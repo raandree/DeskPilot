@@ -9,10 +9,8 @@
 </picture>
 <!-- markdownlint-enable MD033 -->
 
-# DeskPilot
-
-A calm, modern desktop chat window that gives a non-technical user the full
-GitHub Copilot **agent** — able to browse, read and write files, run commands,
+**A calm, modern desktop chat window that gives a non-technical user the full
+GitHub Copilot agent** — able to browse, read and write files, run commands,
 and follow Skills and Instructions — without a terminal or an IDE.
 
 DeskPilot is the friendly front door to the
