@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="system">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DeskPilot</title>
+    <link rel="icon" type="image/png" href="/assets/logo-mark.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" href="/assets/logo-mark-dark.png" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" href="/assets/logo-mark.png" />
+    <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+
+<body>
+    <!-- Authenticate overlay (first run / signed out) -->
+    <div id="auth-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <div class="auth-card">
+            <img class="auth-logo auth-logo-light" src="/assets/logo-full.png"
+                alt="DeskPilot — navigate with clarity" />
+            <img class="auth-logo auth-logo-dark" src="/assets/logo-full-dark.png" alt=""
+                aria-hidden="true" />
+            <h1 id="auth-title">Connect to GitHub Copilot</h1>
+            <p class="muted">DeskPilot uses your GitHub Copilot account through the local ShellPilot engine.
+                Sign in once to get started.</p>
+            <div id="auth-engine" class="auth-engine hidden"></div>
+            <div id="auth-steps" class="auth-steps hidden"></div>
+            <div class="auth-actions">
+                <button id="auth-connect" class="btn btn-primary">Connect</button>
+                <button id="auth-recheck" class="btn">I've signed in elsewhere</button>
+            </div>
+            <p id="auth-error" class="error-text hidden"></p>
+            <p class="muted tiny">Already signed in from a terminal with <code>Initialize-Shp</code>? Use
+                "I've signed in elsewhere" to continue.</p>
+            <p class="muted tiny">Nothing leaves your machine except the calls the engine already makes to GitHub.</p>
+        </div>
+    </div>
+
+    <!-- Engine setup notice -->
+    <div id="engine-notice" class="banner hidden"></div>
+
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-head">
+                <button id="btn-home" class="brand brand-home" type="button"
+                    title="DeskPilot home — close the current chat" aria-label="DeskPilot home">
+                    <span class="brand-mark-img" aria-hidden="true"></span> DeskPilot
+                </button>
+                <button id="btn-new" class="btn btn-primary btn-block">+ New conversation</button>
+            </div>
+            <div class="conv-search-wrap">
+                <input id="conv-search" class="conv-search" type="search" spellcheck="false"
+                    placeholder="Search conversations…" aria-label="Search conversations" />
+            </div>
+            <nav id="conversation-list" class="conversation-list" aria-label="Conversations"></nav>
+            <button id="btn-show-archived" class="show-archived hidden" type="button"></button>
+            <div class="sidebar-foot">
+                <button id="usage-chip" class="usage-chip" title="Credits — this session / all-time">
+                    <span class="bolt">⚡</span> <span id="usage-session-credits">0</span><span class="usage-chip-sep">/</span><span id="usage-alltime-credits" class="usage-chip-alltime">0</span> <span class="usage-chip-unit">cr</span>
+                </button>
+                <button id="btn-customizations" class="icon-btn" title="Customizations — agents, skills, instructions, prompts" aria-label="Customizations">🧩</button>
+                <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+            </div>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <header class="topbar">
+                <button id="btn-sidebar" class="icon-btn only-mobile" aria-label="Toggle sidebar">☰</button>
+                <input id="conv-title" class="conv-title" aria-label="Conversation title" />
+                <div class="topbar-right">
+                    <label class="model-picker">
+                        <span class="muted tiny">Model</span>
+                        <select id="model-select" aria-label="Model"></select>
+                    </label>
+                    <button id="btn-theme" class="icon-btn" title="Toggle light / dark mode"
+                        aria-label="Toggle light or dark mode">☾</button>
+                    <button id="btn-files" class="icon-btn" title="Toggle the project files panel"
+                        aria-label="Toggle files" aria-expanded="false" disabled>☰ Files</button>
+                </div>
+            </header>
+
+            <section id="thread" class="thread" aria-live="polite">
+                <div id="empty-state" class="empty-state">
+                    <span class="brand-mark-img brand-mark-img-xl" aria-hidden="true"></span>
+                    <h2>How can I help?</h2>
+                    <p class="muted">Ask a question, or give the agent a task. It can read and write files, run
+                        commands, and browse — with the permissions you allow.</p>
+                    <div class="examples" id="examples"></div>
+                </div>
+            </section>
+
+            <footer class="composer-wrap">
+                <div id="activity-hint" class="activity-hint hidden"></div>
+                <div class="composer">
+                    <div class="composer-row">
+                        <button id="btn-permissions" class="chip" title="Tool permissions">
+                            <span class="dot" id="perm-dot"></span> Permissions
+                        </button>
+                        <button id="btn-project" class="chip" title="Project — the working folder for new prompts"
+                            aria-haspopup="menu" aria-expanded="false">
+                            📁 <span id="project-chip-label">No project</span> <span class="chip-caret">▾</span>
+                        </button>
+                        <button id="btn-agent" class="chip" title="Agent — the persona the assistant uses"
+                            aria-haspopup="menu" aria-expanded="false">
+                            🤖 <span id="agent-chip-label">No agent</span> <span class="chip-caret">▾</span>
+                        </button>
+                        <button id="btn-attach" class="chip" title="Attach files">
+                            📎 Attach
+                        </button>
+                        <button id="btn-insert" class="chip" title="Insert a prompt file or reference a project file"
+                            aria-haspopup="menu" aria-expanded="false">
+                            ＋ Insert
+                        </button>
+                        <button id="btn-mic" class="chip hidden" title="Dictate (speech to text)"
+                            aria-pressed="false" aria-label="Dictate">
+                            🎤 Dictate
+                        </button>
+                        <input id="file-input" type="file" multiple class="hidden" />
+                    </div>
+                    <div id="attachment-row" class="attachment-row hidden"></div>
+                    <div id="dispatch-queue" class="dispatch-queue hidden"
+                        aria-label="Pending messages queued for after the current turn"></div>
+                    <textarea id="prompt" class="prompt" rows="1"
+                        placeholder="Message DeskPilot…  (Enter to send, Shift+Enter for a new line)"></textarea>
+                    <div class="composer-actions">
+                        <button id="btn-send" class="btn btn-primary btn-send" disabled>Send</button>
+                        <button id="btn-dispatch" class="btn btn-dispatch hidden" type="button"
+                            aria-haspopup="menu" aria-expanded="false"
+                            aria-label="Dispatch this message: Stop and send, Add to queue, or Steer"
+                            title="Dispatch this message">▾</button>
+                        <div id="dispatch-popover" class="popover dispatch-popover hidden" role="menu"
+                            aria-label="Dispatch options">
+                            <button id="dispatch-stop-send" class="popover-item" role="menuitem" type="button">
+                                <span class="dispatch-glyph">→</span>
+                                <span class="dispatch-label">Stop and Send</span>
+                                <span class="dispatch-kbd"></span>
+                            </button>
+                            <button id="dispatch-queue-add" class="popover-item" role="menuitem" type="button">
+                                <span class="dispatch-glyph">+</span>
+                                <span class="dispatch-label">Add to Queue</span>
+                                <span class="dispatch-kbd">Alt+Enter</span>
+                            </button>
+                            <button id="dispatch-steer" class="popover-item dispatch-recommended"
+                                role="menuitem" type="button">
+                                <span class="dispatch-glyph">↑</span>
+                                <span class="dispatch-label">Steer with Message</span>
+                                <span class="dispatch-kbd">Enter</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <p class="composer-foot muted tiny">DeskPilot runs a real agent. Review the Activity panel to see what
+                    it did.</p>
+            </footer>
+        </main>
+
+        <!-- Project files explorer -->
+        <aside id="explorer" class="explorer collapsed" aria-label="Project files">
+            <div class="explorer-head">
+                <span class="explorer-title" id="explorer-title">Files</span>
+                <button id="explorer-refresh" class="icon-btn" title="Refresh" aria-label="Refresh files">↻</button>
+            </div>
+            <div id="git-bar" class="git-bar hidden"></div>
+            <div id="explorer-tree" class="explorer-tree"></div>
+        </aside>
+    </div>
+
+    <!-- Permissions popover -->
+    <div id="permissions-popover" class="popover hidden" role="dialog" aria-label="Permissions">
+        <h3>Tool permissions</h3>
+        <p class="muted tiny">These control what the agent is allowed to do on this machine.</p>
+        <div class="perm-list" id="perm-list"></div>
+    </div>
+
+    <!-- Project menu -->
+    <div id="project-popover" class="popover popover-menu hidden" role="menu" aria-label="Project">
+        <div id="project-menu" class="menu-list"></div>
+    </div>
+
+    <!-- Agent menu -->
+    <div id="agent-popover" class="popover popover-menu hidden" role="menu" aria-label="Agent">
+        <div id="agent-menu" class="menu-list"></div>
+    </div>
+
+    <!-- Composer insert menu (prompt files via /, project files via #) -->
+    <div id="composer-menu" class="popover popover-menu composer-menu hidden" role="menu" aria-label="Insert">
+        <div class="composer-menu-head">
+            <span id="composer-menu-title">Insert</span>
+            <input id="composer-menu-search" class="composer-menu-search" type="search" spellcheck="false"
+                placeholder="Type to filter…" aria-label="Filter" />
+        </div>
+        <div id="composer-menu-list" class="menu-list composer-menu-list"></div>
+    </div>
+
+    <!-- Usage / credits popover -->
+    <div id="usage-popover" class="popover popover-left hidden" role="dialog" aria-label="Credits and usage">
+        <h3>Credits &amp; usage</h3>
+        <div class="usage-block">
+            <div class="usage-block-head">This session</div>
+            <div class="usage-grid" id="usage-session"></div>
+        </div>
+        <div class="usage-block">
+            <div class="usage-block-head">All time <span id="usage-since" class="muted tiny"></span></div>
+            <div class="usage-grid" id="usage-lifetime"></div>
+            <button id="btn-reset-lifetime" class="btn btn-small">Reset all-time counter</button>
+        </div>
+        <div class="usage-block">
+            <div class="usage-chart-head">
+                <span class="usage-block-head">Credits per day</span>
+                <div class="usage-range" role="group" aria-label="Chart range">
+                    <button class="range-btn" data-range="7">7d</button>
+                    <button class="range-btn active" data-range="14">14d</button>
+                </div>
+            </div>
+            <div id="usage-chart" class="usage-chart"></div>
+        </div>
+    </div>
+
+    <!-- Settings drawer -->
+    <div id="settings-backdrop" class="backdrop hidden"></div>
+    <aside id="settings-drawer" class="drawer hidden" role="dialog" aria-label="Settings">
+        <div class="drawer-head">
+            <h2>Settings</h2>
+            <button id="settings-close" class="icon-btn" aria-label="Close settings">✕</button>
+        </div>
+        <div class="drawer-body" id="settings-body"></div>
+    </aside>
+
+    <!-- Folder picker -->
+    <div id="folder-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="folder-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Choose a folder">
+        <div class="modal-head">
+            <h2 id="folder-title">Choose a folder</h2>
+            <button id="folder-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="folder-nav">
+            <button id="folder-up" class="btn btn-small" title="Up one level">↑ Up</button>
+            <button id="folder-home" class="btn btn-small" title="Home folder">⌂ Home</button>
+            <button id="folder-newdir" class="btn btn-small" title="Create a folder here">＋ New folder</button>
+            <div id="folder-drives" class="folder-drives"></div>
+        </div>
+        <input id="folder-path" class="folder-path" type="text" spellcheck="false"
+            aria-label="Current folder path" />
+        <div id="folder-list" class="folder-list"></div>
+        <div class="modal-foot">
+            <input id="folder-name" class="folder-name" type="text" placeholder="Project name"
+                aria-label="Project name" />
+            <button id="folder-cancel" class="btn">Cancel</button>
+            <button id="folder-select" class="btn btn-primary">Use this folder</button>
+        </div>
+    </div>
+
+    <!-- File viewer -->
+    <div id="file-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="file-modal" class="modal file-modal hidden" role="dialog" aria-modal="true" aria-label="View file">
+        <div class="modal-head">
+            <h2 id="file-title" class="file-title">File</h2>
+            <div class="file-head-actions">
+                <div id="file-viewmode" class="file-viewmode hidden" role="group" aria-label="View mode">
+                    <button id="file-view-rendered" class="range-btn active" type="button">Rendered</button>
+                    <button id="file-view-raw" class="range-btn" type="button">Raw</button>
+                </div>
+                <button id="file-close" class="icon-btn" aria-label="Close">✕</button>
+            </div>
+        </div>
+        <div id="file-meta" class="file-meta muted tiny"></div>
+        <div id="file-body" class="file-body"></div>
+    </div>
+
+    <!-- Customizations (manage AI resources: agents, skills, instructions, prompts) -->
+    <div id="cust-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="cust-modal" class="modal cust-modal hidden" role="dialog" aria-modal="true" aria-label="Customizations">
+        <div class="modal-head">
+            <h2 id="cust-title">Customizations</h2>
+            <button id="cust-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+
+        <!-- List view -->
+        <div id="cust-list-view" class="cust-list-view">
+            <div class="cust-split">
+                <nav id="cust-rail" class="cust-rail" aria-label="Customization categories"></nav>
+                <section class="cust-main">
+                    <div class="cust-main-head">
+                        <input id="cust-search" class="cust-search" type="search" spellcheck="false"
+                            placeholder="Type to search…" aria-label="Search customizations" />
+                        <button id="cust-new" class="btn btn-primary btn-small">＋ New</button>
+                    </div>
+                    <div id="cust-items" class="cust-items"></div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Editor view -->
+        <div id="cust-editor-view" class="cust-editor-view hidden">
+            <div class="cust-editor-head">
+                <button id="cust-back" class="icon-btn" title="Back to the list" aria-label="Back to the list">←</button>
+                <div class="cust-editor-titles">
+                    <span id="cust-editor-name" class="cust-editor-name"></span>
+                    <span id="cust-editor-file" class="cust-editor-file muted tiny"></span>
+                </div>
+                <div class="cust-editor-actions">
+                    <div id="cust-editor-viewmode" class="file-viewmode" role="group" aria-label="View mode">
+                        <button id="cust-view-edit" class="range-btn active" type="button">Edit</button>
+                        <button id="cust-view-preview" class="range-btn" type="button">Preview</button>
+                    </div>
+                    <button id="cust-explain" class="btn btn-small" type="button"
+                        title="Open a new chat that explains this file in plain language">Explain</button>
+                    <button id="cust-save" class="btn btn-primary btn-small" disabled>Save</button>
+                </div>
+            </div>
+            <div id="cust-editor-meta" class="cust-editor-meta muted tiny"></div>
+            <div id="cust-editor-wrap" class="cust-editor-wrap">
+                <div id="cust-gutter" class="cust-gutter" aria-hidden="true"></div>
+                <textarea id="cust-editor" class="cust-editor" spellcheck="false" wrap="off"
+                    aria-label="File contents"></textarea>
+            </div>
+            <div id="cust-preview" class="cust-preview content hidden"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Command palette (Ctrl/Cmd+K) -->
+    <div id="palette-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="palette" class="palette hidden" role="dialog" aria-modal="true" aria-label="Command palette">
+        <input id="palette-input" class="palette-input" type="text" spellcheck="false" autocomplete="off"
+            placeholder="Type a command or search conversations…" aria-label="Command or search" />
+        <div id="palette-list" class="palette-list" role="listbox"></div>
+    </div>
+
+    <!-- Artifact preview (sandboxed HTML / SVG from an assistant message) -->
+    <div id="artifact-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="artifact-modal" class="modal artifact-modal hidden" role="dialog" aria-modal="true"
+        aria-label="Artifact preview">
+        <div class="modal-head">
+            <h2 id="artifact-title">Preview</h2>
+            <div class="file-head-actions">
+                <div id="artifact-viewmode" class="file-viewmode" role="group" aria-label="View mode">
+                    <button id="artifact-view-preview" class="range-btn active" type="button">Preview</button>
+                    <button id="artifact-view-source" class="range-btn" type="button">Source</button>
+                </div>
+                <button id="artifact-close" class="icon-btn" aria-label="Close">✕</button>
+            </div>
+        </div>
+        <p class="artifact-note muted tiny">Rendered in an isolated sandbox. Scripts run without access to DeskPilot,
+            your files, or the network.</p>
+        <div id="artifact-body" class="artifact-body"></div>
+    </div>
+
+    <script type="module" src="/assets/app.js"></script>
+</body>
+
+</html>

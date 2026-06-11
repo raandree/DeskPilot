@@ -1,0 +1,113 @@
+# System Patterns — DeskPilot
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser — deep-teal SPA"]
+    UI[web/ static SPA]
+  end
+  subgraph Server["Host Server (PowerShell 7)"]
+    HTTP[HttpListener router]
+    SSE[SSE streamer]
+    STORE[(Conversation store)]
+    CFG[(Settings)]
+  end
+  subgraph EngineProc["Engine Runspace"]
+    SHP[ShellPilot — the Engine]
+  end
+  UI -- REST (fetch) --> HTTP
+  UI -- SSE (EventSource) --> SSE
+  HTTP --> STORE
+  HTTP --> CFG
+  SSE -- Invoke-Shp --> SHP
+  SHP -- Write-Host echo --> SSE
+  SHP -- result object --> SSE
+  SHP -- HTTPS --> Copilot[(GitHub Copilot)]
+```
+
+## Core decisions
+
+1. **The Engine is sacrosanct.** DeskPilot never re-implements Copilot calls,
+   tools, or auth. It orchestrates `Invoke-Shp` and friends. Anything the Engine
+   gains, DeskPilot can surface.
+2. **One long-lived Engine Runspace.** The Engine is imported once at startup
+   and authenticated once. Every Turn runs `Invoke-Shp` on this runspace via a
+   fresh `[PowerShell]` instance, so module-scoped state (auth, model) persists
+   while per-Turn Streams stay isolated.
+3. **Conversation isolation via `-History`.** Each Conversation owns a history
+   array. A Turn replays that array with `-History`, then appends the returned
+   `.History`. The Engine's own running chat is never used, preventing bleed
+   between Conversations.
+4. **Streaming through the Information stream.** With Engine streaming on, answer
+   tokens arrive as `Write-Host` calls captured on the `[PowerShell]` instance's
+   `Streams.Information.DataAdded`. The handler enqueues each delta to a
+   thread-safe queue; the SSE loop drains it to the browser. The final Message
+   text is taken from `.Content` (clean, ANSI-free).
+5. **Single-threaded accept loop.** For one local user, the Host Server accepts
+   on the main thread and handles each request inline. Only the Engine call runs
+   off-thread (its own `[PowerShell]`/runspace) so the SSE loop can write deltas
+   while it runs. Multi-client concurrency is explicitly out of scope for v1.
+6. **Static, build-free frontend.** The SPA is plain files the Host Server
+   serves. No bundler, no npm — nothing for an end user to install.
+
+## Streaming sequence (one Turn)
+
+```mermaid
+sequenceDiagram
+  participant UI
+  participant Server as Host Server
+  participant PS as [PowerShell] (Engine Runspace)
+  UI->>Server: POST /api/conversations/{id}/messages {prompt}
+  Server->>PS: BeginInvoke Invoke-Shp -History ... -Prompt ...
+  Note over Server,PS: subscribe Streams.Information.DataAdded
+  loop while running
+    PS-->>Server: InformationRecord (answer delta)
+    Server-->>UI: SSE event: delta {text}
+  end
+  PS-->>Server: EndInvoke -> result object
+  Server->>Server: append result.History to Conversation
+  Server-->>UI: SSE event: done {content, activity, usage}
+```
+
+## Patterns to keep
+
+- **Boundary validation only.** Validate inputs where the browser meets the Host
+  Server (route params, JSON bodies) and where the Host Server meets the Engine
+  (parameter assembly). Do not sprinkle defensive checks through internal
+  helpers.
+- **Surface, don't hide.** Tool use becomes Activity; cost becomes Usage;
+  errors become a visible Message. The UI never silently swallows agent
+  behaviour.
+- **Permissions are explicit state.** Tool categories map 1:1 to Engine
+  `-Disable*` switches. A Permission that is off means the corresponding switch
+  is passed; the UI reflects the exact set in force for the next Turn.
+- **Settings are a single object.** Model, Permissions, Projects + selected
+  Project, Agents folder + selected Agent, Skill/Instruction/Prompt roots,
+  reasoning effort — one settings object, read at the start of each Turn so
+  changes take effect on the next prompt.
+- **Derive, don't duplicate.** `workspaceFolder` is derived from the selected
+  Project on every `Merge-DpSettings`, so Turn/Upload/explorer code reads one
+  field while the registry stays the source of truth. A legacy direct
+  `workspaceFolder` write is migrated into a registered Project.
+- **Engine gaps filled via the system prompt.** Concepts the Engine has no native
+  parameter for (Projects, Agents) are surfaced by composing `-SystemPrompt`
+  rather than changing the Engine: the selected Agent's `*.agent.md` body plus a
+  note naming the Project folder.
+- **Filesystem endpoints are directory-only.** The folder picker and explorer
+  enumerate/create directories (never file contents); `mkdir` is single-segment
+  (no separators/`..`); the explorer tree is confined to the selected Project.
+- **One gate for Customization I/O.** Every Customization read, write, and create
+  passes `Resolve-DpCustomizationPath`: the path must be a descendant of a
+  configured root **and** match the category's file pattern. Reads/saves/creates
+  never re-implement the check; they call the gate. Saves are edit-only and
+  atomic (temp + `Move-Item -Force`); creates validate the name as a single safe
+  segment and refuse an existing target.
+
+## Anti-patterns to avoid
+
+- Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
+  structured result object for Activity and Usage.
+- Binding the Host Server to `0.0.0.0` — localhost only unless explicitly opted
+  in with auth.
+- Leaking one Conversation's history into another via the Engine's running chat.

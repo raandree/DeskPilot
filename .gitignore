@@ -1,0 +1,17 @@
+# Build / tooling output
+output/
+.work/
+*.log
+
+# Pester / test results
+testResults*.xml
+coverage*.xml
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+*.tmp
+
+# Local secrets (never commit the Engine token)
+.copilot-demo-token
+*.token
