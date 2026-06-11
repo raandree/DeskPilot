@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every Turn broke against the latest Engine (Task List parameter renamed).**
+  ShellPilot made its built-in Task List tool (`manage_todo_list`) on by default
+  and renamed the opt-in `-EnableTodoList` switch to an opt-out `-DisableTodoList`.
+  DeskPilot still passed `-EnableTodoList` whenever task tracking was on (the
+  default), so `Invoke-Shp` rejected the now-unknown parameter and the Turn
+  failed. DeskPilot now relies on the Engine's default-on behaviour and passes
+  `-DisableTodoList` only when the "Track tasks for multi-step work" setting is
+  turned off — preserving the previous behaviour with the new Engine.
 - **UI failed to load (no model selectable, Send disabled).** A scrambled edit
   in the previous change shipped a syntax error in the single-page app's module
   bundle, which the browser refuses to execute — so nothing initialised. Repaired

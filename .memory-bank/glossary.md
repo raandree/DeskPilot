@@ -58,6 +58,6 @@ synonym.
   List** map onto ShellPilot's built-in `manage_todo_list` tool and its result
   `TodoList` member. Those two identifiers are third-party names from the Engine
   boundary and are kept verbatim only where DeskPilot reads them off the Engine
-  (the `-EnableTodoList` switch, the `ShpProgress` records, `result.TodoList`).
+  (the `-DisableTodoList` switch, the `ShpProgress` records, `result.TodoList`).
   Everywhere else — code identifiers, SSE event, UI copy, docs — use **Task** /
   **Task List** (`task`, `tasks`, `taskList`, `taskTracking`).

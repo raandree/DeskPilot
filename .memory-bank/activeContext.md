@@ -2,38 +2,40 @@
 
 ## Current focus
 
-Brand polish: README now leads with the **full DeskPilot lockup** (compass-D
-glyph + wordmark) floated left and theme-switched via `<picture>`. Two new
-transparent variants live in `assets/`: `dp-logo-on-light.png` (navy + teal
-two-tone) and `dp-logo-on-dark.png` (cream + bright-teal). The in-app web
-assets under `web/assets/logo-*.png` are unchanged — they still drive the
-SPA favicon, sidebar mark, empty-state hero, and auth lockup.
+**Engine compatibility.** ShellPilot shipped a breaking parameter change to
+`Invoke-Shp`: its built-in Task List tool (`manage_todo_list`) is now on by
+default and the opt-in `-EnableTodoList` switch was replaced with an opt-out
+`-DisableTodoList`. DeskPilot was still passing `-EnableTodoList`, so every Turn
+failed against the current Engine. Realigned DeskPilot to the new Engine surface.
 
 ## Just completed
 
-- Generated `assets/dp-logo-on-light.png` and `assets/dp-logo-on-dark.png` from
-  the design-board source `DP #1` with a single .NET LockBits pass: vs-white
-  colour-to-alpha (threshold 24), ink-aware recolour for the dark variant
-  (navy → `#EAF1F8`, mid-teal → `#2DD4BF`), bbox auto-crop with 16 px margin.
-  Both are 32bpp ARGB, corner alpha 0, 1273×467.
-- Rewrote the README header: removed the right-corner `web/assets/logo-mark*.png`
-  block; added the floated-left `<picture>` (width 300) + `<br clear="left">`
-  after the lead paragraph; kept `MD033`/`MD041` markdownlint disables scoped to
-  the HTML block.
-- Added `.gitattributes` (this repo had none) marking `*.png binary` and
-  enforcing LF for source files.
+- Inverted the Task List mapping in `New-DpTurnParameter`: pass
+  `-DisableTodoList` only when the `taskTracking` Setting is **off**; otherwise
+  pass nothing and rely on the Engine's default-on behaviour. This preserves
+  DeskPilot's previous semantics (Task List on by default) with the new Engine.
+- Rewrote the two Task List splat tests (on → asserts no `-DisableTodoList`;
+  off → asserts `-DisableTodoList = $true`) and updated the glossary's
+  Engine-boundary note (`-EnableTodoList` → `-DisableTodoList`).
+- Audited the rest of ShellPilot's recent changes against DeskPilot:
+  - `git diff` since ShellPilot's init shows `Invoke-Shp.ps1` as the only
+    functional source change, and the Task List rename as its only
+    parameter-surface change.
+  - The `-ShowThinking` streaming fix needs **no** DeskPilot change — the
+    `Get-DpStreamFrame` classifier already handles the trace format (DarkGray
+    `thinking:` + ANSI `3;90m` reasoning + DarkCyan/Cyan/Yellow), and the fix
+    keeps live streaming on when thinking is enabled (a net improvement).
+  - The `ShellPilot.Result` default-view fix is display-only; DeskPilot reads
+    result members programmatically, so it is unaffected.
 - CHANGELOG `[Unreleased]` and Memory Bank `progress.md` updated.
+- Verified: both edited `.ps1` parse clean; Pester **186/186**.
 
 ## Next steps
 
-1. (Deferred) Same brand pass for sub-READMEs (`specs/000-overview.md`, `docs/`)
-   if requested — would use a small `dp-glyph-*.png` corner mark generated from
-   `DP #3`/`#4` with the same helper.
-2. (Deferred) `DeskPilot.psd1` `PrivateData.PSData.IconUri` pointing at the
-   raw-GitHub URL of an app-icon variant — only useful once the module is
-   published to PowerShell Gallery.
-3. Resume the previous focus (Phase 2.6 QoL batch / regenerate + edit/resend
-   live-Engine smoke).
+1. Live smoke a streaming + Task List Turn against the updated Engine to confirm
+   end-to-end (the unit suite proves the splat; a live run proves the wire).
+2. Resume the previous focus (Phase 2.6 QoL batch / regenerate + edit/resend
+   live-Engine smoke; brand pass for sub-READMEs — both deferred).
 
 ## Open decisions
 

@@ -134,15 +134,16 @@ Describe 'New-DpTurnParameter' {
         $p.SystemPrompt | Should -Match 'working directory'
         $p.SystemPrompt | Should -Match ([regex]::Escape('C:\a'))
     }
-    It 'offers the Task List tool (EnableTodoList) when taskTracking is on' {
+    It 'does not disable the Task List tool when taskTracking is on (the Engine offers it by default)' {
         $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings)
-        $p.ContainsKey('EnableTodoList') | Should -BeTrue
-        $p.EnableTodoList | Should -BeTrue
+        $p.ContainsKey('DisableTodoList') | Should -BeFalse
     }
-    It 'omits EnableTodoList when taskTracking is off' {
+    It 'disables the Task List tool (DisableTodoList) when taskTracking is off' {
         $s = Get-DpDefaultSettings
         $s.taskTracking = $false
-        (New-DpTurnParameter -Prompt 'hi' -Settings $s).ContainsKey('EnableTodoList') | Should -BeFalse
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s
+        $p.ContainsKey('DisableTodoList') | Should -BeTrue
+        $p.DisableTodoList | Should -BeTrue
     }
     It 'never passes DisableProgressEvents' {
         (New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings)).ContainsKey('DisableProgressEvents') | Should -BeFalse

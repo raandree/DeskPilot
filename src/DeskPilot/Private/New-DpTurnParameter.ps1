@@ -53,13 +53,14 @@ function New-DpTurnParameter {
     if ($Settings.reasoningEffort) { $params.ReasoningEffort = $Settings.reasoningEffort }
     if ($Settings.maxToolIterations) { $params.MaxToolIterations = $Settings.maxToolIterations }
 
-    # Offer the Engine's built-in Task List tool (manage_todo_list) so the model can
-    # plan and track sub-steps within the Turn; live updates arrive as ShpProgress
-    # Information records and the final list on result.TodoList. The Engine injects
-    # its own task-tracking system-prompt nudge when this switch is set, so DeskPilot
-    # adds no instruction of its own. When taskTracking is off the tool is not
-    # offered. Progress events are left enabled (no -DisableProgressEvents).
-    if ($Settings.ContainsKey('taskTracking') -and $Settings.taskTracking) { $params.EnableTodoList = $true }
+    # The Engine offers its built-in Task List tool (manage_todo_list) by default,
+    # so the model can plan and track sub-steps within the Turn; live updates arrive
+    # as ShpProgress Information records and the final list on result.TodoList, and
+    # the Engine injects its own task-tracking system-prompt nudge. DeskPilot
+    # therefore adds no instruction of its own and only opts out when taskTracking
+    # is off, by passing the Engine's -DisableTodoList switch. Progress events are
+    # left enabled (no -DisableProgressEvents).
+    if ($Settings.ContainsKey('taskTracking') -and -not $Settings.taskTracking) { $params.DisableTodoList = $true }
 
     # Tell the model about the Workspace Folder. The runspace's working directory
     # Compose the system prompt from the selected Agent's persona (if any) and a
