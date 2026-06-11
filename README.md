@@ -13,6 +13,8 @@
 GitHub Copilot agent** — able to browse, read and write files, run commands,
 and follow Skills and Instructions — without a terminal or an IDE.
 
+---
+
 DeskPilot is the friendly front door to the
 [Agentic Operating Model](https://github.com/raandree/AgenticOperatingModel):
 it fronts the [ShellPilot](https://github.com/raandree/ShellPilot) engine (which
