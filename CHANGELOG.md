@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Brand: theme-aware floated logo in README.** Replaced the small right-corner
+  mark with the full DeskPilot lockup floated left (`<picture>` switching by
+  `prefers-color-scheme`). Generated two transparent variants
+  (`assets/dp-logo-on-light.png`, `assets/dp-logo-on-dark.png`) from the
+  design-board source: navy `#06172A` wordmark + teal `#067E7D` "Pilot" accent
+  for light themes; cream `#EAF1F8` wordmark + bright teal `#2DD4BF` accent for
+  dark. Both 32bpp ARGB, auto-cropped, corner alpha 0. Existing in-app marks
+  (`web/assets/logo-mark*.png`, `logo-full*.png`) are untouched. Added
+  `.gitattributes` to mark `*.png binary`.
+
 ### Fixed
 
 - **UI failed to load (no model selectable, Send disabled).** A scrambled edit

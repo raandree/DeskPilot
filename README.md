@@ -1,9 +1,13 @@
 <!-- markdownlint-disable MD033 MD041 -->
+<!-- Logo floated left; two transparent variants switch by theme via <picture>.
+     Judge on github.com — editor previews mis-resolve prefers-color-scheme. -->
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="web/assets/logo-mark-dark.png">
-  <img align="right" width="112" alt="DeskPilot logo" src="web/assets/logo-mark.png">
+  <source media="(prefers-color-scheme: dark)"
+          srcset="assets/dp-logo-on-dark.png">
+  <img align="left" width="300" alt="DeskPilot logo"
+       src="assets/dp-logo-on-light.png">
 </picture>
-<!-- markdownlint-enable MD033 MD041 -->
+<!-- markdownlint-enable MD033 -->
 
 # DeskPilot
 
@@ -17,6 +21,11 @@ it fronts the [ShellPilot](https://github.com/raandree/ShellPilot) engine (which
 talks to GitHub Copilot) with a local web UI, so the people the model is meant to
 serve — analysts, operators, lawyers, researchers — can do agentic knowledge
 work without driving the tool stack themselves.
+
+<!-- markdownlint-disable MD033 -->
+<br clear="left">
+<!-- markdownlint-enable MD033 -->
+
 
 > **Status: experimental pre-release.** DeskPilot builds on ShellPilot, which
 > talks to internal Copilot endpoints intended for first-party editors. They may

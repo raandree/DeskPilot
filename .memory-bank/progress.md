@@ -9,6 +9,7 @@ and tests are in place and verified.
 
 | Date | Change |
 | --- | --- |
+| 2026-06-11 | Brand: theme-aware floated logo in root README. Generated `assets/dp-logo-on-light.png` (navy + teal lockup, dark ink for light themes) and `assets/dp-logo-on-dark.png` (cream `#EAF1F8` wordmark + bright teal `#2DD4BF` accent for dark themes) from `DP #1` via .NET LockBits colour-to-alpha + per-ink recolour, auto-cropped to 1273×467, 32bpp ARGB with corner alpha 0. Replaced the right-aligned `web/assets/logo-mark*.png` corner mark in `README.md` with a `<picture>` floated left (width 300) + `<br clear="left">` after the intro. In-app marks (`web/assets/logo-*.png`) untouched. Added `.gitattributes` marking `*.png binary`. Verified visually on `#FFFFFF` and `#0d1117` composites; corners A=0; PNG inspection shows expected ink mids. |
 | 2026-06-08 | Memory Bank established (brief, product context, tech context, system patterns, glossary, active context, progress). |
 | 2026-06-08 | Seven specs written (overview, requirements, architecture, API contract, UI design, security model, roadmap). |
 | 2026-06-08 | Host Server module `src/DeskPilot` implemented: loopback HTTP + SSE, token gate, static serving, REST + streaming routes, Engine runspace, Conversation store, Settings, Usage. |
