@@ -20,16 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Start-DeskPilot.ps1` now builds on first run and imports the built module.
   This prepares DeskPilot for publishing to the PowerShell Gallery (the actual
   publish is gated to a later phase).
-- **CI: added a GitHub Actions pipeline (`.github/workflows/ci.yml`).** Mirrors
-  ShellPilot — build + package (GitVersion), a Linux/Windows/macOS test matrix on
-  PowerShell 7, and a built-module smoke check — on every push to `main` and pull
-  request. Publishing follows a two-track release model (both gated off behind the
-  `PUBLISH_ENABLED` repository variable until go-live): every push to `main`
-  publishes a **prerelease** to the PowerShell Gallery (installable with
-  `Install-Module DeskPilot -AllowPrerelease`) so users can test it, and pushing a
-  version tag such as `v1.0.0` publishes a **full release** (GitHub release +
-  stable Gallery module + changelog PR). GitVersion runs in `ContinuousDeployment`
-  mode so each `main` commit gets a unique, incrementing prerelease version.
+- **CI: added a GitHub Actions pipeline (`.github/workflows/ci.yml`).** Built from
+  ShellPilot's pipeline as the template: build + package (GitVersion), a Linux/
+  Windows/macOS test matrix on PowerShell 7, and a deploy job (on pushes to `main`
+  and `v*` tags) that publishes to GitHub and the PowerShell Gallery and raises a
+  changelog PR. Sampler/GitVersion produce a prerelease for `main` builds
+  (installable with `Install-Module DeskPilot -AllowPrerelease`) and a stable
+  release for a `v1.0.0`-style tag. Publishing stays dormant until the
+  `GalleryApiToken`/`GitHubToken` repository secrets are configured.
 - **Engine resolution: download ShellPilot from the PowerShell Gallery.** The
   Engine is now resolved by a new `Resolve-DpEngineModule` helper — an explicit
   `-EngineModulePath`, an already-installed `ShellPilot` module on the module

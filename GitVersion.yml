@@ -1,10 +1,4 @@
-# ContinuousDeployment: every commit to main produces a unique, incrementing
-# prerelease number (e.g. 0.2.0-preview0009, 0.2.0-preview0010), so each main
-# commit can publish a distinct prerelease to the PowerShell Gallery. (Under
-# ContinuousDelivery the number only advances on a version bump and the per-commit
-# difference is build metadata, which the Gallery strips - causing version
-# collisions.) A pushed v* tag still yields a clean stable version (e.g. 1.0.0).
-mode: ContinuousDeployment
+mode: ContinuousDelivery
 next-version: 0.1.0
 major-version-bump-message: '(breaking\schange|breaking|major)\b'
 minor-version-bump-message: '(adds?|features?|minor)\b'

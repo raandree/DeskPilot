@@ -22,24 +22,25 @@ non-prerelease ShellPilot exists or a first user appears). Phased plan A–D:
   (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
   `LICENSE` (MIT); built-module smoke test.
 - **C — CI (dry-run): pipeline added 2026-06-12 (`.github/workflows/ci.yml`).**
-  Mirrors ShellPilot: build (GitVersion + pack + artifact) -> test matrix
-  (ubuntu/windows/macos, PS7) -> smoke (import the built module, assert
-  `Start-DeskPilot` exported). **Two-track release model** (both gated OFF behind
-  the repo variable `PUBLISH_ENABLED == 'true'` until go-live): push to `main` ->
-  `publish_prerelease` job (Gallery prerelease only, `-AllowPrerelease`); push a
-  `v*` tag -> `publish_release` job (GitHub release + stable Gallery + changelog
-  PR). GitVersion switched to **`ContinuousDeployment`** so each main commit gets
-  a unique incrementing prerelease number (`-preview0009`, `-preview0010`); a `v*`
-  tag still yields a clean stable version. The GitHub-release task does NOT skip
-  prereleases, which is why prerelease publishing deliberately runs only
-  `publish_module_to_gallery` (no GitHub release / no changelog cut). Still to do
-  in the GitHub UI (not code): branch protection (PR-only + green-CI-to-merge) and
-  the `PUBLISH_ENABLED` variable + `GitHubToken`/`GalleryApiToken` secrets at
-  go-live.
+  Built from ShellPilot's pipeline as the template (deliberately the SAME idea,
+  not a different one): build (GitVersion + pack + artifact) -> test matrix
+  (ubuntu/windows/macos, PS7) -> deploy (single job; `needs: [build, test]`; runs
+  on push to `main` or a `v*` tag for owner `raandree`; `./build.ps1 -Tasks
+  publish` + `Create_ChangeLog_GitHub_PR`). `-Tasks publish` lets Sampler/
+  GitVersion do the prerelease-vs-release split as needed: `main` is a `-preview`
+  build (Gallery prerelease, `-AllowPrerelease`), a `v1.0.0` tag is a stable
+  release. GitVersion stays in `ContinuousDelivery` (same as ShellPilot).
+  Publishing is dormant until the `GalleryApiToken`/`GitHubToken` secrets are
+  added — the Sampler publish tasks self-guard on secret presence, so that IS the
+  "publish-for-real later" gate (no custom variable). Still to do in the GitHub UI
+  (not code): branch protection (PR-only + green-CI-to-merge); add the secrets at
+  go-live. NOTE: an earlier iteration diverged (two-job prerelease/release split,
+  a `smoke` job, a `PUBLISH_ENABLED` variable, `ContinuousDeployment`); reverted
+  to mirror ShellPilot per user direction.
 - **D — Go-live (later, separate decision):** stable ShellPilot →
   `RequiredModules` pin (min tested version) → cross-platform `iwr|iex`
   bootstrap (in-repo, HTTPS, tag-pinned; CurrentUser + trust PSGallery + TLS 1.2
-  + PS7 check) → enable the publish gate.
+  + PS7 check) → add the `GalleryApiToken`/`GitHubToken` secrets to enable publishing.
 
 **Previous focus (Engine distribution — shipped).** ShellPilot is published to
 the PowerShell Gallery; DeskPilot downloads it into the user scope (preview
@@ -74,14 +75,16 @@ Phase D's `RequiredModules` pin will supersede this.
    SPA ships inside the built module; remove the remaining hardcoded `0.1.0` in
    `$script:DeskPilot.Version`; fix manifest metadata (ProjectUri →
    raandree/DeskPilot, real Author, IconUri, fuller description); add `LICENSE`
-   (MIT); extend the CI smoke to start the Host Server and GET `/api/health`.
+   (MIT); add a built-module smoke test (import + resolve web root + GET
+   `/api/health`) now that the server can start self-contained.
    Also repoint the root `Start-DeskPilot.ps1` launcher's `WebRoot` (currently
    `$repoRoot/web`) once `web/` moves to `source/web` — or drop `-WebRoot` there
    and rely on the new module-relative default. The root launcher + `DeskPilot.cmd`
    stay as the dev/clone convenience (never shipped to the Gallery).
 2. **Phase C remainder (GitHub UI, not code):** enable branch protection on `main`
-   (PR-only + require the CI checks) once the workflow has run on a PR; leave
-   `PUBLISH_ENABLED` unset until go-live.
+   (PR-only + require the CI checks) once the workflow has run on a PR; leave the
+   `GalleryApiToken`/`GitHubToken` secrets unset until go-live (their absence is
+   the publish gate).
 3. Before C/D: confirm a stable (non-prerelease) ShellPilot release and pick the
    minimum version to pin; confirm the mirrored secret names
    (`GitHubToken`/`GalleryApiToken`) match ShellPilot (Decision Concept TBDs

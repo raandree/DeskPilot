@@ -1,40 +1,27 @@
 # Continuous integration pipeline for DeskPilot.
 #
-# Mirrors ShellPilot's .github/workflows/ci.yml:
+# Uses ShellPilot's .github/workflows/ci.yml as the template (same idea):
 #   * Build  - calculate the version with GitVersion, build and package the
 #              module, then publish the output/ folder as a build artifact.
 #   * Test   - on Linux, Windows and macOS (PowerShell 7), reuse the build
 #              artifact and run the Sampler test workflow.
-#   * Smoke  - import the BUILT module and assert it exposes Start-DeskPilot.
-#              Gates both deploy jobs. (A fuller /api/health server smoke
-#              arrives once Phase B bundles web/ into the module - see
-#              .memory-bank.)
+#   * Deploy - on the upstream repository, for pushes to main or v* tags,
+#              publish the release to GitHub and the PowerShell Gallery and
+#              raise the changelog pull request. Sampler/GitVersion handle the
+#              prerelease-vs-release split as needed: a push to main is a
+#              -preview build (a Gallery prerelease, installable with
+#              Install-Module -AllowPrerelease), while a v* tag (e.g. v1.0.0)
+#              is a clean stable release.
 #
-# Release model (two trigger-split deploy jobs):
-#   * publish_prerelease - on every push to main. GitVersion stamps a
-#              -preview<N> version, so this publishes a PRERELEASE to the
-#              PowerShell Gallery (installable with Install-Module -AllowPrerelease)
-#              so users can see and test it. No GitHub release, no changelog cut.
-#   * publish_release    - on a pushed version tag v* (e.g. v1.0.0). GitVersion
-#              computes the clean stable version, so this publishes the FULL
-#              release: GitHub release + stable Gallery module + a changelog PR
-#              back to main.
-#   Because main is configured as a prerelease branch in GitVersion.yml
-#   (tag: preview), main is always a -preview build and a clean stable version
-#   only ever comes from a v* tag - exactly the desired split.
+# Publishing stays dormant until the secrets below are configured: the Sampler
+# publish tasks are guarded by the presence of GalleryApiToken / GitHubToken, so
+# with no secrets set the deploy job runs but publishes nothing. To go live
+# (Phase D), add the two repository secrets.
 #
-#   BOTH jobs are GATED OFF until go-live (Phase D): they only run when the
-#   repository variable PUBLISH_ENABLED is set to 'true'. DeskPilot is not yet
-#   published to the Gallery (its ShellPilot dependency is still prerelease).
-#   To go live: set the repo variable PUBLISH_ENABLED=true (Settings > Secrets
-#   and variables > Actions > Variables) and add the secrets below. No code
-#   change required.
-#
-# Required repository secrets (only used once publishing is enabled):
+# Required repository secrets (Settings > Secrets and variables > Actions):
 #   GitHubToken     - personal access token used to create the GitHub release
-#                     and the changelog pull request (release job only).
-#   GalleryApiToken - PowerShell Gallery API key used to publish the module
-#                     (both prerelease and release jobs).
+#                     and the changelog pull request.
+#   GalleryApiToken - PowerShell Gallery API key used to publish the module.
 name: CI
 
 run-name: ${{ github.ref_type == 'tag' && format('Release {0}', github.ref_name) || '' }}
@@ -139,78 +126,21 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TestResults-${{ matrix.os }}
+          name: CodeCoverage-${{ matrix.os }}
           path: output/testResults/
           if-no-files-found: warn
 
-  smoke:
-    name: Smoke ${{ needs.build.outputs.fullSemVer }}
-    needs: build
+  deploy:
+    name: Deploy Module ${{ needs.build.outputs.fullSemVer }}
+    needs: [build, test]
     runs-on: ubuntu-latest
-    steps:
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.buildArtifactName }}
-          path: output/
-
-      - name: Import built module and verify the public surface
-        shell: pwsh
-        run: |
-          $manifest = Get-ChildItem -Path ./output/module/DeskPilot -Recurse -Filter DeskPilot.psd1 |
-              Sort-Object -Property LastWriteTime -Descending |
-              Select-Object -First 1
-          if (-not $manifest) { throw 'Built DeskPilot manifest not found in the artifact.' }
-          Write-Host -Object "Importing $($manifest.FullName)"
-          Import-Module -Name $manifest.FullName -Force -ErrorAction Stop
-          $command = Get-Command -Name Start-DeskPilot -Module DeskPilot -ErrorAction Stop
-          if (-not $command) { throw 'Start-DeskPilot is not exported from the built module.' }
-          Write-Host -Object 'OK: built module imports and exports Start-DeskPilot.'
-          # A fuller smoke (start the Host Server, GET /api/health) lands in
-          # Phase B, once web/ is bundled into the module and -WebRoot has a
-          # module-relative default. See .memory-bank/activeContext.md.
-
-  publish_prerelease:
-    name: Publish prerelease ${{ needs.build.outputs.fullSemVer }} (Gallery)
-    needs: [build, test, smoke]
-    runs-on: ubuntu-latest
-    # On every push to main. GitVersion makes main a -preview build, so this
-    # publishes a PRERELEASE to the PowerShell Gallery for users to test with
-    # Install-Module -AllowPrerelease. GATED OFF until go-live via PUBLISH_ENABLED.
+    # Only deploy from the upstream repository, for pushes to the default
+    # branch or for version tags. Publishing itself is guarded by the presence
+    # of the GalleryApiToken / GitHubToken secrets, so this is a no-op until
+    # those are configured (Phase D go-live).
     if: >-
-      vars.PUBLISH_ENABLED == 'true' &&
       github.repository_owner == 'raandree' &&
-      github.event_name == 'push' &&
-      github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ env.buildArtifactName }}
-          path: output/
-
-      - name: Publish prerelease to PowerShell Gallery
-        shell: pwsh
-        env:
-          GalleryApiToken: ${{ secrets.GalleryApiToken }}
-        run: ./build.ps1 -Tasks publish_module_to_gallery
-
-  publish_release:
-    name: Publish release ${{ needs.build.outputs.fullSemVer }}
-    needs: [build, test, smoke]
-    runs-on: ubuntu-latest
-    # On a pushed version tag (e.g. v1.0.0). GitVersion computes the clean stable
-    # version, so this publishes the FULL release: GitHub release + stable Gallery
-    # module + a changelog PR back to main. GATED OFF until go-live via PUBLISH_ENABLED.
-    if: >-
-      vars.PUBLISH_ENABLED == 'true' &&
-      github.repository_owner == 'raandree' &&
-      startsWith(github.ref, 'refs/tags/v')
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: write
       pull-requests: write
@@ -226,7 +156,7 @@ jobs:
           name: ${{ env.buildArtifactName }}
           path: output/
 
-      - name: Publish Release (GitHub release + PowerShell Gallery)
+      - name: Publish Release
         shell: pwsh
         env:
           GitHubToken: ${{ secrets.GitHubToken }}
