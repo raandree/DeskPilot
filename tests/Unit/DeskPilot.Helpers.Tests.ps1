@@ -1739,3 +1739,228 @@ Describe 'Get-DpBranchList' {
         Should -Invoke Invoke-DpGitFetch -Times 1
     }
 }
+
+Describe 'New-DpMergePlanPrompt' {
+    It 'includes the branches, file paths and JSON instructions' {
+        $p = New-DpMergePlanPrompt -SourceBranch 'feature' -DefaultBranch 'main' -Files @(
+            @{ rel = 'src/a.txt'; content = "<<<<<<< HEAD`nours`n=======`ntheirs`n>>>>>>> feature" }
+        )
+        $p | Should -Match 'feature'
+        $p | Should -Match 'main'
+        $p | Should -Match ([regex]::Escape('src/a.txt'))
+        $p | Should -Match 'resolutions'
+        $p | Should -Match 'json'
+    }
+    It 'handles an empty file list without throwing' {
+        { New-DpMergePlanPrompt -SourceBranch 'f' -DefaultBranch 'main' -Files @() } | Should -Not -Throw
+    }
+}
+
+Describe 'ConvertFrom-DpMergePlan' {
+    It 'parses a fenced json block with nested objects' {
+        $text = "Here is the plan:`n``````json`n{ ""resolutions"": [ { ""path"": ""a.txt"", ""content"": ""hello world"" } ], ""notes"": ""merged both"" }`n```````n"
+        $r = ConvertFrom-DpMergePlan -Text $text
+        $r.ok | Should -BeTrue
+        @($r.resolutions).Count | Should -Be 1
+        $r.resolutions[0].path | Should -Be 'a.txt'
+        $r.resolutions[0].content | Should -Be 'hello world'
+        $r.notes | Should -Be 'merged both'
+    }
+    It 'parses bare json without a fence' {
+        $r = ConvertFrom-DpMergePlan -Text '{ "resolutions": [ { "path": "b.txt", "content": "x" } ] }'
+        $r.ok | Should -BeTrue
+        $r.resolutions[0].path | Should -Be 'b.txt'
+    }
+    It 'parses multiple resolutions' {
+        $r = ConvertFrom-DpMergePlan -Text '{ "resolutions": [ { "path": "a", "content": "1" }, { "path": "b", "content": "2" } ] }'
+        @($r.resolutions).Count | Should -Be 2
+    }
+    It 'reports invalid json' {
+        $r = ConvertFrom-DpMergePlan -Text '{ not json at all'
+        $r.ok | Should -BeFalse
+        $r.error | Should -Not -BeNullOrEmpty
+    }
+    It 'reports an empty response' {
+        (ConvertFrom-DpMergePlan -Text '').ok | Should -BeFalse
+    }
+    It 'reports a plan with no resolutions' {
+        $r = ConvertFrom-DpMergePlan -Text '{ "resolutions": [] }'
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'no file resolutions'
+    }
+    It 'skips a resolution missing a path or content' {
+        $r = ConvertFrom-DpMergePlan -Text '{ "resolutions": [ { "path": "a.txt", "content": "ok" }, { "path": "" , "content": "x" }, { "content": "no path" } ] }'
+        $r.ok | Should -BeTrue
+        @($r.resolutions).Count | Should -Be 1
+    }
+}
+
+Describe 'Merge helper guards (no git required)' {
+    It 'Get-DpMergePreview reports a missing project folder' {
+        (Get-DpMergePreview -Root (Join-Path $TestDrive 'no-such-mp') -Branch 'feature').error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpGitMerge reports a missing project folder' {
+        (Invoke-DpGitMerge -Root (Join-Path $TestDrive 'no-such-mm') -Branch 'feature').error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpMergeApply reports a missing project folder' {
+        (Invoke-DpMergeApply -Root (Join-Path $TestDrive 'no-such-ma') -Resolutions @()).error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpBranchCleanup reports a missing project folder' {
+        (Invoke-DpBranchCleanup -Root (Join-Path $TestDrive 'no-such-bc') -Branch 'feature').error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpGitMergeAbort reports a missing project folder' {
+        (Invoke-DpGitMergeAbort -Root (Join-Path $TestDrive 'no-such-ab')).error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpGitMergeUndo rejects an invalid commit id' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (Invoke-DpGitMergeUndo -Root $dir -Sha 'xyz').error | Should -Be 'Invalid commit id.'
+    }
+}
+
+Describe 'Merge Wizard against a real repository' -Skip:(-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    BeforeAll {
+        function New-MergeRepo {
+            param([string]$Path)
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+            & git -C $Path init -q 2>$null
+            & git -C $Path symbolic-ref HEAD refs/heads/main 2>$null
+            & git -C $Path config user.email 'test@example.com' 2>$null
+            & git -C $Path config user.name 'Test' 2>$null
+            & git -C $Path config commit.gpgsign false 2>$null
+        }
+    }
+
+    Context 'clean merge, preview and cleanup' {
+        BeforeAll {
+            $script:repoA = Join-Path $TestDrive 'mergeA'
+            New-MergeRepo -Path $script:repoA
+            Set-Content -LiteralPath (Join-Path $script:repoA 'base.txt') -Value "base`n" -NoNewline
+            & git -C $script:repoA add . 2>$null
+            & git -C $script:repoA commit -q -m 'init' 2>$null
+            & git -C $script:repoA checkout -q -b feature 2>$null
+            Set-Content -LiteralPath (Join-Path $script:repoA 'feature.txt') -Value "feature work`n" -NoNewline
+            & git -C $script:repoA add . 2>$null
+            & git -C $script:repoA commit -q -m 'add feature file' 2>$null
+            & git -C $script:repoA checkout -q main 2>$null
+        }
+
+        It 'previews the incoming commits against the default branch' {
+            $p = Get-DpMergePreview -Root $script:repoA -Branch 'feature'
+            $p.isRepo | Should -BeTrue
+            $p.defaultBranch | Should -Be 'main'
+            $p.commitCount | Should -Be 1
+            $p.commits[0].subject | Should -Be 'add feature file'
+            $p.commits[0].sha | Should -Match '^[0-9a-f]{40}$'
+            $p.fastForward | Should -BeTrue
+            $p.alreadyMerged | Should -BeFalse
+        }
+
+        It 'blocks merging the default branch into itself' {
+            (Get-DpMergePreview -Root $script:repoA -Branch 'main').sameBranch | Should -BeTrue
+        }
+
+        It 'merges the feature branch (fast-forward)' {
+            $m = Invoke-DpGitMerge -Root $script:repoA -Branch 'feature'
+            $m.status | Should -Be 'success'
+            $m.fastForward | Should -BeTrue
+            $m.mergedSha | Should -Match '^[0-9a-f]{40}$'
+            Test-Path -LiteralPath (Join-Path $script:repoA 'feature.txt') | Should -BeTrue
+        }
+
+        It 'shows the branch as already merged afterwards' {
+            $p = Get-DpMergePreview -Root $script:repoA -Branch 'feature'
+            $p.alreadyMerged | Should -BeTrue
+            $p.commitCount | Should -Be 0
+        }
+
+        It 'deletes the local branch on cleanup' {
+            $cl = Invoke-DpBranchCleanup -Root $script:repoA -Branch 'feature'
+            $cl.localDeleted | Should -BeTrue
+            $cl.localError | Should -BeNullOrEmpty
+            (& git -C $script:repoA branch --format='%(refname:short)' 2>$null) | Should -Not -Contain 'feature'
+        }
+
+        It 'reports no remote when remote cleanup is requested without a remote' {
+            & git -C $script:repoA checkout -q -b tmp 2>$null
+            & git -C $script:repoA checkout -q main 2>$null
+            $cl = Invoke-DpBranchCleanup -Root $script:repoA -Branch 'tmp' -DeleteRemote -PushDefaultBranch
+            $cl.localDeleted | Should -BeTrue
+            $cl.remoteError | Should -Be 'No remote configured.'
+            $cl.pushError | Should -Be 'No remote configured.'
+        }
+    }
+
+    Context 'conflict, plan read, apply and undo' {
+        BeforeAll {
+            $script:repoB = Join-Path $TestDrive 'mergeB'
+            New-MergeRepo -Path $script:repoB
+            Set-Content -LiteralPath (Join-Path $script:repoB 'conflict.txt') -Value "line ours`n" -NoNewline
+            & git -C $script:repoB add . 2>$null
+            & git -C $script:repoB commit -q -m 'init' 2>$null
+            & git -C $script:repoB checkout -q -b feat2 2>$null
+            Set-Content -LiteralPath (Join-Path $script:repoB 'conflict.txt') -Value "line theirs`n" -NoNewline
+            & git -C $script:repoB add . 2>$null
+            & git -C $script:repoB commit -q -m 'theirs change' 2>$null
+            & git -C $script:repoB checkout -q main 2>$null
+            Set-Content -LiteralPath (Join-Path $script:repoB 'conflict.txt') -Value "line ours edited`n" -NoNewline
+            & git -C $script:repoB add . 2>$null
+            & git -C $script:repoB commit -q -m 'ours change' 2>$null
+        }
+
+        It 'returns conflict status with the conflicted file and a pre-merge sha' {
+            $script:mergeB = Invoke-DpGitMerge -Root $script:repoB -Branch 'feat2'
+            $script:mergeB.status | Should -Be 'conflict'
+            $script:mergeB.conflictFiles | Should -Contain 'conflict.txt'
+            $script:mergeB.preMergeSha | Should -Match '^[0-9a-f]{40}$'
+        }
+
+        It 'reads the conflicted file as text with markers' {
+            $cf = Get-DpMergeConflict -Root $script:repoB
+            $cf.inMerge | Should -BeTrue
+            $entry = $cf.files | Where-Object { $_.rel -eq 'conflict.txt' }
+            $entry.binary | Should -BeFalse
+            $entry.content | Should -Match '<<<<<<<'
+            $entry.content | Should -Match '>>>>>>>'
+        }
+
+        It 'applies a resolution and completes the merge commit' {
+            $apply = Invoke-DpMergeApply -Root $script:repoB -Resolutions @(@{ path = 'conflict.txt'; content = "line resolved`n" })
+            $apply.ok | Should -BeTrue
+            $apply.mergedSha | Should -Match '^[0-9a-f]{40}$'
+            $apply.remaining.Count | Should -Be 0
+            (Get-Content -LiteralPath (Join-Path $script:repoB 'conflict.txt') -Raw) | Should -Match 'line resolved'
+        }
+
+        It 'undoes the merge back to the pre-merge commit' {
+            $undo = Invoke-DpGitMergeUndo -Root $script:repoB -Sha $script:mergeB.preMergeSha
+            $undo.ok | Should -BeTrue
+            (Get-Content -LiteralPath (Join-Path $script:repoB 'conflict.txt') -Raw) | Should -Match 'line ours edited'
+        }
+    }
+
+    Context 'abort a conflicted merge' {
+        BeforeAll {
+            $script:repoC = Join-Path $TestDrive 'mergeC'
+            New-MergeRepo -Path $script:repoC
+            Set-Content -LiteralPath (Join-Path $script:repoC 'c.txt') -Value "ours`n" -NoNewline
+            & git -C $script:repoC add . 2>$null
+            & git -C $script:repoC commit -q -m 'init' 2>$null
+            & git -C $script:repoC checkout -q -b other 2>$null
+            Set-Content -LiteralPath (Join-Path $script:repoC 'c.txt') -Value "theirs`n" -NoNewline
+            & git -C $script:repoC add . 2>$null
+            & git -C $script:repoC commit -q -m 'theirs' 2>$null
+            & git -C $script:repoC checkout -q main 2>$null
+            Set-Content -LiteralPath (Join-Path $script:repoC 'c.txt') -Value "ours edited`n" -NoNewline
+            & git -C $script:repoC add . 2>$null
+            & git -C $script:repoC commit -q -m 'ours' 2>$null
+        }
+
+        It 'aborts and restores the pre-merge working tree' {
+            (Invoke-DpGitMerge -Root $script:repoC -Branch 'other').status | Should -Be 'conflict'
+            $abort = Invoke-DpGitMergeAbort -Root $script:repoC
+            $abort.ok | Should -BeTrue
+            (& git -C $script:repoC rev-parse --verify --quiet MERGE_HEAD 2>$null) | Should -BeNullOrEmpty
+            (Get-Content -LiteralPath (Join-Path $script:repoC 'c.txt') -Raw) | Should -Match 'ours edited'
+        }
+    }
+}
