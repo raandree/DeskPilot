@@ -51,9 +51,10 @@ work without driving the tool stack themselves.
 
 - **PowerShell 7.0+** (Windows, macOS, or Linux).
 - A **GitHub account with Copilot access**.
-- The **ShellPilot** engine module available (built from source or installed).
-  DeskPilot probes common locations and falls back to importing it by name; you
-  can also pass an explicit path.
+- A network connection on first run. DeskPilot downloads the **ShellPilot**
+  engine from the PowerShell Gallery into your user scope (`-Scope CurrentUser`,
+  preview versions allowed) the first time it can't already find it, then imports
+  it by name. You can also point at an explicit build with `-EngineModulePath`.
 - A modern browser.
 
 ## Quick start
@@ -71,6 +72,8 @@ you through GitHub sign-in (device code) from inside the window.
 
 ### Pointing at a specific engine build
 
+Pass an explicit module path to use a local build and skip the Gallery download:
+
 ```powershell
 ./Start-DeskPilot.ps1 -EngineModulePath 'V:/Git/ShellPilot/output/module/ShellPilot/0.0.1/ShellPilot.psd1'
 ```
@@ -80,7 +83,7 @@ you through GitHub sign-in (device code) from inside the window.
 | Parameter | Meaning |
 | --- | --- |
 | `-Port <int>` | Port to listen on. `0` (default) picks a free one. |
-| `-EngineModulePath <path>` | Explicit path to the ShellPilot module. |
+| `-EngineModulePath <path>` | Explicit path to the ShellPilot module (skips the Gallery download). |
 | `-NoBrowser` | Do not open the browser automatically. |
 
 ## How it works

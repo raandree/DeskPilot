@@ -110,6 +110,9 @@ function Start-DeskPilot {
         )
     }
 
+    if ($engine.Installed) {
+        Write-Host 'Engine downloaded from the PowerShell Gallery (CurrentUser scope).' -ForegroundColor Cyan
+    }
     if ($engine.Imported) {
         Write-Host "Engine ready: $($engine.ModulePath)" -ForegroundColor Green
     }

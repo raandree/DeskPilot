@@ -16,8 +16,11 @@
 - Windows, macOS, or Linux with **PowerShell 7.0+**.
 - A **GitHub account with Copilot access** (same as the Engine).
 - A modern browser (the UI runs at `http://127.0.0.1:<port>`).
-- The **Engine** available: either importable by name, or built from source at a
-  configurable path (default probes `V:\Git\ShellPilot\output\module\ShellPilot`).
+- The **Engine** available. DeskPilot resolves it in order: an explicit
+  `-EngineModulePath`; an already-installed `ShellPilot` module on `PSModulePath`;
+  otherwise a fresh install from the PowerShell Gallery into the CurrentUser scope
+  (preview/prerelease versions allowed) via `Resolve-DpEngineModule`, then import
+  by name.
 
 ## Key integration facts (Engine API)
 

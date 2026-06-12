@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Engine resolution: download ShellPilot from the PowerShell Gallery.** The
+  Engine is now resolved by a new `Resolve-DpEngineModule` helper — an explicit
+  `-EngineModulePath`, an already-installed `ShellPilot` module on the module
+  path, or, when neither is found, a fresh install from the PowerShell Gallery
+  into the CurrentUser scope (preview/prerelease versions allowed) — then
+  imported by name. This replaces the previous probe of a hardcoded local build
+  path (`V:/Git/ShellPilot/output/module/ShellPilot`), so DeskPilot now works on
+  any machine without first building ShellPilot from source. The launcher prints
+  a one-line note when a download happens.
 - **Brand: theme-aware floated logo in README.** Replaced the small right-corner
   mark with the full DeskPilot lockup floated left (`<picture>` switching by
   `prefers-color-scheme`). Generated two transparent variants

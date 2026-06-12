@@ -3,12 +3,14 @@ function Initialize-DpEngine {
     .SYNOPSIS
         Creates the Engine Runspace and imports the Engine (ShellPilot) into it.
     .DESCRIPTION
-        Resolves the Engine module (from an explicit path, a probed build output,
-        or the module name), opens a dedicated long-lived runspace, imports the
-        module, and reports whether the import succeeded along with the cached
-        token path used for auth detection.
+        Resolves the Engine module via Resolve-DpEngineModule (an explicit path,
+        an already-installed module, or a fresh PowerShell Gallery install into
+        the CurrentUser scope, prerelease allowed), opens a dedicated long-lived
+        runspace, imports the module, and reports whether the import succeeded
+        along with the cached token path used for auth detection.
     .PARAMETER EngineModulePath
-        Optional explicit path to a ShellPilot manifest or module folder.
+        Optional explicit path to a ShellPilot manifest or module folder. When
+        supplied, no Gallery install is attempted.
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -18,31 +20,10 @@ function Initialize-DpEngine {
         [string]$EngineModulePath
     )
 
-    $resolved = $null
-    $importError = $null
+    $resolution = Resolve-DpEngineModule -Path $EngineModulePath
+    $resolved = $resolution.Path
+    $importError = $resolution.Error
     $imported = $false
-
-    if ($EngineModulePath) {
-        if (Test-Path -LiteralPath $EngineModulePath) {
-            $resolved = (Resolve-Path -LiteralPath $EngineModulePath).Path
-        }
-        else {
-            $importError = "Engine module path not found: $EngineModulePath"
-        }
-    }
-    else {
-        $probes = @(
-            (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell/Modules/ShellPilot')
-            'V:/Git/ShellPilot/output/module/ShellPilot'
-        )
-        foreach ($root in $probes) {
-            if (Test-Path -LiteralPath $root) {
-                $manifest = Get-ChildItem -LiteralPath $root -Recurse -Filter 'ShellPilot.psd1' -ErrorAction SilentlyContinue |
-                    Sort-Object FullName -Descending | Select-Object -First 1
-                if ($manifest) { $resolved = $manifest.FullName; break }
-            }
-        }
-    }
 
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.Open()
@@ -50,23 +31,22 @@ function Initialize-DpEngine {
     $importShell = [powershell]::Create()
     $importShell.Runspace = $runspace
     try {
-        if ($resolved) {
-            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $resolved).AddParameter('ErrorAction', 'Stop')
-        }
-        else {
-            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', 'ShellPilot').AddParameter('ErrorAction', 'Stop')
-        }
+        $importName = if ($resolved) { $resolved } else { 'ShellPilot' }
+        $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $importName).AddParameter('ErrorAction', 'Stop')
         $importShell.Invoke() | Out-Null
         if ($importShell.HadErrors) {
             $firstError = $importShell.Streams.Error | Select-Object -First 1
-            $importError = if ($firstError) { $firstError.ToString() } else { 'Engine import failed.' }
+            if (-not $importError) {
+                $importError = if ($firstError) { $firstError.ToString() } else { 'Engine import failed.' }
+            }
         }
         else {
             $imported = $true
+            $importError = $null
         }
     }
     catch {
-        $importError = "$_"
+        if (-not $importError) { $importError = "$_" }
     }
     finally {
         $importShell.Dispose()
@@ -82,6 +62,7 @@ function Initialize-DpEngine {
     @{
         Runspace    = $runspace
         Imported    = $imported
+        Installed   = $resolution.Installed
         ModulePath  = $resolved
         ImportError = $importError
         TokenPath   = $tokenPath

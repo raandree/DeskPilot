@@ -2,40 +2,38 @@
 
 ## Current focus
 
-**Engine compatibility.** ShellPilot shipped a breaking parameter change to
-`Invoke-Shp`: its built-in Task List tool (`manage_todo_list`) is now on by
-default and the opt-in `-EnableTodoList` switch was replaced with an opt-out
-`-DisableTodoList`. DeskPilot was still passing `-EnableTodoList`, so every Turn
-failed against the current Engine. Realigned DeskPilot to the new Engine surface.
+**Engine distribution.** ShellPilot is now published to the PowerShell Gallery,
+so DeskPilot no longer relies on a hardcoded local build path. The Engine is
+downloaded into the user scope (preview allowed) on first run when it isn't
+already available.
 
 ## Just completed
 
-- Inverted the Task List mapping in `New-DpTurnParameter`: pass
-  `-DisableTodoList` only when the `taskTracking` Setting is **off**; otherwise
-  pass nothing and rely on the Engine's default-on behaviour. This preserves
-  DeskPilot's previous semantics (Task List on by default) with the new Engine.
-- Rewrote the two Task List splat tests (on → asserts no `-DisableTodoList`;
-  off → asserts `-DisableTodoList = $true`) and updated the glossary's
-  Engine-boundary note (`-EnableTodoList` → `-DisableTodoList`).
-- Audited the rest of ShellPilot's recent changes against DeskPilot:
-  - `git diff` since ShellPilot's init shows `Invoke-Shp.ps1` as the only
-    functional source change, and the Task List rename as its only
-    parameter-surface change.
-  - The `-ShowThinking` streaming fix needs **no** DeskPilot change — the
-    `Get-DpStreamFrame` classifier already handles the trace format (DarkGray
-    `thinking:` + ANSI `3;90m` reasoning + DarkCyan/Cyan/Yellow), and the fix
-    keeps live streaming on when thinking is enabled (a net improvement).
-  - The `ShellPilot.Result` default-view fix is display-only; DeskPilot reads
-    result members programmatically, so it is unaffected.
-- CHANGELOG `[Unreleased]` and Memory Bank `progress.md` updated.
-- Verified: both edited `.ps1` parse clean; Pester **186/186**.
+- Added `Resolve-DpEngineModule` (new Private helper): resolves the Engine in
+  order — explicit `-EngineModulePath`; an already-installed `ShellPilot` on
+  `PSModulePath` (newest version); otherwise `Install-Module ShellPilot -Scope
+  CurrentUser -AllowPrerelease -Force`, then re-resolve. Returns `{ Path;
+  Installed; Error }` and never imports. `-StableOnly` excludes prerelease;
+  `-SkipInstall` reports missing instead of installing.
+- Rewrote `Initialize-DpEngine` to call the resolver (removed the hardcoded
+  `V:/Git/ShellPilot/output/module/ShellPilot` + MyDocuments probes), preserve a
+  resolution error through the import fallback, and return an `Installed` flag.
+- Surfaced the download in `Start-DeskPilot`'s console output (one-line note when
+  `Installed` is true).
+- Added 9 unit tests (mock `Get-Module`/`Install-Module`) covering explicit-path,
+  already-available, newest-version, install-with-prerelease, `-StableOnly`,
+  `-SkipInstall`, install-failure, and installed-but-not-found. Hit a Pester
+  gotcha: mocking `Get-Module` before the first `Mock Install-Module` blocks
+  PowerShellGet auto-load — fixed by importing PowerShellGet in `BeforeAll`.
+- Updated README (prereqs/options), techContext, specs 020/030, and CHANGELOG.
+- Verified: both `.ps1` parse clean; Pester **195/195** (+9).
 
 ## Next steps
 
-1. Live smoke a streaming + Task List Turn against the updated Engine to confirm
-   end-to-end (the unit suite proves the splat; a live run proves the wire).
-2. Resume the previous focus (Phase 2.6 QoL batch / regenerate + edit/resend
-   live-Engine smoke; brand pass for sub-READMEs — both deferred).
+1. Live smoke: launch on a machine without ShellPilot to confirm the Gallery
+   download + import + a first Turn end-to-end.
+2. Resume the previous focus (Phase 2.6 QoL live-Engine smoke; brand pass for
+   sub-READMEs — both deferred).
 
 ## Open decisions
 

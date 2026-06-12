@@ -21,7 +21,7 @@ Status codes: `200` OK, `201` Created, `204` No Content, `400` bad input,
   "engineImported": true,
   "authenticated": true,
   "model": "claude-opus-4.8",
-  "engineModulePath": "V:/Git/ShellPilot/output/module/ShellPilot/.../ShellPilot.psd1"
+  "engineModulePath": "C:/Users/you/Documents/PowerShell/Modules/ShellPilot/0.1.0/ShellPilot.psd1"
 }
 ```
 

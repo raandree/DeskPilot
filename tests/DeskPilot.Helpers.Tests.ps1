@@ -1465,3 +1465,105 @@ Describe 'New-DpTurnParameter reference files injection' {
         ($p.ContainsKey('SystemPrompt') -and $p.SystemPrompt -match 'Reference files') | Should -BeFalse
     }
 }
+
+Describe 'Resolve-DpEngineModule' {
+    BeforeAll {
+        # Ensure Install-Module is resolvable so Pester can mock it even after
+        # Get-Module itself is mocked (otherwise the first mock setup that follows
+        # a Get-Module mock fails to auto-load PowerShellGet).
+        Import-Module PowerShellGet -ErrorAction SilentlyContinue
+        function New-FakeModuleInfo {
+            param([string]$Path, [string]$Version = '1.0.0')
+            [pscustomobject]@{ Path = $Path; Version = [version]$Version }
+        }
+    }
+
+    It 'returns an explicit path without consulting the Gallery' {
+        Mock Get-Module { }
+        Mock Install-Module { }
+        $file = Join-Path $TestDrive 'ShellPilot.psd1'
+        Set-Content -LiteralPath $file -Value '@{}' -NoNewline
+        $r = Resolve-DpEngineModule -Path $file
+        $r.Path | Should -Be ((Resolve-Path -LiteralPath $file).Path)
+        $r.Installed | Should -BeFalse
+        $r.Error | Should -BeNullOrEmpty
+        Should -Invoke Get-Module -Times 0
+        Should -Invoke Install-Module -Times 0
+    }
+
+    It 'reports an error for an explicit path that does not exist' {
+        Mock Install-Module { }
+        $r = Resolve-DpEngineModule -Path (Join-Path $TestDrive 'missing.psd1')
+        $r.Path | Should -BeNullOrEmpty
+        $r.Error | Should -Match 'not found'
+        Should -Invoke Install-Module -Times 0
+    }
+
+    It 'uses an already-available module and does not install' {
+        Mock Get-Module { New-FakeModuleInfo -Path 'C:\mods\ShellPilot\1.2.0\ShellPilot.psd1' -Version '1.2.0' }
+        Mock Install-Module { }
+        $r = Resolve-DpEngineModule
+        $r.Path | Should -Be 'C:\mods\ShellPilot\1.2.0\ShellPilot.psd1'
+        $r.Installed | Should -BeFalse
+        Should -Invoke Install-Module -Times 0
+    }
+
+    It 'picks the newest available version' {
+        Mock Get-Module {
+            New-FakeModuleInfo -Path 'C:\mods\ShellPilot\1.0.0\ShellPilot.psd1' -Version '1.0.0'
+            New-FakeModuleInfo -Path 'C:\mods\ShellPilot\2.5.0\ShellPilot.psd1' -Version '2.5.0'
+        }
+        Mock Install-Module { }
+        (Resolve-DpEngineModule).Path | Should -Be 'C:\mods\ShellPilot\2.5.0\ShellPilot.psd1'
+    }
+
+    It 'installs from the Gallery into CurrentUser with prerelease allowed when missing' {
+        $script:spInstalled = $false
+        Mock Get-Module { if ($script:spInstalled) { New-FakeModuleInfo -Path 'C:\u\ShellPilot\0.1.0\ShellPilot.psd1' -Version '0.1.0' } }
+        Mock Install-Module { $script:spInstalled = $true }
+        $r = Resolve-DpEngineModule
+        $r.Installed | Should -BeTrue
+        $r.Path | Should -Be 'C:\u\ShellPilot\0.1.0\ShellPilot.psd1'
+        $r.Error | Should -BeNullOrEmpty
+        Should -Invoke Install-Module -Times 1 -Exactly -ParameterFilter {
+            $Name -eq 'ShellPilot' -and $Scope -eq 'CurrentUser' -and $AllowPrerelease
+        }
+    }
+
+    It 'excludes prerelease when -StableOnly is set' {
+        $script:spInstalled = $false
+        Mock Get-Module { if ($script:spInstalled) { New-FakeModuleInfo -Path 'C:\u\ShellPilot\1.0.0\ShellPilot.psd1' } }
+        Mock Install-Module { $script:spInstalled = $true }
+        $r = Resolve-DpEngineModule -StableOnly
+        $r.Installed | Should -BeTrue
+        Should -Invoke Install-Module -Times 1 -Exactly -ParameterFilter { -not $AllowPrerelease }
+    }
+
+    It 'does not install when -SkipInstall is set and the module is missing' {
+        Mock Get-Module { }
+        Mock Install-Module { }
+        $r = Resolve-DpEngineModule -SkipInstall
+        $r.Path | Should -BeNullOrEmpty
+        $r.Installed | Should -BeFalse
+        $r.Error | Should -Match 'skipped'
+        Should -Invoke Install-Module -Times 0
+    }
+
+    It 'captures a Gallery install failure as an error' {
+        Mock Get-Module { }
+        Mock Install-Module { throw 'no network' }
+        $r = Resolve-DpEngineModule
+        $r.Installed | Should -BeFalse
+        $r.Path | Should -BeNullOrEmpty
+        $r.Error | Should -Match 'Failed to install'
+    }
+
+    It 'errors when the module installs but cannot be located afterwards' {
+        Mock Get-Module { }
+        Mock Install-Module { }
+        $r = Resolve-DpEngineModule
+        $r.Installed | Should -BeTrue
+        $r.Path | Should -BeNullOrEmpty
+        $r.Error | Should -Match 'could not be located'
+    }
+}
