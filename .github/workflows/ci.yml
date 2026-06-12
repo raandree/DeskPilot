@@ -1,0 +1,203 @@
+# Continuous integration pipeline for DeskPilot.
+#
+# Mirrors ShellPilot's .github/workflows/ci.yml:
+#   * Build  - calculate the version with GitVersion, build and package the
+#              module, then publish the output/ folder as a build artifact.
+#   * Test   - on Linux, Windows and macOS (PowerShell 7), reuse the build
+#              artifact and run the Sampler test workflow.
+#   * Smoke  - import the BUILT module and assert it exposes Start-DeskPilot.
+#              Gates deploy. (A fuller /api/health server smoke arrives once
+#              Phase B bundles web/ into the module - see .memory-bank.)
+#   * Deploy - publish the release to GitHub and the PowerShell Gallery and
+#              raise the changelog pull request.
+#              GATED OFF until go-live (Phase D): the job only runs when the
+#              repository variable PUBLISH_ENABLED is set to 'true'. DeskPilot
+#              is not yet published to the Gallery (its ShellPilot dependency is
+#              still prerelease). To go live: set the repo variable
+#              PUBLISH_ENABLED=true (Settings > Secrets and variables > Actions
+#              > Variables) and add the secrets below. No code change required.
+#
+# Required repository secrets (only used once deploy is enabled):
+#   GitHubToken     - personal access token used to create the GitHub release
+#                     and the changelog pull request.
+#   GalleryApiToken - PowerShell Gallery API key used to publish the module.
+name: CI
+
+run-name: ${{ github.ref_type == 'tag' && format('Release {0}', github.ref_name) || '' }}
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+      - '!v*-*'
+    paths-ignore:
+      - CHANGELOG.md
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  buildArtifactName: output
+  defaultBranch: main
+
+jobs:
+  build:
+    name: Package Module
+    runs-on: ubuntu-latest
+    # Expose the GitVersion value to downstream jobs so they can show it in
+    # their display names - the closest GitHub gets to Azure DevOps run renaming.
+    outputs:
+      fullSemVer: ${{ steps.gitversion.outputs.FullSemVer }}
+      nuGetVersion: ${{ steps.gitversion.outputs.NuGetVersionV2 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # GitVersion needs the full history to calculate the version.
+          fetch-depth: 0
+
+      - name: Calculate ModuleVersion (GitVersion)
+        id: gitversion
+        shell: pwsh
+        env:
+          # GitVersion 5.x targets an older .NET; allow it to run on the
+          # runner's newer shared framework.
+          DOTNET_ROLL_FORWARD: LatestMajor
+        run: |
+          dotnet tool install --global GitVersion.Tool --version 5.*
+          $env:PATH += [System.IO.Path]::PathSeparator + (Join-Path -Path $HOME -ChildPath '.dotnet/tools')
+          $gitVersionObject = dotnet-gitversion | ConvertFrom-Json
+          $gitVersionObject.PSObject.Properties.ForEach{
+              Write-Host -Object "Setting output '$($_.Name)' with value '$($_.Value)'."
+              "$($_.Name)=$($_.Value)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+          Write-Host -Object "ModuleVersion (FullSemVer): $($gitVersionObject.FullSemVer)"
+          "## DeskPilot $($gitVersionObject.FullSemVer)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: Build & Package Module
+        shell: pwsh
+        env:
+          ModuleVersion: ${{ steps.gitversion.outputs.NuGetVersionV2 }}
+        run: ./build.ps1 -ResolveDependency -Tasks pack
+
+      - name: Publish Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.buildArtifactName }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    name: Test ${{ needs.build.outputs.fullSemVer }} (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.buildArtifactName }}
+          path: output/
+
+      - name: Run Tests
+        shell: pwsh
+        run: ./build.ps1 -Tasks test
+
+      - name: Publish Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults-${{ matrix.os }}
+          path: output/testResults/
+          if-no-files-found: warn
+
+  smoke:
+    name: Smoke ${{ needs.build.outputs.fullSemVer }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.buildArtifactName }}
+          path: output/
+
+      - name: Import built module and verify the public surface
+        shell: pwsh
+        run: |
+          $manifest = Get-ChildItem -Path ./output/module/DeskPilot -Recurse -Filter DeskPilot.psd1 |
+              Sort-Object -Property LastWriteTime -Descending |
+              Select-Object -First 1
+          if (-not $manifest) { throw 'Built DeskPilot manifest not found in the artifact.' }
+          Write-Host -Object "Importing $($manifest.FullName)"
+          Import-Module -Name $manifest.FullName -Force -ErrorAction Stop
+          $command = Get-Command -Name Start-DeskPilot -Module DeskPilot -ErrorAction Stop
+          if (-not $command) { throw 'Start-DeskPilot is not exported from the built module.' }
+          Write-Host -Object 'OK: built module imports and exports Start-DeskPilot.'
+          # A fuller smoke (start the Host Server, GET /api/health) lands in
+          # Phase B, once web/ is bundled into the module and -WebRoot has a
+          # module-relative default. See .memory-bank/activeContext.md.
+
+  deploy:
+    name: Deploy Module ${{ needs.build.outputs.fullSemVer }}
+    needs: [build, test, smoke]
+    runs-on: ubuntu-latest
+    # GATED OFF until go-live (Phase D). The deploy job only runs when the repo
+    # variable PUBLISH_ENABLED is 'true', on the upstream repository, for pushes
+    # to the default branch or for version tags. DeskPilot is not yet on the
+    # Gallery (its ShellPilot dependency is still prerelease), so this stays
+    # disabled. To go live: set repo variable PUBLISH_ENABLED=true and add the
+    # GitHubToken / GalleryApiToken secrets. No code change required.
+    if: >-
+      vars.PUBLISH_ENABLED == 'true' &&
+      github.repository_owner == 'raandree' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.buildArtifactName }}
+          path: output/
+
+      - name: Publish Release
+        shell: pwsh
+        env:
+          GitHubToken: ${{ secrets.GitHubToken }}
+          GalleryApiToken: ${{ secrets.GalleryApiToken }}
+          ReleaseBranch: ${{ env.defaultBranch }}
+          MainGitBranch: ${{ env.defaultBranch }}
+        run: ./build.ps1 -Tasks publish
+
+      - name: Send Changelog PR
+        shell: pwsh
+        env:
+          GitHubToken: ${{ secrets.GitHubToken }}
+          ReleaseBranch: ${{ env.defaultBranch }}
+          MainGitBranch: ${{ env.defaultBranch }}
+        run: ./build.ps1 -Tasks Create_ChangeLog_GitHub_PR

@@ -21,10 +21,15 @@ non-prerelease ShellPilot exists or a first user appears). Phased plan A–D:
   hardcoded `0.1.0` (GitVersion owns it); fix manifest metadata
   (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
   `LICENSE` (MIT); built-module smoke test.
-- **C — CI (dry-run):** mirror ShellPilot's CI/secret; unit Pester only;
-  built-module smoke gate (import, resolve web root, `/api/health`) before the
-  publish step; protected `main` (PR-only) + green CI + manifest-validate;
-  auto-publish on merge to main but the publish step gated OFF until go-live.
+- **C — CI (dry-run): pipeline added 2026-06-12 (`.github/workflows/ci.yml`).**
+  Mirrors ShellPilot: build (GitVersion + pack + artifact) -> test matrix
+  (ubuntu/windows/macos, PS7) -> smoke (import the built module, assert
+  `Start-DeskPilot` exported) -> deploy. Deploy is **gated OFF** behind the repo
+  variable `PUBLISH_ENABLED == 'true'` (plus owner + main/tag) until go-live.
+  Smoke is import-only for now; the full server `/api/health` smoke waits for
+  Phase B (web bundled + module-relative `-WebRoot`). Still to configure in the
+  GitHub UI (not code): branch protection (PR-only + green-CI-to-merge) and the
+  `PUBLISH_ENABLED` variable + `GitHubToken`/`GalleryApiToken` secrets at go-live.
 - **D — Go-live (later, separate decision):** stable ShellPilot →
   `RequiredModules` pin (min tested version) → cross-platform `iwr|iex`
   bootstrap (in-repo, HTTPS, tag-pinned; CurrentUser + trust PSGallery + TLS 1.2
@@ -63,15 +68,18 @@ Phase D's `RequiredModules` pin will supersede this.
    SPA ships inside the built module; remove the remaining hardcoded `0.1.0` in
    `$script:DeskPilot.Version`; fix manifest metadata (ProjectUri →
    raandree/DeskPilot, real Author, IconUri, fuller description); add `LICENSE`
-   (MIT); add a built-module smoke test (import, resolve web root, /api/health).   Also repoint the root `Start-DeskPilot.ps1` launcher's `WebRoot` (currently
+   (MIT); extend the CI smoke to start the Host Server and GET `/api/health`.
+   Also repoint the root `Start-DeskPilot.ps1` launcher's `WebRoot` (currently
    `$repoRoot/web`) once `web/` moves to `source/web` — or drop `-WebRoot` there
    and rely on the new module-relative default. The root launcher + `DeskPilot.cmd`
-   stay as the dev/clone convenience (never shipped to the Gallery).2. **Phase C — CI (dry-run):** mirror ShellPilot's GitHub Actions + publish secret;
-   unit Pester only; built-module smoke gate; protected main + green-CI-to-merge;
-   publish job present but gated OFF until go-live.
-3. Before C/D: inspect `raandree/ShellPilot`'s workflows to mirror CI exactly,
-   confirm a stable (non-prerelease) ShellPilot release, and pick the minimum
-   version to pin (Decision Concept TBDs #1–#3).
+   stay as the dev/clone convenience (never shipped to the Gallery).
+2. **Phase C remainder (GitHub UI, not code):** enable branch protection on `main`
+   (PR-only + require the CI checks) once the workflow has run on a PR; leave
+   `PUBLISH_ENABLED` unset until go-live.
+3. Before C/D: confirm a stable (non-prerelease) ShellPilot release and pick the
+   minimum version to pin; confirm the mirrored secret names
+   (`GitHubToken`/`GalleryApiToken`) match ShellPilot (Decision Concept TBDs
+   #1–#3).
 4. Optionally persist the signed-off Decision Concept as `specs/070-*.md`.
 5. Carried over: live smoke (launcher first-run build + a Turn end-to-end).
 

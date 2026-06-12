@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Start-DeskPilot.ps1` now builds on first run and imports the built module.
   This prepares DeskPilot for publishing to the PowerShell Gallery (the actual
   publish is gated to a later phase).
+- **CI: added a GitHub Actions pipeline (`.github/workflows/ci.yml`).** Mirrors
+  ShellPilot — build + package (GitVersion), a Linux/Windows/macOS test matrix on
+  PowerShell 7, and a built-module smoke check — on every push to `main` and pull
+  request. A deploy job (GitHub release + PowerShell Gallery publish + changelog
+  PR) is included but gated off behind the `PUBLISH_ENABLED` repository variable
+  until go-live.
 - **Engine resolution: download ShellPilot from the PowerShell Gallery.** The
   Engine is now resolved by a new `Resolve-DpEngineModule` helper — an explicit
   `-EngineModulePath`, an already-installed `ShellPilot` module on the module
