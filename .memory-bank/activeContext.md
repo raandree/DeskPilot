@@ -2,71 +2,72 @@
 
 ## Current focus
 
-**Git for non-experts: Merge Wizard + Clone Wizard.** A grill-me interview on
-2026-06-12 produced two signed-off Design Concepts, persisted as
-`specs/070-merge-wizard.md` and `specs/080-clone-wizard.md`. Implementation
-sequence: the **Merge Wizard first**, then the Clone Wizard.
+**Branch Merge Wizard — SHIPPED (2026-06-12).** The non-expert merge feature from
+the grill-me interview (specs/070) is fully implemented end to end: backend
+helpers, HTTP routes, and the wizard UI. Next up is the **Clone Wizard**
+(specs/080), then a live HTTP smoke of the merge routes.
 
 The Merge Wizard lets a non-expert merge a Branch into the Default Branch (main,
-else master) from the existing Git bar: a merged / not-merged badge in the branch
-picker, an incoming-commits preview, merge on approval (fast-forward else merge
-commit), optional push + remote-branch delete behind a separate confirm,
-local-branch cleanup, an AI-proposed Merge Plan on conflict (pure-reasoning Turn,
-Tools off; DeskPilot writes the resolved files), and an Undo. Remote actions use
-ambient git credentials only.
+else master) from the explorer Git bar: a merged (check) / not-merged
+(exclamation) badge per branch with hover tooltips + a legend, remote-only
+branches marked, a "Merge into <default>..." button opening a step wizard
+(choose -> preview incoming commits -> merge ff-or-commit -> on conflict an
+AI-proposed Merge Plan the user approves before any write, binary keep-ours/theirs
+-> result -> local cleanup; remote push+delete behind a SEPARATE confirm; Undo).
 
-### Signed-off decisions (interview 2026-06-12)
+## Just completed (this work, 3 commits on ai/merge-wizard)
 
-- Merge target / "merged?" basis: the Default Branch (origin/HEAD, else main, else master).
-- Remote scope: local + push main + delete remote, behind a SEPARATE explicit confirm.
-- Conflicts: the AI PROPOSES a Merge Plan; the user approves before any write; DeskPilot writes + commits.
-- Conflict Turn: pure reasoning, all Tools disabled; binary conflicts get keep-ours / keep-theirs.
-- Delta preview: the incoming commit list. Strategy: ff-else-merge-commit.
-- Preconditions autofix: stash -> ff main from origin -> merge -> pop; abort safely on a pull conflict.
-- Cleanup: auto local delete (after switching to the Default Branch); remote behind a separate confirm.
-- Badge: fetch from origin first, then compare; degrade to local-only with no remote / on fetch failure.
-- Picker lists local + remote-only Branches; entry point is "Merge into main..." in the Git bar.
-- Remote-failure: keep the local merge; report; retry. Undo: reset the default to the pre-merge sha (local only).
-- Clone Wizard: one New Project Wizard (clone-vs-local); SSH + ambient credentials only; repo-name default; auto-select.
+- **50b4ca5** foundation: specs 070+080, glossary rows, Get-DpDefaultBranch /
+  Invoke-DpGitFetch / Get-DpBranchList (+13 tests).
+- **c84f628** backend: Get-DpMergePreview, Invoke-DpGitMerge (+autofix
+  stash->ff->merge->pop), Invoke-DpGitMergeAbort, Invoke-DpGitMergeUndo,
+  Get-DpMergeConflict, New-DpMergePlanPrompt, ConvertFrom-DpMergePlan,
+  Invoke-DpMergeApply, Invoke-DpBranchCleanup (+33 tests incl. a real-repo suite).
+- **0612594** routes + UI: 8 routes (GET branches, GET merge/preview, POST merge,
+  merge/plan [Tools-off Invoke-Shp via Invoke-DpEngineCommand], merge/apply,
+  merge/abort, merge/undo, cleanup) in Start-DeskPilot + Invoke-DpRouteHandler;
+  specs/030; web/ (git bar badges/legend/remote-only + "Merge into..." entry; the
+  Merge Wizard modal in index.html/styles.css/app.js with the conflict sub-flow).
 
-## Just completed (foundation slice)
+Verified: full Sampler build green TWICE (246 tests, 0 failed, 0 errors, 0
+warnings); app.js parses as an ES module (.mjs check); HTML/CSS/JS + all .ps1
+clean; route-table names match handler cases 1:1 (8/8). CHANGELOG [Unreleased]
+"Added" entry written.
 
-- Persisted `specs/070-merge-wizard.md` + `specs/080-clone-wizard.md`.
-- Added glossary rows: Branch, Default Branch, Merge, Merge Wizard, Merge Plan, Clone, New Project Wizard (+ boundary notes).
-- New Private helpers (process-based, confined, never-throw): `Get-DpDefaultBranch`
-  (origin/HEAD -> main -> master), `Invoke-DpGitFetch` (best-effort; reports
-  no-remote / offline), `Get-DpBranchList` (local + remote-only Branches with a
-  merged-into-Default flag; optional pre-fetch; picks a comparison ref that
-  exists locally or as origin/<default>).
-- Added 13 unit tests (mock Invoke-DpGitCommand / Get-DpGitStatus / Invoke-DpGitFetch).
-  Verified: helpers suite 172/172 green; all new .ps1 parse clean.
+## Next steps
 
-## Next steps (Merge Wizard, in order)
+1. **Live HTTP smoke of the merge routes** (recommended before merge to main):
+   start Start-DeskPilot with a real-repo Project, exercise /api/git/branches,
+   /merge/preview, a real merge, a conflict -> /merge/plan -> /merge/apply, and
+   /cleanup (local-only). The plan route needs the Engine authenticated. Helpers
+   are already real-repo-tested; this validates the HTTP + UI wiring.
+2. **Manual browser smoke** of the wizard (badges render, tooltips, each step).
+3. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
+   screen); Invoke-DpGitClone (validate URL, derive repo basename, clone via
+   Invoke-DpGitCommand, never-throw); POST /api/projects/clone; reuse the folder
+   picker; SSH + ambient credentials only; auto-select the new Project.
+4. Then resume the parked publish/Sampler work (Phase B/D) if desired.
 
-1. Backend: `Get-DpMergePreview` (incoming commits + dirty / behind preconditions).
-2. Backend: `Invoke-DpGitMerge` (capture pre-merge sha; optional autofix; merge; success | already-merged | conflict { files } | error), `Invoke-DpGitMergeAbort`, `Invoke-DpGitMergeUndo`.
-3. Backend: precondition autofix (stash -> ff -> merge -> pop).
-4. Backend: `Invoke-DpBranchCleanup` (local delete; optional push + remote delete).
-5. Backend: AI Merge Plan -- `Get-DpMergeConflict` (list + classify + read text), build the conflict prompt, run a Tools-off Turn, parse the structured per-file resolution, `Invoke-DpMergeApply` (write + add + commit). Binary: keep-ours / keep-theirs.
-6. Routes: register + handlers (`/api/git/branches`, `/merge/preview`, `/merge`, `/merge/plan`, `/merge/apply`, `/merge/abort`, `/merge/undo`, `/cleanup`); update `specs/030-api-contract.md`.
-7. Frontend: branch-picker badges (check / exclamation) + tooltips + remote-only; "Merge into main..." entry; the multi-step Merge Wizard modal; the conflict sub-flow.
-8. Tests + a guarded real-repo merge test; add the CHANGELOG entry once the UI is reachable.
-9. Then: implement the Clone Wizard (spec 080).
+## Design decisions in force (Merge Wizard, signed off 2026-06-12)
 
-## Previous focus (publish/Sampler -- partially shipped)
-
-Phase A (Sampler-ize) and Phase C (CI mirroring ShellPilot, deploy gated OFF) are
-DONE. Still pending: Phase B (module-relative `-WebRoot` default, `CopyPaths:
-[web]`, manifest metadata, MIT `LICENSE`, built-module smoke) and Phase D
-(go-live: pin a stable ShellPilot in RequiredModules, iwr|iex bootstrap, add the
-`GalleryApiToken` / `GitHubToken` secrets). See progress.md for the full history.
+- Merge target / "merged?" basis = the Default Branch (origin/HEAD, else main, else master).
+- Conflicts: AI PROPOSES a Merge Plan (pure-reasoning Turn, Tools off); user approves; DeskPilot writes+commits. Binary = keep-ours/theirs.
+- Strategy ff-else-merge-commit; autofix stash->ff->merge->pop; abort safely on a pull conflict.
+- Cleanup auto local delete; remote push+delete behind a SEPARATE explicit confirm; ambient git credentials only.
+- Badge fetches from origin first in the wizard (accuracy); the Git bar uses no-fetch (speed). Remote-failure keeps the local merge. Undo resets the default to the pre-merge sha (local only).
 
 ## Constraints in force
 
-- Localhost-only bind + per-launch session token; single active Turn at a time.
-- Filesystem + Git endpoints confined to the selected Project's folder.
-- Git runs via `Invoke-DpGitCommand` (process, no shell). Remote push / delete is
-  the ONLY networked privileged action and requires a separate explicit
-  per-action confirm; ambient git credentials only (DeskPilot stores no secrets).
-- Canonical glossary terms only.
-- README assets in `assets/`; in-app assets under `web/assets/`.
+- Localhost-only bind + per-launch session token; single active Turn at a time
+  (the merge/plan route guards on $state.TurnRunning, returns 409 if busy).
+- Filesystem + Git endpoints confined to the selected Project's folder; git runs
+  via Invoke-DpGitCommand (process, no shell). Remote push/delete is the only
+  networked privileged action and requires a separate explicit per-action confirm.
+- Canonical glossary terms only. README assets in assets/; in-app under web/assets/.
+
+## Previous focus (publish/Sampler -- partially shipped)
+
+Phase A (Sampler-ize) + Phase C (CI mirroring ShellPilot, deploy gated OFF) DONE.
+Pending: Phase B (module-relative -WebRoot default, CopyPaths [web], manifest
+metadata, MIT LICENSE, built-module smoke) and Phase D (go-live: pin stable
+ShellPilot, iwr|iex bootstrap, add GalleryApiToken/GitHubToken secrets).

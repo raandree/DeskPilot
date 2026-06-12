@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Branch Merge Wizard — merge a branch into main/master without the command
+  line.** The project file explorer's Git bar now shows, for every branch, whether
+  it is already merged into the **Default Branch** (a ✓ badge) or not yet merged
+  (a ❗ badge), with a hover explanation and a legend; remote-only branches are
+  listed and marked. A new **“Merge into &lt;default&gt;…”** button opens a guided,
+  step-by-step wizard that: previews the incoming commits (the delta); merges
+  (fast-forward when possible, otherwise a merge commit); offers a one-click fix
+  when the working tree is dirty or the Default Branch is behind the server
+  (auto-stash + update, then merge); and, on a **merge conflict**, hands off to the
+  AI to propose a **Merge Plan** that you review before anything is written
+  (binary files get a simple keep-mine / keep-theirs choice). After a successful
+  merge it offers to delete the local branch, and — behind a separate, explicit
+  confirmation — to push the Default Branch and delete the branch on the server
+  using your existing Git sign-in. Every merge can be undone within the wizard.
+  Backed by new endpoints under `/api/git/*` (`branches`, `merge/preview`, `merge`,
+  `merge/plan`, `merge/apply`, `merge/abort`, `merge/undo`, `cleanup`), all
+  confined to the selected Project's folder and run via a no-shell process call.
+  The conflict-resolution Turn runs with all Tools disabled. Specs `070`
+  (Merge Wizard) and `080` (Clone Wizard) capture the signed-off design.
+
 ### Changed
 
 - **Build system: converted to the Sampler framework.** DeskPilot is now built
