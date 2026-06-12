@@ -24,12 +24,18 @@ non-prerelease ShellPilot exists or a first user appears). Phased plan A–D:
 - **C — CI (dry-run): pipeline added 2026-06-12 (`.github/workflows/ci.yml`).**
   Mirrors ShellPilot: build (GitVersion + pack + artifact) -> test matrix
   (ubuntu/windows/macos, PS7) -> smoke (import the built module, assert
-  `Start-DeskPilot` exported) -> deploy. Deploy is **gated OFF** behind the repo
-  variable `PUBLISH_ENABLED == 'true'` (plus owner + main/tag) until go-live.
-  Smoke is import-only for now; the full server `/api/health` smoke waits for
-  Phase B (web bundled + module-relative `-WebRoot`). Still to configure in the
-  GitHub UI (not code): branch protection (PR-only + green-CI-to-merge) and the
-  `PUBLISH_ENABLED` variable + `GitHubToken`/`GalleryApiToken` secrets at go-live.
+  `Start-DeskPilot` exported). **Two-track release model** (both gated OFF behind
+  the repo variable `PUBLISH_ENABLED == 'true'` until go-live): push to `main` ->
+  `publish_prerelease` job (Gallery prerelease only, `-AllowPrerelease`); push a
+  `v*` tag -> `publish_release` job (GitHub release + stable Gallery + changelog
+  PR). GitVersion switched to **`ContinuousDeployment`** so each main commit gets
+  a unique incrementing prerelease number (`-preview0009`, `-preview0010`); a `v*`
+  tag still yields a clean stable version. The GitHub-release task does NOT skip
+  prereleases, which is why prerelease publishing deliberately runs only
+  `publish_module_to_gallery` (no GitHub release / no changelog cut). Still to do
+  in the GitHub UI (not code): branch protection (PR-only + green-CI-to-merge) and
+  the `PUBLISH_ENABLED` variable + `GitHubToken`/`GalleryApiToken` secrets at
+  go-live.
 - **D — Go-live (later, separate decision):** stable ShellPilot →
   `RequiredModules` pin (min tested version) → cross-platform `iwr|iex`
   bootstrap (in-repo, HTTPS, tag-pinned; CurrentUser + trust PSGallery + TLS 1.2
