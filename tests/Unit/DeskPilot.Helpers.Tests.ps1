@@ -1567,3 +1567,175 @@ Describe 'Resolve-DpEngineModule' {
         $r.Error | Should -Match 'could not be located'
     }
 }
+
+Describe 'Get-DpDefaultBranch' {
+    BeforeAll {
+        function Ok($out) { @{ Ok = $true; ExitCode = 0; StdOut = $out; StdErr = '' } }
+        function Fail { @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' } }
+        $script:dbDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:dbDir | Out-Null
+    }
+
+    It 'returns the remote HEAD short name when origin/HEAD is set' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            if (($Arguments -join ' ') -match 'symbolic-ref') { return Ok "origin/main`n" }
+            Fail
+        }
+        Get-DpDefaultBranch -Path $script:dbDir | Should -Be 'main'
+    }
+
+    It 'falls back to a local main when origin/HEAD is unset' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -match 'symbolic-ref') { return Fail }
+            if ($j -match 'refs/heads/main') { return Ok '' }
+            Fail
+        }
+        Get-DpDefaultBranch -Path $script:dbDir | Should -Be 'main'
+    }
+
+    It 'falls back to master when only master exists' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -match 'symbolic-ref') { return Fail }
+            if ($j -match 'refs/heads/main') { return Fail }
+            if ($j -match 'refs/heads/master') { return Ok '' }
+            Fail
+        }
+        Get-DpDefaultBranch -Path $script:dbDir | Should -Be 'master'
+    }
+
+    It 'returns null when no default can be determined' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { Fail }
+        Get-DpDefaultBranch -Path $script:dbDir | Should -BeNullOrEmpty
+    }
+
+    It 'returns null for a missing folder without calling git' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { Fail }
+        Get-DpDefaultBranch -Path (Join-Path $TestDrive 'no-such-dir-xyz') | Should -BeNullOrEmpty
+        Should -Invoke Invoke-DpGitCommand -Times 0
+    }
+}
+
+Describe 'Invoke-DpGitFetch' {
+    BeforeAll {
+        function Ok($out) { @{ Ok = $true; ExitCode = 0; StdOut = $out; StdErr = '' } }
+        $script:fDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:fDir | Out-Null
+    }
+
+    It 'reports no remote when none is configured' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { Ok '' }
+        $r = Invoke-DpGitFetch -Path $script:fDir
+        $r.hasRemote | Should -BeFalse
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'No remote'
+    }
+
+    It 'fetches when a remote exists' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`n" }
+            if ($j -match 'fetch') { return Ok '' }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Invoke-DpGitFetch -Path $script:fDir
+        $r.hasRemote | Should -BeTrue
+        $r.ok | Should -BeTrue
+    }
+
+    It 'captures a fetch failure (offline / auth)' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`n" }
+            if ($j -match 'fetch') { return @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = 'could not read from remote' } }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Invoke-DpGitFetch -Path $script:fDir
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'could not read'
+    }
+
+    It 'reports a missing folder' {
+        $r = Invoke-DpGitFetch -Path (Join-Path $TestDrive 'no-such-fetch')
+        $r.error | Should -Be 'No project folder.'
+    }
+}
+
+Describe 'Get-DpBranchList' {
+    BeforeAll {
+        function Ok($out) { @{ Ok = $true; ExitCode = 0; StdOut = $out; StdErr = '' } }
+        $script:blDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:blDir | Out-Null
+    }
+
+    It 'returns isRepo false for a non-repo' {
+        Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $false; branch = $null; detached = $false; branches = @(); root = $null; error = 'not a repo' } }
+        (Get-DpBranchList -Path $script:blDir).isRepo | Should -BeFalse
+    }
+
+    It 'flags merged local branches against a local default (no remote)' {
+        Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $true; branch = 'feature'; detached = $false; branches = @('main', 'feature', 'done'); root = 'C:\r'; error = $null } }
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok '' }
+            if ($j -match 'symbolic-ref') { return @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' } }
+            if ($j -match 'show-ref --verify --quiet refs/heads/main') { return Ok '' }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`nfeature`ndone`n" }
+            if ($j -match 'branch -r --merged') { return Ok '' }
+            if ($j -match 'branch --merged') { return Ok "main`ndone`n" }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Get-DpBranchList -Path $script:blDir
+        $r.isRepo | Should -BeTrue
+        $r.currentBranch | Should -Be 'feature'
+        $r.defaultBranch | Should -Be 'main'
+        $r.hasRemote | Should -BeFalse
+        @($r.branches).Count | Should -Be 3
+        ($r.branches | Where-Object { $_.name -eq 'feature' }).merged | Should -BeFalse
+        ($r.branches | Where-Object { $_.name -eq 'done' }).merged | Should -BeTrue
+        ($r.branches | Where-Object { $_.name -eq 'main' }).isDefault | Should -BeTrue
+        ($r.branches | Where-Object { $_.name -eq 'feature' }).isCurrent | Should -BeTrue
+    }
+
+    It 'includes remote-only branches and marks merged ones (origin/HEAD excluded)' {
+        Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $true; branch = 'main'; detached = $false; branches = @('main', 'feature'); root = 'C:\r'; error = $null } }
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`n" }
+            if ($j -match 'symbolic-ref') { return Ok "origin/main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`nfeature`n" }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/remotes') { return Ok "origin/main`norigin/feature`norigin/release`norigin/HEAD`n" }
+            if ($j -match 'branch -r --merged') { return Ok "origin/main`norigin/release`n" }
+            if ($j -match 'branch --merged') { return Ok "main`n" }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Get-DpBranchList -Path $script:blDir
+        $r.hasRemote | Should -BeTrue
+        $r.defaultBranch | Should -Be 'main'
+        $remoteOnly = @($r.branches | Where-Object { $_.isRemote })
+        $remoteOnly.Count | Should -Be 1
+        $remoteOnly[0].name | Should -Be 'origin/release'
+        $remoteOnly[0].shortName | Should -Be 'release'
+        $remoteOnly[0].merged | Should -BeTrue
+        @($r.branches | Where-Object { $_.name -like '*HEAD*' }).Count | Should -Be 0
+    }
+
+    It 'fetches first when -Fetch is set and a remote exists' {
+        Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $true; branch = 'main'; detached = $false; branches = @('main'); root = 'C:\r'; error = $null } }
+        Mock -CommandName Invoke-DpGitFetch -MockWith { @{ ok = $true; hasRemote = $true; error = $null } }
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`n" }
+            if ($j -match 'symbolic-ref') { return Ok "origin/main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/remotes') { return Ok "origin/main`n" }
+            if ($j -match 'branch -r --merged') { return Ok "origin/main`n" }
+            if ($j -match 'branch --merged') { return Ok "main`n" }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Get-DpBranchList -Path $script:blDir -Fetch
+        $r.fetched | Should -BeTrue
+        Should -Invoke Invoke-DpGitFetch -Times 1
+    }
+}

@@ -32,6 +32,13 @@ synonym.
 | Reference File | A project-relative file path the user marks as always-relevant; its path (not its content) is injected into every Turn's system prompt so the agent reads it with its File Tool on demand. | attachment, upload, knowledge base, RAG doc |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
+| Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
+| Default Branch | The repository's primary integration branch and the only Merge target: `origin/HEAD` if set, else a local `main`, else `master`. | trunk, mainline, master (when you mean the concept rather than the literal branch name) |
+| Merge | Combining a source Branch into the Default Branch — fast-forward when possible, else a merge commit. | integrate, combine, sync |
+| Merge Wizard | The multi-step DeskPilot UI that previews incoming commits, merges a Branch into the Default Branch, resolves conflicts via a Merge Plan, and cleans up the Branch for a non-expert. | merge dialog, merge tool (loosely) |
+| Merge Plan | The AI's proposed, per-file resolution of a merge conflict, shown for the user's approval before any file is written. Distinct from a Task List. | conflict fix, resolution, patch, diff |
+| Clone | Creating a local copy of a remote repository as a new Project. | checkout (that is switching Branches), download, pull, copy |
+| New Project Wizard | The DeskPilot UI for creating a Project either by Clone or by choosing a local-only Workspace Folder. | add-project dialog, import wizard |
 
 ## Notes
 
@@ -61,3 +68,12 @@ synonym.
   (the `-DisableTodoList` switch, the `ShpProgress` records, `result.TodoList`).
   Everywhere else — code identifiers, SSE event, UI copy, docs — use **Task** /
   **Task List** (`task`, `tasks`, `taskList`, `taskTracking`).
+- **Default Branch vs. the literal name.** **Default Branch** is the *concept*
+  (the only Merge target); the actual branch is named `main` or `master`. Use
+  **Default Branch** in code, UI copy, and docs; only write `main`/`master` when
+  naming a literal branch the user sees.
+- **Merge Plan vs. Task List.** A **Merge Plan** is the AI's proposed conflict
+  resolution (per-file content the user approves before any write). It is not a
+  **Task List** (the in-Turn progress checklist) and not an **Activity** record.
+- **Clone vs. checkout.** **Clone** creates a new local Project from a remote
+  repository. Switching between existing Branches is a checkout, not a Clone.

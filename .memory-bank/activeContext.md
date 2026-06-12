@@ -2,166 +2,71 @@
 
 ## Current focus
 
-**Publish/Sampler decision — signed off 2026-06-12.** A grill-me interview
-concluded: **convert DeskPilot to a Lean Sampler project now**, and make it
-**publish-ready now but publish-for-real later** (deferred until a stable,
-non-prerelease ShellPilot exists or a first user appears). Phased plan A–D:
+**Git for non-experts: Merge Wizard + Clone Wizard.** A grill-me interview on
+2026-06-12 produced two signed-off Design Concepts, persisted as
+`specs/070-merge-wizard.md` and `specs/080-clone-wizard.md`. Implementation
+sequence: the **Merge Wizard first**, then the Clone Wizard.
 
-- **A — Sampler-ize (no publish): DONE (2026-06-12).** Source moved
-  `src/DeskPilot/` → `source/` (empty psm1 + `Prefix.ps1` carrying StrictMode);
-  manifest version → `0.0.1` placeholder (GitVersion owns it). Lean scaffolding
-  (`build.yaml`, `RequiredModules.psd1` incl. ModuleBuilder's `Configuration`/
-  `Metadata` deps, `GitVersion.yml` with `main` as mainline, plus `build.ps1`/
-  `Resolve-Dependency.*` copied from ShellPilot). Tests split into `tests/QA` +
-  `tests/Unit` (QA per-function gates scoped to the **exported** surface, since
-  DeskPilot has one public command + ~60 collectively-tested Private helpers).
-  `./build.ps1` green: build 0 errors, **207 tests pass / 0 failed**.
-- **B — Make installable:** module-relative `-WebRoot` default (currently
-  `[Parameter(Mandatory)]`); ModuleBuilder `CopyPaths` to bundle `web/`; remove
-  hardcoded `0.1.0` (GitVersion owns it); fix manifest metadata
-  (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
-  `LICENSE` (MIT); built-module smoke test.
-- **C — CI (dry-run): pipeline added 2026-06-12 (`.github/workflows/ci.yml`).**
-  Built from ShellPilot's pipeline as the template (deliberately the SAME idea,
-  not a different one): build (GitVersion + pack + artifact) -> test matrix
-  (ubuntu/windows/macos, PS7) -> deploy (single job; `needs: [build, test]`; runs
-  on push to `main` or a `v*` tag for owner `raandree`; `./build.ps1 -Tasks
-  publish` + `Create_ChangeLog_GitHub_PR`). `-Tasks publish` lets Sampler/
-  GitVersion do the prerelease-vs-release split as needed: `main` is a `-preview`
-  build (Gallery prerelease, `-AllowPrerelease`), a `v1.0.0` tag is a stable
-  release. GitVersion stays in `ContinuousDelivery` (same as ShellPilot).
-  Publishing is dormant until the `GalleryApiToken`/`GitHubToken` secrets are
-  added — the Sampler publish tasks self-guard on secret presence, so that IS the
-  "publish-for-real later" gate (no custom variable). Still to do in the GitHub UI
-  (not code): branch protection (PR-only + green-CI-to-merge); add the secrets at
-  go-live. NOTE: an earlier iteration diverged (two-job prerelease/release split,
-  a `smoke` job, a `PUBLISH_ENABLED` variable, `ContinuousDeployment`); reverted
-  to mirror ShellPilot per user direction.
-- **D — Go-live (later, separate decision):** stable ShellPilot →
-  `RequiredModules` pin (min tested version) → cross-platform `iwr|iex`
-  bootstrap (in-repo, HTTPS, tag-pinned; CurrentUser + trust PSGallery + TLS 1.2
-  + PS7 check) → add the `GalleryApiToken`/`GitHubToken` secrets to enable publishing.
+The Merge Wizard lets a non-expert merge a Branch into the Default Branch (main,
+else master) from the existing Git bar: a merged / not-merged badge in the branch
+picker, an incoming-commits preview, merge on approval (fast-forward else merge
+commit), optional push + remote-branch delete behind a separate confirm,
+local-branch cleanup, an AI-proposed Merge Plan on conflict (pure-reasoning Turn,
+Tools off; DeskPilot writes the resolved files), and an Undo. Remote actions use
+ambient git credentials only.
 
-**Previous focus (Engine distribution — shipped).** ShellPilot is published to
-the PowerShell Gallery; DeskPilot downloads it into the user scope (preview
-allowed) on first run via `Resolve-DpEngineModule` when not already available.
-Phase D's `RequiredModules` pin will supersede this.
+### Signed-off decisions (interview 2026-06-12)
 
-## Just completed
+- Merge target / "merged?" basis: the Default Branch (origin/HEAD, else main, else master).
+- Remote scope: local + push main + delete remote, behind a SEPARATE explicit confirm.
+- Conflicts: the AI PROPOSES a Merge Plan; the user approves before any write; DeskPilot writes + commits.
+- Conflict Turn: pure reasoning, all Tools disabled; binary conflicts get keep-ours / keep-theirs.
+- Delta preview: the incoming commit list. Strategy: ff-else-merge-commit.
+- Preconditions autofix: stash -> ff main from origin -> merge -> pop; abort safely on a pull conflict.
+- Cleanup: auto local delete (after switching to the Default Branch); remote behind a separate confirm.
+- Badge: fetch from origin first, then compare; degrade to local-only with no remote / on fetch failure.
+- Picker lists local + remote-only Branches; entry point is "Merge into main..." in the Git bar.
+- Remote-failure: keep the local merge; report; retry. Undo: reset the default to the pre-merge sha (local only).
+- Clone Wizard: one New Project Wizard (clone-vs-local); SSH + ambient credentials only; repo-name default; auto-select.
 
-- Added `Resolve-DpEngineModule` (new Private helper): resolves the Engine in
-  order — explicit `-EngineModulePath`; an already-installed `ShellPilot` on
-  `PSModulePath` (newest version); otherwise `Install-Module ShellPilot -Scope
-  CurrentUser -AllowPrerelease -Force`, then re-resolve. Returns `{ Path;
-  Installed; Error }` and never imports. `-StableOnly` excludes prerelease;
-  `-SkipInstall` reports missing instead of installing.
-- Rewrote `Initialize-DpEngine` to call the resolver (removed the hardcoded
-  `V:/Git/ShellPilot/output/module/ShellPilot` + MyDocuments probes), preserve a
-  resolution error through the import fallback, and return an `Installed` flag.
-- Surfaced the download in `Start-DeskPilot`'s console output (one-line note when
-  `Installed` is true).
-- Added 9 unit tests (mock `Get-Module`/`Install-Module`) covering explicit-path,
-  already-available, newest-version, install-with-prerelease, `-StableOnly`,
-  `-SkipInstall`, install-failure, and installed-but-not-found. Hit a Pester
-  gotcha: mocking `Get-Module` before the first `Mock Install-Module` blocks
-  PowerShellGet auto-load — fixed by importing PowerShellGet in `BeforeAll`.
-- Updated README (prereqs/options), techContext, specs 020/030, and CHANGELOG.
-- Verified: both `.ps1` parse clean; Pester **195/195** (+9).
+## Just completed (foundation slice)
 
-## Next steps
+- Persisted `specs/070-merge-wizard.md` + `specs/080-clone-wizard.md`.
+- Added glossary rows: Branch, Default Branch, Merge, Merge Wizard, Merge Plan, Clone, New Project Wizard (+ boundary notes).
+- New Private helpers (process-based, confined, never-throw): `Get-DpDefaultBranch`
+  (origin/HEAD -> main -> master), `Invoke-DpGitFetch` (best-effort; reports
+  no-remote / offline), `Get-DpBranchList` (local + remote-only Branches with a
+  merged-into-Default flag; optional pre-fetch; picks a comparison ref that
+  exists locally or as origin/<default>).
+- Added 13 unit tests (mock Invoke-DpGitCommand / Get-DpGitStatus / Invoke-DpGitFetch).
+  Verified: helpers suite 172/172 green; all new .ps1 parse clean.
 
-1. **Phase B — make installable** (next): give `Start-DeskPilot` a module-relative
-   `-WebRoot` default; move `web/` under `source/` + set `CopyPaths: [web]` so the
-   SPA ships inside the built module; remove the remaining hardcoded `0.1.0` in
-   `$script:DeskPilot.Version`; fix manifest metadata (ProjectUri →
-   raandree/DeskPilot, real Author, IconUri, fuller description); add `LICENSE`
-   (MIT); add a built-module smoke test (import + resolve web root + GET
-   `/api/health`) now that the server can start self-contained.
-   Also repoint the root `Start-DeskPilot.ps1` launcher's `WebRoot` (currently
-   `$repoRoot/web`) once `web/` moves to `source/web` — or drop `-WebRoot` there
-   and rely on the new module-relative default. The root launcher + `DeskPilot.cmd`
-   stay as the dev/clone convenience (never shipped to the Gallery).
-2. **Phase C remainder (GitHub UI, not code):** enable branch protection on `main`
-   (PR-only + require the CI checks) once the workflow has run on a PR; leave the
-   `GalleryApiToken`/`GitHubToken` secrets unset until go-live (their absence is
-   the publish gate).
-3. Before C/D: confirm a stable (non-prerelease) ShellPilot release and pick the
-   minimum version to pin; confirm the mirrored secret names
-   (`GitHubToken`/`GalleryApiToken`) match ShellPilot (Decision Concept TBDs
-   #1–#3).
-4. Optionally persist the signed-off Decision Concept as `specs/070-*.md`.
-5. Carried over: live smoke (launcher first-run build + a Turn end-to-end).
+## Next steps (Merge Wizard, in order)
 
-## Open decisions
+1. Backend: `Get-DpMergePreview` (incoming commits + dirty / behind preconditions).
+2. Backend: `Invoke-DpGitMerge` (capture pre-merge sha; optional autofix; merge; success | already-merged | conflict { files } | error), `Invoke-DpGitMergeAbort`, `Invoke-DpGitMergeUndo`.
+3. Backend: precondition autofix (stash -> ff -> merge -> pop).
+4. Backend: `Invoke-DpBranchCleanup` (local delete; optional push + remote delete).
+5. Backend: AI Merge Plan -- `Get-DpMergeConflict` (list + classify + read text), build the conflict prompt, run a Tools-off Turn, parse the structured per-file resolution, `Invoke-DpMergeApply` (write + add + commit). Binary: keep-ours / keep-theirs.
+6. Routes: register + handlers (`/api/git/branches`, `/merge/preview`, `/merge`, `/merge/plan`, `/merge/apply`, `/merge/abort`, `/merge/undo`, `/cleanup`); update `specs/030-api-contract.md`.
+7. Frontend: branch-picker badges (check / exclamation) + tooltips + remote-only; "Merge into main..." entry; the multi-step Merge Wizard modal; the conflict sub-flow.
+8. Tests + a guarded real-repo merge test; add the CHANGELOG entry once the UI is reachable.
+9. Then: implement the Clone Wizard (spec 080).
 
-- Whether to migrate the in-app web assets to the new `dp-*` naming. Currently
-  not — they're wired into the SPA in many places and the brand is identical;
-  the docs assets just live alongside under `assets/`.
+## Previous focus (publish/Sampler -- partially shipped)
+
+Phase A (Sampler-ize) and Phase C (CI mirroring ShellPilot, deploy gated OFF) are
+DONE. Still pending: Phase B (module-relative `-WebRoot` default, `CopyPaths:
+[web]`, manifest metadata, MIT `LICENSE`, built-module smoke) and Phase D
+(go-live: pin a stable ShellPilot in RequiredModules, iwr|iex bootstrap, add the
+`GalleryApiToken` / `GitHubToken` secrets). See progress.md for the full history.
 
 ## Constraints in force
 
-- README assets in `assets/`; in-app assets stay under `web/assets/`.
-- Logo variants are transparent (`Format32bppArgb`, corner A=0); judge final
-  rendering on github.com (some editor previews mis-resolve
-  `prefers-color-scheme`).
-
-## Previous focus (Phase 2.5 + 2.6 QoL batches — shipped)
-
-- **Backend (7 new/edited helpers + 5 routes).** New `Get-DpFileFind`
-  (project-confined recursive file search for `#file`), `Get-DpAtelierHealth`
-  (per-root resolve/count/junction report), `Get-DpGitDiff` (working-tree diff
-  vs HEAD, untracked→content), `Invoke-DpGitRestore` (revert tracked to HEAD +
-  delete untracked, path-confined). Edited `New-DpConversation` /
-  `Import-DpConversationStore` / `Save-DpConversationStore` (pinned/archived
-  fields), `Merge-DpSettings` + `Get-DpDefaultSettings` (preferences, validated,
-  8000-char cap), `New-DpTurnParameter` (About-the-user system-prompt block).
-  New routes: `GET /api/conversations/search` (registered before `/{id}`),
-  `GET /api/fs/find`, `GET /api/git/diff`, `POST /api/git/restore`,
-  `GET /api/atelier/health`; `patchConversation` now accepts pinned/archived
-  without bumping `updatedUtc`; `listConversations` returns the flags and sorts
-  pinned-first.
-- **Frontend.** Conversation list rewritten for search results, archived
-  hide/show, pinned marker and a per-item ⋯ action menu (pin/archive/rename/
-  export); inline Git diff + Undo in the Activity panel; Preferences textarea and
-  an auto-loading Atelier health panel in Settings; plus the already-landed
-  client-side voice/artifact/insert-menu/drag-drop/explain wiring.
-- **Specs + glossary** updated (FR-C10–C14, FR-T6/T7, FR-M7/M8, FR-S4, FR-X6,
-  FR-G1; Preferences + Artifact terms; roadmap Phase 2.5 + deferred list).
-
-### Phase 2.6 (second QoL batch)
-
-- **Regenerate** the last response (`POST /regenerate`) and **edit & resend** a
-  user Message (`POST /edit`), both via `Reset-DpConversationForRerun` (truncate
-  to a user Message, rebuild Engine history, re-run `Invoke-DpTurn`). The `start`
-  SSE frame now also carries `userMessageId` so the optimistic user bubble gets
-  an authoritative id for in-place edit.
-- **Command palette** (Ctrl/Cmd+K) + shortcuts (Ctrl/Cmd+Shift+O new, `/` focus).
-- **Reference files** Setting injected into the Turn system prompt (paths, not
-  contents — build-free light retrieval).
-- **Spend warning** Setting (`costBudgetUSD`) — one-time session-cost toast.
-- Verified: 186/186 Pester (+11), 7/7 round-2 endpoint smoke, `node --check`
-  clean, PSScriptAnalyzer baseline-consistent (only the accepted
-  `PSUseShouldProcessForStateChangingFunctions` on `Reset-Dp…`, as on existing
-  `Update-DpUsage`/`Set-DpEngineLocation`).
-
-## Open decisions (carried over)
-
-- **Undo semantics.** "Undo a Turn" reverts to the last **commit**, not a
-  pre-Turn snapshot (DeskPilot keeps no snapshot). Documented in the UI confirm;
-  committing before a Turn makes undo exact. Revisit if per-Turn snapshots are
-  wanted.
-- **Artifacts.** Only `html`/`svg` render (sandboxed); Mermaid/charts are
-  deferred (need a JS lib/CDN, against build-free + offline).
-- **RAG / scheduled prompts / MCP / multi-model compare** deliberately deferred
-  (see roadmap “Deliberately deferred”) — constraint- or Engine-bound.
-
-## Engine-side constraints (carried over)
-
-- Localhost-only bind + per-launch session token.
-- Single active Turn at a time.
-- Filesystem + Git endpoints are confined to the selected Project's folder; the
-  Customization endpoints to a configured root + the category's file pattern.
-- Artifact frames run sandboxed (`allow-scripts`, no `allow-same-origin`) under a
-  strict CSP: no network, cookies, storage, or access to DeskPilot.
-- Canonical glossary terms only (Preferences, Artifact included).
-
+- Localhost-only bind + per-launch session token; single active Turn at a time.
+- Filesystem + Git endpoints confined to the selected Project's folder.
+- Git runs via `Invoke-DpGitCommand` (process, no shell). Remote push / delete is
+  the ONLY networked privileged action and requires a separate explicit
+  per-action confirm; ambient git credentials only (DeskPilot stores no secrets).
+- Canonical glossary terms only.
+- README assets in `assets/`; in-app assets under `web/assets/`.
