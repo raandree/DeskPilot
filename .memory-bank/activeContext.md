@@ -63,8 +63,10 @@ Phase D's `RequiredModules` pin will supersede this.
    SPA ships inside the built module; remove the remaining hardcoded `0.1.0` in
    `$script:DeskPilot.Version`; fix manifest metadata (ProjectUri →
    raandree/DeskPilot, real Author, IconUri, fuller description); add `LICENSE`
-   (MIT); add a built-module smoke test (import, resolve web root, /api/health).
-2. **Phase C — CI (dry-run):** mirror ShellPilot's GitHub Actions + publish secret;
+   (MIT); add a built-module smoke test (import, resolve web root, /api/health).   Also repoint the root `Start-DeskPilot.ps1` launcher's `WebRoot` (currently
+   `$repoRoot/web`) once `web/` moves to `source/web` — or drop `-WebRoot` there
+   and rely on the new module-relative default. The root launcher + `DeskPilot.cmd`
+   stay as the dev/clone convenience (never shipped to the Gallery).2. **Phase C — CI (dry-run):** mirror ShellPilot's GitHub Actions + publish secret;
    unit Pester only; built-module smoke gate; protected main + green-CI-to-merge;
    publish job present but gated OFF until go-live.
 3. Before C/D: inspect `raandree/ShellPilot`'s workflows to mirror CI exactly,
