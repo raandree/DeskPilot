@@ -221,6 +221,179 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpGitStatus -Path $root)
         }
+        'gitBranches' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $doFetch = $false
+            if ($Request -and $Request.Query -and $Request.Query.ContainsKey('fetch')) {
+                $fv = [string]$Request.Query['fetch']
+                $doFetch = ($fv -eq '1' -or $fv -eq 'true')
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpBranchList -Path $root -Fetch:$doFetch)
+        }
+        'gitMergePreview' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $branch = if ($Request -and $Request.Query -and $Request.Query.ContainsKey('branch')) { [string]$Request.Query['branch'] } else { '' }
+            if ([string]::IsNullOrWhiteSpace($branch)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_branch'; message = 'A branch name is required.' } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpMergePreview -Root $root -Branch $branch)
+        }
+        'gitMerge' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $branch = [string](Get-DpPropertyValue -InputObject $Body -Name @('branch') -Default '')
+            if ([string]::IsNullOrWhiteSpace($branch)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_branch'; message = 'A branch name is required.' } }
+                return
+            }
+            $autofix = [bool](Get-DpPropertyValue -InputObject $Body -Name @('autofix') -Default $false)
+            Write-DpResponse -Stream $Stream -Json (Invoke-DpGitMerge -Root $root -Branch $branch -Autofix:$autofix)
+        }
+        'gitMergePlan' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            # The conflict-resolution Turn runs synchronously on the shared Engine
+            # Runspace; refuse to start it while another Turn is in flight.
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'turn_running'; message = 'Another task is running; wait for it to finish.' } }
+                return
+            }
+            $conflict = Get-DpMergeConflict -Root $root
+            if ($conflict.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'conflict_read_failed'; message = $conflict.error } }
+                return
+            }
+            if (-not $conflict.inMerge) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'not_in_merge'; message = 'There is no merge in progress.' } }
+                return
+            }
+            $textFiles = @($conflict.files | Where-Object { -not $_.binary })
+            $binaryFiles = @($conflict.files | Where-Object { $_.binary })
+            $sourceBranch = [string](Get-DpPropertyValue -InputObject $Body -Name @('branch') -Default '')
+            if ([string]::IsNullOrWhiteSpace($sourceBranch)) { $sourceBranch = 'the merged branch' }
+            $defaultBranch = Get-DpDefaultBranch -Path $root
+            $plan = @{ ok = $true; resolutions = @(); notes = $null; error = $null }
+            if ($textFiles.Count -gt 0) {
+                $defaultForPrompt = if ($defaultBranch) { $defaultBranch } else { 'main' }
+                $prompt = New-DpMergePlanPrompt -SourceBranch $sourceBranch -DefaultBranch $defaultForPrompt -Files $textFiles
+                $engineParams = @{
+                    Prompt             = $prompt
+                    DisableBrowsing    = $true
+                    DisableFileAccess  = $true
+                    DisableTerminal    = $true
+                    DisableUserPrompts = $true
+                    DisableUserTools   = $true
+                    DisableTodoList    = $true
+                }
+                if ($state.Settings.model) { $engineParams.Model = $state.Settings.model }
+                $state.TurnRunning = $true
+                try {
+                    $engineResult = Invoke-DpEngineCommand -Command 'Invoke-Shp' -Parameter $engineParams | Select-Object -Last 1
+                }
+                catch {
+                    $state.TurnRunning = $false
+                    Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'engine_error'; message = "The model could not produce a merge plan: $($_.Exception.Message)" } }
+                    return
+                }
+                $state.TurnRunning = $false
+                $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
+                $plan = ConvertFrom-DpMergePlan -Text $content
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                inMerge       = $true
+                sourceBranch  = $sourceBranch
+                defaultBranch = $defaultBranch
+                textFiles     = @($textFiles | ForEach-Object { @{ rel = $_.rel; truncated = $_.truncated } })
+                binaryFiles   = @($binaryFiles | ForEach-Object { @{ rel = $_.rel } })
+                plan          = @{ ok = $plan.ok; resolutions = $plan.resolutions; notes = $plan.notes; error = $plan.error }
+            }
+        }
+        'gitMergeApply' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $resolutions = @()
+            if ($Body -and $Body.PSObject.Properties['resolutions'] -and $Body.resolutions) { $resolutions = @($Body.resolutions) }
+            $binaryChoices = @()
+            if ($Body -and $Body.PSObject.Properties['binaryChoices'] -and $Body.binaryChoices) { $binaryChoices = @($Body.binaryChoices) }
+            $popStash = [bool](Get-DpPropertyValue -InputObject $Body -Name @('popStash') -Default $false)
+            $result = Invoke-DpMergeApply -Root $root -Resolutions $resolutions -BinaryChoices $binaryChoices -PopStash:$popStash
+            if ($result.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'merge_apply_failed'; message = $result.error }; result = $result }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $result
+        }
+        'gitMergeAbort' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $popStash = [bool](Get-DpPropertyValue -InputObject $Body -Name @('popStash') -Default $false)
+            $result = Invoke-DpGitMergeAbort -Root $root -PopStash:$popStash
+            if ($result.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'merge_abort_failed'; message = $result.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $result
+        }
+        'gitMergeUndo' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $sha = [string](Get-DpPropertyValue -InputObject $Body -Name @('sha') -Default '')
+            if ([string]::IsNullOrWhiteSpace($sha)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_sha'; message = 'A commit id is required.' } }
+                return
+            }
+            $result = Invoke-DpGitMergeUndo -Root $root -Sha $sha
+            if ($result.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'merge_undo_failed'; message = $result.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $result
+        }
+        'gitCleanup' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $branch = [string](Get-DpPropertyValue -InputObject $Body -Name @('branch') -Default '')
+            if ([string]::IsNullOrWhiteSpace($branch)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_branch'; message = 'A branch name is required.' } }
+                return
+            }
+            $deleteRemote = [bool](Get-DpPropertyValue -InputObject $Body -Name @('deleteRemote') -Default $false)
+            $pushDefault = [bool](Get-DpPropertyValue -InputObject $Body -Name @('pushDefaultBranch') -Default $false)
+            $force = [bool](Get-DpPropertyValue -InputObject $Body -Name @('force') -Default $false)
+            $result = Invoke-DpBranchCleanup -Root $root -Branch $branch -DeleteRemote:$deleteRemote -PushDefaultBranch:$pushDefault -Force:$force
+            if ($result.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'cleanup_failed'; message = $result.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $result
+        }
         'fsMkdir' {
             if ($null -eq $Body) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'A parent and name are required.' } }

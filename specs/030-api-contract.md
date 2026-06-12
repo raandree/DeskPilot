@@ -253,6 +253,117 @@ against the live branch list) and returns the new status. `400` for an unknown
 branch or no Project; `409` when the checkout fails (for example uncommitted
 changes would be overwritten).
 
+## Merge Wizard (selected Project)
+
+These power the non-expert Branch Merge Wizard (spec 070). All operate on the
+selected Project's folder only and run `git` via a process call. The **Default
+Branch** is resolved as `origin/HEAD`, else `main`, else `master`.
+
+### `GET /api/git/branches`
+
+Optional query `fetch=1` fetches from origin first so merged status reflects the
+remote (best effort; degrades to a local comparison on failure). Returns the
+branch picker data:
+
+```json
+{ "isRepo": true, "currentBranch": "feature", "defaultBranch": "main",
+  "hasRemote": true, "fetched": true, "fetchError": null,
+  "branches": [
+    { "name": "feature", "display": "feature", "isRemote": false,
+      "isCurrent": true, "isDefault": false, "hasLocal": true, "merged": false },
+    { "name": "origin/release", "shortName": "release", "isRemote": true,
+      "isCurrent": false, "isDefault": false, "hasLocal": false, "merged": true }
+  ], "error": null }
+```
+
+`merged` is `true` when the Branch is already in the Default Branch, `false` when
+not, or `null` when it could not be computed.
+
+### `GET /api/git/merge/preview?branch=<name>`
+
+Previews merging `<branch>` into the Default Branch. Returns the incoming commits
+(the delta) plus preconditions:
+
+```json
+{ "isRepo": true, "sourceBranch": "feature", "defaultBranch": "main",
+  "commits": [ { "sha": "…", "shortSha": "a1b2c3d", "author": "…", "date": "…",
+                 "subject": "add feature file" } ],
+  "commitCount": 1, "truncated": false, "dirty": false, "behind": false,
+  "behindCount": 0, "fastForward": true, "alreadyMerged": false,
+  "sameBranch": false, "hasRemote": true, "error": null }
+```
+
+`alreadyMerged` is `true` when there is nothing to merge; `sameBranch` is `true`
+when `branch` is the Default Branch itself.
+
+### `POST /api/git/merge`
+
+Body `{ "branch": "<name>", "autofix": false }`. Switches to the Default Branch and
+merges (fast-forward, else a merge commit), capturing the pre-merge commit id for
+undo. With `autofix` it stashes local changes and fast-forwards the Default Branch
+from origin first. Returns a `status` of `success`, `already-merged`, `conflict`
+(with `conflictFiles`), `blocked` (with `reasons`: `dirty`, `behind`,
+`pull-diverged`, `conflict-with-local-changes`), or `error`:
+
+```json
+{ "status": "conflict", "defaultBranch": "main", "sourceBranch": "feature",
+  "preMergeSha": "…", "mergedSha": null, "fastForward": false,
+  "conflictFiles": [ "conflict.txt" ], "stashed": false, "pulled": false,
+  "stashPopConflict": false, "reasons": [], "error": null }
+```
+
+### `POST /api/git/merge/plan`
+
+Body `{ "branch": "<source name>" }`. Reads the in-progress merge's conflicted
+files, then runs a **pure-reasoning Turn with all Tools disabled** to propose a
+**Merge Plan** for the text files. Binary conflicts are returned separately for a
+keep-ours / keep-theirs choice (the model is not asked to resolve them). `409`
+when another Turn is running; `400` when no merge is in progress; `502` on an
+Engine error.
+
+```json
+{ "inMerge": true, "sourceBranch": "feature", "defaultBranch": "main",
+  "textFiles": [ { "rel": "conflict.txt", "truncated": false } ],
+  "binaryFiles": [ { "rel": "logo.png" } ],
+  "plan": { "ok": true,
+            "resolutions": [ { "path": "conflict.txt", "content": "<full file>" } ],
+            "notes": "merged both sides", "error": null } }
+```
+
+### `POST /api/git/merge/apply`
+
+Body `{ "resolutions": [ { "path", "content" } ], "binaryChoices": [ { "path",
+"choice": "ours|theirs" } ], "popStash": false }`. Writes each resolved file
+(path-confined), applies binary choices, verifies no conflicts remain, then
+commits the merge. `400` (with `result`) when a path escapes the Project or
+conflicts remain.
+
+### `POST /api/git/merge/abort`
+
+Body `{ "popStash": false }`. Runs `git merge --abort`, optionally restoring an
+autostash. Returns `{ "ok": true, "stashPopConflict": false, "error": null }`.
+
+### `POST /api/git/merge/undo`
+
+Body `{ "sha": "<pre-merge commit id>" }`. Hard-resets the Default Branch to the
+captured pre-merge commit (local only; the caller warns when already pushed).
+`400` for an invalid or unknown commit id.
+
+### `POST /api/git/cleanup`
+
+Body `{ "branch": "<name>", "deleteRemote": false, "pushDefaultBranch": false,
+"force": false }`. Deletes the local Branch (switching to the Default Branch
+first if needed). The networked actions are **opt-in** and reported separately so
+a remote failure never undoes the local result — `pushDefaultBranch` pushes the
+Default Branch, `deleteRemote` deletes the Branch on the remote, both using
+ambient git credentials:
+
+```json
+{ "defaultBranch": "main", "localDeleted": true, "localSkipped": false,
+  "localError": null, "defaultPushed": false, "pushError": null,
+  "remoteDeleted": false, "remoteError": null, "error": null }
+```
+
 ## Conversations
 
 ### `GET /api/conversations`

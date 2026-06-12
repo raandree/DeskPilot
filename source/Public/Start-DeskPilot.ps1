@@ -94,6 +94,14 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/git/checkout'; Name = 'gitCheckout' }
             @{ Method = 'GET'; Pattern = '/api/git/diff'; Name = 'gitDiff' }
             @{ Method = 'POST'; Pattern = '/api/git/restore'; Name = 'gitRestore' }
+            @{ Method = 'GET'; Pattern = '/api/git/branches'; Name = 'gitBranches' }
+            @{ Method = 'GET'; Pattern = '/api/git/merge/preview'; Name = 'gitMergePreview' }
+            @{ Method = 'POST'; Pattern = '/api/git/merge'; Name = 'gitMerge' }
+            @{ Method = 'POST'; Pattern = '/api/git/merge/plan'; Name = 'gitMergePlan' }
+            @{ Method = 'POST'; Pattern = '/api/git/merge/apply'; Name = 'gitMergeApply' }
+            @{ Method = 'POST'; Pattern = '/api/git/merge/abort'; Name = 'gitMergeAbort' }
+            @{ Method = 'POST'; Pattern = '/api/git/merge/undo'; Name = 'gitMergeUndo' }
+            @{ Method = 'POST'; Pattern = '/api/git/cleanup'; Name = 'gitCleanup' }
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }

@@ -1567,10 +1567,38 @@ async function refreshGitBar() {
     let status;
     try { status = await api('GET', '/api/git/status'); }
     catch (e) { bar.innerHTML = `<span class="git-warn">Git: ${escapeHtml(e.message)}</span>`; return; }
-    renderGitBar(status);
+    // The richer branch list (local + remote-only, each with a merged-into-default
+    // flag) powers the badges and the Merge entry. A local-only comparison keeps
+    // this fast; the Merge Wizard re-fetches from the remote for accuracy.
+    let branchData = null;
+    if (status && status.isRepo) {
+        try { branchData = await api('GET', '/api/git/branches'); } catch { /* fall back to status */ }
+    }
+    renderGitBar(status, branchData);
 }
 
-function renderGitBar(status) {
+function gitLegendText(def) {
+    const where = def ? `'${def}'` : 'the default branch';
+    return `\u2713 = already merged into ${where}  \u00b7  \u2757 = not yet merged  \u00b7  (remote) = exists only on the server`;
+}
+
+function gitBranchBadge(b) {
+    if (b.merged === true) return '\u2713 ';
+    if (b.merged === false) return '\u2757 ';
+    return '\u2022 ';
+}
+
+function branchTitle(b, def) {
+    const where = def ? `'${def}'` : 'the default branch';
+    let s;
+    if (b.merged === true) s = `Already merged into ${where}.`;
+    else if (b.merged === false) s = `Not yet merged into ${where}.`;
+    else s = 'Merge status unknown.';
+    if (b.isRemote) s += ' Remote-only branch (exists on the server only).';
+    return s;
+}
+
+function renderGitBar(status, branchData) {
     const bar = $('git-bar');
     if (!bar) return;
     bar.innerHTML = '';
@@ -1595,24 +1623,63 @@ function renderGitBar(status) {
     info.innerHTML = '<span class="git-ico git-ok">✔</span> Git';
     const label = el('git-branch-label muted tiny');
     label.textContent = status.detached ? 'detached at' : 'branch';
+
+    const def = (branchData && branchData.defaultBranch) || '';
+    const entries = (branchData && branchData.branches && branchData.branches.length) ? branchData.branches : null;
+
     const select = document.createElement('select');
     select.className = 'git-branch-select';
-    select.title = 'Switch branch';
-    const branches = status.branches && status.branches.length ? status.branches : [status.branch];
+    select.title = entries ? gitLegendText(def) : 'Switch branch';
+
     // A detached HEAD isn't in the branch list; show it as a disabled current option.
     if (status.detached) {
         const o = document.createElement('option');
         o.value = ''; o.textContent = status.branch + ' (detached)'; o.selected = true; o.disabled = true;
         select.appendChild(o);
     }
-    for (const b of branches) {
-        const o = document.createElement('option');
-        o.value = b; o.textContent = b;
-        if (!status.detached && b === status.branch) o.selected = true;
-        select.appendChild(o);
+
+    if (entries) {
+        for (const b of entries) {
+            const o = document.createElement('option');
+            // Remote-only branches can't be checked out directly here.
+            o.value = b.isRemote ? '' : b.name;
+            if (b.isRemote) o.disabled = true;
+            o.textContent = gitBranchBadge(b) + b.display + (b.isDefault ? '  (main)' : '') + (b.isRemote ? '  (remote)' : '');
+            o.title = branchTitle(b, def);
+            if (!status.detached && b.isCurrent) o.selected = true;
+            select.appendChild(o);
+        }
+    } else {
+        const branches = status.branches && status.branches.length ? status.branches : [status.branch];
+        for (const b of branches) {
+            const o = document.createElement('option');
+            o.value = b; o.textContent = b;
+            if (!status.detached && b === status.branch) o.selected = true;
+            select.appendChild(o);
+        }
     }
     select.onchange = () => { if (select.value) switchBranch(select.value); };
+
     bar.append(info, label, select);
+
+    // A small, reliably-hoverable legend explaining the badges.
+    if (entries) {
+        const legend = el('git-legend', 'span');
+        legend.textContent = '\u24d8'; // circled i
+        legend.title = gitLegendText(def);
+        legend.setAttribute('aria-label', gitLegendText(def));
+        bar.append(legend);
+    }
+
+    // The "Merge into <default>…" entry point opens the guided Merge Wizard.
+    if (def) {
+        const mergeBtn = document.createElement('button');
+        mergeBtn.className = 'btn btn-small git-merge-btn';
+        mergeBtn.textContent = `Merge into ${def}…`;
+        mergeBtn.title = `Merge a branch into ${def} with a guided wizard`;
+        mergeBtn.onclick = () => openMergeWizard();
+        bar.append(mergeBtn);
+    }
 }
 
 async function gitInit() {
@@ -1629,6 +1696,403 @@ async function switchBranch(branch) {
         toast('Switched to ' + branch + '.');
         refreshExplorer();
     } catch (e) { toast(e.message); refreshGitBar(); }
+}
+
+// ===== Merge Wizard =====
+// A step machine that walks a non-expert through merging a branch into the
+// default branch: choose -> preview -> merge -> (conflict -> AI plan) -> result
+// -> cleanup -> done. Each step re-renders the modal body + foot.
+const merge = {
+    step: '', branch: '', branches: [], defaultBranch: '',
+    preview: null, autofix: false, result: null, plan: null,
+    binaryChoices: {}, applyResult: null, preMergeSha: '',
+};
+
+function openMergeWizard(branch) {
+    merge.step = 'choose';
+    merge.branch = branch || '';
+    merge.branches = []; merge.defaultBranch = '';
+    merge.preview = null; merge.autofix = false; merge.result = null;
+    merge.plan = null; merge.binaryChoices = {}; merge.applyResult = null;
+    merge.preMergeSha = '';
+    $('merge-backdrop').classList.remove('hidden');
+    $('merge-modal').classList.remove('hidden');
+    renderMerge();
+    if (merge.branch) mergeGoPreview(merge.branch);
+    else mergeLoadBranches();
+}
+
+function closeMergeWizard() {
+    if (merge.step === 'conflict' || merge.step === 'plan') {
+        if (!window.confirm('A merge is in progress with unresolved conflicts. Leave it open in the repository? You can choose “Abort the merge” instead to undo it cleanly.')) return;
+    }
+    $('merge-backdrop').classList.add('hidden');
+    $('merge-modal').classList.add('hidden');
+}
+
+function mergeBtnEl(label, cls, onclick, disabled) {
+    const b = document.createElement('button');
+    b.className = 'btn ' + (cls || '');
+    b.textContent = label;
+    if (disabled) b.disabled = true;
+    if (onclick) b.onclick = onclick;
+    return b;
+}
+
+function renderMerge() {
+    const body = $('merge-body');
+    const foot = $('merge-foot');
+    const title = $('merge-title');
+    if (!body || !foot) return;
+    body.innerHTML = ''; foot.innerHTML = '';
+    switch (merge.step) {
+        case 'choose': renderMergeChoose(body, foot, title); break;
+        case 'preview': renderMergePreview(body, foot, title); break;
+        case 'merging': renderMergeBusy(body, foot, title, 'Merging…'); break;
+        case 'blocked': renderMergeBlocked(body, foot, title); break;
+        case 'conflict': renderMergeConflict(body, foot, title); break;
+        case 'planning': renderMergeBusy(body, foot, title, 'Asking the AI for a merge plan…'); break;
+        case 'plan': renderMergePlan(body, foot, title); break;
+        case 'applying': renderMergeBusy(body, foot, title, 'Completing the merge…'); break;
+        case 'result': renderMergeResult(body, foot, title); break;
+        case 'cleanup': renderMergeCleanup(body, foot, title); break;
+        case 'done': renderMergeDone(body, foot, title); break;
+        default: body.textContent = '';
+    }
+}
+
+function renderMergeBusy(body, foot, title, label) {
+    title.textContent = label.replace(/…$/, '');
+    body.innerHTML = `<div class="merge-busy"><span class="merge-spinner"></span> ${escapeHtml(label)}</div>`;
+}
+
+async function mergeLoadBranches() {
+    try {
+        // Fetch from the remote so merged status is accurate when choosing.
+        const data = await api('GET', '/api/git/branches?fetch=1');
+        merge.branches = data.branches || [];
+        merge.defaultBranch = data.defaultBranch || '';
+    } catch (e) { toast(e.message); merge.branches = []; }
+    if (merge.step === 'choose') renderMerge();
+}
+
+function renderMergeChoose(body, foot, title) {
+    title.textContent = 'Merge a branch';
+    if (!merge.branches.length && !merge.defaultBranch) {
+        body.innerHTML = '<div class="muted tiny merge-msg">Loading branches…</div>';
+        foot.appendChild(mergeBtnEl('Close', '', closeMergeWizard));
+        return;
+    }
+    const def = merge.defaultBranch || 'main';
+    const candidates = merge.branches.filter((b) => !b.isDefault && b.name !== def);
+    if (!candidates.length) {
+        body.innerHTML = `<div class="merge-msg">There are no other branches to merge into <strong>${escapeHtml(def)}</strong>.</div>`;
+        foot.appendChild(mergeBtnEl('Close', '', closeMergeWizard));
+        return;
+    }
+    const intro = el('merge-intro');
+    intro.innerHTML = `Choose a branch to merge into <strong>${escapeHtml(def)}</strong>:`;
+    body.appendChild(intro);
+    const list = el('merge-branch-list');
+    for (const b of candidates) {
+        const badgeCls = b.merged === true ? 'is-merged' : (b.merged === false ? 'is-unmerged' : 'is-unknown');
+        const badgeCh = b.merged === true ? '\u2713' : (b.merged === false ? '\u2757' : '\u2022');
+        const row = document.createElement('button');
+        row.className = 'merge-branch-row';
+        row.innerHTML =
+            `<span class="merge-badge ${badgeCls}" title="${escapeHtml(branchTitle(b, def))}">${badgeCh}</span>` +
+            `<span class="merge-branch-name">${escapeHtml(b.display)}</span>` +
+            (b.isCurrent ? '<span class="merge-tag muted tiny">current</span>' : '') +
+            (b.isRemote ? '<span class="merge-tag muted tiny">remote</span>' : '') +
+            (b.merged === true ? '<span class="merge-tag muted tiny">merged</span>' : '');
+        row.onclick = () => mergeGoPreview(b.name);
+        list.appendChild(row);
+    }
+    body.appendChild(list);
+    foot.appendChild(mergeBtnEl('Close', '', closeMergeWizard));
+}
+
+async function mergeGoPreview(branch) {
+    merge.branch = branch;
+    merge.step = 'preview';
+    merge.preview = null;
+    renderMerge();
+    try { merge.preview = await api('GET', '/api/git/merge/preview?branch=' + encodeURIComponent(branch)); }
+    catch (e) { merge.preview = { error: e.message }; }
+    if (merge.preview && merge.preview.defaultBranch) merge.defaultBranch = merge.preview.defaultBranch;
+    renderMerge();
+}
+
+function renderMergePreview(body, foot, title) {
+    title.textContent = 'Review the merge';
+    const p = merge.preview;
+    if (!p) {
+        body.innerHTML = '<div class="muted tiny merge-msg">Loading preview…</div>';
+        foot.appendChild(mergeBtnEl('Cancel', '', () => mergeBackToChoose()));
+        return;
+    }
+    if (p.error) {
+        body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(p.error)}</div>`;
+        foot.appendChild(mergeBtnEl('Back', '', () => mergeBackToChoose()));
+        return;
+    }
+    const def = p.defaultBranch || merge.defaultBranch || 'main';
+    if (p.alreadyMerged) {
+        body.innerHTML = `<div class="merge-ok">\u2713 <strong>${escapeHtml(merge.branch)}</strong> is already merged into <strong>${escapeHtml(def)}</strong>. There is nothing to merge — you can clean it up.</div>`;
+        foot.appendChild(mergeBtnEl('Cancel', '', closeMergeWizard));
+        foot.appendChild(mergeBtnEl('Clean up the branch', 'btn-primary', () => mergeGoCleanup()));
+        return;
+    }
+    const head = el('merge-summary');
+    head.innerHTML =
+        `Merging <strong>${escapeHtml(merge.branch)}</strong> → <strong>${escapeHtml(def)}</strong> &nbsp;·&nbsp; ` +
+        `${p.commitCount} commit${p.commitCount === 1 ? '' : 's'}${p.truncated ? '+' : ''} &nbsp;·&nbsp; ` +
+        (p.fastForward ? 'fast-forward' : 'creates a merge commit');
+    body.appendChild(head);
+
+    if (p.dirty || p.behind) {
+        const warn = el('merge-precond');
+        let msg = '<strong>Before merging:</strong><ul>';
+        if (p.dirty) msg += '<li>You have uncommitted changes in your working folder.</li>';
+        if (p.behind) msg += `<li><strong>${escapeHtml(def)}</strong> is ${p.behindCount} commit${p.behindCount === 1 ? '' : 's'} behind the server.</li>`;
+        msg += '</ul>';
+        warn.innerHTML = msg;
+        const lbl = el('merge-autofix', 'label');
+        lbl.innerHTML = `<input type="checkbox" id="merge-autofix-cb"> Fix this for me (stash my changes${p.behind ? ', update ' + escapeHtml(def) + ' from the server' : ''}, then merge)`;
+        warn.appendChild(lbl);
+        body.appendChild(warn);
+    }
+
+    const list = el('merge-commits');
+    for (const c of (p.commits || [])) {
+        const row = el('merge-commit');
+        row.innerHTML = `<span class="merge-sha">${escapeHtml(c.shortSha)}</span><span class="merge-cmsg">${escapeHtml(c.subject)}</span><span class="muted tiny">${escapeHtml(c.author)}</span>`;
+        list.appendChild(row);
+    }
+    if (p.truncated) { const m = el('muted tiny'); m.textContent = '…and more.'; list.appendChild(m); }
+    body.appendChild(list);
+
+    foot.appendChild(mergeBtnEl('Cancel', '', closeMergeWizard));
+    foot.appendChild(mergeBtnEl('Merge', 'btn-primary', () => {
+        const cb = $('merge-autofix-cb');
+        merge.autofix = !!(cb && cb.checked);
+        if ((p.dirty || p.behind) && !merge.autofix) { toast('Tick “Fix this for me”, or commit your changes first.'); return; }
+        mergeDoMerge();
+    }));
+}
+
+function mergeBackToChoose() {
+    merge.step = 'choose';
+    renderMerge();
+    if (!merge.branches.length) mergeLoadBranches();
+}
+
+async function mergeDoMerge() {
+    merge.step = 'merging';
+    renderMerge();
+    let r;
+    try { r = await api('POST', '/api/git/merge', { branch: merge.branch, autofix: merge.autofix }); }
+    catch (e) { toast(e.message); merge.step = 'preview'; renderMerge(); return; }
+    merge.result = r;
+    if (r.preMergeSha) merge.preMergeSha = r.preMergeSha;
+    if (r.status === 'success' || r.status === 'already-merged') merge.step = 'result';
+    else if (r.status === 'conflict') merge.step = 'conflict';
+    else if (r.status === 'blocked') merge.step = 'blocked';
+    else { toast(r.error || 'Merge failed.'); merge.step = 'preview'; }
+    renderMerge();
+    if (merge.step === 'result') refreshExplorer();
+}
+
+function renderMergeBlocked(body, foot, title) {
+    title.textContent = 'Action needed';
+    const r = merge.result || {};
+    const reasons = r.reasons || [];
+    let msg = '<div class="merge-precond"><strong>The merge can’t run yet:</strong><ul>';
+    if (reasons.includes('dirty')) msg += '<li>You have uncommitted changes.</li>';
+    if (reasons.includes('behind')) msg += `<li><strong>${escapeHtml(r.defaultBranch || 'main')}</strong> is behind the server.</li>`;
+    if (reasons.includes('pull-diverged')) msg += '<li>Your branch and the server have diverged; resolve that first.</li>';
+    if (reasons.includes('conflict-with-local-changes')) msg += '<li>The merge conflicts <em>and</em> you have uncommitted changes. Commit or discard them, then merge again.</li>';
+    msg += '</ul></div>';
+    if (r.error) msg += `<div class="muted tiny">${escapeHtml(r.error)}</div>`;
+    body.innerHTML = msg;
+    foot.appendChild(mergeBtnEl('Cancel', '', closeMergeWizard));
+    if (reasons.includes('dirty') || reasons.includes('behind')) {
+        foot.appendChild(mergeBtnEl('Fix it for me & merge', 'btn-primary', () => { merge.autofix = true; mergeDoMerge(); }));
+    } else {
+        foot.appendChild(mergeBtnEl('Back', '', () => mergeGoPreview(merge.branch)));
+    }
+}
+
+function renderMergeConflict(body, foot, title) {
+    title.textContent = 'Merge conflicts';
+    const files = (merge.result && merge.result.conflictFiles) || [];
+    let msg = `<div class="merge-msg">The merge has conflicts in ${files.length} file${files.length === 1 ? '' : 's'}. DeskPilot can ask the AI to propose a fix, which you’ll review before anything is saved.</div><ul class="merge-file-list">`;
+    for (const f of files) msg += `<li>${escapeHtml(f)}</li>`;
+    msg += '</ul>';
+    body.innerHTML = msg;
+    foot.appendChild(mergeBtnEl('Abort the merge', '', mergeAbort));
+    foot.appendChild(mergeBtnEl('Ask the AI for a fix', 'btn-primary', mergeAskAI));
+}
+
+async function mergeAskAI() {
+    merge.step = 'planning';
+    renderMerge();
+    let r;
+    try { r = await api('POST', '/api/git/merge/plan', { branch: merge.branch }); }
+    catch (e) { toast(e.message); merge.step = 'conflict'; renderMerge(); return; }
+    merge.plan = r;
+    merge.binaryChoices = {};
+    for (const bf of (r.binaryFiles || [])) merge.binaryChoices[bf.rel] = 'theirs';
+    merge.step = 'plan';
+    renderMerge();
+}
+
+function renderMergePlan(body, foot, title) {
+    title.textContent = 'Review the AI’s merge plan';
+    const plan = merge.plan || {};
+    const res = (plan.plan && plan.plan.resolutions) || [];
+    const planErr = plan.plan && plan.plan.error;
+    const binary = plan.binaryFiles || [];
+
+    if (planErr && !res.length && !binary.length) {
+        body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(planErr)}</div>`;
+        foot.appendChild(mergeBtnEl('Abort the merge', '', mergeAbort));
+        foot.appendChild(mergeBtnEl('Try again', '', mergeAskAI));
+        return;
+    }
+    if (plan.plan && plan.plan.notes) {
+        const n = el('merge-plan-notes');
+        n.textContent = '\u201c' + plan.plan.notes + '\u201d';
+        body.appendChild(n);
+    }
+    for (const r of res) {
+        const det = document.createElement('details');
+        det.className = 'merge-res';
+        const sum = document.createElement('summary');
+        sum.innerHTML = `<span class="merge-res-path">${escapeHtml(r.path)}</span> <span class="muted tiny">resolved — click to preview</span>`;
+        det.appendChild(sum);
+        const pre = el('merge-res-body', 'pre');
+        pre.textContent = r.content;
+        det.appendChild(pre);
+        body.appendChild(det);
+    }
+    if (binary.length) {
+        const bh = el('merge-binary');
+        bh.innerHTML = '<strong>Binary files</strong> — the AI can’t merge these. Pick which version to keep:';
+        body.appendChild(bh);
+        binary.forEach((bf, i) => {
+            const cur = merge.binaryChoices[bf.rel] || 'theirs';
+            const row = el('merge-binary-row');
+            row.innerHTML =
+                `<span class="merge-bin-path">${escapeHtml(bf.rel)}</span>` +
+                `<label><input type="radio" name="merge-bin-${i}" value="ours" ${cur === 'ours' ? 'checked' : ''}> keep ${escapeHtml(merge.defaultBranch || 'main')} (ours)</label>` +
+                `<label><input type="radio" name="merge-bin-${i}" value="theirs" ${cur === 'theirs' ? 'checked' : ''}> keep ${escapeHtml(merge.branch)} (theirs)</label>`;
+            row.querySelectorAll('input[type=radio]').forEach((inp) => { inp.onchange = () => { merge.binaryChoices[bf.rel] = inp.value; }; });
+            body.appendChild(row);
+        });
+    }
+    if (!res.length && !binary.length) {
+        body.innerHTML = '<div class="merge-error">⚠ The AI returned no resolutions. You can abort the merge.</div>';
+        foot.appendChild(mergeBtnEl('Abort the merge', '', mergeAbort));
+        foot.appendChild(mergeBtnEl('Try again', '', mergeAskAI));
+        return;
+    }
+    foot.appendChild(mergeBtnEl('Abort the merge', '', mergeAbort));
+    foot.appendChild(mergeBtnEl('Apply & complete the merge', 'btn-primary', mergeApply));
+}
+
+async function mergeApply() {
+    const plan = merge.plan || {};
+    const resolutions = (plan.plan && plan.plan.resolutions) || [];
+    const binaryChoices = Object.keys(merge.binaryChoices).map((k) => ({ path: k, choice: merge.binaryChoices[k] }));
+    merge.step = 'applying';
+    renderMerge();
+    let r;
+    try { r = await api('POST', '/api/git/merge/apply', { resolutions, binaryChoices, popStash: !!(merge.result && merge.result.stashed) }); }
+    catch (e) { toast(e.message); merge.step = 'plan'; renderMerge(); return; }
+    merge.applyResult = r;
+    merge.result = merge.result || {};
+    if (r.mergedSha) { merge.result.mergedSha = r.mergedSha; merge.result.status = 'success'; merge.result.fastForward = false; }
+    merge.step = 'result';
+    renderMerge();
+    refreshExplorer();
+}
+
+async function mergeAbort() {
+    try { await api('POST', '/api/git/merge/abort', { popStash: !!(merge.result && merge.result.stashed) }); toast('Merge aborted.'); }
+    catch (e) { toast(e.message); }
+    $('merge-backdrop').classList.add('hidden');
+    $('merge-modal').classList.add('hidden');
+    refreshExplorer();
+}
+
+function renderMergeResult(body, foot, title) {
+    title.textContent = 'Merged';
+    const r = merge.result || {};
+    const def = r.defaultBranch || merge.defaultBranch || 'main';
+    const how = r.fastForward ? 'fast-forward' : 'merge commit';
+    body.innerHTML =
+        `<div class="merge-ok">\u2713 Merged <strong>${escapeHtml(merge.branch)}</strong> into <strong>${escapeHtml(def)}</strong>` +
+        (r.mergedSha ? ` (${escapeHtml(String(r.mergedSha).slice(0, 7))}, ${how})` : '') + '.</div>' +
+        (r.stashPopConflict ? '<div class="merge-precond">Your stashed changes could not be re-applied cleanly; resolve them in your editor.</div>' : '') +
+        '<div class="muted tiny merge-msg">Clean up the branch now, or undo this merge.</div>';
+    foot.appendChild(mergeBtnEl('Undo this merge', '', mergeUndo, !merge.preMergeSha));
+    foot.appendChild(mergeBtnEl('Skip cleanup', '', () => { closeMergeWizard(); refreshExplorer(); }));
+    foot.appendChild(mergeBtnEl('Clean up the branch', 'btn-primary', () => mergeGoCleanup()));
+}
+
+function mergeGoCleanup() { merge.step = 'cleanup'; renderMerge(); }
+
+function renderMergeCleanup(body, foot, title) {
+    title.textContent = 'Clean up the branch';
+    const def = merge.defaultBranch || 'main';
+    body.innerHTML =
+        `<div class="merge-msg">The local branch <strong>${escapeHtml(merge.branch)}</strong> will be deleted (it’s merged into ${escapeHtml(def)}).</div>` +
+        `<label class="merge-clean-opt"><input type="checkbox" id="merge-clean-remote"> Also push <strong>${escapeHtml(def)}</strong> to the server and delete the branch there <span class="muted tiny">(uses your Git sign-in; affects the shared remote)</span></label>`;
+    foot.appendChild(mergeBtnEl('Not now', '', () => { closeMergeWizard(); refreshExplorer(); }));
+    foot.appendChild(mergeBtnEl('Delete', 'btn-primary', mergeCleanup));
+}
+
+async function mergeCleanup() {
+    const remote = $('merge-clean-remote') ? $('merge-clean-remote').checked : false;
+    if (remote) {
+        if (!window.confirm(`This will push ${merge.defaultBranch || 'main'} to the server and delete the branch there. It affects the shared remote and is hard to undo. Continue?`)) return;
+    }
+    merge.step = 'applying';
+    renderMerge();
+    try {
+        const r = await api('POST', '/api/git/cleanup', { branch: merge.branch, deleteRemote: remote, pushDefaultBranch: remote });
+        merge.applyResult = r;
+        merge.step = 'done';
+    } catch (e) { toast(e.message); merge.step = 'cleanup'; }
+    renderMerge();
+    refreshExplorer();
+}
+
+function renderMergeDone(body, foot, title) {
+    title.textContent = 'Done';
+    const r = merge.applyResult || {};
+    let msg = '<div class="merge-ok">\u2713 Cleanup complete.</div><ul class="merge-clean-result">';
+    if (r.localDeleted) msg += `<li>Deleted the local branch <strong>${escapeHtml(merge.branch)}</strong>.</li>`;
+    else if (r.localSkipped) msg += '<li>No local branch to delete.</li>';
+    else if (r.localError) msg += `<li class="merge-err-li">Could not delete the local branch: ${escapeHtml(r.localError)}</li>`;
+    if (r.defaultPushed) msg += `<li>Pushed <strong>${escapeHtml(r.defaultBranch || 'main')}</strong> to the server.</li>`;
+    else if (r.pushError) msg += `<li class="merge-err-li">Could not push: ${escapeHtml(r.pushError)}</li>`;
+    if (r.remoteDeleted) msg += '<li>Deleted the branch on the server.</li>';
+    else if (r.remoteError) msg += `<li class="merge-err-li">Could not delete on the server: ${escapeHtml(r.remoteError)}</li>`;
+    msg += '</ul>';
+    if (r.localError || r.pushError || r.remoteError) msg += '<div class="muted tiny">The local merge is safe; you can retry the remote steps later.</div>';
+    body.innerHTML = msg;
+    foot.appendChild(mergeBtnEl('Close', 'btn-primary', () => { closeMergeWizard(); refreshExplorer(); }));
+}
+
+async function mergeUndo() {
+    if (!merge.preMergeSha) { toast('Nothing to undo.'); return; }
+    if (!window.confirm(`Undo the merge and return ${merge.defaultBranch || 'main'} to its previous state? (Local only.)`)) return;
+    try { await api('POST', '/api/git/merge/undo', { sha: merge.preMergeSha }); toast('Merge undone.'); }
+    catch (e) { toast(e.message); return; }
+    closeMergeWizard();
+    refreshExplorer();
 }
 
 async function fetchTree(path) {
@@ -3131,6 +3595,13 @@ function wireGlobal() {
     $('artifact-view-source').onclick = () => setArtifactMode('source');
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !$('artifact-modal').classList.contains('hidden')) closeArtifact();
+    });
+
+    // Merge Wizard
+    $('merge-close').onclick = () => closeMergeWizard();
+    $('merge-backdrop').onclick = () => closeMergeWizard();
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !$('merge-modal').classList.contains('hidden')) closeMergeWizard();
     });
 
     // Composer insert menu (/ prompt files, # project files)
