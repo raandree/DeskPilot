@@ -9,6 +9,7 @@ and tests are in place and verified.
 
 | Date | Change |
 | --- | --- |
+| 2026-06-12 | **Converted to a Sampler build project (Phase A of the publish/Sampler plan).** Moved module source `src/DeskPilot/` → `source/` (empty psm1 + `Prefix.ps1` carrying `Set-StrictMode -Version Latest`); manifest version → `0.0.1` placeholder (GitVersion owns it). Added lean Sampler scaffolding: `build.ps1` + `Resolve-Dependency.ps1`/`.psd1` copied from ShellPilot; `build.yaml` (CopyPaths empty for now — web bundling is Phase B), `RequiredModules.psd1` (incl. ModuleBuilder's `Configuration`/`Metadata` deps), `GitVersion.yml` with `main` as mainline. Tests split into `tests/QA/module.tests.ps1` (mirrored from ShellPilot; per-function gates scoped to the **exported** surface because DeskPilot has one public command + ~60 collectively-tested Private helpers) and `tests/Unit` (helpers test repointed to `source/Private`; new `Start-DeskPilot.Tests.ps1`). Made `Start-DeskPilot` PSSA-clean (ASCII-only + ShouldProcess/Write-Host suppressions). Rebuilt the launcher to import the built module (auto-build on first run). Verified: `./build.ps1` build 0 errors; **207 tests pass, 0 failed, 0 skipped**. Publish stays gated OFF until Phase D. |
 | 2026-06-12 | **Engine distribution: download ShellPilot from the PowerShell Gallery.** Now that ShellPilot is published, replaced the hardcoded local-build probe (`V:/Git/ShellPilot/output/module/ShellPilot`) and the MyDocuments probe with a new `Resolve-DpEngineModule` helper: resolve an explicit `-EngineModulePath`, else an already-installed `ShellPilot` on `PSModulePath` (newest version), else `Install-Module ShellPilot -Scope CurrentUser -AllowPrerelease -Force` then re-resolve — returning `{ Path; Installed; Error }` without importing (`-StableOnly`/`-SkipInstall` switches included). Rewrote `Initialize-DpEngine` to call it (preserving a resolution error through the import-by-name fallback, adding an `Installed` flag) and surfaced the download in `Start-DeskPilot`'s console output. Added 9 unit tests (mock `Get-Module`/`Install-Module`); fixed a Pester mock-order gotcha by importing PowerShellGet in `BeforeAll`. Updated README, techContext, specs 020/030, CHANGELOG. Verified: both `.ps1` parse clean; Pester 195/195 (+9). | The Engine made its built-in `manage_todo_list` tool on by default and replaced the opt-in `-EnableTodoList` switch with an opt-out `-DisableTodoList` (ShellPilot commit `3c0fc6e`). DeskPilot still passed `-EnableTodoList` whenever `taskTracking` was on (the default), so `Invoke-Shp` rejected the now-unknown parameter and **every Turn failed** against the current Engine. Inverted the mapping in `New-DpTurnParameter` (pass `-DisableTodoList` only when `taskTracking` is off; otherwise rely on the Engine's default-on behaviour), rewrote the two Task List splat tests, and updated the glossary Engine-boundary note. Confirmed via `git diff 3f60386 HEAD -- source` that this rename is the **only** functional ShellPilot source change since its init commit: the `-ShowThinking` streaming fix needs no DeskPilot change (the `Get-DpStreamFrame` classifier already routes the DarkGray `thinking:` label + ANSI `3;90m` reasoning + DarkCyan/Cyan/Yellow trace, and the fix actually keeps live streaming on when thinking is enabled), and the `ShellPilot.Result` default-view fix is display-only (DeskPilot reads `.Content`/`.History`/`.Usage`/`.TodoList` programmatically). Verified: both edited `.ps1` parse clean; Pester 186/186. |
 | 2026-06-08 | Memory Bank established (brief, product context, tech context, system patterns, glossary, active context, progress). |
 | 2026-06-08 | Seven specs written (overview, requirements, architecture, API contract, UI design, security model, roadmap). |
@@ -70,8 +71,15 @@ and tests are in place and verified.
 
 - Vision (image attach) and structured-output surfaces.
 - User Tool management UI (`Register-ShpTool`).
-- WebView2 single-window desktop shell; packaging/installer.
+- WebView2 single-window desktop shell; packaging/installer. Revisit as a
+  separate, decoupled track; weigh a **cross-platform** shell (Tauri/Photino/
+  Electron/MAUI BlazorWebView) against Windows-only WebView2 because
+  cross-platform is a first-class value. Motivation: single-window app feel,
+  own taskbar/Alt-Tab entry, hide the localhost URL from non-technical users.
 - Multi-client concurrency for the Host Server.
+- **Consider running the live tests in CI** (behind a stored Copilot token
+  secret + accepted per-run credit cost). Current plan is unit-Pester-only in
+  CI. Parked from the 2026-06-12 publish/Sampler grill-me interview.
 
 ## Decision log
 
@@ -86,3 +94,25 @@ and tests are in place and verified.
 - **2026-06-08 — Build-free static SPA.** No toolchain for end users.
 - **2026-06-08 — In-house XSS-safe Markdown renderer.** Escape-first, safe
   subset; no third-party script to vendor or audit.
+- **2026-06-12 — Publish to the Gallery + convert to Sampler (signed off).**
+  Grill-me interview verdict: convert DeskPilot to a **Lean Sampler** project
+  now (ModuleBuilder + InvokeBuild + GitVersion + Pester 5 + PSScriptAnalyzer;
+  no DSC/Datum); make it **publish-ready now, publish-for-real later** (deferred
+  until a stable ShellPilot release or a first user). Dependency model: declare
+  ShellPilot in `RequiredModules` with a pinned minimum tested version (needs a
+  stable, non-prerelease ShellPilot first; `Resolve-DpEngineModule` demoted to a
+  fallback). Packaging fixes found in the interview: give `Start-DeskPilot` a
+  module-relative `-WebRoot` default (it is currently `[Parameter(Mandatory)]`),
+  ModuleBuilder `CopyPaths` to bundle `web/`, and remove the hardcoded `0.1.0`
+  (GitVersion owns the version, in both the manifest and the
+  `$script:DeskPilot.Version` hashtable). CI mirrors ShellPilot, unit-Pester
+  only, a built-module smoke gate (import, resolve web root, `/api/health`)
+  before publish, protected `main` (PR-only) + green CI + manifest-validate,
+  auto-publish on merge to main but gated OFF until go-live. Ship unsigned with a
+  cross-platform `iwr|iex` bootstrap (in-repo, HTTPS, tag-pinned; forces
+  CurrentUser, trusts PSGallery, sets TLS 1.2, verifies PS7). No telemetry
+  (Gallery download counts only); CI/version/downloads badges; fail-silent
+  launch-time version + update check. Fix manifest metadata
+  (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
+  a `LICENSE` (MIT) file. WebView2/desktop shell parked as a decoupled,
+  cross-platform-aware later track.

@@ -1,0 +1,77 @@
+---
+####################################################
+#          ModuleBuilder Configuration             #
+####################################################
+BuiltModuleSubdirectory: module
+# web/ assets are bundled into the built module in Phase B (CopyPaths: [web])
+# once web/ is relocated under source/. Kept empty for the Sampler bootstrap.
+CopyPaths: []
+Encoding: UTF8
+prefix: Prefix.ps1
+VersionedOutputDirectory: true
+
+####################################################
+#       Sampler Pipeline Configuration             #
+####################################################
+BuildWorkflow:
+  '.':
+    - build
+    - test
+
+  build:
+    - Clean
+    - Build_Module_ModuleBuilder
+    - Build_NestedModules_ModuleBuilder
+    - Create_changelog_release_output
+
+  pack:
+    - build
+    - package_module_nupkg
+
+  test:
+    - Pester_Tests_Stop_On_Fail
+    - Convert_Pester_Coverage
+    - Pester_if_Code_Coverage_Under_Threshold
+
+  publish:
+    - Publish_Release_To_GitHub
+    - publish_module_to_gallery
+
+####################################################
+#       PESTER  Configuration                      #
+####################################################
+Pester:
+  OutputFormat: NUnitXML
+  ExcludeFromCodeCoverage:
+  Script:
+    - tests/QA/module.tests.ps1
+    - tests/Unit
+  ExcludeTag:
+  Tag:
+  CodeCoverageThreshold: 0
+
+ModuleBuildTasks:
+  Sampler:
+    - '*.build.Sampler.ib.tasks'
+  Sampler.GitHubTasks:
+    - '*.ib.tasks'
+
+TaskHeader: |
+  param($Path)
+  ""
+  "=" * 79
+  Write-Build Cyan "`t`t`t$($Task.Name.replace("_"," ").ToUpper())"
+  Write-Build DarkGray  "$(Get-BuildSynopsis $Task)"
+  "-" * 79
+  Write-Build DarkGray "  $Path"
+  Write-Build DarkGray "  $($Task.InvocationInfo.ScriptName):$($Task.InvocationInfo.ScriptLineNumber)"
+  ""
+
+####################################################
+#                GitHub Configuration              #
+####################################################
+GitHubConfig:
+  GitHubFilesToAdd:
+    - 'CHANGELOG.md'
+  GitHubConfigUserName: Raimund
+  GitHubConfigUserEmail: r.andree@live.com

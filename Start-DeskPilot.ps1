@@ -31,9 +31,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
-$manifest = Join-Path $repoRoot 'src/DeskPilot/DeskPilot.psd1'
 
-Import-Module $manifest -Force
+# DeskPilot is built with Sampler/ModuleBuilder into output/module/DeskPilot/<version>/.
+# Build on first run so the launcher works from a fresh clone.
+$builtBase = Join-Path $repoRoot 'output/module/DeskPilot'
+if (-not (Test-Path -LiteralPath $builtBase)) {
+    Write-Host 'Building the DeskPilot module (first run, this may take a moment)...' -ForegroundColor Cyan
+    & (Join-Path $repoRoot 'build.ps1') -Tasks build -ResolveDependency | Out-Host
+}
+$manifest = Get-ChildItem -Path $builtBase -Recurse -Filter 'DeskPilot.psd1' -ErrorAction Stop |
+    Sort-Object -Property LastWriteTime -Descending |
+    Select-Object -First 1
+
+Import-Module $manifest.FullName -Force
 
 $params = @{
     Port      = $Port

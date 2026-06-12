@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Build system: converted to the Sampler framework.** DeskPilot is now built
+  with [Sampler](https://github.com/gaelcolas/Sampler) (ModuleBuilder,
+  InvokeBuild, Pester 5, PSScriptAnalyzer, GitVersion). Module source moved from
+  `src/DeskPilot/` to `source/`; the module builds into
+  `output/module/DeskPilot/<version>/` with the version stamped from git by
+  GitVersion. Build with `./build.ps1 -ResolveDependency -Tasks build` and test
+  with `./build.ps1 -Tasks test`. Tests reorganised into `tests/QA` (module
+  quality gates) and `tests/Unit`; the suite is green at 207 tests.
+  `Start-DeskPilot.ps1` now builds on first run and imports the built module.
+  This prepares DeskPilot for publishing to the PowerShell Gallery (the actual
+  publish is gated to a later phase).
 - **Engine resolution: download ShellPilot from the PowerShell Gallery.** The
   Engine is now resolved by a new `Resolve-DpEngineModule` helper — an explicit
   `-EngineModulePath`, an already-installed `ShellPilot` module on the module

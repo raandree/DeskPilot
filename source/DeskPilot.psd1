@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DeskPilot.psm1'
-    ModuleVersion     = '0.1.0'
+    ModuleVersion     = '0.0.1'
     GUID              = 'b8f3a2d1-7c4e-4a9b-9f1d-2e6c5a0b3d77'
     Author            = 'DeskPilot contributors'
     CompanyName       = 'DeskPilot'
@@ -13,9 +13,11 @@
     AliasesToExport   = @()
     PrivateData       = @{
         PSData = @{
-            Tags       = @('Copilot', 'ShellPilot', 'Agent', 'GUI', 'AgenticOperatingModel')
-            LicenseUri = 'https://opensource.org/licenses/MIT'
-            ProjectUri = 'https://github.com/raandree/AgenticOperatingModel'
+            Tags         = @('Copilot', 'ShellPilot', 'Agent', 'GUI', 'AgenticOperatingModel')
+            LicenseUri   = 'https://opensource.org/licenses/MIT'
+            ProjectUri   = 'https://github.com/raandree/AgenticOperatingModel'
+            ReleaseNotes = ''
+            Prerelease   = ''
         }
     }
 }

@@ -2,10 +2,38 @@
 
 ## Current focus
 
-**Engine distribution.** ShellPilot is now published to the PowerShell Gallery,
-so DeskPilot no longer relies on a hardcoded local build path. The Engine is
-downloaded into the user scope (preview allowed) on first run when it isn't
-already available.
+**Publish/Sampler decision — signed off 2026-06-12.** A grill-me interview
+concluded: **convert DeskPilot to a Lean Sampler project now**, and make it
+**publish-ready now but publish-for-real later** (deferred until a stable,
+non-prerelease ShellPilot exists or a first user appears). Phased plan A–D:
+
+- **A — Sampler-ize (no publish): DONE (2026-06-12).** Source moved
+  `src/DeskPilot/` → `source/` (empty psm1 + `Prefix.ps1` carrying StrictMode);
+  manifest version → `0.0.1` placeholder (GitVersion owns it). Lean scaffolding
+  (`build.yaml`, `RequiredModules.psd1` incl. ModuleBuilder's `Configuration`/
+  `Metadata` deps, `GitVersion.yml` with `main` as mainline, plus `build.ps1`/
+  `Resolve-Dependency.*` copied from ShellPilot). Tests split into `tests/QA` +
+  `tests/Unit` (QA per-function gates scoped to the **exported** surface, since
+  DeskPilot has one public command + ~60 collectively-tested Private helpers).
+  `./build.ps1` green: build 0 errors, **207 tests pass / 0 failed**.
+- **B — Make installable:** module-relative `-WebRoot` default (currently
+  `[Parameter(Mandatory)]`); ModuleBuilder `CopyPaths` to bundle `web/`; remove
+  hardcoded `0.1.0` (GitVersion owns it); fix manifest metadata
+  (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
+  `LICENSE` (MIT); built-module smoke test.
+- **C — CI (dry-run):** mirror ShellPilot's CI/secret; unit Pester only;
+  built-module smoke gate (import, resolve web root, `/api/health`) before the
+  publish step; protected `main` (PR-only) + green CI + manifest-validate;
+  auto-publish on merge to main but the publish step gated OFF until go-live.
+- **D — Go-live (later, separate decision):** stable ShellPilot →
+  `RequiredModules` pin (min tested version) → cross-platform `iwr|iex`
+  bootstrap (in-repo, HTTPS, tag-pinned; CurrentUser + trust PSGallery + TLS 1.2
+  + PS7 check) → enable the publish gate.
+
+**Previous focus (Engine distribution — shipped).** ShellPilot is published to
+the PowerShell Gallery; DeskPilot downloads it into the user scope (preview
+allowed) on first run via `Resolve-DpEngineModule` when not already available.
+Phase D's `RequiredModules` pin will supersede this.
 
 ## Just completed
 
@@ -30,10 +58,20 @@ already available.
 
 ## Next steps
 
-1. Live smoke: launch on a machine without ShellPilot to confirm the Gallery
-   download + import + a first Turn end-to-end.
-2. Resume the previous focus (Phase 2.6 QoL live-Engine smoke; brand pass for
-   sub-READMEs — both deferred).
+1. **Phase B — make installable** (next): give `Start-DeskPilot` a module-relative
+   `-WebRoot` default; move `web/` under `source/` + set `CopyPaths: [web]` so the
+   SPA ships inside the built module; remove the remaining hardcoded `0.1.0` in
+   `$script:DeskPilot.Version`; fix manifest metadata (ProjectUri →
+   raandree/DeskPilot, real Author, IconUri, fuller description); add `LICENSE`
+   (MIT); add a built-module smoke test (import, resolve web root, /api/health).
+2. **Phase C — CI (dry-run):** mirror ShellPilot's GitHub Actions + publish secret;
+   unit Pester only; built-module smoke gate; protected main + green-CI-to-merge;
+   publish job present but gated OFF until go-live.
+3. Before C/D: inspect `raandree/ShellPilot`'s workflows to mirror CI exactly,
+   confirm a stable (non-prerelease) ShellPilot release, and pick the minimum
+   version to pin (Decision Concept TBDs #1–#3).
+4. Optionally persist the signed-off Decision Concept as `specs/070-*.md`.
+5. Carried over: live smoke (launcher first-run build + a Turn end-to-end).
 
 ## Open decisions
 

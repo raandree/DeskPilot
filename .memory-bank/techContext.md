@@ -10,6 +10,7 @@
 | Frontend | **Static SPA** — vanilla HTML/CSS/JS, no build step | Zero toolchain for end users; the Host Server serves the files directly. A calm, deep-teal, dependency-free UI. |
 | Launcher | `Start-DeskPilot.ps1` + a double-click `.cmd` | One action to start the server and open the browser. |
 | Tests | **Pester 5** | Matches workspace conventions; unit-tests Host Server helpers and routing. |
+| Build | **Sampler** (ModuleBuilder, InvokeBuild, GitVersion, PSScriptAnalyzer) | Mirrors ShellPilot. Source in `source/`, built to `output/module/DeskPilot/<version>/`; version from GitVersion. `./build.ps1` runs build/test/pack/publish workflows. |
 
 ## Prerequisites (end user)
 
@@ -74,14 +75,18 @@ atomic (temp file + `Move-Item -Force`).
 ## Repo layout
 
 ```text
-assistant/
+DeskPilot/
   .memory-bank/      # this knowledge base
   specs/             # product + technical specifications
-  src/
-    DeskPilot/        # Host Server PowerShell module (functions)
+  source/            # Host Server PowerShell module (Public/Private/manifest; built by Sampler)
   web/               # static SPA (index.html, css, js, assets)
-  tests/             # Pester tests
-  Start-DeskPilot.ps1  # launcher
+  tests/             # Pester 5: tests/QA (module quality) + tests/Unit
+  output/            # build output, gitignored (built module + test results)
+  build.ps1          # Sampler build bootstrap
+  build.yaml         # Sampler build configuration
+  RequiredModules.psd1  # build + runtime dependencies
+  GitVersion.yml     # versioning (main is the mainline)
+  Start-DeskPilot.ps1  # launcher (builds on first run, imports the built module)
   DeskPilot.cmd        # double-click launcher (Windows)
   README.md
   CHANGELOG.md

@@ -68,7 +68,9 @@ Or on Windows, double-click `DeskPilot.cmd`.
 
 The launcher starts the local Host Server, prints a URL such as
 `http://127.0.0.1:8473/?t=<token>`, and opens your browser. On first run it walks
-you through GitHub sign-in (device code) from inside the window.
+you through GitHub sign-in (device code) from inside the window. The very first
+run also builds the module (resolving build dependencies from the Gallery), which
+can take a minute.
 
 ### Pointing at a specific engine build
 
@@ -106,13 +108,18 @@ See the [specs](specs/000-overview.md) for the full design, and the
 ## Project layout
 
 ```text
-assistant/
+DeskPilot/
   .memory-bank/        Project knowledge base (brief, context, patterns, glossary)
   specs/               Product + technical specifications
-  src/DeskPilot/        Host Server PowerShell module
+  source/              Host Server PowerShell module (Public/Private/manifest; built by Sampler)
   web/                 Static single-page UI (no build step)
-  tests/               Pester 5 tests for the Host Server helpers
-  Start-DeskPilot.ps1  Launcher
+  tests/               Pester 5 tests: tests/QA (module quality) + tests/Unit
+  output/              Build output, gitignored (built module + test results)
+  build.ps1            Sampler build bootstrap
+  build.yaml           Sampler build configuration
+  RequiredModules.psd1 Build + runtime module dependencies
+  GitVersion.yml       Versioning configuration
+  Start-DeskPilot.ps1  Launcher (builds on first run, then imports the built module)
   DeskPilot.cmd        Double-click launcher (Windows)
 ```
 
@@ -136,15 +143,25 @@ sandbox the agent.
 See [specs/050-security-model.md](specs/050-security-model.md) for the full
 threat model.
 
-## Running the tests
+## Building and testing
 
-Tests use Pester 5. Run them in a detached process (so VS Code never blocks):
+DeskPilot uses the [Sampler](https://github.com/gaelcolas/Sampler) build
+framework (ModuleBuilder, InvokeBuild, Pester 5, PSScriptAnalyzer, GitVersion).
 
 ```powershell
-Start-Process pwsh -ArgumentList '-NoProfile','-NonInteractive','-Command',
-  "Set-Location '$PWD'; Import-Module Pester -MinimumVersion 5.0 -Force; Invoke-Pester -Path ./tests -Output Detailed" `
-  -WindowStyle Hidden -Wait
+# Resolve build dependencies and build the module (first time)
+./build.ps1 -ResolveDependency -Tasks build
+
+# Run the test suite (QA + unit tests)
+./build.ps1 -Tasks test
+
+# Build and test in one go
+./build.ps1
 ```
+
+The built module lands in `output/module/DeskPilot/<version>/`, with the version
+stamped from git by GitVersion. `Start-DeskPilot.ps1` builds automatically on
+first run.
 
 ## Roadmap
 

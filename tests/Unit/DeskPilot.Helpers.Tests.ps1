@@ -1,7 +1,7 @@
 #requires -Version 7.0
 
 BeforeAll {
-    $privateRoot = Join-Path $PSScriptRoot '..' 'src' 'DeskPilot' 'Private'
+    $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 }
 

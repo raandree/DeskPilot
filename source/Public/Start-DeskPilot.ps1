@@ -26,6 +26,7 @@ function Start-DeskPilot {
     #>
     [CmdletBinding()]
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'The launcher prints the local URL and status to the console for the user.')]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Start-DeskPilot is an interactive launcher, not a state-changing cmdlet; ShouldProcess is not meaningful.')]
     param(
         [int]$Port = 0,
 
@@ -42,7 +43,7 @@ function Start-DeskPilot {
     if (-not (Test-Path -LiteralPath $WebRoot)) { throw "Web root not found: $WebRoot" }
     $webRootFull = (Resolve-Path -LiteralPath $WebRoot).Path
 
-    Write-Host 'Starting DeskPilot…' -ForegroundColor Cyan
+    Write-Host 'Starting DeskPilot...' -ForegroundColor Cyan
     $engine = Initialize-DpEngine -EngineModulePath $EngineModulePath
 
     $dataDirFull = if ($DataDir) {
@@ -141,7 +142,7 @@ function Start-DeskPilot {
     try {
         while ($true) {
             # AcceptTcpClient() blocks synchronously, and PowerShell can only act
-            # on Ctrl+C (a pipeline stop) between statements — never while parked
+            # on Ctrl+C (a pipeline stop) between statements - never while parked
             # inside a blocking .NET call. So poll the non-blocking Pending() and
             # yield through Start-Sleep when idle. Start-Sleep is a cmdlet and thus
             # a cancellation checkpoint (unlike [Threading.Thread]::Sleep, which is
