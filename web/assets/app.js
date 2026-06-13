@@ -1672,7 +1672,10 @@ function renderGitBar(status, branchData) {
     }
 
     // The "Merge into <default>…" entry point opens the guided Merge Wizard.
-    if (def) {
+    // Hidden when the Default Branch is already the current branch: there is no
+    // feature branch to bring in, so "Merge into main" while on main is moot.
+    const currentBranch = (branchData && branchData.currentBranch) || (status.detached ? null : status.branch);
+    if (def && currentBranch !== def) {
         const mergeBtn = document.createElement('button');
         mergeBtn.className = 'btn btn-small git-merge-btn';
         mergeBtn.textContent = `Merge into ${def}…`;
