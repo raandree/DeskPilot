@@ -95,6 +95,9 @@ const state = {
     historyIndex: -1,
     historyDraft: '',
     explorerPath: '',
+    // Folders the user has expanded in the explorer (absolute paths). Tracked so a
+    // refresh — including an automatic one — keeps the tree exactly as they left it.
+    explorerExpanded: new Set(),
     // Pending-dispatch queue: messages typed while a Turn is streaming and held
     // back until it finishes. Each item is { kind, text, prompt }: `kind` is
     // 'queue' or 'steer', `text` is what the user actually typed (rendered in
@@ -1515,10 +1518,12 @@ function syncExplorerAvailability() {
         if (ex && !ex.classList.contains('collapsed')) collapseExplorer();
         if (btn) btn.setAttribute('aria-expanded', 'false');
         state.explorerPath = '';
+        state.explorerExpanded.clear();
         return;
     }
-    // Project switched while the explorer is open -> reload its tree + git bar.
-    if (explorerOpen() && state.explorerPath !== wf) refreshExplorer();
+    // Project switched while the explorer is open -> reload its tree + git bar
+    // (drop the previous project's expanded folders, whose paths point elsewhere).
+    if (explorerOpen() && state.explorerPath !== wf) { state.explorerExpanded.clear(); refreshExplorer(); }
 }
 
 function explorerOpen() { return !$('explorer').classList.contains('collapsed'); }
@@ -1544,26 +1549,66 @@ function toggleExplorer() {
     else expandExplorer();
 }
 
-async function refreshExplorer() {
+// Sequence + busy guards so overlapping refreshes (a poll, a focus event, a
+// post-Turn refresh) never swap a stale tree into the DOM or stack background work.
+let _explorerSeq = 0;
+let _explorerBusy = false;
+
+async function refreshExplorer(opts) {
+    const silent = !!(opts && opts.silent);
     const proj = selectedProject();
     const tree = $('explorer-tree');
     $('explorer-title').textContent = proj ? proj.name : 'Files';
     state.explorerPath = proj ? proj.path : '';
-    if (!proj) { tree.innerHTML = ''; $('git-bar').classList.add('hidden'); return; }
-    refreshGitBar();
-    tree.innerHTML = '<div class="muted tiny explorer-msg">Loading…</div>';
-    const rootNode = await buildTreeLevel('', 0);
+    if (!proj) { tree.innerHTML = ''; state.explorerExpanded.clear(); $('git-bar').classList.add('hidden'); return; }
+    // Don't stack background refreshes; an explicit (non-silent) refresh still runs.
+    if (silent && _explorerBusy) return;
+    _explorerBusy = true;
+    const seq = ++_explorerSeq;
+    refreshGitBar(silent);
+    // A silent refresh keeps the current tree visible while it rebuilds (no flicker);
+    // an explicit one shows a loading hint.
+    if (!silent) tree.innerHTML = '<div class="muted tiny explorer-msg">Loading…</div>';
+    let rootNode = null;
+    try { rootNode = await buildTreeLevel('', 0); }
+    finally { if (seq === _explorerSeq) _explorerBusy = false; }
+    // Superseded by a newer refresh, or the explorer was closed while we built.
+    if (seq !== _explorerSeq || !explorerOpen()) return;
+    const prevScroll = tree.scrollTop;
     tree.innerHTML = '';
     if (rootNode) tree.appendChild(rootNode);
+    tree.scrollTop = prevScroll;
+}
+
+// Keep the explorer in step with on-disk changes without a manual refresh:
+// silently (no flicker, expanded folders + scroll preserved) when the window/tab
+// regains focus or becomes visible, and on a gentle interval while it is open and
+// visible. Skips while the user is interacting inside the explorer so a poll never
+// yanks the tree or an open branch dropdown out from under them.
+let _explorerAutoWired = false;
+function wireExplorerAutoRefresh() {
+    if (_explorerAutoWired) return;
+    _explorerAutoWired = true;
+    const tick = () => {
+        if (!explorerOpen() || document.visibilityState !== 'visible') return;
+        const active = document.activeElement;
+        if (active && $('explorer').contains(active)) return;
+        refreshExplorer({ silent: true });
+    };
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+    setInterval(tick, 5000);
 }
 
 // ===== Git bar (in the explorer) =====
-async function refreshGitBar() {
+async function refreshGitBar(silent) {
     const bar = $('git-bar');
     if (!bar) return;
     if (!(state.settings && state.settings.workspaceFolder)) { bar.classList.add('hidden'); return; }
     bar.classList.remove('hidden');
-    bar.innerHTML = '<span class="muted tiny">Checking Git…</span>';
+    // On a silent (auto) refresh, keep the current bar visible while we re-check
+    // so it doesn't flash "Checking Git…" every few seconds.
+    if (!silent) bar.innerHTML = '<span class="muted tiny">Checking Git…</span>';
     let status;
     try { status = await api('GET', '/api/git/status'); }
     catch (e) { bar.innerHTML = `<span class="git-warn">Git: ${escapeHtml(e.message)}</span>`; return; }
@@ -2119,12 +2164,12 @@ async function buildTreeLevel(path, depth) {
         return ul;
     }
     for (const ent of data.entries) {
-        ul.appendChild(ent.type === 'dir' ? buildDirNode(ent, depth) : buildFileNode(ent));
+        ul.appendChild(ent.type === 'dir' ? await buildDirNode(ent, depth) : buildFileNode(ent));
     }
     return ul;
 }
 
-function buildDirNode(ent, depth) {
+async function buildDirNode(ent, depth) {
     const li = el('tree-node tree-dir', 'li');
     const row = el('tree-row', 'button');
     row.innerHTML = `<span class="tree-caret">▸</span><span class="tree-ico">📁</span><span class="tree-name"></span>`;
@@ -2132,19 +2177,32 @@ function buildDirNode(ent, depth) {
     row.title = ent.path;
     let loaded = false;
     const childWrap = el('tree-children hidden');
-    row.onclick = async () => {
-        const open = li.classList.toggle('open');
-        row.querySelector('.tree-caret').textContent = open ? '▾' : '▸';
-        childWrap.classList.toggle('hidden', !open);
-        if (open && !loaded) {
+
+    const expand = async () => {
+        li.classList.add('open');
+        row.querySelector('.tree-caret').textContent = '▾';
+        childWrap.classList.remove('hidden');
+        state.explorerExpanded.add(ent.path);
+        if (!loaded) {
             loaded = true;
             childWrap.innerHTML = '<div class="muted tiny tree-msg">Loading…</div>';
-            const level = await buildTreeLevel(ent.path, 1);
+            const level = await buildTreeLevel(ent.path, depth + 1);
             childWrap.innerHTML = '';
             childWrap.appendChild(level);
         }
     };
+    const collapse = () => {
+        li.classList.remove('open');
+        row.querySelector('.tree-caret').textContent = '▸';
+        childWrap.classList.add('hidden');
+        state.explorerExpanded.delete(ent.path);
+    };
+    row.onclick = () => { if (li.classList.contains('open')) collapse(); else expand(); };
     li.append(row, childWrap);
+
+    // Re-open folders the user had expanded before this refresh so an automatic
+    // refresh keeps the tree exactly as they left it.
+    if (state.explorerExpanded.has(ent.path)) await expand();
     return li;
 }
 
@@ -3512,6 +3570,7 @@ function wireGlobal() {
     $('btn-theme').onclick = () => toggleTheme();
     $('btn-files').onclick = () => toggleExplorer();
     $('explorer-refresh').onclick = () => refreshExplorer();
+    wireExplorerAutoRefresh();
     $('btn-attach').onclick = () => $('file-input').click();
     $('file-input').addEventListener('change', (e) => {
         const files = Array.from(e.target.files || []);

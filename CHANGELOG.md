@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The file explorer now refreshes automatically.** It updates on its own when
+  the window or tab regains focus, when the tab becomes visible again, and on a
+  gentle interval while it is open — so files an agent (or you) create, change, or
+  delete on disk appear without clicking the refresh button. Automatic refreshes
+  are silent (no flicker) and preserve which folders you have expanded and your
+  scroll position, and they pause while you are interacting with the tree or the
+  branch dropdown so nothing is yanked out from under you.
 - **Build system: converted to the Sampler framework.** DeskPilot is now built
   with [Sampler](https://github.com/gaelcolas/Sampler) (ModuleBuilder,
   InvokeBuild, Pester 5, PSScriptAnalyzer, GitVersion). Module source moved from
