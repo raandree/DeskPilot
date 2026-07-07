@@ -94,6 +94,7 @@ function Merge-DpSettings {
                 }
                 $merged.compactionKeepRecent = $keep
             }
+            'memoryLearning' { $merged.memoryLearning = [bool]$value }
             'skillRoots' { $merged.skillRoots = @($value | ForEach-Object { [string]$_ }) }
             'instructionRoots' { $merged.instructionRoots = @($value | ForEach-Object { [string]$_ }) }
             'promptRoots' { $merged.promptRoots = @($value | ForEach-Object { [string]$_ }) }

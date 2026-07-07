@@ -49,5 +49,11 @@ function Get-DpDefaultSettings {
         autoCompaction       = $true
         compactionThreshold  = 0.8
         compactionKeepRecent = 4
+        # Persistent memory. When memoryLearning is on, after a Turn DeskPilot runs
+        # a throttled, best-effort pure-reasoning pass that folds durable facts from
+        # the conversation into the agent's Memory (see Get-DpMemoryLimits). The
+        # User Profile is the manual preferences block above; the Agent Memory store
+        # lives in agent-memory.json, not in Settings.
+        memoryLearning       = $true
     }
 }

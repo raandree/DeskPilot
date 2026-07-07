@@ -599,6 +599,50 @@ Resets a counter to zero. Body: `{ "scope": "lifetime" | "session" }`
 (defaults to `lifetime`). Resetting `lifetime` also sets a new `sinceUtc` and
 rewrites `lifetime-usage.json`. Returns the same payload as `GET /api/usage`.
 
+## Memory
+
+Persistent, cross-Conversation memory injected into every Turn's system prompt.
+Two stores: the **User Profile** (the manual `preferences` Setting) and the
+**Agent Memory** (an agent-curated store persisted to `agent-memory.json`). Both
+are bounded (`Get-DpMemoryLimits`: User Profile 8,000 chars, Agent Memory 12,000
+chars) and fenced in the system prompt as reference-not-instructions
+(`New-DpTurnParameter`).
+
+### `GET /api/memory`
+
+Returns both stores with their character counts and caps, plus whether autonomous
+learning is on:
+
+```json
+{
+  "userProfile": { "text": "...", "chars": 42, "cap": 8000 },
+  "agentMemory": { "text": "...", "chars": 310, "cap": 12000, "updatedUtc": "2026-07-07T20:00:00Z" },
+  "learning": true
+}
+```
+
+### `PUT /api/memory`
+
+Body: `{ "userProfile"?: string|null, "agentMemory"?: string|null }` — either or
+both. The User Profile is validated and persisted through `Merge-DpSettings` (the
+`preferences` Setting); the Agent Memory is trimmed and written to
+`agent-memory.json`. `400 too_long` if a store exceeds its cap. Returns the same
+shape as `GET /api/memory`.
+
+### `POST /api/memory/learn`
+
+Body: `{ "conversationId": string }`. Runs a **pure-reasoning Turn** with all Tools
+disabled (like auto-title / compaction) that folds durable facts from the
+Conversation's recent messages into the Agent Memory via `New-DpMemoryPrompt` +
+`ConvertFrom-DpMemoryResult`, capped to the Agent Memory limit. Best-effort: a
+failed extraction leaves the memory unchanged. Errors:
+`400 missing_conversation`, `404 not_found`, `409 busy` (a Turn is running),
+`400 too_short` (too few messages). Returns the `GET /api/memory` shape plus
+`"changed": <bool>`.
+
+The SPA also calls this route automatically (throttled by assistant-turn count)
+after a Turn when the `memoryLearning` Setting is on, mirroring auto-titling.
+
 ## Uploads
 
 ### `POST /api/uploads`

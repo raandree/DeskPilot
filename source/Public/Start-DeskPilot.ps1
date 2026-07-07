@@ -57,6 +57,7 @@ function Start-DeskPilot {
     $conversations = Import-DpConversationStore -Directory $dataDirFull
     $lifetimeUsage = Import-DpLifetimeUsage -Directory $dataDirFull
     $persistedSettings = Import-DpSettings -Directory $dataDirFull
+    $memoryStore = Import-DpMemoryStore -Directory $dataDirFull
 
     $script:DeskPilot = @{
         Version         = '0.1.0'
@@ -64,6 +65,9 @@ function Start-DeskPilot {
         Conversations   = $conversations
         Usage           = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; byModel = @{} }
         LifetimeUsage   = $lifetimeUsage
+        # Persistent Agent Memory (durable notes about the user + environment),
+        # injected into every Turn's system prompt and curated by the memory routes.
+        Memory          = $memoryStore
         DataDir         = $dataDirFull
         Engine          = $engine
         WebRoot         = $webRootFull
@@ -115,6 +119,9 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
+            @{ Method = 'GET'; Pattern = '/api/memory'; Name = 'getMemory' }
+            @{ Method = 'PUT'; Pattern = '/api/memory'; Name = 'updateMemory' }
+            @{ Method = 'POST'; Pattern = '/api/memory/learn'; Name = 'learnMemory' }
             @{ Method = 'GET'; Pattern = '/api/conversations'; Name = 'listConversations' }
             @{ Method = 'POST'; Pattern = '/api/conversations'; Name = 'createConversation' }
             @{ Method = 'GET'; Pattern = '/api/conversations/search'; Name = 'searchConversations' }

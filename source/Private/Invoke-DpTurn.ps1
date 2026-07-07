@@ -80,6 +80,10 @@ function Invoke-DpTurn {
             try { $agentPrompt = Get-DpAgentSystemPrompt -Root $settings.agentsRoot -Id $settings.selectedAgent } catch { $agentPrompt = $null }
         }
 
+        # The agent's persistent Memory (durable notes about the user + environment),
+        # injected into every Turn's system prompt so past learning carries forward.
+        $agentMemory = if ($script:DeskPilot.Memory) { [string]$script:DeskPilot.Memory.text } else { '' }
+
         # Resolve the effective Model (Conversation-pinned, else the Settings
         # default, else the Engine default) and its advertised reasoning efforts
         # from the capability cache the /api/models route fills. New-DpTurnParameter
@@ -93,7 +97,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # Reposition the long-lived Engine Runspace every Turn, not only when a

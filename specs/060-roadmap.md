@@ -84,6 +84,24 @@ build-free, local-first, cost-honest constraints; dropped the rest.
   already tracked; no Engine change. Mirrors Hermes's Tokens IN/OUT, Top Models,
   and 7/30/90-day range.
 
+### Phase 2.8 — Persistent memory (learns who you are)
+
+The Hermes memory idea researched after the compaction batch: an agent that
+"builds a deepening model of who you are across sessions."
+
+- ~~**User Profile + Agent Memory** (FR-M12).~~ **Done** — two bounded stores
+  injected into every Turn's system prompt: the **User Profile** (the manual
+  preferences block, 8,000 chars) and a new agent-curated **Agent Memory**
+  (12,000 chars, `agent-memory.json`), fenced as reference-not-instructions. Sized
+  a few times larger than the minimalist ~3,600-char reference design while still a
+  small fraction of a modern context window.
+- ~~**Autonomous + manual learning** (FR-M13).~~ **Done** — a throttled,
+  best-effort post-Turn pure-reasoning pass (`POST /api/memory/learn`, default on,
+  toasted, toggleable) folds durable declarative facts into the Agent Memory,
+  excluding secrets and transient state; a manual "update from this conversation"
+  action plus a full view/edit/clear surface in Settings back it up. Reuses the
+  auto-title / compaction pattern; no Engine change.
+
 ### Deliberately deferred (constraint or Engine bound)
 
 - **System / diagnostics screen with live logs + update/restart** (Hermes's
@@ -92,10 +110,10 @@ build-free, local-first, cost-honest constraints; dropped the rest.
   server **log stream** and in-app **update / restart** — need a logging ring
   buffer threaded through the Host Server and a self-update path, a larger,
   separate track. Spec it before building.
-- **Persistent (durable) agent memory across sessions** (Hermes's *Persistent
-  Memory* / *Memory Provider*). DeskPilot's **Preferences** already cover the
-  *User Profile* half (a compact, user-authored profile injected into every
-  Turn); agent-written durable memories are a bigger, Engine-adjacent feature.
+- **External memory providers** (Hermes's *Memory Provider* plugins — Honcho,
+  Mem0, Hindsight, etc.). DeskPilot now has its own bounded, built-in persistent
+  memory (Phase 2.8); pluggable external backends are a larger, later track that
+  would need a provider abstraction and their own dependencies.
 - **Top Skills usage panel** (Hermes's *Top Skills*). The Engine does not report
   which Skill a Turn invoked, so per-Skill activity can't be measured without a
   ShellPilot change (the "Engine is sacrosanct" pattern).

@@ -1451,6 +1451,9 @@ async function _runTurn({ prompt, displayText, dispatch }) {
         // Auto-compact when the context window is filling up, so a long
         // Conversation keeps working instead of overflowing the Model window.
         await maybeAutoCompact();
+        // Fold durable facts from the conversation into the agent's persistent
+        // Memory (throttled by turn count), when automatic learning is on.
+        await maybeLearnMemory();
         // Drain one queued/steered message, if any. We only fire the next one;
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
@@ -1527,6 +1530,34 @@ async function maybeAutoCompact() {
         }
     } finally {
         state.autoCompacting = false;
+    }
+}
+
+// After some turns, ask the server to fold durable facts from the conversation
+// into the agent's persistent Memory. Throttled by assistant-turn count (not every
+// turn) to keep the cost honest, best-effort, and announced with a toast only when
+// something actually changed. Mirrors maybeAutoTitle / maybeAutoCompact. The manual
+// "Update from this conversation" button in Settings covers the off / short-chat
+// cases.
+async function maybeLearnMemory() {
+    const s = state.settings || {};
+    if (!s.memoryLearning) return;
+    if (!state.current || state.learningMemory) return;
+    const assistantTurns = ((state.current.messages) || []).filter((m) => m.role === 'assistant').length;
+    const EVERY = 5;
+    // Nothing to learn from a very short chat; then only every EVERY-th turn.
+    if (assistantTurns < EVERY || assistantTurns % EVERY !== 0) return;
+    const id = state.current.id;
+    state.learningMemory = true;
+    try {
+        const r = await api('POST', '/api/memory/learn', { conversationId: id });
+        if (r && r.changed) toast('Updated what I remember about you.');
+    } catch (e) {
+        // Best-effort: a busy Turn (409) or a short conversation (400) is a silent
+        // no-op; learning must never interrupt the user's flow.
+        void e;
+    } finally {
+        state.learningMemory = false;
     }
 }
 
@@ -3267,9 +3298,22 @@ function openSettings() {
       <p class="hint">Whether each <code>~/.copilot</code> customization folder resolves, and how many agents, skills, instructions and prompts were found.</p>
     </div>
     <div class="field">
-      <label>About you (preferences)</label>
+      <label>User profile — about you</label>
       <textarea id="set-preferences" rows="4" placeholder="e.g. I'm a paralegal. Write in plain British English, cite sources, and keep answers concise.">${escapeHtml(s.preferences || '')}</textarea>
-      <p class="hint">A durable note about you — role, writing style, recurring context. Added to every turn so the agent serves you consistently.</p>
+      <p class="hint">A durable note <em>you</em> write about yourself — role, writing style, recurring context. Added to every turn so the agent serves you consistently.</p>
+    </div>
+    <div class="field">
+      <label>Agent memory — what DeskPilot has learned <span id="mem-updated" class="muted tiny"></span></label>
+      <textarea id="set-agent-memory" rows="8" placeholder="DeskPilot fills this in as it learns durable facts about you and your projects. You can edit or clear it."></textarea>
+      <div class="mem-row">
+        <span id="mem-count" class="muted tiny"></span>
+        <button class="btn btn-small mem-learn-btn" id="set-memory-learn" type="button">Update from this conversation</button>
+      </div>
+      <p class="hint">Durable notes the agent keeps about you and your environment across conversations, injected into every turn as background reference.</p>
+    </div>
+    <div class="field">
+      <label><input type="checkbox" id="set-memory-learning" ${s.memoryLearning !== false ? 'checked' : ''} /> Let DeskPilot learn about you automatically</label>
+      <p class="hint">Every few turns, DeskPilot folds durable facts from the conversation into its agent memory (a brief background step that uses a little credit); you’ll see a note when it does. Turn this off to curate memory yourself.</p>
     </div>
     <div class="field">
       <label>Reference files (one project-relative path per line)</label>
@@ -3397,6 +3441,40 @@ function openSettings() {
         save({ compactionKeepRecent: keep });
     };
     $('set-preferences').onchange = (e) => save({ preferences: e.target.value.trim() || null });
+    // Agent memory: loaded from /api/memory, edited/cleared via PUT, and learned
+    // on demand via POST /api/memory/learn. The User profile above stays the
+    // preferences Setting; this is the separate, agent-curated store.
+    const renderMemMeta = (m) => {
+        const am = (m && m.agentMemory) || {};
+        state._memCap = am.cap || 12000;
+        const ta = $('set-agent-memory');
+        if (ta && document.activeElement !== ta) ta.value = am.text || '';
+        const cnt = $('mem-count');
+        if (cnt) cnt.textContent = ((ta ? ta.value.length : am.chars || 0)).toLocaleString() + ' / ' + state._memCap.toLocaleString() + ' chars';
+        const upd = $('mem-updated');
+        if (upd) upd.textContent = am.updatedUtc ? '· updated ' + new Date(am.updatedUtc).toLocaleString() : '';
+    };
+    api('GET', '/api/memory').then(renderMemMeta).catch(() => { });
+    $('set-agent-memory').oninput = () => {
+        const cnt = $('mem-count'); const ta = $('set-agent-memory');
+        if (cnt) cnt.textContent = ta.value.length.toLocaleString() + ' / ' + (state._memCap || 12000).toLocaleString() + ' chars';
+    };
+    $('set-agent-memory').onchange = async (e) => {
+        try { renderMemMeta(await api('PUT', '/api/memory', { agentMemory: e.target.value })); toast('Memory saved.'); }
+        catch (err) { toast((err && err.message) || 'Could not save memory.'); }
+    };
+    $('set-memory-learn').onclick = async () => {
+        if (!state.current) { toast('Open a conversation first, then update memory from it.'); return; }
+        const btn = $('set-memory-learn'); const old = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Updating…';
+        try {
+            const r = await api('POST', '/api/memory/learn', { conversationId: state.current.id });
+            renderMemMeta(r);
+            toast(r && r.changed ? 'Memory updated from this conversation.' : 'Nothing new worth remembering yet.');
+        } catch (e) { toast((e && e.message) || 'Could not update memory.'); }
+        finally { btn.disabled = false; btn.textContent = old; }
+    };
+    $('set-memory-learning').onchange = (e) => save({ memoryLearning: e.target.checked });
     $('set-reffiles').onchange = (e) => save({ referenceFiles: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) });
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });

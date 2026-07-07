@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Persistent memory (DeskPilot learns who you are).** DeskPilot now carries
+  durable memory across conversations, injected into every turn. Two parts: a
+  **User profile** — the note you write about yourself (the existing preferences,
+  now framed as your profile, up to 8,000 characters) — and a new agent-curated
+  **Agent memory** — durable, declarative facts the agent keeps about you and your
+  environment (conventions, tools, observed preferences, lessons), up to 12,000
+  characters. Both are shown as fenced *reference notes* in the system prompt so a
+  recalled fact is never mistaken for a new instruction. The agent keeps its memory
+  up to date two ways: **automatically** (a throttled, best-effort background step
+  after some turns — default on, announced with a toast, one toggle to disable) and
+  **manually** (an "Update from this conversation" button). Learning writes facts
+  only, never secrets or one-off task state, and never changes your visible
+  messages. Manage it all in **Settings → Memory**: view, edit, or clear either
+  store, with a live character/budget count. New endpoints `GET`/`PUT /api/memory`
+  and `POST /api/memory/learn`; new helpers `Get-DpMemoryLimits`,
+  `Import-DpMemoryStore`, `Save-DpMemoryStore`, `New-DpMemoryPrompt`,
+  `ConvertFrom-DpMemoryResult`, `Get-DpMemoryPayload`; a new `agent-memory.json`
+  store and a `memoryLearning` setting (+17 unit tests).
 - **Automatic conversation compaction (Memory & context).** When a conversation
   fills most of the model's context window, DeskPilot can now summarise its earlier
   turns automatically so it keeps working instead of overflowing — the same
@@ -148,6 +166,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Agents list no longer errors on an inaccessible agents folder.**
+  `Get-DpAgentList` probed the configured Agents root with `Test-Path`; if the root
+  pointed at a drive or path that denies access (for example a restricted mapped
+  drive), that probe could throw instead of returning an empty list. It now
+  suppresses the probe error and returns no agents, matching the function's
+  documented contract ("empty when the root is unset or missing").
 - **The "Working…" indicator now always animates.** The spinner shown next to
   *Working…* while a turn is running could appear frozen — a static ring — for
   anyone who has operating-system animations turned off (on Windows: Settings →

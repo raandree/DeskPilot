@@ -478,6 +478,103 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpUsagePayload)
         }
+        'getMemory' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpMemoryPayload)
+        }
+        'updateMemory' {
+            # Manual edits to either memory store. User Profile is the preferences
+            # Setting (validated + persisted via Merge-DpSettings); Agent Memory is
+            # its own store. Either or both may be present in the body.
+            if ($null -eq $Body) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'Nothing to update.' } }
+                return
+            }
+            $limits = Get-DpMemoryLimits
+            if ($Body.PSObject.Properties['userProfile']) {
+                $profileText = if ($null -eq $Body.userProfile) { $null } else { [string]$Body.userProfile }
+                if ($profileText -and $profileText.Length -gt $limits.userProfile) {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_long'; message = "The user profile must be $($limits.userProfile) characters or fewer." } }
+                    return
+                }
+                try {
+                    $state.Settings = Merge-DpSettings -Current $state.Settings -Patch @{ preferences = $profileText }
+                    if ($state.DataDir) { Save-DpSettings -Settings $state.Settings -Directory $state.DataDir }
+                }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_profile'; message = "$_" } }
+                    return
+                }
+            }
+            if ($Body.PSObject.Properties['agentMemory']) {
+                $memText = if ($null -eq $Body.agentMemory) { '' } else { ([string]$Body.agentMemory).Trim() }
+                if ($memText.Length -gt $limits.agentMemory) {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_long'; message = "The agent memory must be $($limits.agentMemory) characters or fewer." } }
+                    return
+                }
+                $state.Memory = @{ text = $memText; updatedUtc = [DateTime]::UtcNow.ToString('o') }
+                if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpMemoryPayload)
+        }
+        'learnMemory' {
+            # Fold durable facts from a Conversation into the Agent Memory via a
+            # pure-reasoning Turn (all Tools off, like auto-title / compaction). The
+            # visible transcript is untouched; only the persistent memory changes.
+            $conversationId = if ($Body -and $Body.PSObject.Properties['conversationId'] -and $Body.conversationId) { [string]$Body.conversationId } else { $null }
+            if (-not $conversationId) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'missing_conversation'; message = 'A conversationId is required.' } }
+                return
+            }
+            $conversation = $state.Conversations[$conversationId]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
+                return
+            }
+            $limits = Get-DpMemoryLimits
+            $recent = @($conversation.messages | Where-Object { $_.role -in @('user', 'assistant') } | Select-Object -Last 8)
+            if ($recent.Count -lt 2) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_short'; message = 'This conversation is too short to learn from.' } }
+                return
+            }
+            $current = if ($state.Memory) { [string]$state.Memory.text } else { '' }
+            $changed = $false
+            $engineParams = @{
+                Prompt             = New-DpMemoryPrompt -CurrentMemory $current -Messages $recent -MaxChars $limits.agentMemory
+                DisableBrowsing    = $true
+                DisableFileAccess  = $true
+                DisableTerminal    = $true
+                DisableUserPrompts = $true
+                DisableUserTools   = $true
+                DisableTodoList    = $true
+            }
+            $effectiveModel = if ($conversation.model) { $conversation.model } elseif ($state.Settings.model) { $state.Settings.model } else { $null }
+            if ($effectiveModel) { $engineParams.Model = $effectiveModel }
+            $state.TurnRunning = $true
+            try {
+                $engineResult = Invoke-DpEngineCommand -Command 'Invoke-Shp' -Parameter $engineParams | Select-Object -Last 1
+                $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
+                $extracted = ConvertFrom-DpMemoryResult -Text $content -MaxLength $limits.agentMemory
+                if (-not [string]::IsNullOrWhiteSpace($extracted) -and $extracted -ne $current) {
+                    $state.Memory = @{ text = $extracted; updatedUtc = [DateTime]::UtcNow.ToString('o') }
+                    if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
+                    $changed = $true
+                }
+            }
+            catch {
+                # Best-effort: a failed extraction leaves the memory unchanged.
+                $null = $_
+            }
+            finally {
+                $state.TurnRunning = $false
+            }
+            $payload = Get-DpMemoryPayload
+            $payload.changed = $changed
+            Write-DpResponse -Stream $Stream -Json $payload
+        }
         'listConversations' {
             $summaries = $state.Conversations.Values |
                 Sort-Object @{ Expression = { [bool]$_.pinned }; Descending = $true }, @{ Expression = { $_.updatedUtc }; Descending = $true } |

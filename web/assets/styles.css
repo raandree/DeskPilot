@@ -2026,6 +2026,20 @@ button.tree-row {
     width: 100%;
 }
 
+.mem-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.mem-learn-btn {
+    width: auto;
+    margin-top: 0;
+    flex: none;
+}
+
 .bolt {
     color: var(--accent);
 }

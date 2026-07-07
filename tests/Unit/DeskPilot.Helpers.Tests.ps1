@@ -2107,6 +2107,132 @@ Describe 'ConvertFrom-DpCompactionResult' {
     }
 }
 
+Describe 'Get-DpMemoryLimits' {
+    It 'returns the User Profile and Agent Memory caps' {
+        $l = Get-DpMemoryLimits
+        $l.userProfile | Should -Be 8000
+        $l.agentMemory | Should -Be 12000
+    }
+}
+
+Describe 'Get-DpDefaultSettings memory' {
+    It 'defaults memoryLearning on' {
+        (Get-DpDefaultSettings).memoryLearning | Should -BeTrue
+    }
+}
+
+Describe 'Merge-DpSettings memoryLearning' {
+    It 'toggles memoryLearning off and on' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ memoryLearning = $false })).memoryLearning | Should -BeFalse
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ memoryLearning = $true })).memoryLearning | Should -BeTrue
+    }
+}
+
+Describe 'Agent memory store' {
+    It 'returns an empty store when the file is missing' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $store = Import-DpMemoryStore -Directory $dir
+        $store.text | Should -Be ''
+        $store.updatedUtc | Should -BeNullOrEmpty
+    }
+    It 'round-trips text and updatedUtc through save and load' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $ts = [datetime]::Parse('2026-07-07T00:00:00Z').ToUniversalTime().ToString('o')
+        Save-DpMemoryStore -Memory @{ text = "User likes Go`nUses Ubuntu"; updatedUtc = $ts } -Directory $dir
+        $store = Import-DpMemoryStore -Directory $dir
+        $store.text | Should -Be "User likes Go`nUses Ubuntu"
+        # Normalised ISO-8601 UTC survives the JSON date-coercion round-trip.
+        ([datetime]$store.updatedUtc).ToUniversalTime() | Should -Be ([datetime]::Parse('2026-07-07T00:00:00Z').ToUniversalTime())
+    }
+    It 'caps over-long text to the Agent Memory limit on load' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $cap = (Get-DpMemoryLimits).agentMemory
+        Save-DpMemoryStore -Memory @{ text = ('y' * ($cap + 500)); updatedUtc = $null } -Directory $dir
+        (Import-DpMemoryStore -Directory $dir).text.Length | Should -Be $cap
+    }
+}
+
+Describe 'New-DpMemoryPrompt' {
+    It 'includes the current notes and the recent exchange' {
+        $p = New-DpMemoryPrompt -CurrentMemory 'User uses Go.' -Messages @(
+            @{ role = 'user'; text = 'I always use poetry for Python.' }
+            @{ role = 'assistant'; text = 'Noted.' }
+        )
+        $p | Should -Match 'User uses Go\.'
+        $p | Should -Match 'poetry'
+        $p | Should -Match 'NO_CHANGE'
+        $p | Should -Match 'declarative facts'
+    }
+    It 'shows a no-notes placeholder when memory is empty' {
+        (New-DpMemoryPrompt -CurrentMemory '' -Messages @(@{ role = 'user'; text = 'hi' })) | Should -Match 'no notes yet'
+    }
+    It 'accepts an empty or null message list without throwing' {
+        { New-DpMemoryPrompt -CurrentMemory 'x' -Messages @() } | Should -Not -Throw
+        { New-DpMemoryPrompt -CurrentMemory 'x' -Messages $null } | Should -Not -Throw
+    }
+}
+
+Describe 'ConvertFrom-DpMemoryResult' {
+    It 'returns trimmed multi-line notes' {
+        ConvertFrom-DpMemoryResult -Text "  a`nb  " | Should -Be "a`nb"
+    }
+    It 'unwraps a fenced code block' {
+        $fence = '```'
+        ConvertFrom-DpMemoryResult -Text "$fence`nUser likes tea`n$fence" | Should -Be 'User likes tea'
+    }
+    It 'treats the NO_CHANGE sentinel as no update' {
+        ConvertFrom-DpMemoryResult -Text 'NO_CHANGE' | Should -Be ''
+        ConvertFrom-DpMemoryResult -Text 'no change' | Should -Be ''
+    }
+    It 'returns empty for null or whitespace' {
+        ConvertFrom-DpMemoryResult -Text $null | Should -Be ''
+        ConvertFrom-DpMemoryResult -Text '   ' | Should -Be ''
+    }
+    It 'caps over-long output to the limit' {
+        (ConvertFrom-DpMemoryResult -Text ('z' * 100) -MaxLength 40).Length | Should -BeLessOrEqual 40
+    }
+}
+
+Describe 'New-DpTurnParameter agent memory injection' {
+    It 'injects the agent memory as fenced reference notes when set' {
+        $s = Get-DpDefaultSettings
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -AgentMemory 'User deploys with Terraform.'
+        $p.SystemPrompt | Should -Match 'saved notes about this user'
+        $p.SystemPrompt | Should -Match 'Terraform'
+        $p.SystemPrompt | Should -Match 'not as new'
+    }
+    It 'omits the memory block when no memory is set' {
+        $s = Get-DpDefaultSettings
+        $s.preferences = 'I am a tester.'
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s
+        $p.SystemPrompt | Should -Match 'I am a tester'
+        $p.SystemPrompt | Should -Not -Match 'saved notes about this user'
+    }
+}
+
+Describe 'Get-DpMemoryPayload' {
+    It 'reports both stores with caps and the learning flag' {
+        $settings = Get-DpDefaultSettings
+        $settings.preferences = 'I am a lawyer.'
+        $settings.memoryLearning = $false
+        $script:DeskPilot = @{
+            Settings = $settings
+            Memory   = @{ text = 'User is in Berlin.'; updatedUtc = '2026-07-07T00:00:00Z' }
+        }
+        $payload = Get-DpMemoryPayload
+        $payload.userProfile.text | Should -Be 'I am a lawyer.'
+        $payload.userProfile.cap | Should -Be 8000
+        $payload.agentMemory.text | Should -Be 'User is in Berlin.'
+        $payload.agentMemory.cap | Should -Be 12000
+        $payload.agentMemory.chars | Should -Be ('User is in Berlin.'.Length)
+        $payload.learning | Should -BeFalse
+        $script:DeskPilot = $null
+    }
+}
+
 Describe 'Compress-DpConversationHistory' {
     BeforeAll {
         $script:sixEntry = @(

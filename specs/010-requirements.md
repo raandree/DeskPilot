@@ -60,17 +60,19 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-M4 | S | Let the user set reasoning effort and a "show thinking" toggle. |
 | FR-M5 | S | Let the user pick an Agent (a persona from an `*.agent.md` file under an Agents folder, defaulting to `~/.copilot/agents`); the selected Agent's body becomes the Turn's system prompt. |
 | FR-M6 | C | Support image (vision) attachments and structured-output requests. |
-| FR-M7 | S | Let the user record durable **Preferences** (an About-me note: role, writing style, recurring context) that are injected into every Turn's system prompt. Preferences persist across sessions and Conversations. |
+| FR-M7 | S | Let the user record durable **Preferences** (the **User Profile** — an About-me note: role, writing style, recurring context) that are injected into every Turn's system prompt. Preferences persist across sessions and Conversations. |
 | FR-M8 | C | Let the user insert a Prompt File's body into the composer with a `/` menu, filling any `{{variable}}` placeholders first, and reference a Project file by relative path with a `#` menu. |
 | FR-M9 | C | Let the user mark **Reference files** (project-relative paths) that are injected into every Turn's system prompt so the agent always treats them as relevant and reads them with its File Tool on demand — a build-free alternative to vector retrieval. |
 | FR-M10 | C | Provide a **command palette** (Ctrl/Cmd+K) and a few global keyboard shortcuts for common actions (new conversation, search, settings, customizations, theme, regenerate, export) and quick conversation jump. |
 | FR-M11 | C | Let the user set a per-session **spend warning** (USD); show a one-time warning when the session's estimated cost crosses it (0 disables it). |
+| FR-M12 | S | Maintain a persistent **Agent Memory** — durable, declarative notes the agent keeps about the user and their environment (conventions, tools, observed preferences, lessons learned) — injected into every Turn's system prompt as fenced reference background so past learning carries into new Conversations. Bounded to a fixed character budget (12,000 characters ≈ 3,000 tokens); the user can view, edit, and clear it. Distinct from the **User Profile** (FR-M7): the profile is what the *user states* about themselves; the memory is what the *agent learns*. |
+| FR-M13 | S | Curate the Agent Memory two ways: **automatically** after a Turn (a throttled, best-effort, pure-reasoning pass that folds durable facts from the conversation into the memory — default on, announced with a toast, and toggleable), and **manually** on demand (an "update from this conversation" action). Learning writes declarative facts only, never records secrets or transient task state, consolidates to fit the budget, and never alters the visible transcript. |
 
 ### Settings
 
 | ID | Priority | Requirement |
 | --- | --- | --- |
-| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap, auto-compaction toggle/threshold/keep-recent) to disk and load them on startup so the user's choices stick between sessions. |
+| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap, auto-compaction toggle/threshold/keep-recent, memory-learning toggle) to disk and load them on startup so the user's choices stick between sessions. |
 | FR-S2 | S | Let the user back up all Settings to a JSON file and restore them from one (restore is a full replace onto defaults). |
 | FR-S3 | S | Show a collapsible file explorer of the selected Project's folders and files; collapsed and not expandable when no Project is selected. |
 | FR-S4 | C | Show an **Atelier health** panel: whether each configured Customization root (`~/.copilot/{agents,skills,instructions,prompts}` by default) resolves, how many Customizations were discovered in each, and a flag when a root is missing or an unreadable reparse point. |

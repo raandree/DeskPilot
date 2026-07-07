@@ -47,6 +47,9 @@ synonym.
 | Context Window | The Model's maximum input size in tokens, and how much of it the last Turn used (the Engine-reported `promptTokens`). Shown as a gauge in Session Info and a compact meter in the top bar. | context length, window size, token budget (loosely) |
 | Compact | Summarise a Conversation's earlier replayed history into a short briefing, keeping recent Turns verbatim, so future Turns send fewer tokens. The visible transcript is preserved. | compress (in UI copy), summarise, truncate, prune, forget |
 | Auto-compaction | Running **Compact** automatically after a Turn when the Context Window occupancy reaches a user-set threshold, so a long Conversation keeps working without overflowing the Model window. Controlled by the `autoCompaction`, `compactionThreshold` and `compactionKeepRecent` Settings. Every firing is announced with a toast. | auto-compress, auto-summarise, auto-prune, context engine |
+| Memory | DeskPilot's persistent, cross-Conversation memory injected into every Turn's system prompt. Has two parts: the **User Profile** and the **Agent Memory**. Not the same as the developer-facing `.memory-bank/` (DeskPilot's own project knowledge base used to *build* DeskPilot). | context, history, the memory bank (the dev knowledge base) |
+| User Profile | The durable note the **user** writes about themselves (role, style, recurring context) — the `preferences` Setting — injected into every Turn. | preferences (in UI copy), bio, about-me |
+| Agent Memory | Durable, declarative notes the **agent** curates about the user and their environment across Conversations (conventions, tools, observed preferences, lessons), bounded and injected into every Turn. Learned automatically (throttled) or edited by hand. | memory (bare), agent notes, the memory bank |
 
 ## Notes
 
@@ -111,6 +114,17 @@ synonym.
   go through the one `POST /compact` route and the `Compress-DpConversationHistory`
   helper. Use **Compact** for the action/verb and **Auto-compaction** only for the
   automatic policy; never call the automatic firing "auto-compress".
+- **Memory vs. the Memory Bank.** DeskPilot's runtime **Memory** (User Profile +
+  Agent Memory, a feature for the end user) is a different thing from the developer
+  `.memory-bank/` folder (the version-controlled project knowledge base an AI
+  coding agent reads to *build* DeskPilot). Never conflate them; in product code,
+  UI, and docs, **Memory** / **User Profile** / **Agent Memory** are the runtime
+  feature, and `.memory-bank/` is only ever the dev knowledge base.
+- **User Profile vs. Agent Memory.** The **User Profile** is what the *user states*
+  about themselves (the manual `preferences` block); the **Agent Memory** is what
+  the *agent learns* (curated automatically or by hand, its own `agent-memory.json`
+  store). Both are injected every Turn but have different authors and stores; keep
+  the terms distinct.
 - **Session Info vs. Usage vs. Details.** **Usage** is the global credits/cost
   counter (this-session and all-time) in the sidebar. **Session Info** is
   per-Conversation: its accumulated cost plus its Context Window occupancy and the

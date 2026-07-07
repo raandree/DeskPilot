@@ -166,6 +166,13 @@ accent fills so the bright dark-mode accent stays legible.
   DeskPilot summarises a Conversation's earlier turns automatically once its last
   Turn fills the Model window to the threshold, announcing each firing with a
   toast and preserving the visible transcript (see FR-C19).
+- **Persistent memory**: a **User profile** (what you write about yourself — the
+  preferences block) and an **Agent memory** (what DeskPilot has learned about you
+  and your environment across conversations — editable and clearable, with a
+  character/budget count, a last-updated time, and an **Update from this
+  conversation** action), plus a **Let DeskPilot learn about you automatically**
+  toggle (default on). Both stores are injected into every Turn as background
+  reference (see FR-M7, FR-M12, FR-M13).
 - Theme (system/light/dark).
 - Engine status (path, version, auth) + a **Re-authenticate** action.
 - **Back up & restore** of all settings as a JSON file.

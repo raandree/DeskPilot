@@ -2,8 +2,61 @@
 
 ## Current focus
 
-**Memory & context batch (Hermes-inspired) — SHIPPED on `ai/memory-context-batch`
-(2026-07-07, local-only, not yet merged/pushed).**
+**Persistent memory (User Profile + Agent Memory) — SHIPPED on `ai/persistent-memory`
+(2026-07-07, local-only, not merged).**
+The user approved building the Hermes-style memory researched earlier, "a bit
+bigger, my call on size." Delivered a persistent, cross-Conversation memory injected
+into every Turn's system prompt (fenced as reference-not-instructions), in two
+parts: **User Profile** (the manual `preferences` block, reframed; 8,000 chars) and
+a new agent-curated **Agent Memory** (12,000 chars, its own `agent-memory.json`
+store). Combined worst case ~20,000 chars / ~5,000 tokens per Turn — ~5× Hermes's
+~3,600, still <5% of a 128k window (my sizing rationale, in `Get-DpMemoryLimits`).
+
+Curation is two-way: **autonomous** (`maybeLearnMemory` in `_runTurn`'s finally,
+throttled to every 5th assistant Turn, best-effort, re-entrancy-guarded, silent on
+400/409, toasts only when it changes something; default on via `memoryLearning`) and
+**manual** (an "Update from this conversation" button + full view/edit/clear in
+Settings → Memory). The learn pass is a pure-reasoning Turn (Tools off via
+`Invoke-DpEngineCommand`, like auto-title/compaction); no Engine change.
+
+Backend: 6 new Private helpers — `Get-DpMemoryLimits` (caps, one source of truth),
+`Import-DpMemoryStore`/`Save-DpMemoryStore` (atomic JSON; `ConvertTo-DpIsoString` on
+load to survive JSON date coercion — a bug the first build caught),
+`New-DpMemoryPrompt` (declarative-facts rule, NO_CHANGE sentinel, no-secrets),
+`ConvertFrom-DpMemoryResult` (clean fences/labels, NO_CHANGE→'', cap on a line
+boundary), `Get-DpMemoryPayload`. `New-DpTurnParameter` gained `-AgentMemory` (fenced
+block after preferences); `Invoke-DpTurn` reads `$script:DeskPilot.Memory.text` and
+passes it. New `memoryLearning` Setting (default on). Store loaded into state at
+startup. Routes `GET`/`PUT /api/memory`, `POST /api/memory/learn`
+(404/409/`400 too_short`/`missing_conversation`; returns `changed`).
+
+Frontend (`app.js`): Settings "About you" → **User profile**; new **Agent memory**
+field (textarea + live char/budget count + updated time + Update button) + a **learn
+automatically** toggle; `renderMemMeta` GET/PUT/learn wiring; `maybeLearnMemory`. CSS
+`.mem-row`/`.mem-learn-btn`. +17 unit tests. Specs 010 (FR-M7 reframe, FR-M12/M13,
+FR-S1) / 030 (Memory section) / 040 (Settings memory) / 050 (T11) / 060 (Phase 2.8) +
+glossary (Memory / User Profile / Agent Memory + **Memory vs. the dev `.memory-bank/`**
+note). CHANGELOG. **Verified: full Sampler build+test 344/344, 0 failed (16 tasks, 0
+errors, 0 warnings); `app.js` ESM check OK.**
+
+**Also on this branch (a separate commit): hardened `Get-DpAgentList`** to suppress a
+`Test-Path` access-denied error on an inaccessible agents root (returns `@()` per its
+contract). This surfaced as an environmental failure on this machine — a restricted
+`X:` drive throws Access Denied under the build's `ErrorActionPreference=Stop`;
+pre-existing, not caused by the memory feature. The fix also makes the build green here.
+
+## Next steps
+
+1. **Manual + live smoke of persistent memory (`ai/persistent-memory`, not merged):**
+   run a couple of Conversations, confirm the Agent memory fills in (auto every 5th
+   assistant Turn + the manual button), confirm injection (the agent recalls a stated
+   fact in a fresh Conversation), edit/clear it in Settings, and toggle learning off.
+2. Merge `ai/memory-context-batch` then `ai/persistent-memory` into `main`
+   (fast-forward, local-only) once smoke-tested. Consider whether to squash the
+   `Get-DpAgentList` fix onto `main` independently.
+
+## Prior focus — Memory & context batch (Hermes-inspired), SHIPPED on `ai/memory-context-batch` (2026-07-07, local-only, not merged)
+
 The user shared screenshots of a similar local agent tool ("Hermes" — Usage,
 System, and Memory & Context screens) and asked to migrate useful ideas: update
 the specs and implement to done while they were away. Delivered two well-fitting
@@ -56,17 +109,9 @@ build+test 327/327, 0 failed (16 tasks, 0 errors, 0 warnings); `app.js` ESM chec
 (`.mjs`).** The ESM check caught a dropped `stopTurn` declaration during editing —
 fixed before the green run.
 
-## Next steps
-
-1. **Manual + live smoke of auto-compaction (`ai/memory-context-batch`, not yet
-   merged):** with auto-compaction on, run a Conversation until the context meter is
-   near the threshold and confirm the next Turn's finally fires a compaction (toast
-   reports freed tokens, visible transcript unchanged, the following Turn's measured
-   context is smaller); confirm `400 too_short` is a silent no-op on a short
-   Conversation; confirm toggling it off in Settings stops it. Confirm the Usage
-   popover shows tokens in/out, the Top models list, and the 30d chart.
-2. Merge `ai/memory-context-batch` into `main` (fast-forward, local-only) once
-   smoke-tested.
+   this session. DeskPilot's `preferences` Setting already ≈ USER.md (manual); the
+   gap is an agent-writable MEMORY.md + a memory tool + auto-injection. Proposed,
+   awaiting go-ahead.
 
 ## Prior focus — Session Info popover + Compact conversation (SHIPPED + MERGED to `main`, 2026-07-07)
 
