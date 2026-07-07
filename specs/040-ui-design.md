@@ -102,9 +102,11 @@ accent fills so the bright dark-mode accent stays legible.
   a colour cue (Terminal/File flagged as powerful).
 - **Project** dropdown (the working folder for new prompts) plus a **＋ Project**
   button to register a new one; the selected Project persists as the default.
-  Registering opens a **folder picker** modal (drive switcher, breadcrumb path,
-  Up/Home, a scrollable sub-folder list, and New folder) so the user browses to
-  a folder instead of typing an absolute path.
+  When a Project is active the dropdown also offers **✕ Close project**, which
+  deselects it (no Workspace Folder) while leaving it registered; the chip then
+  reads **No project**. Registering opens a **folder picker** modal (drive
+  switcher, breadcrumb path, Up/Home, a scrollable sub-folder list, and New
+  folder) so the user browses to a folder instead of typing an absolute path.
 - **Attach** button to upload files into the selected Project.
 - **Send** turns into **Stop** while a Turn streams.
 - **Mid-Turn dispatch.** When a Turn is streaming and the user starts typing,
@@ -126,7 +128,9 @@ accent fills so the bright dark-mode accent stays legible.
 
 ### 6. Settings drawer
 
-- Default Model, default Permissions, Projects (register/select/remove).
+- Default Model, default Permissions, Projects (register/select/close/remove).
+  The active Project row offers **Close** (deselect, keep registered) alongside
+  **Remove** (unregister).
 - **Agents folder** (path to `*.agent.md` personas; the Agent itself is picked
   from the composer dropdown).
 - Skill roots, Instruction roots and Prompt roots (add/remove folder paths).

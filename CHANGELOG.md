@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Close the active project.** The composer's project menu now offers **Close
+  project** whenever a project is active, and the Settings drawer's project list
+  shows a **Close** action on the selected project. Closing deselects the project
+  so no working folder is active — the file explorer collapses and the agent's
+  File/Terminal tools fall back to no default folder — while leaving the project
+  registered (unlike **Remove**, which unregisters it). The closed state persists
+  across sessions. Previously you could only switch to another project or create a
+  new one, with no way back to a no-project state.
 - **Branch Merge Wizard — merge a branch into main/master without the command
   line.** The project file explorer's Git bar now shows, for every branch, whether
   it is already merged into the **Default Branch** (a ✓ badge) or not yet merged

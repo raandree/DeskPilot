@@ -1182,6 +1182,15 @@ function buildProjectMenu() {
     const divider = el('menu-divider');
     menu.appendChild(divider);
 
+    if (selectedId) {
+        const close = document.createElement('button');
+        close.className = 'menu-item';
+        close.setAttribute('role', 'menuitem');
+        close.innerHTML = '<span class="check">✕</span><span class="menu-text">Close project</span>';
+        close.onclick = () => closeProject();
+        menu.appendChild(close);
+    }
+
     const add = document.createElement('button');
     add.className = 'menu-item add';
     add.setAttribute('role', 'menuitem');
@@ -1225,6 +1234,12 @@ async function selectProject(value) {
         state.settings = await api('PUT', '/api/settings', { selectedProjectId: value || null });
         updateProjectChip();
     } catch (e) { toast(e.message); updateProjectChip(); }
+}
+
+// Close (deselect) the active Project. It stays registered, but no Workspace
+// Folder is active until a Project is selected again.
+function closeProject() {
+    return selectProject(null);
 }
 
 async function newProject() {
@@ -1393,6 +1408,13 @@ function renderProjectsManager() {
             use.textContent = 'Use';
             use.onclick = () => projectAction({ selectedProjectId: p.id });
             actions.appendChild(use);
+        } else {
+            const close = document.createElement('button');
+            close.className = 'btn btn-small';
+            close.textContent = 'Close';
+            close.title = 'Deselect this project (keeps it registered)';
+            close.onclick = () => projectAction({ selectedProjectId: null });
+            actions.appendChild(close);
         }
         const rm = document.createElement('button');
         rm.className = 'btn btn-small btn-danger';

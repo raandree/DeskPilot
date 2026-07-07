@@ -783,6 +783,16 @@ Describe 'Projects (Merge-DpSettings)' {
         $s2.workspaceFolder | Should -BeNullOrEmpty
     }
 
+    It 'closes the active Project when selectedProjectId is set to null, keeping it registered' {
+        $s1 = Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ projects = @(@{ id = 'p_a'; name = 'A'; path = 'C:\a' }); selectedProjectId = 'p_a' }
+        $s1.workspaceFolder | Should -Be 'C:\a'
+        $s2 = Merge-DpSettings -Current $s1 -Patch @{ selectedProjectId = $null }
+        $s2.selectedProjectId | Should -BeNullOrEmpty
+        $s2.workspaceFolder | Should -BeNullOrEmpty
+        @($s2.projects).Count | Should -Be 1
+        $s2.projects[0].id | Should -Be 'p_a'
+    }
+
     It 'migrates a legacy workspaceFolder into a selected Project' {
         $s = Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ workspaceFolder = 'C:\legacy\ws' }
         @($s.projects).Count | Should -Be 1

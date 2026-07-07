@@ -2,37 +2,41 @@
 
 ## Current focus
 
-**Branch Merge Wizard — SHIPPED (2026-06-12).** The non-expert merge feature from
-the grill-me interview (specs/070) is fully implemented end to end: backend
-helpers, HTTP routes, and the wizard UI. Next up is the **Clone Wizard**
-(specs/080), then a live HTTP smoke of the merge routes.
+**Close Project — SHIPPED (2026-07-07).** Added a way to close (deselect) the
+active Project so DeskPilot returns to a no-project state; previously you could
+only switch Projects or create a new one. UI + specs only — the backend already
+supported a null `selectedProjectId` (deriving a null `workspaceFolder`), so no
+`.ps1` behaviour changed. The next substantive feature remains the **Clone
+Wizard** (specs/080), then a live HTTP smoke of the merge routes.
+
+## Just completed (this work, on ai/close-project)
+
+- **Specs:** `FR-M2b` (010-requirements) — close/deselect the active Project;
+  040-ui-design (composer "✕ Close project" item + Settings "Close" action);
+  030-api-contract (`selectedProjectId: null` closes, keeps the Project
+  registered, clears the derived `workspaceFolder`). Glossary: a new **Close (a
+  Project)** row + a Close-vs-Remove-vs-switch note.
+- **UI (web/assets/app.js):** `closeProject()` (= `selectProject(null)`); a
+  **Close project** entry in the composer project popover (shown only when a
+  Project is active); a **Close** button on the selected row of the Settings
+  Projects manager.
+- **Test:** +1 `Merge-DpSettings` regression — closing via `selectedProjectId =
+  $null` clears the selection + `workspaceFolder` but keeps the Project
+  registered (distinct from removal).
+
+Verified: ESM check on `app.js` OK (`.mjs` copy); helper unit suite **235/235, 0
+failed**; edited files clean in the language service (the pre-existing `$routes`
+unused-var warning at test line 71 is untouched, not from this change).
+
+## Prior focus — Branch Merge Wizard (SHIPPED 2026-06-12)
 
 The Merge Wizard lets a non-expert merge a Branch into the Default Branch (main,
-else master) from the explorer Git bar: a merged (check) / not-merged
-(exclamation) badge per branch with hover tooltips + a legend, remote-only
-branches marked, a "Merge into <default>..." button opening a step wizard
-(choose -> preview incoming commits -> merge ff-or-commit -> on conflict an
-AI-proposed Merge Plan the user approves before any write, binary keep-ours/theirs
--> result -> local cleanup; remote push+delete behind a SEPARATE confirm; Undo).
-
-## Just completed (this work, 3 commits on ai/merge-wizard)
-
-- **50b4ca5** foundation: specs 070+080, glossary rows, Get-DpDefaultBranch /
-  Invoke-DpGitFetch / Get-DpBranchList (+13 tests).
-- **c84f628** backend: Get-DpMergePreview, Invoke-DpGitMerge (+autofix
-  stash->ff->merge->pop), Invoke-DpGitMergeAbort, Invoke-DpGitMergeUndo,
-  Get-DpMergeConflict, New-DpMergePlanPrompt, ConvertFrom-DpMergePlan,
-  Invoke-DpMergeApply, Invoke-DpBranchCleanup (+33 tests incl. a real-repo suite).
-- **0612594** routes + UI: 8 routes (GET branches, GET merge/preview, POST merge,
-  merge/plan [Tools-off Invoke-Shp via Invoke-DpEngineCommand], merge/apply,
-  merge/abort, merge/undo, cleanup) in Start-DeskPilot + Invoke-DpRouteHandler;
-  specs/030; web/ (git bar badges/legend/remote-only + "Merge into..." entry; the
-  Merge Wizard modal in index.html/styles.css/app.js with the conflict sub-flow).
-
-Verified: full Sampler build green TWICE (246 tests, 0 failed, 0 errors, 0
-warnings); app.js parses as an ES module (.mjs check); HTML/CSS/JS + all .ps1
-clean; route-table names match handler cases 1:1 (8/8). CHANGELOG [Unreleased]
-"Added" entry written.
+else master) from the explorer Git bar (per-branch merged/not-merged badges +
+legend; a "Merge into <default>…" step wizard; an AI-proposed Merge Plan on
+conflict, approved before any write; local cleanup; remote push+delete behind a
+SEPARATE confirm; Undo). Backend + 8 routes + UI on `ai/merge-wizard`
+(50b4ca5 foundation, c84f628 backend, 0612594 routes+UI). Remaining for that
+track: a live HTTP smoke of the merge routes.
 
 ## Next steps
 

@@ -52,6 +52,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-M1 | M | List available Models and let the user pick one (per Conversation, defaulting from Settings). |
 | FR-M2 | M | Let the user register named Projects (each a Workspace Folder), switch between them from a composer dropdown, and register new ones. The selected Project's folder is where the File/Terminal Tools default to. |
 | FR-M2a | M | Persist the registered Projects and the selected Project; the last selected Project is the default working folder for a new prompt and survives across sessions. No two Projects may share a name or folder path. |
+| FR-M2b | M | Let the user **close** the active Project (deselect it) so no Workspace Folder is active. Closing keeps the Project registered (distinct from removing it); the file explorer collapses and File/Terminal Tools fall back to no default folder until a Project is selected again. The closed state persists across sessions. |
 | FR-M3 | S | Let the user attach Skill roots, Instruction roots and Prompt roots for progressive-disclosure discovery, defaulting to `~/.copilot/skills`, `~/.copilot/instructions` and `~/.copilot/prompts`. |
 | FR-M4 | S | Let the user set reasoning effort and a "show thinking" toggle. |
 | FR-M5 | S | Let the user pick an Agent (a persona from an `*.agent.md` file under an Agents folder, defaulting to `~/.copilot/agents`); the selected Agent's body becomes the Turn's system prompt. |

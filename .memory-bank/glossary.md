@@ -23,6 +23,7 @@ synonym.
 | Instruction | A VS Code instruction file (*.instructions.md) the Engine can load on demand. | rule, prompt file |
 | Workspace Folder | The working directory the Engine's File and Terminal tools operate in by default. | sandbox, root, cwd (in UI copy) |
 | Project | A registered, named pointer to a Workspace Folder. Projects are listed in a registry; the selected Project's folder is the working directory for new Turns, and the last selected Project persists as the default. | workspace (for the registered entity), repo, site, directory (in UI copy) |
+| Close (a Project) | Deselect the active Project so no Workspace Folder is active, while the Project stays registered. Persists across sessions and is distinct from Remove (which unregisters the Project). | deselect, unload, unset, remove (that unregisters), clear |
 | Agent | A selectable persona defined by an `*.agent.md` file (YAML frontmatter + a Markdown body). The selected Agent's body becomes the Turn's system prompt. Agents are discovered under the Agents folder (defaulting to `~/.copilot/agents`). | persona (in identifiers), bot, assistant, role |
 | Customization | An agent-shaping Markdown file the user can browse and edit in DeskPilot: an Agent, a Skill, an Instruction, or a Prompt File. Customizations are discovered under their configured roots and grouped by category in the Customizations surface. | resource, asset, add-on, customisation (spelling) |
 | Prompt File | A reusable `*.prompt.md` file discovered under a Prompt root; one kind of Customization. | prompt (for the file), snippet, template |
@@ -77,3 +78,8 @@ synonym.
   **Task List** (the in-Turn progress checklist) and not an **Activity** record.
 - **Clone vs. checkout.** **Clone** creates a new local Project from a remote
   repository. Switching between existing Branches is a checkout, not a Clone.
+- **Close vs. Remove vs. switch (a Project).** **Close** deselects the active
+  Project — it stays registered, but no Workspace Folder is active. **Remove**
+  unregisters a Project (it leaves the registry; the folder stays on disk).
+  Switching selects a different already-registered Project. Use each verb
+  precisely; never describe closing a Project as "removing" it, or vice versa.

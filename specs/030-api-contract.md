@@ -71,8 +71,11 @@ Unknown fields are rejected with `400`.
 Projects are managed through this endpoint: send `projects` (an array of
 `{ id?, name?, path }`; a missing `id` is generated and a missing `name`
 defaults to the path leaf) and/or `selectedProjectId` (must reference a known
-Project, or `null`). The response includes the derived `workspaceFolder` for the
-selected Project. A `selectedProjectId` that matches no Project returns `400`.
+Project, or `null`). Sending `selectedProjectId: null` **closes** the active
+Project: it clears the selection and the derived `workspaceFolder` while leaving
+the Project registered (distinct from removing it via `projects`). The response
+includes the derived `workspaceFolder` for the selected Project (`null` when
+none). A `selectedProjectId` that matches no Project returns `400`.
 
 ### `GET /api/settings/export`
 
