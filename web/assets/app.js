@@ -270,8 +270,33 @@ function usageRows(block) {
         ['Credits', formatCredits(block.credits), true],
         ['Cost', '$' + (block.costUSD || 0).toFixed(4), false],
         ['Tokens', (block.totalTokens || 0).toLocaleString(), false],
+        ['Tokens in', (block.promptTokens || 0).toLocaleString(), false],
+        ['Tokens out', (block.completionTokens || 0).toLocaleString(), false],
         ['Turns', (block.turns || 0).toLocaleString(), false],
     ];
+}
+
+// Render the top Models of this session (by tokens) into the usage popover. The
+// per-Model breakdown is already tracked server-side; this only surfaces it.
+function renderTopModels(u) {
+    const host = $('usage-topmodels');
+    const wrap = $('usage-topmodels-block');
+    if (!host || !wrap) return;
+    const models = (u && u.byModel || [])
+        .filter((m) => m && (Number(m.totalTokens) > 0 || Number(m.turns) > 0))
+        .sort((a, b) => Number(b.totalTokens) - Number(a.totalTokens))
+        .slice(0, 5);
+    if (models.length === 0) { wrap.classList.add('hidden'); host.innerHTML = ''; return; }
+    wrap.classList.remove('hidden');
+    host.innerHTML = '';
+    for (const m of models) {
+        const row = el('usage-model-row');
+        const name = el('usage-model-name', 'span'); name.textContent = m.model;
+        const meta = el('usage-model-meta muted tiny', 'span');
+        meta.textContent = (Number(m.totalTokens) || 0).toLocaleString() + ' tok · ' + formatCredits(m.credits) + ' cr';
+        row.append(name, meta);
+        host.appendChild(row);
+    }
 }
 
 function populateUsagePopover(u) {
@@ -288,6 +313,7 @@ function populateUsagePopover(u) {
     fill('usage-lifetime', u.lifetime || {});
     const since = u.lifetime && u.lifetime.sinceUtc;
     $('usage-since').textContent = since ? '· since ' + new Date(since).toLocaleDateString() : '';
+    renderTopModels(u);
     renderUsageChart(u);
 }
 
@@ -867,6 +893,16 @@ function fillSessionPopover(conv) {
         pop.appendChild(comp);
     }
 
+    // Surface the auto-compaction policy so an automatic compaction is never a
+    // surprise (the manual button below still works regardless).
+    const sset = state.settings || {};
+    if (sset.autoCompaction) {
+        const auto = el('session-auto muted tiny');
+        const atPct = Math.round((Number(sset.compactionThreshold) || 0.8) * 100);
+        auto.textContent = 'Auto-compaction is on (at ' + atPct + '% full).';
+        pop.appendChild(auto);
+    }
+
     const btn = el('btn btn-small session-compact-btn', 'button');
     btn.id = 'btn-compact';
     btn.type = 'button';
@@ -1412,6 +1448,9 @@ async function _runTurn({ prompt, displayText, dispatch }) {
         promptEl.focus();
         // Give a brand-new Conversation a concise AI title (like GitHub Copilot).
         await maybeAutoTitle();
+        // Auto-compact when the context window is filling up, so a long
+        // Conversation keeps working instead of overflowing the Model window.
+        await maybeAutoCompact();
         // Drain one queued/steered message, if any. We only fire the next one;
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
@@ -1448,6 +1487,47 @@ async function maybeAutoTitle() {
             renderConversationList();
         }
     } catch { /* best-effort: keep the fallback title */ }
+}
+
+// After a Turn, if auto-compaction is enabled and the last Turn filled the Model
+// context window to at least the configured threshold, ask the server to compact
+// the replayed history — the same summarise-and-keep-tail the manual Compact
+// action performs. Best-effort and self-limiting: the visible transcript is never
+// touched, a "too_short" reply is a silent no-op, and because the measured
+// occupancy only drops after the NEXT real Turn this fires at most once per Turn
+// (no loop). Every firing is announced with a toast, so nothing is hidden.
+async function maybeAutoCompact() {
+    const s = state.settings || {};
+    if (!s.autoCompaction) return;
+    if (!state.current || state.autoCompacting) return;
+    const info = computeSessionInfo();
+    if (!info || info.maxTokens <= 0 || info.measured <= 0) return;
+    const threshold = Math.min(0.95, Math.max(0.5, Number(s.compactionThreshold) || 0.8));
+    if (info.pct < threshold * 100) return;
+    const id = state.current.id;
+    state.autoCompacting = true;
+    try {
+        const r = await api('POST', '/api/conversations/' + id + '/compact');
+        const freed = (r && Number(r.estimatedFreed)) || 0;
+        toast(freed > 0
+            ? `Auto-compacted to free context — freed about ${fmtTokens(freed)} tokens.`
+            : 'Auto-compacted to free context.');
+        if (state.current && state.current.id === id) {
+            await refreshCurrentConversation();
+            renderContextMeter();
+        }
+        await loadConversations();
+    } catch (e) {
+        // "too_short" (not enough history yet) is an expected no-op, not an error;
+        // stay silent so a single large Turn near the limit never spams the user.
+        if (!(e && (e.code === 'too_short' || e.status === 400))) {
+            // Any other failure is quietly ignored: auto-compaction is best-effort
+            // and must never interrupt the user's flow. The context meter still
+            // shows the true occupancy, and manual Compact remains available.
+        }
+    } finally {
+        state.autoCompacting = false;
+    }
 }
 
 async function stopTurn() {
@@ -3214,6 +3294,20 @@ function openSettings() {
       <p class="hint">Lets the agent keep a live checklist of sub-tasks while it works through a turn.</p>
     </div>
     <div class="field">
+      <label><input type="checkbox" id="set-autocompact" ${s.autoCompaction !== false ? 'checked' : ''} /> Automatically compact long conversations</label>
+      <p class="hint">When a conversation fills most of the model’s context window, DeskPilot summarises the earlier turns to free space so it keeps working. Your visible messages are always kept, and you’ll see a note each time it happens.</p>
+    </div>
+    <div class="field">
+      <label>Compact when context reaches (%)</label>
+      <input type="number" id="set-compact-threshold" min="50" max="95" step="5" value="${Math.round((s.compactionThreshold || 0.8) * 100)}" />
+      <p class="hint">Percent of the model’s context window that triggers an automatic compaction (50–95).</p>
+    </div>
+    <div class="field">
+      <label>Recent messages to keep in full</label>
+      <input type="number" id="set-compact-keep" min="2" max="100" value="${s.compactionKeepRecent || 4}" />
+      <p class="hint">The most recent messages are never summarised, so recent detail stays intact.</p>
+    </div>
+    <div class="field">
       <label>Max tool iterations</label>
       <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
     </div>
@@ -3291,6 +3385,17 @@ function openSettings() {
     $('set-effort').onchange = (e) => save({ reasoningEffort: e.target.value || null });
     $('set-thinking').onchange = (e) => save({ showThinking: e.target.checked });
     $('set-tasktracking').onchange = (e) => save({ taskTracking: e.target.checked });
+    $('set-autocompact').onchange = (e) => save({ autoCompaction: e.target.checked });
+    $('set-compact-threshold').onchange = (e) => {
+        const pct = Math.min(95, Math.max(50, parseInt(e.target.value, 10) || 80));
+        e.target.value = pct;
+        save({ compactionThreshold: pct / 100 });
+    };
+    $('set-compact-keep').onchange = (e) => {
+        const keep = Math.min(100, Math.max(2, parseInt(e.target.value, 10) || 4));
+        e.target.value = keep;
+        save({ compactionKeepRecent: keep });
+    };
     $('set-preferences').onchange = (e) => save({ preferences: e.target.value.trim() || null });
     $('set-reffiles').onchange = (e) => save({ referenceFiles: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) });
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };

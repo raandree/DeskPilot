@@ -734,7 +734,14 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            # How many recent history entries to keep verbatim comes from Settings
+            # (compactionKeepRecent, default 4), so the same knob drives the manual
+            # Compact action and the automatic compaction the browser triggers.
             $keepCount = 4
+            if ($state.Settings -and $state.Settings.ContainsKey('compactionKeepRecent') -and $state.Settings.compactionKeepRecent) {
+                $keepCount = [int]$state.Settings.compactionKeepRecent
+            }
+            if ($keepCount -lt 2) { $keepCount = 2 } elseif ($keepCount -gt 100) { $keepCount = 100 }
             $history = @($conversation.history)
             # Too little to be worth a summarisation Turn (and its credit cost):
             # there must be at least a few entries to summarise beyond the kept tail.

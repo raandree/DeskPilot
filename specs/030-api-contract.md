@@ -89,6 +89,11 @@ Returns the Settings object (see architecture spec).
 Body: a partial or full Settings object. Returns the merged, persisted Settings.
 Unknown fields are rejected with `400`.
 
+The memory-and-context keys are validated on write: `autoCompaction` (boolean),
+`compactionThreshold` (a fraction 0.5–0.95, rounded to 2 dp; the UI sends it as a
+percent ÷ 100), and `compactionKeepRecent` (an integer 2–100). Out-of-range values
+return `400`.
+
 Projects are managed through this endpoint: send `projects` (an array of
 `{ id?, name?, path }`; a missing `id` is generated and a missing `name`
 defaults to the path leaf) and/or `selectedProjectId` (must reference a known
@@ -511,7 +516,9 @@ Compacts the Conversation's replayed context — the way GitHub Copilot offers
 "Compact Conversation". Summarises the earlier part of the Engine `-History` into a
 short briefing (a pure-reasoning Turn with **all Tools disabled**, cleaned by
 `ConvertFrom-DpCompactionResult`) and keeps only the most recent entries verbatim
-(`Compress-DpConversationHistory`), so future Turns replay far fewer tokens. The
+(`Compress-DpConversationHistory`), so future Turns replay far fewer tokens. How
+many recent entries stay verbatim is the `compactionKeepRecent` Setting (default 4,
+clamped 2–100), so the same knob drives the manual action and the automatic one. The
 visible transcript (`messages`) is left untouched — nothing the user sees is lost;
 only what is replayed to the Engine shrinks. Body: `{}`.
 
@@ -523,6 +530,11 @@ only what is replayed to the Engine shrinks. Body: `{}`.
   `{ "ok": true, "summarised": <n>, "kept": <n>, "before": <n>, "after": <n>, "estimatedFreed": <tokens>, "compactedUtc": "…" }`. Like the organisational flags,
   `compactedUtc` does not bump `updatedUtc` (it changes only the replayed context,
   not the visible thread).
+- **Auto-compaction** (FR-C19) reuses this exact route: after a Turn, when the
+  `autoCompaction` Setting is on and the measured occupancy reaches
+  `compactionThreshold`, the SPA `POST`s here itself (mirroring auto-titling). A
+  `400 too_short` is treated as a silent no-op, so a single large Turn near the
+  limit never spams the user.
 
 The new nullable `compactedUtc` Conversation field is carried on the `list` and
 `GET conversation` summaries and persisted through the store.
@@ -561,9 +573,11 @@ provenance is visible after the fact.
 
 Returns the **session** counter (reset each launch), the persisted **lifetime**
 counter (never reset automatically), the session per-Model breakdown, and a
-**daily** series (the last 30 UTC days of the persisted history) for the usage
-graph. Credits are rounded to 4 decimals and cost to 6 to avoid floating-point
-drift.
+**daily** series (up to the 60-day retention window of the persisted history,
+oldest first) for the usage graph. The popover charts a 7-, 14- or 30-day window
+from this series client-side. `promptTokens`/`completionTokens` on both counters
+give the tokens-in/tokens-out split; `byModel` feeds the Top-models list. Credits
+are rounded to 4 decimals and cost to 6 to avoid floating-point drift.
 
 ```json
 {

@@ -208,12 +208,17 @@
             <div class="usage-grid" id="usage-lifetime"></div>
             <button id="btn-reset-lifetime" class="btn btn-small">Reset all-time counter</button>
         </div>
+        <div class="usage-block hidden" id="usage-topmodels-block">
+            <div class="usage-block-head">Top models (this session)</div>
+            <div id="usage-topmodels" class="usage-models"></div>
+        </div>
         <div class="usage-block">
             <div class="usage-chart-head">
                 <span class="usage-block-head">Credits per day</span>
                 <div class="usage-range" role="group" aria-label="Chart range">
                     <button class="range-btn" data-range="7">7d</button>
                     <button class="range-btn active" data-range="14">14d</button>
+                    <button class="range-btn" data-range="30">30d</button>
                 </div>
             </div>
             <div id="usage-chart" class="usage-chart"></div>

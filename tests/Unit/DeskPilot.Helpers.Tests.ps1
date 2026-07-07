@@ -20,6 +20,12 @@ Describe 'Get-DpDefaultSettings' {
         $s.ContainsKey('promptRoots') | Should -BeTrue
         , $s.promptRoots | Should -BeOfType [System.Array]
     }
+    It 'defaults auto-compaction on at 80% keeping the last 4 messages' {
+        $s = Get-DpDefaultSettings
+        $s.autoCompaction | Should -BeTrue
+        $s.compactionThreshold | Should -Be 0.8
+        $s.compactionKeepRecent | Should -Be 4
+    }
 }
 
 Describe 'Merge-DpSettings' {
@@ -52,6 +58,32 @@ Describe 'Merge-DpSettings' {
     It 'rejects a tool-iteration cap below 1' {
         { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ maxToolIterations = 0 }) } |
             Should -Throw -ExpectedMessage '*at least 1*'
+    }
+}
+
+Describe 'Merge-DpSettings auto-compaction' {
+    It 'toggles autoCompaction off and on' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ autoCompaction = $false })).autoCompaction | Should -BeFalse
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ autoCompaction = $true })).autoCompaction | Should -BeTrue
+    }
+    It 'accepts an in-range threshold and rounds it to two decimals' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionThreshold = 0.75 })).compactionThreshold | Should -Be 0.75
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionThreshold = 0.833 })).compactionThreshold | Should -Be 0.83
+    }
+    It 'rejects a threshold below 0.5 or above 0.95' {
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionThreshold = 0.4 }) } |
+            Should -Throw -ExpectedMessage '*between 0.5 and 0.95*'
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionThreshold = 0.99 }) } |
+            Should -Throw -ExpectedMessage '*between 0.5 and 0.95*'
+    }
+    It 'accepts an in-range keep-recent count' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionKeepRecent = 12 })).compactionKeepRecent | Should -Be 12
+    }
+    It 'rejects a keep-recent count below 2 or above 100' {
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionKeepRecent = 1 }) } |
+            Should -Throw -ExpectedMessage '*between 2 and 100*'
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionKeepRecent = 101 }) } |
+            Should -Throw -ExpectedMessage '*between 2 and 100*'
     }
 }
 

@@ -2,50 +2,75 @@
 
 ## Current focus
 
-**Session Info popover + Compact conversation (GitHub-Copilot-style) — SHIPPED +
-MERGED to `main` (2026-07-07, local-only, not pushed).**
+**Memory & context batch (Hermes-inspired) — SHIPPED on `ai/memory-context-batch`
+(2026-07-07, local-only, not yet merged/pushed).**
+The user shared screenshots of a similar local agent tool ("Hermes" — Usage,
+System, and Memory & Context screens) and asked to migrate useful ideas: update
+the specs and implement to done while they were away. Delivered two well-fitting
+features and documented the deferred ones.
+
+**Feature 1 — Automatic conversation compaction (the headline).** Builds directly
+on the just-shipped manual Compact + Context Window gauge. After a Turn, when the
+new `autoCompaction` Setting is on and the measured occupancy
+(`promptTokens ÷ maxContextWindowTokens`) reaches `compactionThreshold`, the SPA
+fires the existing `POST /compact` route itself — mirroring `maybeAutoTitle`. New
+`maybeAutoCompact()` runs in `_runTurn`'s finally (after `maybeAutoTitle`), gated on
+occupancy ≥ threshold, re-entrancy-guarded (`state.autoCompacting`), treats
+`400 too_short` as a silent no-op, and toasts freed tokens on success. Three new
+Settings in `Get-DpDefaultSettings` + validated in `Merge-DpSettings`:
+`autoCompaction` (bool, default **on**), `compactionThreshold` (0.5–0.95, default
+0.8, rounded 2 dp), `compactionKeepRecent` (2–100, default 4). The compact route now
+reads `keepCount` from `compactionKeepRecent` (clamped), so one knob drives manual +
+auto. Settings drawer gained a **Memory & context** section (toggle + threshold% +
+keep-recent); the Session Info popover shows a one-line "Auto-compaction is on (at
+N% full)" indicator. Mirrors Hermes's Auto-Compression / Threshold / Protected
+Recent Messages. Default-on is defensible: every firing is visible (toast + meter +
+compacted marker) and it usually *saves* credits over a long Conversation, honouring
+"cost is honest" / "surface, don't hide".
+
+**Feature 2 — Usage panel enhancements.** Frontend-only (data already tracked):
+`usageRows` now shows **Tokens in** (`promptTokens`) / **Tokens out**
+(`completionTokens`) alongside the totals; a new **Top models (this session)** list
+(`renderTopModels`, from the existing `byModel`); and a **30d** range button
+(7d/14d/30d). `Get-DpUsagePayload` daily window bumped 30→60 (the full retention) so
+the 30d chart always has coverage. Mirrors Hermes's Tokens IN/OUT + Top Models +
+30d.
+
+**Deferred (documented in specs/060 Phase 2.7 + deferred list):** Hermes's **System
+screen** (live server logs + in-app update/restart) — the status/version parts
+overlap Settings→Engine + `/api/health`; the new parts need a logging ring buffer
+threaded through the Host Server + a self-update path (a larger, separate track).
+**Persistent agent memory** — Preferences already cover the User-Profile half.
+**Top Skills** — the Engine doesn't report which Skill ran (Engine-sacrosanct).
+
+Backend: `Get-DpDefaultSettings` (+3 keys), `Merge-DpSettings` (+3 validated cases),
+compact route keepCount from settings, `Get-DpUsagePayload` daily 60. Frontend
+(`app.js`): `maybeAutoCompact`, settings section + wiring, session-popover indicator,
+`usageRows` +2 rows, `renderTopModels`, `populateUsagePopover` call; `index.html`
+top-models block + 30d button; `styles.css` `.usage-models*`. +6 unit tests. Specs
+010 (FR-C19, FR-U5, FR-S1) / 030 (compact keepCount + auto-compaction note, settings
+validation, usage daily/tokens note) / 040 (Session Info indicator, Memory & context
+settings, Usage popover) / 060 (Phase 2.7 + deferred). Glossary: Auto-compaction row
++ "Auto-compaction vs. Compact" note. CHANGELOG updated. **Verified: full Sampler
+build+test 327/327, 0 failed (16 tasks, 0 errors, 0 warnings); `app.js` ESM check OK
+(`.mjs`).** The ESM check caught a dropped `stopTurn` declaration during editing —
+fixed before the green run.
+
+## Next steps
+
+1. **Manual + live smoke of auto-compaction (`ai/memory-context-batch`, not yet
+   merged):** with auto-compaction on, run a Conversation until the context meter is
+   near the threshold and confirm the next Turn's finally fires a compaction (toast
+   reports freed tokens, visible transcript unchanged, the following Turn's measured
+   context is smaller); confirm `400 too_short` is a silent no-op on a short
+   Conversation; confirm toggling it off in Settings stops it. Confirm the Usage
+   popover shows tokens in/out, the Top models list, and the 30d chart.
+2. Merge `ai/memory-context-batch` into `main` (fast-forward, local-only) once
+   smoke-tested.
+
+## Prior focus — Session Info popover + Compact conversation (SHIPPED + MERGED to `main`, 2026-07-07)
+
 The user asked for a menu like GHCP's Session Info screenshot on a Conversation.
-Delivered: a glanceable **context meter** pill in the top bar and a **Session info**
-entry in the ⋯ menu, both opening a **Session Info** popover that shows the
-Conversation's accumulated **cost** (credits + $) and turn count, a **Context
-Window** gauge (the last Turn's exact `promptTokens` ÷ the effective Model's
-`maxContextWindowTokens`, colour-graded, with a hatched *reserved for response*
-tail = `maxOutputTokens`), and an **estimated** Messages-vs-System+tools breakdown
-(client-side ~4 chars/token; the total is measured, the split is labelled
-estimated). A **Compact conversation** button runs a new
-`POST /api/conversations/{id}/compact` route: a pure-reasoning Turn (all Tools off,
-like auto-title/Merge-Plan) summarises the earlier `history` and keeps the last 4
-entries verbatim, so future Turns replay far fewer tokens — the **visible transcript
-(`messages`) is deliberately preserved**; only the Engine `-History` shrinks.
-
-Backend: 3 new pure Private helpers — `New-DpCompactionPrompt` (renders history to a
-transcript + strict summary instruction; handles hashtable & PSCustomObject entries;
-`[AllowEmptyCollection()]`), `ConvertFrom-DpCompactionResult` (strips fences/label
-lines, collapses blank lines, hard cap), `Compress-DpConversationHistory` (summary
-pair + kept tail; `changed=$false` when too short/empty; input never mutated). New
-`compactConversation` route (404/409/`400 too_short`/`502 compaction_failed`; sets a
-new nullable `compactedUtc` field without bumping `updatedUtc`; returns
-`summarised/kept/before/after/estimatedFreed`). `compactedUtc` plumbed through
-`New-DpConversation` / `Save-` / `Import-DpConversationStore` / `Copy-DpConversation`
-(reset on copy) and the `list` + `GET conversation` shapes. Route registered
-`POST /api/conversations/{id}/compact`.
-
-Frontend (`app.js`): `estimateTokens`, `fmtTokens`, `effectiveContextModel`,
-`computeSessionInfo` (last non-zero assistant `promptTokens` = occupancy),
-`renderContextMeter` (top-bar pill, hidden until a Turn has run / no window size),
-`fillSessionPopover` (DOM-built, XSS-safe like `showConversationDetails`), gauge
-`ctx-bar` + `buildBreakdownRow`, `openSessionInfo`/`closeSessionInfo`,
-`compactConversation` (confirm → POST → toast freed tokens → refresh). Wired into the
-⋯ menu, the header pill, the outside-click dismiss, and meter refresh on
-select/home/turn (via `refreshCurrentConversation`). CSS for the meter + popover +
-gauge + breakdown. index.html: `#btn-context` pill + `#session-popover`.
-
-+16 unit tests. Glossary rows (Session Info, Context Window, Compact) + 3
-disambiguation notes (Compact vs `Compress`; Session Info vs Usage vs Details;
-measured vs estimated). Specs 010 (FR-C18) / 030 (compact route + `compactedUtc`) /
-040 (menu entry + context meter). CHANGELOG updated. Verified: full Sampler
-build+test **321/321, 0 failed** (16 tasks, 0 errors, 0 warnings); `app.js` ESM
-check OK (`.mjs`).
 
 ## Prior focus — extended conversation ⋯ menu (SHIPPED + MERGED to `main`, 2026-07-07)
 

@@ -1992,6 +1992,33 @@ button.tree-row {
     color: var(--accent);
 }
 
+.usage-models {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.usage-model-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+}
+
+.usage-model-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.usage-model-meta {
+    flex: none;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 .btn-small {
     margin-top: 12px;
     padding: 6px 11px;

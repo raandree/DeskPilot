@@ -65,7 +65,10 @@ accent fills so the bright dark-mode accent stays legible.
   - *Manage* — **Rename…**, **Copy transcript** (Markdown → clipboard), **Export as Markdown** (download), **Details** (a read-only popover: created / updated / message count / model / colour, plus the accumulated **Usage** — cost, credits, and tokens summed across the Conversation's Messages), and **Session info** (the per-Conversation cost + **Context Window** gauge + **Compact** action; see Topbar).
 - Below the list: a **Show N archived** toggle and, when any Conversation is
   unread, a **Mark N as read** control.
-- Footer: cumulative **Usage** chip (tokens · $cost) → opens a Usage popover;
+- Footer: cumulative **Usage** chip (tokens · $cost) → opens a Usage popover
+  showing the **session** and **all-time** counters (credits, cost, total tokens,
+  **tokens in / tokens out**, turns), a **Top models** list (this session, by
+  tokens), and a **Credits per day** chart with a 7-/14-/30-day range toggle;
   a **🧩 Customizations** button → the Customizations surface; and the
   **⚙ Settings** button.
 - Collapsible on narrow widths.
@@ -79,8 +82,9 @@ accent fills so the bright dark-mode accent stays legible.
   `maxContextWindowTokens`, colour-graded), which opens the **Session Info**
   popover: accumulated cost (credits + $) and turn count; a Context Window gauge
   with a reserved-for-response tail and an estimated Messages vs. System+tools
-  split; and a **Compact conversation** button. Hidden until the first Turn of a
-  Conversation has run.
+  split; a one-line **auto-compaction** indicator (`Auto-compaction is on (at N%
+  full)`) when the setting is enabled; and a **Compact conversation** button.
+  Hidden until the first Turn of a Conversation has run.
 - **☰ Files** toggle → opens the collapsible Project file explorer (disabled
   when no Project is selected).
 - **⚙ Settings** button → Settings drawer.
@@ -156,6 +160,12 @@ accent fills so the bright dark-mode accent stays legible.
   tool iterations.
 - **Task tracking**: when on (default), the agent is given the
   `manage_todo_list` tool and the Tasks panel renders live during a Turn.
+- **Memory & context**: an **Automatically compact long conversations** toggle
+  (default on), a **Compact when context reaches (%)** field (50–95, default 80),
+  and a **Recent messages to keep in full** field (2–100, default 4). When on,
+  DeskPilot summarises a Conversation's earlier turns automatically once its last
+  Turn fills the Model window to the threshold, announcing each firing with a
+  toast and preserving the visible transcript (see FR-C19).
 - Theme (system/light/dark).
 - Engine status (path, version, auth) + a **Re-authenticate** action.
 - **Back up & restore** of all settings as a JSON file.

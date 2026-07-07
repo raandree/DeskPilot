@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic conversation compaction (Memory & context).** When a conversation
+  fills most of the model's context window, DeskPilot can now summarise its earlier
+  turns automatically so it keeps working instead of overflowing — the same
+  summarise-and-keep-recent **Compact** it already offered, run for you after a turn
+  once the context passes a threshold you set. Your visible messages are always
+  kept, and every automatic compaction is announced with a toast. New **Memory &
+  context** settings: an on/off toggle (default **on**), a **Compact when context
+  reaches** percentage (50–95, default 80), and **Recent messages to keep in full**
+  (2–100, default 4). The same keep-recent setting now also drives the manual
+  Compact action. No new endpoint — auto-compaction reuses
+  `POST /api/conversations/{id}/compact`. The Session Info panel shows a one-line
+  indicator when auto-compaction is on. (+6 unit tests.)
+- **Richer Usage panel.** The credits/usage popover now shows the **tokens in /
+  tokens out** split (prompt vs. completion) for both the session and all-time
+  counters, a **Top models** list for the session (ranked by tokens), and the
+  credits-per-day chart gained a **30-day** range alongside 7d and 14d. All from
+  data already tracked — no extra cost or Engine change.
 - **Session info + Compact conversation (like GitHub Copilot).** Each conversation
   now has a **Session Info** panel — opened from a glanceable **context meter**
   pill in the top bar or the **⋯** menu — showing the conversation's accumulated

@@ -34,6 +34,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-C16 | S | Let the user edit a previous user Message and resend it: the Host Server truncates the Conversation to that Message and re-runs the Turn with the new text, discarding the Messages that followed. |
 | FR-C17 | S | Extend the per-Conversation action menu: open a Conversation in a new browser window (deep link `/?c=<id>`), **Duplicate** it, mark it **Unread** / **Mark all as read** (with an unread dot + a "Mark N as read" control), assign an optional **Colour** label from a fixed palette, **Copy transcript** (Markdown) to the clipboard, and view read-only **Details** (created/updated/message count/model/colour, plus the accumulated **Usage** — cost, credits, and tokens summed across the Conversation's Messages). Keyboard on a focused row: Enter opens, F2 renames, Delete archives. Deletion itself is unchanged (the hover ✕). |
 | FR-C18 | S | Give each Conversation a **Session Info** panel (like GitHub Copilot's): its accumulated cost (credits + $) and turn count, a **Context Window** gauge (the last Turn's `promptTokens` against the Model's `maxContextWindowTokens`, with a reserved-for-response tail and an estimated Messages vs. System+tools breakdown), and a **Compact** action. Open it from a glanceable top-bar context meter or the Conversation action menu. **Compact** summarises the earlier replayed history into a briefing (a pure-reasoning Turn, Tools off), keeps recent Turns verbatim, and preserves the visible transcript; only what is replayed to the Engine shrinks, so the next Turn sends fewer tokens. |
+| FR-C19 | S | **Automatically compact** a Conversation when its last Turn filled the Model context window to at least a configurable threshold. After a Turn, when auto-compaction is enabled and the measured occupancy (`promptTokens` ÷ `maxContextWindowTokens`) reaches the threshold, DeskPilot runs the same summarise-and-keep-tail Compact as FR-C18 (best-effort; a too-little-history reply is a silent no-op) so a long Conversation keeps working instead of overflowing the window. Every firing is announced with a toast and the visible transcript is preserved. Controlled by three Settings: an on/off toggle (default **on**), the threshold percent (50–95, default 80), and how many recent messages to keep verbatim (2–100, default 4). |
 
 ### Agent Tools & Permissions
 
@@ -69,7 +70,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 
 | ID | Priority | Requirement |
 | --- | --- | --- |
-| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap) to disk and load them on startup so the user's choices stick between sessions. |
+| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap, auto-compaction toggle/threshold/keep-recent) to disk and load them on startup so the user's choices stick between sessions. |
 | FR-S2 | S | Let the user back up all Settings to a JSON file and restore them from one (restore is a full replace onto defaults). |
 | FR-S3 | S | Show a collapsible file explorer of the selected Project's folders and files; collapsed and not expandable when no Project is selected. |
 | FR-S4 | C | Show an **Atelier health** panel: whether each configured Customization root (`~/.copilot/{agents,skills,instructions,prompts}` by default) resolves, how many Customizations were discovered in each, and a flag when a root is missing or an unreadable reparse point. |
@@ -93,6 +94,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-U2 | M | Show a **session** Usage summary (tokens, cost, credits, turns) that resets each time the Host Server starts. |
 | FR-U3 | M | Track a **lifetime** Usage counter (credits, cost, tokens, turns) that persists to disk across sessions and is never reset automatically. |
 | FR-U4 | M | Let the user reset the lifetime counter manually; record the date it has counted since. |
+| FR-U5 | S | In the Usage panel, show the **tokens in / tokens out** split (prompt vs. completion) alongside the totals for both the session and lifetime counters, a **Top models** list (this session, ranked by tokens), and a 7-/14-/**30-day** credits-per-day chart. |
 
 ### Generative UI
 

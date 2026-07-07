@@ -79,6 +79,21 @@ function Merge-DpSettings {
                 if ($count -lt 1) { throw 'maxToolIterations must be at least 1.' }
                 $merged.maxToolIterations = $count
             }
+            'autoCompaction' { $merged.autoCompaction = [bool]$value }
+            'compactionThreshold' {
+                $fraction = [double]$value
+                if ($fraction -lt 0.5 -or $fraction -gt 0.95) {
+                    throw 'compactionThreshold must be between 0.5 and 0.95.'
+                }
+                $merged.compactionThreshold = [math]::Round($fraction, 2)
+            }
+            'compactionKeepRecent' {
+                $keep = [int]$value
+                if ($keep -lt 2 -or $keep -gt 100) {
+                    throw 'compactionKeepRecent must be between 2 and 100.'
+                }
+                $merged.compactionKeepRecent = $keep
+            }
             'skillRoots' { $merged.skillRoots = @($value | ForEach-Object { [string]$_ }) }
             'instructionRoots' { $merged.instructionRoots = @($value | ForEach-Object { [string]$_ }) }
             'promptRoots' { $merged.promptRoots = @($value | ForEach-Object { [string]$_ }) }

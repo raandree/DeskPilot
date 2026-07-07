@@ -46,6 +46,7 @@ synonym.
 | Session Info | The per-Conversation panel showing its accumulated cost, the Context Window occupancy of the last Turn, an estimated breakdown of that context, and a **Compact** action. Opened from the top-bar context meter or the Conversation's action menu. Named after GitHub Copilot's "Session Info"; it does not rename the Conversation thread (see Conversation). | stats, dashboard, session (for the thread) |
 | Context Window | The Model's maximum input size in tokens, and how much of it the last Turn used (the Engine-reported `promptTokens`). Shown as a gauge in Session Info and a compact meter in the top bar. | context length, window size, token budget (loosely) |
 | Compact | Summarise a Conversation's earlier replayed history into a short briefing, keeping recent Turns verbatim, so future Turns send fewer tokens. The visible transcript is preserved. | compress (in UI copy), summarise, truncate, prune, forget |
+| Auto-compaction | Running **Compact** automatically after a Turn when the Context Window occupancy reaches a user-set threshold, so a long Conversation keeps working without overflowing the Model window. Controlled by the `autoCompaction`, `compactionThreshold` and `compactionKeepRecent` Settings. Every firing is announced with a toast. | auto-compress, auto-summarise, auto-prune, context engine |
 
 ## Notes
 
@@ -104,6 +105,12 @@ synonym.
   (matching GitHub Copilot's "Compact Conversation"); the private helper is
   `Compress-DpConversationHistory` because **Compress** is the approved PowerShell
   verb. This mirrors the Duplicate / `Copy-DpConversation` boundary note.
+- **Auto-compaction vs. Compact.** **Compact** is the manual, user-invoked action
+  (the Session Info button). **Auto-compaction** is the same summarisation fired
+  automatically after a Turn once the Context Window crosses the threshold; both
+  go through the one `POST /compact` route and the `Compress-DpConversationHistory`
+  helper. Use **Compact** for the action/verb and **Auto-compaction** only for the
+  automatic policy; never call the automatic firing "auto-compress".
 - **Session Info vs. Usage vs. Details.** **Usage** is the global credits/cost
   counter (this-session and all-time) in the sidebar. **Session Info** is
   per-Conversation: its accumulated cost plus its Context Window occupancy and the

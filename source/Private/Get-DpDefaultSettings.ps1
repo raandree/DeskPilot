@@ -39,5 +39,15 @@ function Get-DpDefaultSettings {
         referenceFiles    = @()
         costBudgetUSD     = 0.0
         maxToolIterations = 25
+        # Memory & context. When autoCompaction is on, a Conversation whose last
+        # Turn filled its Model context window to at least compactionThreshold is
+        # summarised automatically after the Turn (the same summarise-and-keep-tail
+        # the manual Compact action performs), so a long Conversation keeps working
+        # instead of overflowing the window. compactionKeepRecent is how many recent
+        # history entries stay verbatim (the rest are summarised). Defaults: on, at
+        # 80% full, keeping the last 4 entries.
+        autoCompaction       = $true
+        compactionThreshold  = 0.8
+        compactionKeepRecent = 4
     }
 }

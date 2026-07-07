@@ -27,10 +27,12 @@ function Get-DpUsagePayload {
             }
         })
 
-    # The last 30 days of the persisted daily history, oldest first, for the
-    # usage graph. Each entry: { date 'yyyy-MM-dd', credits, costUSD, totalTokens, turns }.
+    # The persisted daily history (up to the 60-day retention window), oldest
+    # first, for the usage graph. The popover charts a 7-, 14- or 30-day window
+    # client-side, so returning the whole retained set keeps every range covered.
+    # Each entry: { date 'yyyy-MM-dd', credits, costUSD, totalTokens, turns }.
     $dailyAll = @($life.daily)
-    $daily = @($dailyAll | Select-Object -Last 30 | ForEach-Object {
+    $daily = @($dailyAll | Select-Object -Last 60 | ForEach-Object {
             @{
                 date        = [string]$_.date
                 credits     = [double]$_.credits
