@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Extended the per-Conversation ⋯ menu (8-feature batch) — SHIPPED on
-`ai/conversation-menu-extras` (2026-07-07), local-only, not yet merged.**
+**Extended the per-Conversation ⋯ menu (8-feature batch) — SHIPPED + MERGED to
+`main` (2026-07-07, local-only, not pushed).**
 The user asked to extend the conversation menu like VS Code's Chat Sessions menu
 plus researched extras, and reviewed a tiered proposal before work. Approved set:
 Open in new window (A1), Mark unread / Mark all read + badge (A2), keyboard
@@ -51,11 +51,11 @@ stays as the fallback.
 
 ## Next steps
 
-1. **Manual browser smoke of the new menu:** open the ⋯ menu, try each action —
-   open-in-new-window (confirm the deep link `/?c=` opens the right Conversation),
-   Duplicate, mark unread + "Mark N as read", set/clear a Colour, Copy transcript,
-   Details; and the row keyboard shortcuts (Enter/F2/Delete). Then merge
-   `ai/conversation-menu-extras` into `main` (local-only) when satisfied.
+1. **Manual browser smoke of the new menu (now merged into `main`):** open the ⋯
+   menu, try each action — open-in-new-window (confirm the deep link `/?c=` opens
+   the right Conversation), Duplicate, mark unread + "Mark N as read", set/clear a
+   Colour, Copy transcript, Details (incl. the accumulated cost/credits/tokens);
+   and the row keyboard shortcuts (Enter/F2/Delete).
 2. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
    main): exercise /api/git/branches, /merge/preview, a real merge, a conflict →
    /merge/plan → /merge/apply, and /cleanup (local-only; the plan route needs the
