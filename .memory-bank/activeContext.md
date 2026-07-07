@@ -2,48 +2,44 @@
 
 ## Current focus
 
-**Expired sign-in left the user stuck (no re-auth path) — FIXED (2026-07-07), on
-`ai/stop-button-fix`.**
-`authenticated` is derived from the token *file* existing, not its validity, so
-an expired token still reported `true`: DeskPilot entered the app (skipping the
-sign-in screen), the model list then failed with a 401 from the Engine's token
-exchange, and the dropdown dead-ended at "(sign in to load models)" — with the
-only re-auth entry point (Settings → Re-authenticate) silently no-op'ing because
-a stale token file made both `Invoke-DpAuthFlow` and `Initialize-Shp`
-short-circuit. Fix: classify auth failures (`Test-DpAuthError`) so `/api/models`
-returns `401 auth_required`; the UI then auto-opens the sign-in overlay in an
-"expired" mode that forces a fresh device-code flow (`Initialize-Shp -Force` via
-the new `Invoke-DpAuthFlow -Force`). Both this and the Stop-button fix live on
-`ai/stop-button-fix`. Next: fast-forward into `main` (local-only, once reviewed);
+**Transient 403 on the Copilot session-token exchange failed the whole Turn —
+FIXED (2026-07-07), on `ai/stop-button-fix`.**
+ShellPilot exchanges the cached GitHub token for a short-lived Copilot session
+token at the start of every Turn; that endpoint intermittently returns 403
+(Forbidden), so `Invoke-Shp` threw, `EndInvoke` rethrew, and the Turn failed with
+a raw *"Session token exchange failed … 403"* — the user had to stop and resend
+(which worked, because a retry of the exchange succeeds). Fix: a bounded retry of
+the Engine call in `Invoke-DpTurn` for transient PRE-STREAM failures, so these
+blips are invisible. Next: fast-forward into `main` (local-only, once reviewed);
 the Clone Wizard (specs/080) remains the next feature.
 
 ## Just completed (this work, on ai/stop-button-fix)
 
-- **New `Test-DpAuthError`** (`source/Private`): classifies a caught error as an
-  auth failure by walking the inner-exception chain and matching only auth
-  signals (401/403/Unauthorized/Forbidden, "Session token exchange failed",
-  "Token file not found", "Initialize-Shp") — so a transient network error is
-  never mistaken for an expired sign-in.
-- **`/api/models` route**: the catch now returns `401 { code: auth_required;
-  reauth: true }` for auth failures (still `502 engine_unavailable` otherwise).
-- **`Invoke-DpAuthFlow -Force`**: skips the "already signed in" short-circuit and
-  passes `Initialize-Shp -Force`, so an expired token is actually re-issued; the
-  `authStart` route forwards `{ force }` from the request body.
-- **Frontend** (`web/`): `api()` attaches `status`/`code`/`reauth` to thrown
-  errors; `loadModels` opens the re-sign-in overlay on a 401; `showAuth({expired})`
-  forces the flow and swaps in "Your sign-in has expired" wording (new
-  `#auth-subtitle` in `index.html`); `startAuth` posts `{ force }`; the Settings
-  **Re-authenticate** button now forces too.
-- **Tests:** +9 `Test-DpAuthError` unit tests (401/403/exchange-failure/missing-
-  token/inner-exception/ErrorRecord → true; network + unrelated + null → false).
-- **Specs:** 030 (auth/status validity note, auth/start `force` body, models
-  `401 auth_required`).
+- **New `Test-DpTransientEngineError`** (`source/Private`): flags transient Engine
+  failures worth retrying (403/408/429/5xx, forbidden, timeouts, dropped
+  connections, unable-to-connect) by walking the inner-exception chain —
+  deliberately NOT 401/Unauthorized, so a genuine expired sign-in is surfaced for
+  re-auth, never retried.
+- **`Invoke-DpTurn` retry**: the Engine invocation now runs in a bounded loop
+  (max 3 attempts, 400 ms × attempt back-off). It retries ONLY when the failure is
+  transient AND nothing has streamed yet (`$turnState.emitted -eq 0`, a new frame
+  counter incremented in `$emit`), so answer text is never duplicated; a Stop
+  during a back-off ends the Turn cleanly.
+- **Tests:** +10 `Test-DpTransientEngineError` unit tests (403/429/503/timeout/
+  dropped-connection/inner-exception → true; 401 + missing-token + unrelated +
+  null → false).
 
-Verified: full test suite **272/272, 0 failed** (16 tasks, 0 errors, 0 warnings);
-`app.js` ESM check OK (`node --check` on a `.mjs` copy). Manual smoke recommended:
-let a token expire (or corrupt `~/.copilot-demo-token`), open DeskPilot, confirm
-the "Your sign-in has expired" overlay appears and Connect runs a fresh device
-flow that restores models.
+Verified: full test suite **282/282, 0 failed** (16 tasks, 0 errors, 0 warnings).
+Manual smoke: reproduce a 403 (or hit the flaky endpoint) and confirm the Turn now
+streams normally instead of failing — no stop-and-resend needed.
+
+## Recently on this branch — expired sign-in re-auth (FIXED 2026-07-07)
+
+`authenticated` reflected the token *file* existing, not its validity, so an
+expired token dead-ended at "(sign in to load models)". Now `/api/models` returns
+`401 auth_required` (`Test-DpAuthError`) and the UI auto-opens the sign-in overlay
+in an "expired" mode that forces a fresh device flow (`Invoke-DpAuthFlow -Force`
+→ `Initialize-Shp -Force`). +9 unit tests. Specs 030.
 
 ## Also on this branch — conversation menu sizing (FIXED 2026-07-07)
 

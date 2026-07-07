@@ -2128,3 +2128,38 @@ Describe 'Test-DpAuthError' {
         Test-DpAuthError -ErrorRecord $null | Should -BeFalse
     }
 }
+
+Describe 'Test-DpTransientEngineError' {
+    It 'flags the reported 403 session-token-exchange failure' {
+        Test-DpTransientEngineError -ErrorRecord 'Session token exchange failed: Response status code does not indicate success: 403 (Forbidden).' | Should -BeTrue
+    }
+    It 'flags a 429 / too many requests' {
+        Test-DpTransientEngineError -ErrorRecord 'Response status code does not indicate success: 429 (Too Many Requests).' | Should -BeTrue
+    }
+    It 'flags a 503 / service unavailable' {
+        Test-DpTransientEngineError -ErrorRecord 'Response status code does not indicate success: 503 (Service Unavailable).' | Should -BeTrue
+    }
+    It 'flags a request timeout' {
+        Test-DpTransientEngineError -ErrorRecord 'The operation has timed out.' | Should -BeTrue
+    }
+    It 'flags a dropped connection' {
+        Test-DpTransientEngineError -ErrorRecord 'Unable to read data from the transport connection: An existing connection was forcibly closed by the remote host.' | Should -BeTrue
+    }
+    It 'recognises a transient failure wrapped in an inner exception' {
+        $inner = [System.Exception]::new('Response status code does not indicate success: 403 (Forbidden).')
+        $outer = [System.Exception]::new('Session token exchange failed', $inner)
+        Test-DpTransientEngineError -ErrorRecord $outer | Should -BeTrue
+    }
+    It 'does NOT flag a 401 / expired sign-in (must not retry that)' {
+        Test-DpTransientEngineError -ErrorRecord 'Session token exchange failed: Response status code does not indicate success: 401 (Unauthorized).' | Should -BeFalse
+    }
+    It 'does NOT flag a missing token file' {
+        Test-DpTransientEngineError -ErrorRecord 'Token file not found: C:\Users\me\.copilot-demo-token. Run Initialize-Shp first.' | Should -BeFalse
+    }
+    It 'does NOT flag an unrelated engine error' {
+        Test-DpTransientEngineError -ErrorRecord 'The model returned an empty response.' | Should -BeFalse
+    }
+    It 'returns false for a null error' {
+        Test-DpTransientEngineError -ErrorRecord $null | Should -BeFalse
+    }
+}

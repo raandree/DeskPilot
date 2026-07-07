@@ -94,6 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A transient sign-in hiccup no longer fails a turn.** Occasionally the very
+  start of a turn failed with *"Session token exchange failed … 403 (Forbidden)"*
+  and you had to stop and resend. That step — exchanging your GitHub sign-in for a
+  short-lived Copilot token, which the engine does at the start of every turn —
+  intermittently fails and then succeeds on a retry. DeskPilot now retries it
+  automatically (a few times, with a short back-off) before any answer has begun
+  streaming, so the blip is invisible and nothing is ever duplicated. A genuinely
+  expired sign-in is not retried — it still prompts you to sign in again.
 - **The conversation actions menu now fits its contents.** The per-conversation
   "…" menu (Pin, Archive, Rename, Export) was rendered far too large — about as
   wide as a dialog and stretched down most of the window — because it inherited

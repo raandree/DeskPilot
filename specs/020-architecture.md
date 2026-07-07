@@ -49,6 +49,15 @@ pipeline, and emits an `error` frame (`Turn stopped.`). Without this pump the
 stop request would wait in the TCP backlog until the Turn finished, making the
 Stop button a no-op.
 
+**Transient pre-stream retry.** ShellPilot exchanges the cached GitHub token for a
+short-lived Copilot session token at the start of every Turn, and that exchange
+intermittently fails (for example a 403). Because it happens before any answer has
+streamed, the Turn loop retries the Engine call a few times (bounded, short
+back-off) on a transient error (`Test-DpTransientEngineError`) **only while nothing
+has streamed yet**, so the user is not forced to stop and resend and no answer text
+is ever duplicated. A genuine 401/expired sign-in is not transient and is not
+retried.
+
 The **final Message text is `.Content`** (clean), not the concatenated deltas
 (which exist only for the live typing effect). `-ShowThinking` is **off** for the
 answer stream so deltas stay clean; reasoning, when requested, is shown from the

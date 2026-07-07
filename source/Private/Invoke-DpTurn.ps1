@@ -40,7 +40,7 @@ function Invoke-DpTurn {
     # Turn's list never bleeds into the next. It holds the latest list streamed live
     # from ShpProgress records and is only a fallback: the authoritative final list
     # comes from result.TodoList (see below).
-    $turnState = @{ tasks = @() }
+    $turnState = @{ tasks = @(); emitted = 0 }
 
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
@@ -52,6 +52,9 @@ function Invoke-DpTurn {
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
         if ($null -eq $decision) { return }
         if ($decision.event -eq 'tasks') { $turnState.tasks = $decision.Tasks }
+        # Count frames actually sent this Turn so the retry below knows whether
+        # anything has streamed yet (retrying is only safe before the first frame).
+        $turnState.emitted = [int]$turnState.emitted + 1
         $writer.Write((ConvertTo-DpSseFrame -EventName $decision.event -Data $decision.data))
     }
 
@@ -103,44 +106,76 @@ function Invoke-DpTurn {
         # keeping the working directory deterministic.
         $null = Set-DpEngineLocation -Path (Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
 
-        $shell = [powershell]::Create()
-        $shell.Runspace = $script:DeskPilot.Engine.Runspace
-        $null = $shell.AddCommand('Invoke-Shp')
-        foreach ($key in $params.Keys) { $null = $shell.AddParameter($key, $params[$key]) }
-
-        $info = $shell.Streams.Information
-        $lastIndex = 0
-        $heartbeat = 0
-        $async = $shell.BeginInvoke()
+        # Run the Engine call with a bounded retry for transient PRE-STREAM
+        # failures. ShellPilot exchanges the GitHub token for a short-lived Copilot
+        # session token at the start of every Turn, and that exchange intermittently
+        # returns 403 (or 429/5xx); previously the whole Turn failed and the user had
+        # to stop and resend. Retry only while nothing has streamed yet
+        # ($turnState.emitted -eq 0) so no answer text is ever duplicated, and only
+        # for transient errors - a genuine 401/expired token is surfaced, not retried.
+        $maxAttempts = 3
+        $attempt = 0
+        $result = $null
         while ($true) {
-            while ($lastIndex -lt $info.Count) {
-                & $emit $info[$lastIndex]
-                $lastIndex++
+            $attempt++
+            $shell = [powershell]::Create()
+            $shell.Runspace = $script:DeskPilot.Engine.Runspace
+            $null = $shell.AddCommand('Invoke-Shp')
+            foreach ($key in $params.Keys) { $null = $shell.AddParameter($key, $params[$key]) }
+
+            $info = $shell.Streams.Information
+            $lastIndex = 0
+            $heartbeat = 0
+            $async = $shell.BeginInvoke()
+            while ($true) {
+                while ($lastIndex -lt $info.Count) {
+                    & $emit $info[$lastIndex]
+                    $lastIndex++
+                }
+                if ($async.IsCompleted) { break }
+                # The Host Server accepts requests inline on this single thread, so a
+                # concurrent POST /stop would otherwise wait in the backlog until this
+                # Turn ended - the Stop button would do nothing. Service any pending
+                # request here so the stopTurn handler can flip CancelRequested, which
+                # the next line then observes and aborts the Engine pipeline.
+                Invoke-DpPendingRequest
+                if ($script:DeskPilot.CancelRequested) { try { $shell.Stop() } catch { $null = $_ }; break }
+                Start-Sleep -Milliseconds 40
+                $heartbeat++
+                if ($heartbeat -ge 250) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
             }
-            if ($async.IsCompleted) { break }
-            # The Host Server accepts requests inline on this single thread, so a
-            # concurrent POST /stop would otherwise wait in the backlog until this
-            # Turn ended - the Stop button would do nothing. Service any pending
-            # request here so the stopTurn handler can flip CancelRequested, which
-            # the next line then observes and aborts the Engine pipeline.
-            Invoke-DpPendingRequest
-            if ($script:DeskPilot.CancelRequested) { try { $shell.Stop() } catch { $null = $_ }; break }
-            Start-Sleep -Milliseconds 40
-            $heartbeat++
-            if ($heartbeat -ge 250) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
-        }
-        while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
+            while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
 
-        if ($script:DeskPilot.CancelRequested) {
-            try { $shell.EndInvoke($async) | Out-Null } catch { $null = $_ }
-            $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = 'Turn stopped.' }))
-            return
-        }
+            if ($script:DeskPilot.CancelRequested) {
+                try { $shell.EndInvoke($async) | Out-Null } catch { $null = $_ }
+                $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = 'Turn stopped.' }))
+                return
+            }
 
-        $result = $shell.EndInvoke($async) | Select-Object -Last 1
-        if ($shell.HadErrors -and $null -eq $result) {
-            $firstError = $shell.Streams.Error | Select-Object -First 1
-            throw ($(if ($firstError) { $firstError.ToString() } else { 'The Engine returned an error.' }))
+            try {
+                $result = $shell.EndInvoke($async) | Select-Object -Last 1
+                if ($shell.HadErrors -and $null -eq $result) {
+                    $firstError = $shell.Streams.Error | Select-Object -First 1
+                    throw ($(if ($firstError) { $firstError.ToString() } else { 'The Engine returned an error.' }))
+                }
+                break
+            }
+            catch {
+                # Retry a transient pre-stream failure (for example the session-token
+                # exchange returning 403) so the user is not forced to stop and resend.
+                # Gated on emitted -eq 0 so a mid-stream failure never duplicates output.
+                if ($attempt -lt $maxAttempts -and [int]$turnState.emitted -eq 0 -and (Test-DpTransientEngineError -ErrorRecord $_)) {
+                    try { $shell.Dispose() } catch { $null = $_ }
+                    $shell = $null
+                    Start-Sleep -Milliseconds (400 * $attempt)
+                    if ($script:DeskPilot.CancelRequested) {
+                        $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = 'Turn stopped.' }))
+                        return
+                    }
+                    continue
+                }
+                throw
+            }
         }
 
         $mapped = ConvertFrom-DpEngineResult -Result $result
