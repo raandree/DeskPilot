@@ -1672,17 +1672,33 @@ button.tree-row {
 }
 
 .spinner {
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
     border: 2px solid var(--accent-soft);
     border-top-color: var(--accent);
+    border-right-color: var(--accent);
     border-radius: 50%;
     animation: spin .7s linear infinite;
+    /* Hint the browser to keep the rotation smooth on its own layer. */
+    will-change: transform;
 }
 
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+/* The global `@media (prefers-reduced-motion: reduce)` rule sets
+   `animation: none !important` on every element, which would freeze the
+   "Working…" donut into a static ring for users who have OS animations off
+   (e.g. Windows → Accessibility → Visual effects → Animation effects). A
+   loading indicator must still signal activity, so keep the spinner turning:
+   a smooth, continuous rotation (never a flash/blink) is a calm activity cue
+   that still respects the spirit of reduced motion, just a touch slower. */
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation: spin 1s linear infinite !important;
     }
 }
 

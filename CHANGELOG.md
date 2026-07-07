@@ -94,6 +94,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The "Working…" indicator now always animates.** The spinner shown next to
+  *Working…* while a turn is running could appear frozen — a static ring — for
+  anyone who has operating-system animations turned off (on Windows: Settings →
+  Accessibility → Visual effects → **Animation effects**). A global "reduce
+  motion" style rule had switched off every animation, including this activity
+  indicator, so it read as though nothing was happening. The spinner now keeps
+  rotating whenever a turn is running — a smooth, continuous circle (a touch
+  slower when reduced motion is enabled) rather than a flash — so it is always
+  clear that DeskPilot is working.
 - **A transient sign-in hiccup no longer fails a turn.** Occasionally the very
   start of a turn failed with *"Session token exchange failed … 403 (Forbidden)"*
   and you had to stop and resend. That step — exchanging your GitHub sign-in for a

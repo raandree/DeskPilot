@@ -2,6 +2,27 @@
 
 ## Current focus
 
+**The "Working…" spinner froze into a static ring under OS "reduce motion" —
+FIXED (2026-07-07), on `ai/working-spinner-motion`.**
+The streaming activity indicator (`<span class="spinner">` set in `setStreamingUI`,
+`web/assets/app.js`) is styled `animation: spin .7s linear infinite`, but a global
+`@media (prefers-reduced-motion: reduce) { * { animation: none !important } }` rule
+in `web/assets/styles.css` disabled it for anyone with OS animations off (e.g.
+Windows → Accessibility → Visual effects → Animation effects — a common default),
+so the donut next to "Working…" sat frozen and read as "nothing is happening". Fix
+(CSS-only, no JS): keep the rotation for normal users; add a targeted
+reduced-motion override that keeps the spinner ROTATING (`spin 1s linear infinite`
+— a smooth continuous circle, a touch slower than the .7s default; NOT a flash),
+plus a small legibility bump (13→14px, a second coloured border segment so the
+sweep reads clearly). A first pass used an opacity pulse (`spinner-pulse`) but the
+user found the flashing ugly and asked for something circling, so it was reverted
+to rotation (a smooth spin is also calmer/safer than a blink under reduced motion).
+The launcher serves the source `web/` folder directly (`WebRoot = repoRoot/web`, no
+built copy), so a browser hard-refresh shows it — no rebuild. Next: fast-forward
+into `main` (local-only, once reviewed).
+
+## Prior focus — Transient 403 on the Copilot session-token exchange (FIXED + MERGED 2026-07-07)
+
 **Transient 403 on the Copilot session-token exchange failed the whole Turn —
 FIXED + MERGED to `main` (2026-07-07).**
 ShellPilot exchanges the cached GitHub token for a short-lived Copilot session
