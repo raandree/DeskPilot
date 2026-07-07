@@ -76,7 +76,21 @@ function Invoke-DpTurn {
         if ($settings.selectedAgent -and $settings.agentsRoot) {
             try { $agentPrompt = Get-DpAgentSystemPrompt -Root $settings.agentsRoot -Id $settings.selectedAgent } catch { $agentPrompt = $null }
         }
-        $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt
+
+        # Resolve the effective Model (Conversation-pinned, else the Settings
+        # default, else the Engine default) and its advertised reasoning efforts
+        # from the capability cache the /api/models route fills. New-DpTurnParameter
+        # forwards the global reasoning-effort Setting only when this Model lists
+        # it, so a Model that supports none (for example claude-haiku-4.5) never
+        # receives reasoning_effort and cannot fail the Turn with an HTTP 400.
+        $effectiveModelId = if ($Conversation.model) { $Conversation.model } elseif ($settings.model) { $settings.model } else { $script:DeskPilot.DefaultModel }
+        $modelEfforts = @()
+        if ($effectiveModelId) {
+            $modelEntry = @($script:DeskPilot.Models) | Where-Object { $_.id -eq $effectiveModelId } | Select-Object -First 1
+            if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
+        }
+
+        $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # Reposition the long-lived Engine Runspace every Turn, not only when a

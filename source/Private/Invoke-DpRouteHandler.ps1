@@ -68,6 +68,10 @@ function Invoke-DpRouteHandler {
                     }
                 }
                 $defaultId = if ($default -is [string]) { $default } else { [string](Get-DpPropertyValue -InputObject $default -Name @('Id', 'Model', 'Name') -Default $state.Settings.model) }
+                # Cache the capability list so a Turn can send -ReasoningEffort only
+                # to a Model that advertises support (see Get-DpModelReasoningEfforts).
+                $state.Models = @($list)
+                $state.DefaultModel = $defaultId
                 Write-DpResponse -Stream $Stream -Json @{ default = $defaultId; models = @($list) }
             }
             catch {

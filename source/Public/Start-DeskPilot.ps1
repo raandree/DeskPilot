@@ -70,6 +70,12 @@ function Start-DeskPilot {
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
         CancelRequested = $false
+        # Model capability cache, populated by the /api/models route. Keyed lookups
+        # (Get-DpModelReasoningEfforts) use it to send -ReasoningEffort only to a
+        # Model that advertises support, so a global reasoning-effort Setting never
+        # reaches a Model that rejects it (HTTP 400 invalid_reasoning_effort).
+        Models          = @()
+        DefaultModel    = $null
         Routes          = @(
             @{ Method = 'GET'; Pattern = '/api/health'; Name = 'health' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }

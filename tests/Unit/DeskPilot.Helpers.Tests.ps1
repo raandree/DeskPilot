@@ -148,6 +148,31 @@ Describe 'New-DpTurnParameter' {
     It 'never passes DisableProgressEvents' {
         (New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings)).ContainsKey('DisableProgressEvents') | Should -BeFalse
     }
+    It 'passes ReasoningEffort when the effective Model advertises the chosen effort' {
+        $s = Get-DpDefaultSettings
+        $s.reasoningEffort = 'max'
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -ModelReasoningEfforts @('minimal', 'low', 'medium', 'high', 'max')
+        $p.ContainsKey('ReasoningEffort') | Should -BeTrue
+        $p.ReasoningEffort | Should -Be 'max'
+    }
+    It 'suppresses ReasoningEffort when the effective Model supports none (e.g. claude-haiku-4.5)' {
+        $s = Get-DpDefaultSettings
+        $s.reasoningEffort = 'max'
+        (New-DpTurnParameter -Prompt 'hi' -Settings $s -ModelReasoningEfforts @()).ContainsKey('ReasoningEffort') | Should -BeFalse
+    }
+    It 'suppresses ReasoningEffort when the Model advertises a subset that excludes the chosen effort' {
+        $s = Get-DpDefaultSettings
+        $s.reasoningEffort = 'max'
+        (New-DpTurnParameter -Prompt 'hi' -Settings $s -ModelReasoningEfforts @('low', 'medium', 'high')).ContainsKey('ReasoningEffort') | Should -BeFalse
+    }
+    It 'suppresses ReasoningEffort when the Model capabilities are unknown (no efforts supplied)' {
+        $s = Get-DpDefaultSettings
+        $s.reasoningEffort = 'high'
+        (New-DpTurnParameter -Prompt 'hi' -Settings $s).ContainsKey('ReasoningEffort') | Should -BeFalse
+    }
+    It 'omits ReasoningEffort when the Setting is unset even if the Model supports efforts' {
+        (New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings) -ModelReasoningEfforts @('low', 'high', 'max')).ContainsKey('ReasoningEffort') | Should -BeFalse
+    }
 }
 
 Describe 'Get-DpPropertyValue' {

@@ -211,7 +211,11 @@ parameter splat:
 - `-Model` = Conversation model → Settings model.
 - one `-Disable*` switch per Permission that is **off**.
 - `-SkillPath` / `-InstructionRoot` if configured.
-- `-ReasoningEffort`, `-MaxToolIterations` if set.
+- `-ReasoningEffort` only when the effective Model advertises the chosen effort
+  (from the model-capability cache the `/api/models` route fills); a Model that
+  supports no reasoning effort — for example `claude-haiku-4.5` — has the global
+  reasoning-effort Setting suppressed so the Engine never sends `reasoning_effort`
+  to a Model that rejects it (HTTP 400). `-MaxToolIterations` if set.
 - `-SystemPrompt` composed from the selected **Agent**'s `*.agent.md` body (if
   any) followed by a note naming the selected **Project** folder as the working
   directory.

@@ -135,7 +135,9 @@ accent fills so the bright dark-mode accent stays legible.
 - **Agents folder** (path to `*.agent.md` personas; the Agent itself is picked
   from the composer dropdown).
 - Skill roots, Instruction roots and Prompt roots (add/remove folder paths).
-- Reasoning effort, Show thinking, Max tool iterations.
+- Reasoning effort (model-aware: the menu offers only the levels the effective
+  Model advertises, and notes when a Model supports none), Show thinking, Max
+  tool iterations.
 - **Task tracking**: when on (default), the agent is given the
   `manage_todo_list` tool and the Tasks panel renders live during a Turn.
 - Theme (system/light/dark).

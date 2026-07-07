@@ -15,6 +15,13 @@ function New-DpTurnParameter {
         The current Settings hashtable.
     .PARAMETER Model
         Optional Conversation-pinned Model id that overrides Settings.model.
+    .PARAMETER ModelReasoningEfforts
+        The reasoning efforts the effective Model advertises support for. The
+        reasoning-effort Setting is only forwarded as -ReasoningEffort when the
+        effective Model lists it here; a Model that supports no reasoning effort
+        (an empty list) or an unknown Model has the Setting suppressed, so the
+        Engine never sends reasoning_effort to a Model that rejects it with an
+        HTTP 400 (invalid_reasoning_effort).
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -31,7 +38,9 @@ function New-DpTurnParameter {
 
         [string]$Model,
 
-        [string]$AgentSystemPrompt
+        [string]$AgentSystemPrompt,
+
+        [string[]]$ModelReasoningEfforts = @()
     )
 
     $params = @{ Prompt = $Prompt }
@@ -50,7 +59,14 @@ function New-DpTurnParameter {
 
     if ($Settings.skillRoots -and $Settings.skillRoots.Count -gt 0) { $params.SkillPath = $Settings.skillRoots }
     if ($Settings.instructionRoots -and $Settings.instructionRoots.Count -gt 0) { $params.InstructionRoot = $Settings.instructionRoots }
-    if ($Settings.reasoningEffort) { $params.ReasoningEffort = $Settings.reasoningEffort }
+    # Reasoning effort is a single global Setting, but support is per-Model: a
+    # Model such as claude-haiku-4.5 advertises no reasoning efforts and the
+    # Copilot endpoint rejects reasoning_effort for it (HTTP 400). Forward the
+    # Setting only when the effective Model lists it; otherwise leave it off so a
+    # global preference stays inert on Models that cannot honour it.
+    if ($Settings.reasoningEffort -and ($ModelReasoningEfforts -contains $Settings.reasoningEffort)) {
+        $params.ReasoningEffort = $Settings.reasoningEffort
+    }
     if ($Settings.maxToolIterations) { $params.MaxToolIterations = $Settings.maxToolIterations }
 
     # The Engine offers its built-in Task List tool (manage_todo_list) by default,

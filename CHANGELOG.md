@@ -94,6 +94,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reasoning effort no longer breaks turns on models that don't support it.**
+  Reasoning effort is a single setting, but support for it is per-model — for
+  example `claude-haiku-4.5` supports none. When a higher effort (e.g. *max*) was
+  set and such a model was in use, the turn failed with an
+  *"invalid_reasoning_effort"* error from Copilot (HTTP 400). Now the effort menu
+  in Settings offers only the levels the selected model actually supports (and
+  explains when a model supports none), and — as a safety net — the Host Server
+  sends the effort to the Engine only when the model in use advertises it, so a
+  global preference simply stays inactive on models that cannot honour it instead
+  of failing the turn. The model's capabilities are read from the model list the
+  app already loads. +5 unit tests.
 - **No-project turns no longer read a stray `.memory-bank` (or other files) from
   DeskPilot's launch folder.** With no project selected, the agent's working
   directory was left wherever the Engine happened to be — the folder DeskPilot was

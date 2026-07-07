@@ -2642,7 +2642,6 @@ async function importSettings(file) {
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
-    const efforts = ['', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     body.innerHTML = `
     <div class="field">
       <label>Default model</label>
@@ -2702,7 +2701,8 @@ function openSettings() {
     </div>
     <div class="field">
       <label>Reasoning effort</label>
-      <select id="set-effort">${efforts.map((e) => `<option value="${e}" ${e === (s.reasoningEffort || '') ? 'selected' : ''}>${e || 'default'}</option>`).join('')}</select>
+      <select id="set-effort"></select>
+      <p class="hint" id="set-effort-hint"></p>
     </div>
     <div class="field">
       <label><input type="checkbox" id="set-thinking" ${s.showThinking ? 'checked' : ''} /> Show the model’s thinking</label>
@@ -2743,7 +2743,31 @@ function openSettings() {
         try { state.settings = await api('PUT', '/api/settings', patch); updatePermDot(); populateProjectSelect(); }
         catch (e) { toast(e.message); }
     };
-    $('set-model').onchange = (e) => save({ model: e.target.value });
+    // The reasoning-effort menu is model-aware: a Model advertises which efforts
+    // it supports (empty means none), so we offer only those plus the Engine
+    // default. This prevents picking an effort a Model would reject (HTTP 400);
+    // the Host Server also guards this on every Turn. Falls back to the full list
+    // only when the Model's capabilities are not yet loaded.
+    const FALLBACK_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    const refreshEffortField = () => {
+        const modelId = $('set-model').value || (state.settings && state.settings.model) || state.defaultModel;
+        const m = state.models.find((x) => x.id === modelId);
+        const supported = m ? (m.reasoningEfforts || []) : FALLBACK_EFFORTS;
+        const current = (state.settings && state.settings.reasoningEffort) || '';
+        const selected = supported.includes(current) ? current : '';
+        $('set-effort').innerHTML = ['', ...supported]
+            .map((eff) => `<option value="${eff}" ${eff === selected ? 'selected' : ''}>${eff || 'default'}</option>`).join('');
+        const hint = $('set-effort-hint');
+        if (m && supported.length === 0) {
+            hint.textContent = `${modelId} doesn’t support reasoning effort, so this setting stays inactive while it’s selected.`;
+        } else if (current && !supported.includes(current)) {
+            hint.textContent = `Your saved effort “${current}” isn’t offered for ${modelId}; the model’s default is used until you choose a supported level.`;
+        } else {
+            hint.textContent = 'Higher effort lets the model think longer before answering. Available levels depend on the selected model.';
+        }
+    };
+    refreshEffortField();
+    $('set-model').onchange = (e) => { save({ model: e.target.value }); refreshEffortField(); };
     $('proj-browse').onclick = async () => {
         const sel = projects().find((p) => p.id === (state.settings && state.settings.selectedProjectId));
         const picked = await pickFolder({ title: 'New project folder', start: sel ? sel.path : '', requireName: true });

@@ -2,38 +2,52 @@
 
 ## Current focus
 
-**No-project working-directory leak — FIXED and MERGED to `main` (2026-07-07).**
+**Reasoning-effort HTTP 400 on Models without reasoning support — FIXED
+(2026-07-07), on `ai/reasoning-effort-model-guard`.**
+Reasoning effort is a single global Setting, but support is per-Model:
+`claude-haiku-4.5` advertises none, and the Copilot endpoint rejects
+`reasoning_effort` for it (`invalid_reasoning_effort`, HTTP 400). `New-DpTurnParameter`
+forwarded `-ReasoningEffort` whenever the Setting was truthy regardless of the
+effective Model, so a user who had set *max* saw every Turn on such a Model fail
+at `EndInvoke` (the reported error). Fix is defence in depth: the effort menu now
+offers only the Model's advertised levels, and the Host Server sends the effort to
+the Engine only when the effective Model advertises it. Next: fast-forward into
+`main` (local-only, not pushed) once reviewed; the Clone Wizard (specs/080)
+remains the next feature.
+
+## Just completed (this work, on ai/reasoning-effort-model-guard)
+
+- **State cache** (`Start-DeskPilot`): added `Models` + `DefaultModel` to
+  `$script:DeskPilot`; the `/api/models` route (`Invoke-DpRouteHandler`) now
+  populates them from the Engine's `Get-ShpModel` capability list.
+- **Turn guard** (`New-DpTurnParameter`): new `-ModelReasoningEfforts` param; the
+  global reasoning-effort Setting is forwarded as `-ReasoningEffort` only when the
+  effective Model advertises the chosen effort (suppressed on empty/unknown, so a
+  global preference stays inert on Models that can't honour it — never an HTTP 400).
+- **Turn wiring** (`Invoke-DpTurn`): resolves the effective Model (Conversation →
+  Settings → Engine default) and passes its cached efforts into the parameter builder.
+- **Frontend** (`web/assets/app.js`): the Settings reasoning-effort menu is
+  model-aware — options come from the effective Model's `reasoningEfforts` (+
+  default), it refreshes when the model changes, and a hint explains when a Model
+  supports none or when a saved effort is unavailable for the current Model.
+- **Tests:** +5 `New-DpTurnParameter` unit tests (supported→passed; empty→suppressed;
+  subset-miss→suppressed; unknown→suppressed; unset→omitted).
+- **Specs:** 020 (Turn assembly guard), 030 (models route caches the capability
+  list; effort forwarded only when supported), 040 (model-aware effort menu).
+
+Verified: full test suite **258/258, 0 failed** (9 tasks, 0 errors, 0 warnings);
+`app.js` parses as a valid ES module (`.mjs` + `node --check`). Root cause matches
+the screenshot: `claude-haiku-4.5` + `reasoning_effort "max"` → 400.
+
+## Prior focus — No-project working-directory leak (SHIPPED + MERGED 2026-07-07)
+
 `Invoke-DpTurn` only repositioned the long-lived Engine Runspace when a
 `workspaceFolder` was set, so a no-Project Turn ran in whatever directory the
 runspace was last left in — the folder DeskPilot was launched from (its own repo
-checkout, which has a `.memory-bank/`), or a previously selected Project. An
-agent that follows a pre-flight/memory-bank convention therefore probed
-`Test-Path .memory-bank` and read DeskPilot's own Memory Bank even though the
-user had no Project selected — exactly the confusing behaviour the user reported.
-Fix: point the Engine at a deterministic working directory on every Turn.
-Fast-forwarded `4dc9e63..0d75a87` into `main` (local-only, not pushed). Next: the
-Clone Wizard (specs/080) is the next feature.
-
-## Just completed (this work, on ai/no-project-cwd-leak)
-
-- **New helper** `Get-DpEngineWorkingDir` (source/Private): resolves the Engine's
-  per-Turn working directory — the Workspace Folder when set, else
-  `<dataDir>/workspace` (via `Get-DpDataDir`). Path-only; mirrors `Get-DpUploadDir`.
-- **Backend** `Invoke-DpTurn`: replaced the `if ($settings.workspaceFolder)` guard
-  around `Set-DpEngineLocation` with an unconditional call through
-  `Get-DpEngineWorkingDir`, so the runspace `$PWD` + `[Environment]::CurrentDirectory`
-  are deterministic every Turn (no launch-dir or stale-Project leak).
-- **Tests:** +3 `Get-DpEngineWorkingDir` unit tests (workspace passthrough;
-  fallback on null; fallback on whitespace — `Get-DpDataDir` mocked).
-- **Specs:** 020-architecture (Turn now sets a neutral cwd when no Project) and
-  050-security-model (no-Project cwd is a neutral scratch folder, not the launch
-  dir — a confinement note).
-
-Verified: Unit suite **241/241, 0 failed** (the 3 new tests pass); language-service
-clean on the new helper + edited `Invoke-DpTurn` (the pre-existing `$routes`
-unused-var warning at test line 71 is untouched). Root cause confirmed: DeskPilot's
-own `.memory-bank/` holds `projectbrief.md`/`productContext.md`/`activeContext.md`
-— the exact files the in-app agent reported reading.
+checkout, which has a `.memory-bank/`), or a previously selected Project. New
+helper `Get-DpEngineWorkingDir` (Workspace Folder when set, else
+`<dataDir>/workspace`); `Invoke-DpTurn` sets the location on every Turn. +3 unit
+tests. Fast-forwarded `4dc9e63..0d75a87` into `main` (local-only).
 
 ## Prior focus — Attach without a Project (SHIPPED 2026-07-07)
 

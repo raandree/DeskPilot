@@ -57,6 +57,11 @@ Starts the device-code flow. Events:
 }
 ```
 
+The Host Server caches this list. A Turn forwards the reasoning-effort Setting as
+`-ReasoningEffort` only when the effective Model's `reasoningEfforts` includes it;
+a Model advertising an empty list (no reasoning-effort support) never receives
+it, so the Engine cannot reject the Turn with `invalid_reasoning_effort` (400).
+
 ## Settings
 
 ### `GET /api/settings`
