@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Reasoning-effort HTTP 400 on Models without reasoning support — FIXED
-(2026-07-07), on `ai/reasoning-effort-model-guard`.**
+**Reasoning-effort HTTP 400 on Models without reasoning support — FIXED and
+MERGED to `main` (2026-07-07).**
 Reasoning effort is a single global Setting, but support is per-Model:
 `claude-haiku-4.5` advertises none, and the Copilot endpoint rejects
 `reasoning_effort` for it (`invalid_reasoning_effort`, HTTP 400). `New-DpTurnParameter`
@@ -11,9 +11,9 @@ forwarded `-ReasoningEffort` whenever the Setting was truthy regardless of the
 effective Model, so a user who had set *max* saw every Turn on such a Model fail
 at `EndInvoke` (the reported error). Fix is defence in depth: the effort menu now
 offers only the Model's advertised levels, and the Host Server sends the effort to
-the Engine only when the effective Model advertises it. Next: fast-forward into
-`main` (local-only, not pushed) once reviewed; the Clone Wizard (specs/080)
-remains the next feature.
+the Engine only when the effective Model advertises it. Fast-forwarded
+`a1df360..9c3c3e8` into `main` (local-only, not pushed). Next: the Clone Wizard
+(specs/080) is the next feature.
 
 ## Just completed (this work, on ai/reasoning-effort-model-guard)
 
