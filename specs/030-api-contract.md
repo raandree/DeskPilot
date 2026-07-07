@@ -396,9 +396,13 @@ ambient git credentials:
 { "conversations": [
   { "id": "c_8f1", "title": "Summarise the Q2 notes",
     "createdUtc": "2026-06-08T10:00:00Z", "updatedUtc": "2026-06-08T10:05:00Z",
-    "messageCount": 4, "model": "claude-opus-4.8" }
+    "messageCount": 4, "model": "claude-opus-4.8",
+    "pinned": false, "archived": false, "unread": false, "color": null }
 ] }
 ```
+
+The list is sorted pinned-first, then by `updatedUtc` descending. `unread` and
+`color` are organisational fields carried on every summary (and on search results).
 
 ### `POST /api/conversations`
 
@@ -435,9 +439,26 @@ Returns `204`. Also removes the Conversation from the persisted store.
 
 ### `PATCH /api/conversations/{id}`
 
-Body: `{ "title"?: "…", "model"?: "…" }`. Returns the updated summary. Providing a
-`title` also **locks** it (`titleLocked`), so auto-titling never overwrites a name
-the user chose.
+Body: `{ "title"?: "…", "model"?: "…", "pinned"?: bool, "archived"?: bool, "unread"?: bool, "color"?: "red|amber|green|teal|blue|purple|null" }`.
+Returns the updated summary (including `pinned`, `archived`, `unread`, `color`).
+Providing a `title` also **locks** it (`titleLocked`), so auto-titling never
+overwrites a name the user chose. `pinned` / `archived` / `unread` / `color` are
+organisational flags and do **not** bump `updatedUtc` (toggling them never
+reorders the list). An unknown `color` is rejected with `400 bad_color`; an empty
+or absent `color` clears the label.
+
+### `POST /api/conversations/{id}/duplicate`
+
+Duplicates the Conversation into a brand-new one that copies the title (prefixed
+`Copy of `), Messages, and history but shares no state with the original. The copy
+is never pinned/archived/unread and its title is locked. Returns `201` with the new
+Conversation summary; `404` if the source is missing.
+
+### `POST /api/conversations/read-all`
+
+Clears the `unread` flag on every Conversation in one request. Returns
+`{ "ok": true, "cleared": <count> }`. Registered before the `/{id}` routes so the
+literal `read-all` path matches ahead of the `{id}` wildcard.
 
 ## Sending a Turn — **SSE**
 

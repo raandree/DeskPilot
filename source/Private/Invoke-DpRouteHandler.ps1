@@ -482,7 +482,7 @@ function Invoke-DpRouteHandler {
             $summaries = $state.Conversations.Values |
                 Sort-Object @{ Expression = { [bool]$_.pinned }; Descending = $true }, @{ Expression = { $_.updatedUtc }; Descending = $true } |
                 ForEach-Object {
-                    @{ id = $_.id; title = $_.title; model = $_.model; pinned = [bool]$_.pinned; archived = [bool]$_.archived; createdUtc = $_.createdUtc; updatedUtc = $_.updatedUtc; messageCount = $_.messages.Count }
+                    @{ id = $_.id; title = $_.title; model = $_.model; pinned = [bool]$_.pinned; archived = [bool]$_.archived; unread = [bool]$_.unread; color = $_.color; createdUtc = $_.createdUtc; updatedUtc = $_.updatedUtc; messageCount = $_.messages.Count }
                 }
             Write-DpResponse -Stream $Stream -Json @{ conversations = @($summaries) }
         }
@@ -515,23 +515,38 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
                 return
             }
+            # Validate the colour up-front so an unknown value rejects cleanly
+            # before any field is mutated. An empty/absent colour clears it.
+            $requestedColor = $null
+            if ($Body -and $Body.PSObject.Properties['color']) {
+                $requestedColor = if ($Body.color) { [string]$Body.color } else { '' }
+                $allowedColors = @('red', 'amber', 'green', 'teal', 'blue', 'purple')
+                if ($requestedColor -and $allowedColors -notcontains $requestedColor) {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_color'; message = "Unknown colour '$requestedColor'." } }
+                    return
+                }
+            }
             if ($Body -and $Body.PSObject.Properties['title'] -and $Body.title) {
                 $conversation.title = [string]$Body.title
                 # A manual rename locks the title so auto-titling never overwrites it.
                 $conversation.titleLocked = $true
             }
             if ($Body -and $Body.PSObject.Properties['model']) { $conversation.model = if ($Body.model) { [string]$Body.model } else { $null } }
-            # Pin / archive are organisational flags; they must not reorder the list,
-            # so they do not bump updatedUtc (only a title/model edit does).
+            # Pin / archive / unread / colour are organisational flags; they must
+            # not reorder the list, so they do not bump updatedUtc (only a
+            # title/model edit does).
             $touched = $false
             if ($Body -and ($Body.PSObject.Properties['title'] -or $Body.PSObject.Properties['model'])) { $touched = $true }
             if ($Body -and $Body.PSObject.Properties['pinned']) { $conversation.pinned = [bool]$Body.pinned }
             if ($Body -and $Body.PSObject.Properties['archived']) { $conversation.archived = [bool]$Body.archived }
+            if ($Body -and $Body.PSObject.Properties['unread']) { $conversation.unread = [bool]$Body.unread }
+            if ($null -ne $requestedColor) { $conversation.color = if ($requestedColor) { $requestedColor } else { $null } }
             if ($touched) { $conversation.updatedUtc = [DateTime]::UtcNow.ToString('o') }
             Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
             Write-DpResponse -Stream $Stream -Json @{
                 id = $conversation.id; title = $conversation.title; model = $conversation.model
                 pinned = [bool]$conversation.pinned; archived = [bool]$conversation.archived
+                unread = [bool]$conversation.unread; color = $conversation.color
                 createdUtc = $conversation.createdUtc; updatedUtc = $conversation.updatedUtc; messageCount = $conversation.messages.Count
             }
         }
@@ -541,6 +556,32 @@ function Invoke-DpRouteHandler {
                 Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
             }
             Write-DpResponse -Stream $Stream -Status 204 -NoBody
+        }
+        'duplicateConversation' {
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            $copy = Copy-DpConversation -Conversation $conversation
+            $state.Conversations[$copy.id] = $copy
+            Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+            Write-DpResponse -Stream $Stream -Status 201 -Json @{
+                id = $copy.id; title = $copy.title; model = $copy.model
+                pinned = [bool]$copy.pinned; archived = [bool]$copy.archived
+                unread = [bool]$copy.unread; color = $copy.color
+                createdUtc = $copy.createdUtc; updatedUtc = $copy.updatedUtc; messageCount = $copy.messages.Count
+            }
+        }
+        'readAllConversations' {
+            $cleared = 0
+            foreach ($conversation in $state.Conversations.Values) {
+                if ($conversation.unread) { $conversation.unread = $false; $cleared++ }
+            }
+            if ($cleared -gt 0) {
+                Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+            }
+            Write-DpResponse -Stream $Stream -Json @{ ok = $true; cleared = $cleared }
         }
         'postMessage' {
             $conversation = $state.Conversations[$RouteParams.id]
@@ -750,6 +791,8 @@ function Invoke-DpRouteHandler {
                             title        = $conversation.title
                             pinned       = [bool]$conversation.pinned
                             archived     = [bool]$conversation.archived
+                            unread       = [bool]$conversation.unread
+                            color        = $conversation.color
                             updatedUtc   = $conversation.updatedUtc
                             messageCount = $conversation.messages.Count
                             snippet      = $snippet

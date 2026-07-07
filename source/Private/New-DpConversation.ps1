@@ -23,6 +23,8 @@ function New-DpConversation {
         model       = $Model
         pinned      = $false
         archived    = $false
+        unread      = $false
+        color       = $null
         createdUtc  = $now
         updatedUtc  = $now
         messages    = [System.Collections.Generic.List[object]]::new()

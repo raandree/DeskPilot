@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A richer conversation menu.** The per-conversation **⋯** menu is now grouped
+  into clear sections with several new actions: **Open in new window** (opens the
+  conversation in a separate browser window via a `/?c=<id>` deep link),
+  **Duplicate** (an independent copy of the title, messages, and history),
+  **Mark as unread** / **Mark as read** with an unread dot, a bold title, and a
+  **Mark N as read** control under the list, an optional **Colour** label from a
+  fixed palette (shown as a dot on the row), **Copy transcript** (the Markdown
+  transcript straight to the clipboard), and **Details** (a read-only popover with
+  the created/updated times, message count, model, and colour). Focused rows also
+  support keyboard shortcuts: **Enter** opens, **F2** renames, **Delete** archives.
+  Deleting a conversation is unchanged (the hover **✕**). New endpoints
+  `POST /api/conversations/{id}/duplicate` and `POST /api/conversations/read-all`,
+  and new `unread`/`color` fields on the conversation summary.
 - **Automatic conversation titles.** A brand-new conversation is now renamed from
   the generic "New conversation" to a concise, few-word AI summary of your first
   message — the way GitHub Copilot names a new chat (for example "Stop button

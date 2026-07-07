@@ -2,51 +2,62 @@
 
 ## Current focus
 
-**Automatic conversation titles (like GitHub Copilot) — SHIPPED + MERGED to `main`
-(2026-07-07, local-only, not pushed).**
-Previously a brand-new Conversation was titled with a crude 60-char truncation of
-the first prompt (inline in `Invoke-DpTurn`). Now, after the first Turn, the SPA
-fires a new best-effort `POST /api/conversations/{id}/title`; the Host Server runs
-a pure-reasoning Turn with **all Tools disabled** (the Merge-Plan pattern via
-`Invoke-DpEngineCommand`) to summarise the first prompt into a few words, cleans
-it, and persists it — the sidebar + title field update in place.
+**Extended the per-Conversation ⋯ menu (8-feature batch) — SHIPPED on
+`ai/conversation-menu-extras` (2026-07-07), local-only, not yet merged.**
+The user asked to extend the conversation menu like VS Code's Chat Sessions menu
+plus researched extras, and reviewed a tiered proposal before work. Approved set:
+Open in new window (A1), Mark unread / Mark all read + badge (A2), keyboard
+shortcuts (A4), grouped menu with separators (A5), Duplicate (B1), Copy transcript
+(B4), Details popover (B6), Colour label (C4). **Deletion is deliberately
+unchanged** (the user said so mid-turn): the hover ✕ and its instant delete stay
+as-is; Delete was NOT added to the menu.
 
-Design (mirrors `New-DpMergePlanPrompt` / `ConvertFrom-DpMergePlan`):
+Backend: new `unread` (bool) + `color` (nullable palette name) Conversation fields
+through `New-DpConversation` / `Save-DpConversationStore` / `Import-DpConversationStore`;
+`patchConversation` accepts `unread`/`color` (colour validated → `400 bad_color`;
+organisational flags don't bump `updatedUtc`); `list`/`search` summaries carry both;
+new `Copy-DpConversation` helper (JSON-round-trip deep copy, new id, `Copy of `
+prefix, flags reset, `titleLocked`); new routes `POST /api/conversations/{id}/duplicate`
+(201) and `POST /api/conversations/read-all` (registered before `/{id}`).
 
-- **`New-DpTitlePrompt`** (pure): a strict "few-word title only, no quotes/
-  punctuation/Markdown" instruction; the input prompt is truncated to 800 chars.
-- **`ConvertFrom-DpTitleResult`** (pure): first meaningful line (skips a leading
-  `label:` line + code fences), strips a `Title:` label / Markdown heading-list
-  markers / surrounding straight+smart quotes+backticks, collapses whitespace,
-  removes trailing punctuation, caps words (8) then length (60, `…`). Returns ''
-  when nothing usable → caller keeps the fallback title.
-- **Route `titleConversation`**: returns the current title unchanged when
-  `titleLocked` or past the first exchange (>1 user Message); `409` if a Turn is
-  running; else Engine call (Tools off) + clean + persist. Never throws.
-- **`titleLocked`** — a new Conversation field (default `$false`), set `$true` on a
-  manual rename in `patchConversation`, persisted through `New-DpConversation` /
-  `Import-DpConversationStore` / `Save-DpConversationStore` (the store whitelists
-  fields). Auto-titling never clobbers a user's chosen name.
-- **Frontend `maybeAutoTitle()`** in `_runTurn`'s `finally` (after the composer
-  re-enables), gated to `messageCount <= 2`; the server makes the final call.
-  Single-threaded server ⇒ no runspace race (a user send during title-gen queues).
+Frontend (`app.js`): grouped menu (Open / Organise / Manage with `menu-divider`s +
+a colour-swatch row), `openConversationInNewWindow` (deep link `/?c=` handled in
+`enterApp`), `duplicateConversation`, `toggleUnread` + `markAllConversationsRead` +
+`updateMarkAllReadButton` (a "Mark N as read" button in index.html), unread dot +
+bold title + colour dot in `renderConversationList`/`renderSearchResults`,
+`handleConvItemKey` (Enter/F2/Delete=archive on a focused row), `setConversationColor`,
+`copyTranscript` + extracted `buildTranscript` (reused by export),
+`showConversationDetails`. Unread clears on open in `selectConversation`. Palette
+names mirror the backend allow-list. CSS + index.html button added.
 
-The instant truncation in `Invoke-DpTurn` stays as the fallback shown until the AI
-title arrives (and if titling is skipped/fails). +17 unit tests. Verified: full
-suite **299/299, 0 failed** (9 tasks, 0 errors, 0 warnings); `app.js` ESM check OK
-(`.mjs`). Specs 030 + CHANGELOG updated.
++6 unit tests. Glossary rows (Unread, Duplicate, Colour) + notes. Specs 010
+(FR-C17) / 030 / 040 updated. Verified: full Sampler build+test **305/305, 0
+failed** (16 tasks, 0 errors, 0 warnings); `app.js` ESM check OK (`.mjs`).
+
+## Prior focus — automatic conversation titles (SHIPPED + MERGED to `main`, 2026-07-07)
+
+A brand-new Conversation is auto-titled from its first prompt via a best-effort
+`POST /api/conversations/{id}/title` (pure-reasoning Turn, Tools off;
+`New-DpTitlePrompt` + `ConvertFrom-DpTitleResult`); a manual rename sets
+`titleLocked` so auto-titling never overwrites it. The instant 60-char truncation
+stays as the fallback.
 
 ## Next steps
 
-1. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
+1. **Manual browser smoke of the new menu:** open the ⋯ menu, try each action —
+   open-in-new-window (confirm the deep link `/?c=` opens the right Conversation),
+   Duplicate, mark unread + "Mark N as read", set/clear a Colour, Copy transcript,
+   Details; and the row keyboard shortcuts (Enter/F2/Delete). Then merge
+   `ai/conversation-menu-extras` into `main` (local-only) when satisfied.
+2. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
    main): exercise /api/git/branches, /merge/preview, a real merge, a conflict →
    /merge/plan → /merge/apply, and /cleanup (local-only; the plan route needs the
    Engine authenticated).
-2. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
-3. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
+3. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
+4. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
    screen); `Invoke-DpGitClone`; `POST /api/projects/clone`; reuse the folder
    picker; SSH + ambient credentials only; auto-select the new Project.
-4. Then resume the parked publish/Sampler work (Phase B/D) if desired.
+5. Then resume the parked publish/Sampler work (Phase B/D) if desired.
 
 ## Prior focus — "Working…" spinner froze under reduce-motion (FIXED + MERGED 2026-07-07)
 

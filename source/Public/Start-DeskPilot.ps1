@@ -118,6 +118,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/conversations'; Name = 'listConversations' }
             @{ Method = 'POST'; Pattern = '/api/conversations'; Name = 'createConversation' }
             @{ Method = 'GET'; Pattern = '/api/conversations/search'; Name = 'searchConversations' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/read-all'; Name = 'readAllConversations' }
             @{ Method = 'GET'; Pattern = '/api/conversations/{id}'; Name = 'getConversation' }
             @{ Method = 'PATCH'; Pattern = '/api/conversations/{id}'; Name = 'patchConversation' }
             @{ Method = 'DELETE'; Pattern = '/api/conversations/{id}'; Name = 'deleteConversation' }
@@ -126,6 +127,7 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/edit'; Name = 'editTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/stop'; Name = 'stopTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/title'; Name = 'titleConversation' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/duplicate'; Name = 'duplicateConversation' }
             @{ Method = 'POST'; Pattern = '/api/uploads'; Name = 'uploads' }
         )
     }

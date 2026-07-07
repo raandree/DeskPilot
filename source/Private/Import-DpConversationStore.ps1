@@ -41,6 +41,8 @@ function Import-DpConversationStore {
                 model       = if ($c.model) { [string]$c.model } else { $null }
                 pinned      = [bool]($c.PSObject.Properties['pinned'] -and $c.pinned)
                 archived    = [bool]($c.PSObject.Properties['archived'] -and $c.archived)
+                unread      = [bool]($c.PSObject.Properties['unread'] -and $c.unread)
+                color       = if ($c.PSObject.Properties['color'] -and $c.color) { [string]$c.color } else { $null }
                 createdUtc  = ConvertTo-DpIsoString $c.createdUtc
                 updatedUtc  = ConvertTo-DpIsoString $c.updatedUtc
                 messages    = $messages

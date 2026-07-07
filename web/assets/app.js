@@ -128,6 +128,21 @@ const PERMISSIONS = [
     { key: 'userTools', name: 'Your tools', note: 'Call tools you registered.', powerful: false },
 ];
 
+// Fixed palette for the optional Conversation colour label. These names must
+// match the backend allow-list in Invoke-DpRouteHandler (patchConversation).
+const CONV_COLORS = [
+    { name: 'red', hex: '#ef4444' },
+    { name: 'amber', hex: '#f59e0b' },
+    { name: 'green', hex: '#22c55e' },
+    { name: 'teal', hex: '#14b8a6' },
+    { name: 'blue', hex: '#3b82f6' },
+    { name: 'purple', hex: '#a855f7' },
+];
+function convColorHex(name) {
+    const c = CONV_COLORS.find((x) => x.name === name);
+    return c ? c.hex : 'transparent';
+}
+
 // ===== Theme =====
 function effectiveTheme() {
     const t = localStorage.getItem('ad_theme') || 'system';
@@ -188,7 +203,11 @@ async function enterApp() {
     await loadAgents();
     await loadConversations();
     await refreshUsage();
-    if (state.conversations.length) await selectConversation(state.conversations[0].id);
+    // Deep link: /?c=<id> opens that Conversation directly (used by "Open in new
+    // window"), else fall back to the most recent, else a fresh Conversation.
+    const deepId = new URLSearchParams(location.search).get('c');
+    if (deepId && state.conversations.some((c) => c.id === deepId)) await selectConversation(deepId);
+    else if (state.conversations.length) await selectConversation(state.conversations[0].id);
     else await newConversation();
 }
 
@@ -349,9 +368,24 @@ function renderConversationList() {
     for (const c of visible) {
         const item = el('conv-item');
         if (c.archived) item.classList.add('archived');
+        if (c.unread) item.classList.add('unread');
         if (state.current && c.id === state.current.id) item.classList.add('active');
+        item.tabIndex = 0;
+        item.onkeydown = (e) => handleConvItemKey(e, c);
+        if (c.color) {
+            const dot = el('conv-color-dot');
+            dot.style.background = convColorHex(c.color);
+            dot.title = c.color;
+            item.appendChild(dot);
+        }
         const name = el('conv-name');
         name.textContent = (c.pinned ? '📌 ' : '') + (c.title || 'New conversation');
+        item.appendChild(name);
+        if (c.unread) {
+            const unreadDot = el('conv-unread-dot');
+            unreadDot.title = 'Unread';
+            item.appendChild(unreadDot);
+        }
         const menu = el('conv-menu-btn', 'button');
         menu.textContent = '⋯';
         menu.title = 'Conversation actions';
@@ -361,11 +395,12 @@ function renderConversationList() {
         del.textContent = '✕';
         del.title = 'Delete';
         del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
-        item.append(name, menu, del);
+        item.append(menu, del);
         item.onclick = () => selectConversation(c.id);
         list.appendChild(item);
     }
     updateArchivedToggle();
+    updateMarkAllReadButton();
 }
 
 function updateArchivedToggle() {
@@ -378,6 +413,16 @@ function updateArchivedToggle() {
     btn.textContent = state.showArchived ? 'Hide archived' : `Show ${archivedCount} archived`;
 }
 
+// Show a "Mark N as read" control only when unread Conversations exist.
+function updateMarkAllReadButton() {
+    const btn = $('btn-mark-all-read');
+    if (!btn) return;
+    const count = state.conversations.filter((c) => c.unread).length;
+    if (count === 0) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    btn.textContent = 'Mark ' + count + ' as read';
+}
+
 function renderSearchResults() {
     const list = $('conversation-list');
     list.innerHTML = '';
@@ -387,11 +432,14 @@ function renderSearchResults() {
         empty.textContent = 'No conversations match.';
         list.appendChild(empty);
         updateArchivedToggle();
+        updateMarkAllReadButton();
         return;
     }
     for (const r of results) {
         const item = el('conv-item conv-search-item');
+        if (r.unread) item.classList.add('unread');
         if (state.current && r.id === state.current.id) item.classList.add('active');
+        if (r.color) item.style.borderLeft = '3px solid ' + convColorHex(r.color);
         const name = el('conv-name');
         name.textContent = (r.pinned ? '📌 ' : '') + (r.title || 'New conversation');
         item.appendChild(name);
@@ -404,6 +452,7 @@ function renderSearchResults() {
         list.appendChild(item);
     }
     updateArchivedToggle();
+    updateMarkAllReadButton();
 }
 
 // Debounced server-side search across titles and message text.
@@ -422,7 +471,9 @@ function runConversationSearch(q) {
     }, 180);
 }
 
-// Per-conversation action menu (pin, archive, rename, export, delete).
+// Per-conversation action menu, grouped into Open / Organise / Manage sections.
+// Deletion is deliberately NOT in this menu — it stays on the hover ✕ so the
+// delete flow is unchanged.
 function openConvMenu(summary, anchor) {
     closeConvMenu();
     const menu = el('popover popover-menu conv-action-menu', 'div');
@@ -437,19 +488,53 @@ function openConvMenu(summary, anchor) {
         return b;
     };
     menu.append(
+        mk('Open in new window', () => openConversationInNewWindow(summary.id)),
+        mk('Duplicate', () => duplicateConversation(summary.id)),
+        el('menu-divider'),
         mk(summary.pinned ? 'Unpin' : 'Pin to top', () => togglePin(summary.id, !summary.pinned)),
+        mk(summary.unread ? 'Mark as read' : 'Mark as unread', () => toggleUnread(summary.id, !summary.unread)),
         mk(summary.archived ? 'Unarchive' : 'Archive', () => toggleArchive(summary.id, !summary.archived)),
+        buildConvColorRow(summary),
+        el('menu-divider'),
         mk('Rename…', () => renameConversation(summary.id)),
+        mk('Copy transcript', () => copyTranscript(summary.id)),
         mk('Export as Markdown', () => exportConversation(summary.id)),
+        mk('Details', () => showConversationDetails(summary, anchor)),
     );
     document.body.appendChild(menu);
-    const rect = anchor.getBoundingClientRect();
-    menu.style.position = 'fixed';
-    menu.style.transform = 'none';
-    menu.style.top = (rect.bottom + 4) + 'px';
-    menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - (menu.offsetWidth || 180) - 8)) + 'px';
+    positionConvPopover(menu, anchor);
     state._convMenu = menu;
     setTimeout(() => document.addEventListener('click', closeConvMenu, { once: true }), 0);
+}
+
+// Position a fixed popover just below an anchor, clamped to the viewport.
+function positionConvPopover(pop, anchor) {
+    const rect = anchor.getBoundingClientRect();
+    pop.style.position = 'fixed';
+    pop.style.transform = 'none';
+    pop.style.top = (rect.bottom + 4) + 'px';
+    pop.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - (pop.offsetWidth || 180) - 8)) + 'px';
+}
+
+// A row of colour swatches (plus a "no colour" option) for tagging a Conversation.
+function buildConvColorRow(summary) {
+    const row = el('menu-color-row');
+    const none = el('color-swatch color-none' + (summary.color ? '' : ' selected'), 'button');
+    none.type = 'button';
+    none.title = 'No colour';
+    none.setAttribute('aria-label', 'No colour');
+    none.onclick = (e) => { e.stopPropagation(); closeConvMenu(); setConversationColor(summary.id, ''); };
+    row.appendChild(none);
+    for (const col of CONV_COLORS) {
+        const sw = el('color-swatch' + (summary.color === col.name ? ' selected' : ''), 'button');
+        sw.type = 'button';
+        sw.style.background = col.hex;
+        sw.title = col.name;
+        sw.setAttribute('aria-label', col.name);
+        sw.onclick = (e) => { e.stopPropagation(); closeConvMenu(); setConversationColor(summary.id, col.name); };
+        row.appendChild(sw);
+    }
+    return row;
 }
 
 function closeConvMenu() {
@@ -497,11 +582,99 @@ async function renameConversation(id) {
     } catch (e) { toast(e.message); }
 }
 
-// Build a Markdown transcript of a Conversation and download it.
-async function exportConversation(id) {
-    let conv;
-    try { conv = await api('GET', '/api/conversations/' + id); }
-    catch (e) { toast(e.message); return; }
+// Open a Conversation in a separate browser window/tab via a deep link.
+function openConversationInNewWindow(id) {
+    const url = new URL(location.href);
+    url.hash = '';
+    url.searchParams.set('c', id);
+    if (token) url.searchParams.set('t', token);
+    window.open(url.toString(), '_blank', 'noopener');
+}
+
+// Duplicate a Conversation (server copies title + messages + history) and open it.
+async function duplicateConversation(id) {
+    try {
+        const summary = await api('POST', '/api/conversations/' + id + '/duplicate');
+        await loadConversations();
+        await selectConversation(summary.id);
+        toast('Duplicated.');
+    } catch (e) { toast(e.message); }
+}
+
+// Toggle a Conversation's unread flag.
+async function toggleUnread(id, unread) {
+    try {
+        await api('PATCH', '/api/conversations/' + id, { unread });
+        patchConvLocal(id, { unread });
+        renderConversationList();
+        if (state.searchResults) renderSearchResults();
+    } catch (e) { toast(e.message); }
+}
+
+// Clear the unread flag on every Conversation in one request.
+async function markAllConversationsRead() {
+    try {
+        await api('POST', '/api/conversations/read-all');
+        for (const c of state.conversations) c.unread = false;
+        if (state.searchResults) for (const r of state.searchResults) r.unread = false;
+        renderConversationList();
+        if (state.searchResults) renderSearchResults();
+        toast('All marked read.');
+    } catch (e) { toast(e.message); }
+}
+
+// Set (or clear, when color is falsy) a Conversation's colour label.
+async function setConversationColor(id, color) {
+    try {
+        await api('PATCH', '/api/conversations/' + id, { color });
+        patchConvLocal(id, { color: color || null });
+        renderConversationList();
+        if (state.searchResults) renderSearchResults();
+    } catch (e) { toast(e.message); }
+}
+
+// Keyboard shortcuts on a focused Conversation row: Enter opens, F2 renames,
+// Delete archives (reversible — it never deletes the Conversation).
+function handleConvItemKey(e, c) {
+    if (e.key === 'Enter') { e.preventDefault(); selectConversation(c.id); }
+    else if (e.key === 'F2') { e.preventDefault(); renameConversation(c.id); }
+    else if (e.key === 'Delete') { e.preventDefault(); toggleArchive(c.id, !c.archived); }
+}
+
+// Format an ISO timestamp for the details popover; falls back to the raw string.
+function fmtConvDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+}
+
+// A small read-only popover with a Conversation's metadata.
+function showConversationDetails(summary, anchor) {
+    closeConvMenu();
+    const pop = el('popover conv-action-menu conv-details-pop', 'div');
+    const rows = [
+        ['Title', summary.title || 'New conversation'],
+        ['Messages', String(summary.messageCount != null ? summary.messageCount : '—')],
+        ['Model', summary.model || 'Default'],
+        ['Colour', summary.color || 'None'],
+        ['Created', fmtConvDate(summary.createdUtc)],
+        ['Updated', fmtConvDate(summary.updatedUtc)],
+    ];
+    for (const [k, v] of rows) {
+        const row = el('detail-row');
+        const key = el('detail-key'); key.textContent = k;
+        const val = el('detail-val'); val.textContent = v; val.title = v;
+        row.append(key, val);
+        pop.appendChild(row);
+    }
+    document.body.appendChild(pop);
+    positionConvPopover(pop, anchor);
+    state._convMenu = pop;
+    setTimeout(() => document.addEventListener('click', closeConvMenu, { once: true }), 0);
+}
+
+// Build a Markdown transcript of a Conversation.
+function buildTranscript(conv) {
     const lines = [];
     lines.push('# ' + (conv.title || 'Conversation'));
     lines.push('');
@@ -521,7 +694,36 @@ async function exportConversation(id) {
         if (m.model) bits.push(m.model);
         if (bits.length) { lines.push('> ' + bits.join(' · ')); lines.push(''); }
     }
-    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+    return lines.join('\n');
+}
+
+// Copy a Conversation's Markdown transcript to the clipboard.
+async function copyTranscript(id) {
+    let conv;
+    try { conv = await api('GET', '/api/conversations/' + id); }
+    catch (e) { toast(e.message); return; }
+    const text = buildTranscript(conv);
+    try {
+        await navigator.clipboard.writeText(text);
+        toast('Transcript copied.');
+    } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        ta.remove();
+        toast(ok ? 'Transcript copied.' : 'Could not copy transcript.');
+    }
+}
+
+// Build a Markdown transcript of a Conversation and download it.
+async function exportConversation(id) {
+    let conv;
+    try { conv = await api('GET', '/api/conversations/' + id); }
+    catch (e) { toast(e.message); return; }
+    const blob = new Blob([buildTranscript(conv)], { type: 'text/markdown' });
     const safe = (conv.title || 'conversation').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'conversation';
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -557,6 +759,13 @@ async function selectConversation(id) {
     $('conv-title').value = state.current.title || '';
     setModelSelect(state.current.model || state.defaultModel);
     seedPromptHistory(state.current.messages);
+    // Opening a Conversation clears its unread flag (best-effort; never blocks).
+    const openedSummary = state.conversations.find((c) => c.id === id);
+    if (openedSummary && openedSummary.unread) {
+        openedSummary.unread = false;
+        if (state.searchResults) { const r = state.searchResults.find((x) => x.id === id); if (r) r.unread = false; }
+        api('PATCH', '/api/conversations/' + id, { unread: false }).catch(() => {});
+    }
     renderConversationList();
     renderThread();
     closeSidebar();
@@ -3664,6 +3873,7 @@ function wireGlobal() {
         if (e.key === 'Escape') { e.target.value = ''; runConversationSearch(''); }
     });
     $('btn-show-archived').onclick = () => { state.showArchived = !state.showArchived; renderConversationList(); };
+    $('btn-mark-all-read').onclick = () => markAllConversationsRead();
     $('btn-send').onclick = () => send();
     $('btn-dispatch').onclick = (e) => { e.stopPropagation(); toggleDispatchPopover(); };
     $('dispatch-stop-send').onclick = () => dispatchStopAndSend();

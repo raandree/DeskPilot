@@ -12,7 +12,10 @@ synonym.
 | Host Server | The PowerShell HTTP + SSE process that serves the web UI and bridges requests to the Engine. | backend, web server, API (loosely) |
 | Engine | ShellPilot — the PowerShell module that talks to GitHub Copilot. | the model, the API, the SDK, Copilot (for the module) |
 | Engine Runspace | The single long-lived PowerShell runspace with the Engine imported, where every Turn executes. | thread, worker, background job |
-| Conversation | A user-visible chat thread with its own ordered Message history. May be **pinned** (sorted to the top of the list) or **archived** (hidden from the main list behind a show-archived toggle). | session, chat (for the thread), room |
+| Conversation | A user-visible chat thread with its own ordered Message history. May be **pinned** (sorted to the top of the list), **archived** (hidden from the main list behind a show-archived toggle), marked **Unread**, or given a **Colour** label. | session, chat (for the thread), room |
+| Unread | A per-Conversation flag marking it as having content the user has not yet seen. Shown as a dot plus a bold title and cleared when the Conversation is opened or via **Mark all as read**. | notification, badge (loosely), new, seen |
+| Duplicate (a Conversation) | Create an independent copy of a Conversation — its title, Messages, and history — as a brand-new Conversation that shares no state with the original. | fork, branch (that is a git Branch), clone (that is a repo Clone), copy (in UI copy) |
+| Colour | An optional colour label a user assigns to a Conversation for lightweight organisation, drawn from a fixed palette and shown as a dot on the row. | tag, category, flag, label (in identifiers) |
 | Turn | One user prompt plus the assistant's full response, including any Tool use. | round, exchange |
 | Message | A single entry in a Conversation, authored by the user or the assistant. | post, line, bubble |
 | Tool | An agent capability category: Browsing, File, Terminal, Ask-User, or a User Tool. | function, plugin, skill (a Tool is not a Skill) |
@@ -78,6 +81,17 @@ synonym.
   **Task List** (the in-Turn progress checklist) and not an **Activity** record.
 - **Clone vs. checkout.** **Clone** creates a new local Project from a remote
   repository. Switching between existing Branches is a checkout, not a Clone.
+- **Duplicate vs. Branch vs. Clone.** **Duplicate** copies a **Conversation**
+  into a new Conversation. A **Branch** is a git branch inside a Project. A
+  **Clone** makes a new Project from a remote repository. They are three
+  different concepts; never call duplicating a Conversation “branching” or
+  “cloning” it. The private helper is `Copy-DpConversation` because **Copy** is
+  the approved PowerShell verb; the product term everywhere else is **Duplicate**.
+- **Colour vs. the `color` field.** UI copy, docs, and prose use the British
+  spelling **Colour**; the wire/JSON field and code identifiers use `color` to
+  match CSS and JSON conventions. This mirrors the Task / `TodoList` boundary
+  note — the anglicised term is canonical, the technical field name is an
+  accepted boundary spelling.
 - **Close vs. Remove vs. switch (a Project).** **Close** deselects the active
   Project — it stays registered, but no Workspace Folder is active. **Remove**
   unregisters a Project (it leaves the registry; the folder stays on disk).

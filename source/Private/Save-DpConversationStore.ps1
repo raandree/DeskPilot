@@ -33,6 +33,8 @@ function Save-DpConversationStore {
                 model       = $_.model
                 pinned      = [bool]$_.pinned
                 archived    = [bool]$_.archived
+                unread      = [bool]$_.unread
+                color       = $_.color
                 createdUtc  = $_.createdUtc
                 updatedUtc  = $_.updatedUtc
                 messages    = @($_.messages)

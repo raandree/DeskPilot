@@ -55,7 +55,16 @@ accent fills so the bright dark-mode accent stays legible.
 ### 2. Sidebar
 
 - **+ New** Conversation button (primary).
-- Conversation list: title, relative time, hover actions (rename, delete).
+- Conversation list: title, an optional **Colour** dot, an **Unread** dot (with a
+  bold title), and per-item controls — a hover **⋯** action menu and the hover
+  **✕** delete. A focused row supports keyboard shortcuts: Enter opens, F2
+  renames, Delete archives (never deletes).
+- **⋯ action menu**, grouped by separators:
+  - *Open* — **Open in new window** (deep link `/?c=<id>`), **Duplicate**.
+  - *Organise* — **Pin to top** / Unpin, **Mark as unread** / Mark as read, **Archive** / Unarchive, and a **Colour** swatch row (a no-colour option plus the fixed palette).
+  - *Manage* — **Rename…**, **Copy transcript** (Markdown → clipboard), **Export as Markdown** (download), **Details** (a read-only popover: created / updated / message count / model / colour).
+- Below the list: a **Show N archived** toggle and, when any Conversation is
+  unread, a **Mark N as read** control.
 - Footer: cumulative **Usage** chip (tokens · $cost) → opens a Usage popover;
   a **🧩 Customizations** button → the Customizations surface; and the
   **⚙ Settings** button.

@@ -3088,6 +3088,101 @@ button.tree-row {
     z-index: 60;
 }
 
+/* Conversation colour label, unread indicators, keyboard focus, and the
+   colour-swatch row + details popover used by the per-item action menu. */
+.conv-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.conv-item.unread .conv-name {
+    font-weight: 700;
+}
+
+.conv-color-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.conv-unread-dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+.mark-all-read {
+    display: block;
+    width: calc(100% - 24px);
+    margin: 0 12px 8px;
+    padding: 6px 8px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.mark-all-read:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.menu-color-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 9px;
+}
+
+.color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: pointer;
+}
+
+.color-swatch.selected {
+    border-color: var(--text);
+}
+
+.color-swatch.color-none {
+    background: transparent;
+    border: 1px dashed var(--muted);
+}
+
+.color-swatch.color-none.selected {
+    border-color: var(--text);
+}
+
+.conv-details-pop .detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+
+.conv-details-pop .detail-key {
+    color: var(--muted);
+}
+
+.conv-details-pop .detail-val {
+    color: var(--text);
+    text-align: right;
+    max-width: 60%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* ===== Git diff (inline in the Activity panel) ===== */
 .git-diff-btn {
     margin-left: 8px;

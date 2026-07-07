@@ -105,6 +105,56 @@ Describe 'New-DpConversation' {
         $c.id | Should -Match '^c_'
         $c.createdUtc | Should -Not -BeNullOrEmpty
     }
+    It 'defaults the organisational flags off and colour unset' {
+        $c = New-DpConversation -Title 'Flags'
+        $c.pinned | Should -BeFalse
+        $c.archived | Should -BeFalse
+        $c.unread | Should -BeFalse
+        $c.color | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Copy-DpConversation' {
+    It 'duplicates title, messages and history into a fresh Conversation' {
+        $src = New-DpConversation -Title 'Original' -Model 'm1'
+        $src.messages.Add(@{ id = 'm_1'; role = 'user'; text = 'hi' })
+        $src.history.Add(@{ role = 'user'; content = 'hi' })
+        $src.color = 'blue'
+
+        $copy = Copy-DpConversation -Conversation $src
+
+        $copy.id | Should -Not -Be $src.id
+        $copy.id | Should -Match '^c_'
+        $copy.title | Should -Be 'Copy of Original'
+        $copy.titleLocked | Should -BeTrue
+        $copy.model | Should -Be 'm1'
+        $copy.color | Should -Be 'blue'
+        $copy.pinned | Should -BeFalse
+        $copy.archived | Should -BeFalse
+        $copy.unread | Should -BeFalse
+        $copy.messages.Count | Should -Be 1
+        $copy.history.Count | Should -Be 1
+    }
+    It 'shares no state with the source (deep copy)' {
+        $src = New-DpConversation -Title 'Original'
+        $src.messages.Add(@{ id = 'm_1'; role = 'user'; text = 'hi' })
+        $copy = Copy-DpConversation -Conversation $src
+        # A new list plus detached objects: neither appends nor edits leak back.
+        $copy.messages.Add(@{ id = 'm_2'; role = 'assistant'; text = 'yo' })
+        $copy.messages[0].text = 'changed'
+        $src.messages.Count | Should -Be 1
+        $src.messages[0].text | Should -Be 'hi'
+        $copy.messages.Count | Should -Be 2
+    }
+    It 'honours a custom title prefix' {
+        $src = New-DpConversation -Title 'Thing'
+        (Copy-DpConversation -Conversation $src -TitlePrefix 'Fork of ').title | Should -Be 'Fork of Thing'
+    }
+    It 'produces appendable message and history lists' {
+        $copy = Copy-DpConversation -Conversation (New-DpConversation -Title 'X')
+        { $copy.messages.Add(@{ id = 'm_1' }) } | Should -Not -Throw
+        { $copy.history.Add(@{ role = 'user'; content = 'x' }) } | Should -Not -Throw
+    }
 }
 
 Describe 'New-DpTurnParameter' {
@@ -407,6 +457,17 @@ Describe 'Conversation store persistence' {
         # Messages must be appendable after load (List, not a fixed array).
         { $reloaded.messages.Add(@{ id = 'm_2'; role = 'assistant'; text = 'hi' }) } | Should -Not -Throw
         $reloaded.messages.Count | Should -Be 2
+    }
+    It 'round-trips the unread flag and colour label' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $conv = New-DpConversation -Title 'Flagged'
+        $conv.unread = $true
+        $conv.color = 'teal'
+        Save-DpConversationStore -Store @{ $conv.id = $conv } -Directory $dir
+        $loaded = Import-DpConversationStore -Directory $dir
+        $loaded[$conv.id].unread | Should -BeTrue
+        $loaded[$conv.id].color | Should -Be 'teal'
     }
     It 'preserves ISO timestamps across a load/save cycle' {
         $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
