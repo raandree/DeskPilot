@@ -2,40 +2,46 @@
 
 ## Current focus
 
-**Attach without a Project — SHIPPED (2026-07-07), now on `main`.** Removed the last place that
-still forced a selected Project: attaching a file. The composer's Attach button
-(and drag-and-drop) previously toasted "Select or register a project before
-attaching files." and refused to upload when no Workspace Folder was active —
-which contradicted the just-shipped Close Project feature (no-project is now a
-legitimate state). Uploads now fall back to `<dataDir>/uploads` when no Project
-is selected. Fast-forwarded into `main` (`596da8b..e313da7`); `main` is local-only,
-ahead of `origin/main` by 2 commits (Close Project + this), not pushed. The next
-substantive feature remains the **Clone Wizard** (specs/080), then a live HTTP
-smoke of the merge routes.
+**No-project working-directory leak — FIXED (2026-07-07), on `ai/no-project-cwd-leak`.**
+`Invoke-DpTurn` only repositioned the long-lived Engine Runspace when a
+`workspaceFolder` was set, so a no-Project Turn ran in whatever directory the
+runspace was last left in — the folder DeskPilot was launched from (its own repo
+checkout, which has a `.memory-bank/`), or a previously selected Project. An
+agent that follows a pre-flight/memory-bank convention therefore probed
+`Test-Path .memory-bank` and read DeskPilot's own Memory Bank even though the
+user had no Project selected — exactly the confusing behaviour the user reported.
+Fix: point the Engine at a deterministic working directory on every Turn. Next:
+fast-forward into `main` (still local-only, not pushed); the Clone Wizard
+(specs/080) remains the next feature.
 
-## Just completed (this work, on ai/attach-without-project)
+## Just completed (this work, on ai/no-project-cwd-leak)
 
-- **New helper** `Get-DpUploadDir` (source/Private): resolves the upload target
-  directory — the Workspace Folder when set, else `<dataDir>/uploads` (via
-  `Get-DpDataDir`). Path-only; the caller creates the directory.
-- **Backend** `Invoke-DpRouteHandler` (`uploads` route): dropped the
-  `no_workspace` 400 guard; the target dir now comes from `Get-DpUploadDir`. The
-  existing `Test-Path`/`New-Item` block creates `<dataDir>/uploads` on first use.
-- **Frontend** `web/assets/app.js`: removed the no-project guard in
-  `uploadFiles`; the send-time attachment note now names the uploads' **absolute
-  paths** when there is no Workspace Folder (the agent's cwd is not the upload
-  dir), and keeps the relative-names-in-the-Workspace-Folder phrasing when a
-  Project is active.
-- **Tests:** +3 `Get-DpUploadDir` unit tests (workspace passthrough; fallback on
-  null; fallback on whitespace — `Get-DpDataDir` mocked).
-- **Specs:** FR-C9 (010), File uploads (020), Uploads (030 — no longer 400 on no
-  Workspace Folder), composer Attach copy (040).
+- **New helper** `Get-DpEngineWorkingDir` (source/Private): resolves the Engine's
+  per-Turn working directory — the Workspace Folder when set, else
+  `<dataDir>/workspace` (via `Get-DpDataDir`). Path-only; mirrors `Get-DpUploadDir`.
+- **Backend** `Invoke-DpTurn`: replaced the `if ($settings.workspaceFolder)` guard
+  around `Set-DpEngineLocation` with an unconditional call through
+  `Get-DpEngineWorkingDir`, so the runspace `$PWD` + `[Environment]::CurrentDirectory`
+  are deterministic every Turn (no launch-dir or stale-Project leak).
+- **Tests:** +3 `Get-DpEngineWorkingDir` unit tests (workspace passthrough;
+  fallback on null; fallback on whitespace — `Get-DpDataDir` mocked).
+- **Specs:** 020-architecture (Turn now sets a neutral cwd when no Project) and
+  050-security-model (no-Project cwd is a neutral scratch folder, not the launch
+  dir — a confinement note).
 
-Verified: Unit suite **240/240, 0 failed** (the 3 new tests pass); `app.js` ESM
-check OK (`.mjs` copy = the browser's module parser); PSScriptAnalyzer clean on
-the new helper + edited handler region; edited files clean in the language
-service (the pre-existing `$routes` unused-var warning at test line 71 is
-untouched, not from this change).
+Verified: Unit suite **241/241, 0 failed** (the 3 new tests pass); language-service
+clean on the new helper + edited `Invoke-DpTurn` (the pre-existing `$routes`
+unused-var warning at test line 71 is untouched). Root cause confirmed: DeskPilot's
+own `.memory-bank/` holds `projectbrief.md`/`productContext.md`/`activeContext.md`
+— the exact files the in-app agent reported reading.
+
+## Prior focus — Attach without a Project (SHIPPED 2026-07-07)
+
+Removed the last place that forced a selected Project (attaching a file): uploads
+fall back to `<dataDir>/uploads` via the new `Get-DpUploadDir` when no Project is
+active. Backend `Invoke-DpRouteHandler` dropped its `no_workspace` guard; the
+frontend passes absolute upload paths when there is no Workspace Folder. +3
+`Get-DpUploadDir` tests. Fast-forwarded into `main` (`596da8b..e313da7`).
 
 ## Prior focus — Close Project (SHIPPED 2026-07-07)
 

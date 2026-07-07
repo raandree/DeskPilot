@@ -94,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **No-project turns no longer read a stray `.memory-bank` (or other files) from
+  DeskPilot's launch folder.** With no project selected, the agent's working
+  directory was left wherever the Engine happened to be — the folder DeskPilot was
+  started from (its own source checkout, which contains a `.memory-bank`), or the
+  last project you had open — so a turn could silently read files that belong to an
+  unrelated place. An agent that follows a memory-bank / pre-flight convention
+  would probe `.memory-bank` and find DeskPilot's own, reporting it as “your”
+  context even though no project was defined. Every turn now points the Engine at a
+  deterministic working directory: the selected project's folder, or — when no
+  project is selected — a neutral `workspace` folder inside DeskPilot's data
+  directory. New private helper `Get-DpEngineWorkingDir`; `Invoke-DpTurn` sets the
+  location on every turn instead of only when a project is active. +3 unit tests.
 - **Every Turn broke against the latest Engine (Task List parameter renamed).**
   ShellPilot made its built-in Task List tool (`manage_todo_list`) on by default
   and renamed the opt-in `-EnableTodoList` switch to an opt-out `-DisableTodoList`.

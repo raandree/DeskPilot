@@ -580,6 +580,22 @@ Describe 'Get-DpUploadDir' {
     }
 }
 
+Describe 'Get-DpEngineWorkingDir' {
+    It 'returns the Workspace Folder when a Project is active' {
+        Get-DpEngineWorkingDir -WorkspaceFolder 'C:\projects\demo' | Should -Be 'C:\projects\demo'
+    }
+    It 'falls back to a workspace folder in the data directory when no Project is selected' {
+        $fakeData = Join-Path $TestDrive 'data-eng'
+        Mock Get-DpDataDir { $fakeData }
+        Get-DpEngineWorkingDir -WorkspaceFolder $null | Should -Be (Join-Path $fakeData 'workspace')
+    }
+    It 'falls back when the Workspace Folder is whitespace (does not leak the launch directory)' {
+        $fakeData = Join-Path $TestDrive 'data-eng-ws'
+        Mock Get-DpDataDir { $fakeData }
+        Get-DpEngineWorkingDir -WorkspaceFolder '   ' | Should -Be (Join-Path $fakeData 'workspace')
+    }
+}
+
 Describe 'Get-DpCopilotDefaults prompt roots' {
     It 'includes a prompts root when ~/.copilot/prompts exists' {
         $home2 = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))

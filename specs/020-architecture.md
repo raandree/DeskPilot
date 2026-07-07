@@ -218,7 +218,10 @@ parameter splat:
 - `-EnableTodoList` when the `taskTracking` Setting is on, exposing the
   Engine's `manage_todo_list` tool to the model so it can plan the Turn as a
   Task List.
-- working directory set on the Engine Runspace from the Workspace Folder.
+- working directory set on the Engine Runspace every Turn — the Workspace Folder
+  when a Project is active, else a neutral data-directory scratch folder
+  (`Get-DpEngineWorkingDir`), so a no-Project Turn never inherits the folder
+  DeskPilot was launched from or a previously selected Project.
 
 ## Technology rationale
 

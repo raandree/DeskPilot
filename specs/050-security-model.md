@@ -61,6 +61,10 @@ Tool for a non-technical user; turning it on is a deliberate act.
 
 - Sets the Engine Runspace working directory so relative File/Terminal
   operations land in a chosen folder.
+- With no Project selected the working directory is a neutral scratch folder in
+  the per-user data directory (not the folder DeskPilot was launched from and
+  not a previously selected Project), so a no-Project Turn cannot silently read
+  files — for example a `.memory-bank` — that belong to an unrelated context.
 - It is a **default and a convenience, not a jail**: the agent can still use
   absolute paths. The UI states this plainly.
 - v1 recommends pointing it at a dedicated working folder, not a home or system

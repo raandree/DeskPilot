@@ -79,9 +79,15 @@ function Invoke-DpTurn {
         $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
-        if ($settings.workspaceFolder) {
-            $null = Set-DpEngineLocation -Path $settings.workspaceFolder
-        }
+        # Reposition the long-lived Engine Runspace every Turn, not only when a
+        # Project is selected. The runspace keeps whatever working directory it
+        # was last given, so a no-Project Turn would otherwise inherit the folder
+        # DeskPilot was launched from (which may hold a .memory-bank the agent
+        # then reads and mistakes for the user's) or a previously selected
+        # Project. Get-DpEngineWorkingDir yields the Workspace Folder when a
+        # Project is active, else a neutral data-directory scratch folder,
+        # keeping the working directory deterministic.
+        $null = Set-DpEngineLocation -Path (Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
 
         $shell = [powershell]::Create()
         $shell.Runspace = $script:DeskPilot.Engine.Runspace
