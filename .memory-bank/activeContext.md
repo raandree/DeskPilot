@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Automatic conversation titles (like GitHub Copilot) — SHIPPED on
-`ai/auto-conversation-title` (2026-07-07), local-only, not yet merged.**
+**Automatic conversation titles (like GitHub Copilot) — SHIPPED + MERGED to `main`
+(2026-07-07, local-only, not pushed).**
 Previously a brand-new Conversation was titled with a crude 60-char truncation of
 the first prompt (inline in `Invoke-DpTurn`). Now, after the first Turn, the SPA
 fires a new best-effort `POST /api/conversations/{id}/title`; the Host Server runs
@@ -38,20 +38,15 @@ suite **299/299, 0 failed** (9 tasks, 0 errors, 0 warnings); `app.js` ESM check 
 
 ## Next steps
 
-1. **Manual browser smoke of auto-titles:** start a new Conversation, send a first
-   message, confirm the sidebar title flips from the truncated prompt to a concise
-   AI summary a moment after the reply; rename it, then edit the first prompt and
-   confirm the manual name is NOT overwritten (`titleLocked`). Merge
-   `ai/auto-conversation-title` into `main` (local-only) when satisfied.
-2. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
+1. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
    main): exercise /api/git/branches, /merge/preview, a real merge, a conflict →
    /merge/plan → /merge/apply, and /cleanup (local-only; the plan route needs the
    Engine authenticated).
-3. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
-4. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
+2. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
+3. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
    screen); `Invoke-DpGitClone`; `POST /api/projects/clone`; reuse the folder
    picker; SSH + ambient credentials only; auto-select the new Project.
-5. Then resume the parked publish/Sampler work (Phase B/D) if desired.
+4. Then resume the parked publish/Sampler work (Phase B/D) if desired.
 
 ## Prior focus — "Working…" spinner froze under reduce-motion (FIXED + MERGED 2026-07-07)
 
