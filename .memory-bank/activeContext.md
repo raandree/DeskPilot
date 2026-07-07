@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Session Info popover + Compact conversation (GitHub-Copilot-style) — SHIPPED on
-`ai/session-info-compact` (2026-07-07, local-only, NOT yet merged to `main`).**
+**Session Info popover + Compact conversation (GitHub-Copilot-style) — SHIPPED +
+MERGED to `main` (2026-07-07, local-only, not pushed).**
 The user asked for a menu like GHCP's Session Info screenshot on a Conversation.
 Delivered: a glanceable **context meter** pill in the top bar and a **Session info**
 entry in the ⋯ menu, both opening a **Session Info** popover that shows the
@@ -106,7 +106,7 @@ stays as the fallback.
    tokens, the visible transcript is unchanged, and the next Turn's measured context
    is smaller. Live-exercise `POST /compact` (needs the Engine authenticated):
    `too_short` on a fresh Conversation, a real summarise on a long one, `409` while a
-   Turn runs. Then fast-forward the branch into `main`.
+   Turn runs. (The branch is already fast-forwarded into `main`, local-only.)
 2. **Manual browser smoke of the conversation ⋯ menu (already merged into `main`):**
    open the ⋯ menu, try each action — open-in-new-window (confirm the deep link
    `/?c=` opens the right Conversation), Duplicate, mark unread + "Mark N as read",
