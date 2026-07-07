@@ -589,11 +589,10 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
         }
         'uploads' {
-            $workspace = $state.Settings.workspaceFolder
-            if ([string]::IsNullOrWhiteSpace($workspace)) {
-                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'Select or register a Project before uploading files.' } }
-                return
-            }
+            # Uploads land in the active Workspace Folder; with no Project selected
+            # they fall back to an 'uploads' folder in the per-user data directory,
+            # so attaching a file never requires a registered Project.
+            $workspace = Get-DpUploadDir -WorkspaceFolder $state.Settings.workspaceFolder
             $boundary = Get-DpMultipartBoundary -ContentType ([string]$Request.Headers['Content-Type'])
             if (-not $boundary -or -not $Request.BodyBytes -or $Request.BodyBytes.Length -eq 0) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_multipart'; message = 'Request must be a non-empty multipart/form-data upload.' } }

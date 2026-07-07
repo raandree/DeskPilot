@@ -564,6 +564,22 @@ Describe 'Get-DpUniqueFilePath' {
     }
 }
 
+Describe 'Get-DpUploadDir' {
+    It 'returns the Workspace Folder when one is active' {
+        Get-DpUploadDir -WorkspaceFolder 'C:\projects\demo' | Should -Be 'C:\projects\demo'
+    }
+    It 'falls back to an uploads folder in the data directory when no Project is selected' {
+        $fakeData = Join-Path $TestDrive 'data'
+        Mock Get-DpDataDir { $fakeData }
+        Get-DpUploadDir -WorkspaceFolder $null | Should -Be (Join-Path $fakeData 'uploads')
+    }
+    It 'falls back when the Workspace Folder is whitespace' {
+        $fakeData = Join-Path $TestDrive 'data-ws'
+        Mock Get-DpDataDir { $fakeData }
+        Get-DpUploadDir -WorkspaceFolder '   ' | Should -Be (Join-Path $fakeData 'uploads')
+    }
+}
+
 Describe 'Get-DpCopilotDefaults prompt roots' {
     It 'includes a prompts root when ~/.copilot/prompts exists' {
         $home2 = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))

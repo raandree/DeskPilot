@@ -107,7 +107,8 @@ accent fills so the bright dark-mode accent stays legible.
   reads **No project**. Registering opens a **folder picker** modal (drive
   switcher, breadcrumb path, Up/Home, a scrollable sub-folder list, and New
   folder) so the user browses to a folder instead of typing an absolute path.
-- **Attach** button to upload files into the selected Project.
+- **Attach** button to upload files (into the selected Project, or a
+  data-directory uploads folder when no Project is active).
 - **Send** turns into **Stop** while a Turn streams.
 - **Mid-Turn dispatch.** When a Turn is streaming and the user starts typing,
   a chevron (`▾`) appears next to **Stop** and opens a small popover with three

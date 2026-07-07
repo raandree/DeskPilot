@@ -2,31 +2,50 @@
 
 ## Current focus
 
-**Close Project — SHIPPED (2026-07-07).** Added a way to close (deselect) the
-active Project so DeskPilot returns to a no-project state; previously you could
-only switch Projects or create a new one. UI + specs only — the backend already
-supported a null `selectedProjectId` (deriving a null `workspaceFolder`), so no
-`.ps1` behaviour changed. The next substantive feature remains the **Clone
-Wizard** (specs/080), then a live HTTP smoke of the merge routes.
+**Attach without a Project — SHIPPED (2026-07-07).** Removed the last place that
+still forced a selected Project: attaching a file. The composer's Attach button
+(and drag-and-drop) previously toasted "Select or register a project before
+attaching files." and refused to upload when no Workspace Folder was active —
+which contradicted the just-shipped Close Project feature (no-project is now a
+legitimate state). Uploads now fall back to `<dataDir>/uploads` when no Project
+is selected. The next substantive feature remains the **Clone Wizard**
+(specs/080), then a live HTTP smoke of the merge routes.
 
-## Just completed (this work, on ai/close-project)
+## Just completed (this work, on ai/attach-without-project)
 
-- **Specs:** `FR-M2b` (010-requirements) — close/deselect the active Project;
-  040-ui-design (composer "✕ Close project" item + Settings "Close" action);
-  030-api-contract (`selectedProjectId: null` closes, keeps the Project
-  registered, clears the derived `workspaceFolder`). Glossary: a new **Close (a
-  Project)** row + a Close-vs-Remove-vs-switch note.
-- **UI (web/assets/app.js):** `closeProject()` (= `selectProject(null)`); a
-  **Close project** entry in the composer project popover (shown only when a
-  Project is active); a **Close** button on the selected row of the Settings
-  Projects manager.
-- **Test:** +1 `Merge-DpSettings` regression — closing via `selectedProjectId =
-  $null` clears the selection + `workspaceFolder` but keeps the Project
-  registered (distinct from removal).
+- **New helper** `Get-DpUploadDir` (source/Private): resolves the upload target
+  directory — the Workspace Folder when set, else `<dataDir>/uploads` (via
+  `Get-DpDataDir`). Path-only; the caller creates the directory.
+- **Backend** `Invoke-DpRouteHandler` (`uploads` route): dropped the
+  `no_workspace` 400 guard; the target dir now comes from `Get-DpUploadDir`. The
+  existing `Test-Path`/`New-Item` block creates `<dataDir>/uploads` on first use.
+- **Frontend** `web/assets/app.js`: removed the no-project guard in
+  `uploadFiles`; the send-time attachment note now names the uploads' **absolute
+  paths** when there is no Workspace Folder (the agent's cwd is not the upload
+  dir), and keeps the relative-names-in-the-Workspace-Folder phrasing when a
+  Project is active.
+- **Tests:** +3 `Get-DpUploadDir` unit tests (workspace passthrough; fallback on
+  null; fallback on whitespace — `Get-DpDataDir` mocked).
+- **Specs:** FR-C9 (010), File uploads (020), Uploads (030 — no longer 400 on no
+  Workspace Folder), composer Attach copy (040).
 
-Verified: ESM check on `app.js` OK (`.mjs` copy); helper unit suite **235/235, 0
-failed**; edited files clean in the language service (the pre-existing `$routes`
-unused-var warning at test line 71 is untouched, not from this change).
+Verified: Unit suite **240/240, 0 failed** (the 3 new tests pass); `app.js` ESM
+check OK (`.mjs` copy = the browser's module parser); PSScriptAnalyzer clean on
+the new helper + edited handler region; edited files clean in the language
+service (the pre-existing `$routes` unused-var warning at test line 71 is
+untouched, not from this change).
+
+## Prior focus — Close Project (SHIPPED 2026-07-07)
+
+Added a way to close (deselect) the active Project so DeskPilot returns to a
+no-project state; previously you could only switch Projects or create a new one.
+UI + specs only — the backend already supported a null `selectedProjectId`
+(deriving a null `workspaceFolder`). New `closeProject()` (= `selectProject(null)`);
+a **Close project** entry in the composer project popover (shown only when a
+Project is active); a **Close** button on the selected row of the Settings
+Projects manager. +1 `Merge-DpSettings` regression (close clears selection +
+`workspaceFolder`, keeps the Project registered — distinct from removal).
+
 
 ## Prior focus — Branch Merge Wizard (SHIPPED 2026-06-12)
 

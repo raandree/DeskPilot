@@ -500,8 +500,10 @@ rewrites `lifetime-usage.json`. Returns the same payload as `GET /api/usage`.
 
 ### `POST /api/uploads`
 
-Content-Type: `multipart/form-data`. Each `file` part is written to the current
-Workspace Folder under a collision-safe filename. Returns the saved files:
+Content-Type: `multipart/form-data`. Each `file` part is written under a
+collision-safe filename: to the active Workspace Folder when a Project is
+selected, otherwise to an `uploads` folder in the per-user data directory (so an
+upload never requires a registered Project). Returns the saved files:
 
 ```json
 {
@@ -513,8 +515,7 @@ Workspace Folder under a collision-safe filename. Returns the saved files:
 }
 ```
 
-Returns `400` when no Workspace Folder is configured (the server has no safe
-place to put the file), and `413` when an individual part exceeds 25 MiB.
+Returns `413` when an individual part exceeds 25 MiB.
 
 ## Static assets
 

@@ -138,13 +138,16 @@ Agent simply changes the file its persona is read from.
 
 ## File uploads
 
-Uploads land in the Workspace Folder (FR-C9). `POST /api/uploads` accepts
-`multipart/form-data`; the Host Server writes each part to a unique filename in
-the Workspace Folder (collision-safe via `name (n).ext`) and returns the saved
-relative path. The browser sends the upload before the prompt; the prompt then
-includes a brief "attached files" note that names the relative paths so the
-agent's existing File Tool reads them on its first iteration. No new model API
-or Tool is added.
+Uploads land in the Workspace Folder when a Project is active (FR-C9). `POST
+/api/uploads` accepts `multipart/form-data`; the Host Server writes each part to
+a unique filename (collision-safe via `name (n).ext`) and returns the saved
+path. With no Project selected there is no Workspace Folder, so the upload falls
+back to an `uploads` folder in the per-user data directory (resolved by
+`Get-DpUploadDir`), so attaching a file never requires a registered Project. The
+browser sends the upload before the prompt; the prompt then includes a brief
+"attached files" note that names the files (relative names inside the Workspace
+Folder, else their absolute paths) so the agent's existing File Tool reads them
+on its first iteration. No new model API or Tool is added.
 
 ## Data directory
 

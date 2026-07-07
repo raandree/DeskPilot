@@ -39,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Attach files without a project.** The **Attach** button (and drag-and-drop)
+  no longer requires a project to be selected. When a project is active, uploads
+  land in its working folder as before; with no project selected they are saved
+  to an `uploads` folder in DeskPilot's data directory, and the agent is given
+  their full paths so it can read them with its File tool. Previously attaching a
+  file without a project showed *"Select or register a project before attaching
+  files."* and did nothing — which conflicted with the new ability to close a
+  project and work without one.
 - **The file explorer now refreshes automatically.** It updates on its own when
   the window or tab regains focus, when the tab becomes visible again, and on a
   gentle interval while it is open — so files an agent (or you) create, change, or

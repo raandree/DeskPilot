@@ -24,7 +24,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-C6 | S | Allow stopping a Turn in progress. |
 | FR-C7 | M | Persist Conversations to disk so they survive Host Server restarts; load them on startup. |
 | FR-C8 | M | Removing a Conversation deletes it from the persisted store as well as the running session. |
-| FR-C9 | M | Let the user attach files (text and small binaries such as images, PDFs, .docx) to a Turn through an Upload button. Uploads land in the Workspace Folder and the agent is told their relative paths so its existing File Tool can read them. |
+| FR-C9 | M | Let the user attach files (text and small binaries such as images, PDFs, .docx) to a Turn through an Upload button. Uploads land in the Workspace Folder when a Project is active; with no Project selected they fall back to an uploads folder in the data directory. Either way the agent is told the paths so its existing File Tool can read them. |
 | FR-C10 | S | Let the user search Conversations by title and Message text and jump to a match. Searching matches case-insensitively across the persisted store and returns the matching Conversations with a short snippet. |
 | FR-C11 | S | Let the user pin a Conversation (pinned Conversations sort to the top) and archive a Conversation (archived Conversations are hidden from the main list behind a show-archived toggle). Both states persist across sessions. |
 | FR-C12 | S | Let the user export a Conversation as a Markdown transcript (a download), with the title, each Message labelled by author, and per-Turn Usage. |

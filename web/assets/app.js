@@ -835,8 +835,14 @@ async function send() {
 
     let prompt = userPrompt;
     if (state.pendingAttachments.length) {
-        const names = state.pendingAttachments.map(f => f.savedAs).join(', ');
-        const note = `I attached ${state.pendingAttachments.length} file(s) in the Workspace Folder: ${names}. Read them with your file tool when relevant.`;
+        const count = state.pendingAttachments.length;
+        const hasWorkspace = !!(state.settings && state.settings.workspaceFolder);
+        // With a Project active the agent's working directory is the Workspace
+        // Folder, so relative names suffice; with no Project the uploads live
+        // elsewhere, so name their absolute paths instead.
+        const note = hasWorkspace
+            ? `I attached ${count} file(s) in the Workspace Folder: ${state.pendingAttachments.map(f => f.savedAs).join(', ')}. Read them with your file tool when relevant.`
+            : `I attached ${count} file(s) at these paths: ${state.pendingAttachments.map(f => f.path).join(', ')}. Read them with your file tool when relevant.`;
         prompt = prompt ? `${note}\n\n${prompt}` : note;
         state.pendingAttachments = [];
         renderAttachments();
@@ -2556,10 +2562,8 @@ async function newCustomization() {
 
 // ===== File uploads =====
 async function uploadFiles(files) {
-    if (!state.settings || !state.settings.workspaceFolder) {
-        toast('Select or register a project before attaching files.');
-        return;
-    }
+    // No Project required: with no Workspace Folder the server saves uploads to
+    // an 'uploads' folder in the data directory and returns their absolute paths.
     const fd = new FormData();
     for (const f of files) fd.append('files', f, f.name);
     try {
