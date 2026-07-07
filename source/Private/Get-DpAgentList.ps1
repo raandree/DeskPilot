@@ -18,7 +18,7 @@ function Get-DpAgentList {
         [string]$Root
     )
 
-    if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) {
+    if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container -ErrorAction SilentlyContinue)) {
         return @()
     }
 
