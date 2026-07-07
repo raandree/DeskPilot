@@ -8,11 +8,17 @@ function Invoke-DpAuthFlow {
         code frames, and emits a final done frame when authentication completes.
     .PARAMETER Stream
         The network stream to write SSE frames to.
+    .PARAMETER Force
+        Re-run the device-code flow even when a token file already exists (an
+        expired sign-in). Passed through to Initialize-Shp -Force so a stale
+        token is replaced instead of short-circuiting as "already signed in".
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [System.IO.Stream]$Stream
+        [System.IO.Stream]$Stream,
+
+        [switch]$Force
     )
 
     $writer = New-DpSseWriter -Stream $Stream
@@ -30,7 +36,8 @@ function Invoke-DpAuthFlow {
 
         # Already signed in (for example the user ran Initialize-Shp in a terminal):
         # report success immediately rather than starting a second device-code flow.
-        if (Test-Path -LiteralPath $script:DeskPilot.Engine.TokenPath) {
+        # Skipped under -Force so an expired token is actually re-issued.
+        if (-not $Force -and (Test-Path -LiteralPath $script:DeskPilot.Engine.TokenPath)) {
             $writer.Write((ConvertTo-DpSseFrame -EventName 'done' -Data @{ authenticated = $true }))
             return
         }
@@ -40,6 +47,7 @@ function Invoke-DpAuthFlow {
         $shell = [powershell]::Create()
         $shell.Runspace = $script:DeskPilot.Engine.Runspace
         $null = $shell.AddCommand('Initialize-Shp')
+        if ($Force) { $null = $shell.AddParameter('Force', $true) }
 
         $info = $shell.Streams.Information
         $lastIndex = 0

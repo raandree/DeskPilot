@@ -51,7 +51,10 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Json @{ authenticated = (Test-Path -LiteralPath $state.Engine.TokenPath) }
         }
         'authStart' {
-            Invoke-DpAuthFlow -Stream $Stream
+            # force=true re-runs the device flow even when a stale token file is
+            # present (an expired sign-in), so a re-auth actually replaces it.
+            $force = [bool](Get-DpPropertyValue -InputObject $Body -Name @('force') -Default $false)
+            Invoke-DpAuthFlow -Stream $Stream -Force:$force
         }
         'models' {
             try {
@@ -75,7 +78,16 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Json @{ default = $defaultId; models = @($list) }
             }
             catch {
-                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'engine_unavailable'; message = "Could not list models: $_" } }
+                # An expired or missing GitHub token surfaces here as a 401/403
+                # while the Engine exchanges the token. Answer with an actionable
+                # auth_required so the UI can re-trigger the device-code flow,
+                # rather than a generic engine error the user cannot act on.
+                if (Test-DpAuthError -ErrorRecord $_) {
+                    Write-DpResponse -Stream $Stream -Status 401 -Json @{ error = @{ code = 'auth_required'; reauth = $true; message = 'Your GitHub Copilot sign-in has expired or is missing. Sign in again to continue.' } }
+                }
+                else {
+                    Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'engine_unavailable'; message = "Could not list models: $_" } }
+                }
             }
         }
         'getSettings' {

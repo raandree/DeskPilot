@@ -2094,3 +2094,37 @@ Describe 'Invoke-DpPendingRequest' {
         $listener.Accepted | Should -Be 4
     }
 }
+
+Describe 'Test-DpAuthError' {
+    It 'flags a 401 / Unauthorized message' {
+        Test-DpAuthError -ErrorRecord 'Response status code does not indicate success: 401 (Unauthorized).' | Should -BeTrue
+    }
+    It 'flags a 403 / Forbidden message' {
+        Test-DpAuthError -ErrorRecord 'The remote server returned 403 (Forbidden).' | Should -BeTrue
+    }
+    It 'flags the Engine session-token exchange failure' {
+        Test-DpAuthError -ErrorRecord 'Session token exchange failed: some detail' | Should -BeTrue
+    }
+    It 'flags a missing token-file message' {
+        Test-DpAuthError -ErrorRecord 'Token file not found: C:\Users\me\.copilot-demo-token. Run Initialize-Shp first.' | Should -BeTrue
+    }
+    It 'recognises an auth failure wrapped in an inner exception' {
+        $inner = [System.Exception]::new('Response status code does not indicate success: 401 (Unauthorized).')
+        $outer = [System.Exception]::new('Get-ShpModel failed', $inner)
+        Test-DpAuthError -ErrorRecord $outer | Should -BeTrue
+    }
+    It 'recognises an auth failure carried on an ErrorRecord' {
+        $ex = [System.Exception]::new('Session token exchange failed: 401 Unauthorized')
+        $rec = [System.Management.Automation.ErrorRecord]::new($ex, 'AuthError', [System.Management.Automation.ErrorCategory]::AuthenticationError, $null)
+        Test-DpAuthError -ErrorRecord $rec | Should -BeTrue
+    }
+    It 'does NOT flag a transient network failure' {
+        Test-DpAuthError -ErrorRecord 'Unable to connect to the remote server' | Should -BeFalse
+    }
+    It 'does NOT flag an unrelated engine error' {
+        Test-DpAuthError -ErrorRecord 'The model returned an empty response.' | Should -BeFalse
+    }
+    It 'returns false for a null error' {
+        Test-DpAuthError -ErrorRecord $null | Should -BeFalse
+    }
+}

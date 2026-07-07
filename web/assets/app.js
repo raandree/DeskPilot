@@ -35,7 +35,15 @@ async function api(method, path, body) {
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { /* not json */ }
-    if (!res.ok) throw new Error((data && data.error && data.error.message) || res.statusText);
+    if (!res.ok) {
+        // Enrich the thrown error so callers can react to specific conditions
+        // (notably a 401 auth_required, which drives the re-sign-in overlay).
+        const err = new Error((data && data.error && data.error.message) || res.statusText);
+        err.status = res.status;
+        err.code = data && data.error && data.error.code;
+        err.reauth = !!(data && data.error && data.error.reauth);
+        throw err;
+    }
     return data;
 }
 
@@ -82,6 +90,7 @@ const state = {
     settings: null,
     models: [],
     defaultModel: null,
+    authForce: false,
     streaming: false,
     pendingAttachments: [],
     agents: [],
@@ -195,7 +204,14 @@ async function loadModels() {
         const data = await api('GET', '/api/models');
         state.models = data.models || [];
         state.defaultModel = data.default || (state.models[0] && state.models[0].id);
-    } catch { state.models = []; }
+    } catch (e) {
+        state.models = [];
+        // An expired or missing sign-in surfaces as a 401 auth_required here; the
+        // token file still exists, so the app was entered normally and the model
+        // dropdown would otherwise dead-end at "(sign in to load models)". Surface
+        // the re-sign-in overlay so there is an obvious next step.
+        if (e && (e.reauth || e.status === 401)) promptReauth();
+    }
     populateModelSelect();
 }
 async function loadConversations() {
@@ -2794,7 +2810,7 @@ function openSettings() {
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
-    $('set-reauth').onclick = () => { closeSettings(); showAuth(); };
+    $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
     $('set-export').onclick = () => exportSettings();
     $('set-import').onclick = () => $('set-import-file').click();
@@ -2851,11 +2867,33 @@ function closeSettings() {
 }
 
 // ===== Auth =====
-function showAuth() {
+// showAuth({ expired }) opens the sign-in overlay. In expired mode it forces a
+// fresh device-code flow (Initialize-Shp -Force) — needed because a stale token
+// file still exists, so a non-forced sign-in would short-circuit as "already
+// signed in" and never replace the dead token — and it swaps in re-auth wording.
+function showAuth(opts) {
+    const expired = !!(opts && opts.expired);
+    state.authForce = expired;
+    const title = $('auth-title');
+    const sub = $('auth-subtitle');
+    if (title) title.textContent = expired ? 'Your sign-in has expired' : 'Connect to GitHub Copilot';
+    if (sub) sub.textContent = expired
+        ? 'Your GitHub Copilot sign-in is no longer valid. Sign in again to keep using DeskPilot.'
+        : 'DeskPilot uses your GitHub Copilot account through the local ShellPilot engine. Sign in once to get started.';
+    $('auth-steps').classList.add('hidden');
+    $('auth-error').classList.add('hidden');
     $('auth-overlay').classList.remove('hidden');
     reflectEngineState();
 }
 function hideAuth() { $('auth-overlay').classList.add('hidden'); }
+
+// Open the sign-in overlay in expired mode when a running session discovers the
+// token is no longer valid (for example the model list returned 401). Do not
+// stack it if it is already open.
+function promptReauth() {
+    if (!$('auth-overlay').classList.contains('hidden')) return;
+    showAuth({ expired: true });
+}
 
 // Reflect engine load state in the auth overlay: if the engine isn't loaded,
 // sign-in cannot work, so explain that and disable Connect.
@@ -2903,7 +2941,7 @@ async function startAuth() {
     steps.innerHTML = '<div class="muted">Starting…</div>';
     $('auth-connect').disabled = true;
     try {
-        await streamPost('/api/auth/start', {}, {
+        await streamPost('/api/auth/start', { force: !!state.authForce }, {
             waiting: (d) => { steps.innerHTML = `<div class="muted">${escapeHtml((d && d.message) || 'Working…')}</div>`; },
             code: (d) => { appendAuthLine(steps, (d && d.message) || ''); },
             done: async (d) => {

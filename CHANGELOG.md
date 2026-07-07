@@ -94,6 +94,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An expired sign-in now offers a clear way back in.** When the cached GitHub
+  Copilot sign-in expired, the model dropdown showed *"(sign in to load models)"*
+  with no obvious next step: the token file still existed, so the app had already
+  started and the sign-in screen was skipped, leaving an inexperienced user stuck.
+  DeskPilot now recognises an expired or missing sign-in (the model list responds
+  with a specific "sign in again" instead of a generic engine error) and
+  automatically reopens the sign-in screen in a **"Your sign-in has expired"** mode
+  that runs a fresh GitHub device-code flow. Previously a re-sign-in silently did
+  nothing, because a stale token file made it report *"already signed in"* without
+  actually re-authenticating; the flow is now forced (`Initialize-Shp -Force`), and
+  the **Re-authenticate** button in Settings uses the same forced flow. Transient
+  network hiccups are not mistaken for an expired sign-in. +9 unit tests.
 - **The Stop button now actually stops a running turn.** Clicking **Stop** (or
   pressing Send while a turn is streaming with an empty composer) had no effect:
   the Host Server handles requests one at a time on a single thread, and a running

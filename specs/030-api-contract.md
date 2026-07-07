@@ -27,9 +27,17 @@ Status codes: `200` OK, `201` Created, `204` No Content, `400` bad input,
 
 ### `GET /api/auth/status` → `{ "authenticated": true|false }`
 
+`authenticated` reflects whether the cached token **file** exists — a cheap
+check, not a validity probe. An *expired* token still reports `true`; expiry is
+detected lazily when the first Engine call fails (see `GET /api/models` → `401`
+`auth_required`).
+
 ### `POST /api/auth/start` — **SSE** (`text/event-stream`)
 
-Starts the device-code flow. Events:
+Starts the device-code flow. Optional JSON body `{ "force": true }` re-runs the
+flow even when a token file already exists (`Initialize-Shp -Force`) — required to
+replace an **expired** token, since without `force` a present token
+short-circuits straight to `done { "authenticated": true }`. Events:
 
 | event | data |
 | --- | --- |
@@ -61,6 +69,14 @@ The Host Server caches this list. A Turn forwards the reasoning-effort Setting a
 `-ReasoningEffort` only when the effective Model's `reasoningEfforts` includes it;
 a Model advertising an empty list (no reasoning-effort support) never receives
 it, so the Engine cannot reject the Turn with `invalid_reasoning_effort` (400).
+
+If the cached GitHub sign-in is missing or expired, the Engine fails while
+exchanging the token and this route returns `401` with
+`{ "error": { "code": "auth_required", "reauth": true, "message": "…" } }`
+(distinct from `502 engine_unavailable` for other Engine faults). The SPA treats
+`auth_required` / `401` as the signal to open the re-sign-in overlay, which posts
+`POST /api/auth/start { "force": true }`. Transient network failures are **not**
+classified as auth errors, so they never trigger a spurious re-sign-in.
 
 ## Settings
 

@@ -2,42 +2,58 @@
 
 ## Current focus
 
-**Stop button did nothing — FIXED (2026-07-07), on `ai/stop-button-fix`.**
-The Host Server's accept loop is single-threaded and handles each request
-inline, so a running Turn held the only thread for its whole duration. The Stop
-button's `POST /stop` therefore sat unaccepted in the TCP backlog until the Turn
-had already finished on its own, so the `CancelRequested` flag (which the Turn
-loop checks to call `[PowerShell].Stop()`) was set far too late — the button
-appeared dead. Fix: the Turn's poll loop now pumps pending HTTP connections each
-iteration, so a concurrent `/stop` is serviced mid-Turn and the next iteration
-aborts the Engine pipeline. Next: fast-forward into `main` (local-only, once
-reviewed); the Clone Wizard (specs/080) remains the next feature.
+**Expired sign-in left the user stuck (no re-auth path) — FIXED (2026-07-07), on
+`ai/stop-button-fix`.**
+`authenticated` is derived from the token *file* existing, not its validity, so
+an expired token still reported `true`: DeskPilot entered the app (skipping the
+sign-in screen), the model list then failed with a 401 from the Engine's token
+exchange, and the dropdown dead-ended at "(sign in to load models)" — with the
+only re-auth entry point (Settings → Re-authenticate) silently no-op'ing because
+a stale token file made both `Invoke-DpAuthFlow` and `Initialize-Shp`
+short-circuit. Fix: classify auth failures (`Test-DpAuthError`) so `/api/models`
+returns `401 auth_required`; the UI then auto-opens the sign-in overlay in an
+"expired" mode that forces a fresh device-code flow (`Initialize-Shp -Force` via
+the new `Invoke-DpAuthFlow -Force`). Both this and the Stop-button fix live on
+`ai/stop-button-fix`. Next: fast-forward into `main` (local-only, once reviewed);
+the Clone Wizard (specs/080) remains the next feature.
 
 ## Just completed (this work, on ai/stop-button-fix)
 
-- **New `Invoke-DpClient`** (`source/Private`): extracted the accept loop's
-  per-client read → dispatch (`Invoke-DpRequest`) → close, with a `-ReadTimeoutMs`
-  param. Shared by `Start-DeskPilot` and the pump; swallows all errors so one bad
-  connection never tears down the server or an in-flight Turn.
-- **New `Invoke-DpPendingRequest`** (`source/Private`): the request pump. While
-  the registered `$script:DeskPilot.Listener` has `Pending()` connections (capped
-  at 16/call, 5s read timeout) it accepts and dispatches each via `Invoke-DpClient`.
-  No-ops when no listener is registered (unit tests / safety).
-- **`Start-DeskPilot`**: registers the `TcpListener` on
-  `$script:DeskPilot.Listener` (new field), replaced the inline accept-loop client
-  handling with `Invoke-DpClient`, and clears the listener on shutdown.
-- **`Invoke-DpTurn`**: the poll loop now calls `Invoke-DpPendingRequest` right
-  before the `CancelRequested` check, so a mid-Turn `/stop` flips the flag and is
-  observed on the same iteration (`$shell.Stop()` → `error` frame `Turn stopped.`).
-- **Tests:** +5 `Invoke-DpPendingRequest` unit tests (no state → no-op; no
-  listener → no-op; empty backlog → 0 accepts; drains a 3-deep backlog; caps at
-  MaxRequests). The fake listener returns unconnected `TcpClient`s so no socket I/O.
-- **Specs:** 020 (cancellation-on-a-single-thread note in Streaming design + the
-  single-threaded accept-loop bullet), 030 (stop serviced mid-Turn).
+- **New `Test-DpAuthError`** (`source/Private`): classifies a caught error as an
+  auth failure by walking the inner-exception chain and matching only auth
+  signals (401/403/Unauthorized/Forbidden, "Session token exchange failed",
+  "Token file not found", "Initialize-Shp") — so a transient network error is
+  never mistaken for an expired sign-in.
+- **`/api/models` route**: the catch now returns `401 { code: auth_required;
+  reauth: true }` for auth failures (still `502 engine_unavailable` otherwise).
+- **`Invoke-DpAuthFlow -Force`**: skips the "already signed in" short-circuit and
+  passes `Initialize-Shp -Force`, so an expired token is actually re-issued; the
+  `authStart` route forwards `{ force }` from the request body.
+- **Frontend** (`web/`): `api()` attaches `status`/`code`/`reauth` to thrown
+  errors; `loadModels` opens the re-sign-in overlay on a 401; `showAuth({expired})`
+  forces the flow and swaps in "Your sign-in has expired" wording (new
+  `#auth-subtitle` in `index.html`); `startAuth` posts `{ force }`; the Settings
+  **Re-authenticate** button now forces too.
+- **Tests:** +9 `Test-DpAuthError` unit tests (401/403/exchange-failure/missing-
+  token/inner-exception/ErrorRecord → true; network + unrelated + null → false).
+- **Specs:** 030 (auth/status validity note, auth/start `force` body, models
+  `401 auth_required`).
 
-Verified: full test suite **263/263, 0 failed** (16 tasks, 0 errors, 0 warnings).
-Root cause is architectural: a single-threaded inline accept loop + a
-long-running Turn = no thread free to accept the stop request until the Turn ends.
+Verified: full test suite **272/272, 0 failed** (16 tasks, 0 errors, 0 warnings);
+`app.js` ESM check OK (`node --check` on a `.mjs` copy). Manual smoke recommended:
+let a token expire (or corrupt `~/.copilot-demo-token`), open DeskPilot, confirm
+the "Your sign-in has expired" overlay appears and Connect runs a fresh device
+flow that restores models.
+
+## Prior focus — Stop button did nothing (FIXED 2026-07-07, ai/stop-button-fix)
+
+The single-threaded accept loop handled each request inline, so a running Turn
+held the only thread and the Stop button's `POST /stop` waited in the TCP backlog
+until the Turn had already finished. `Invoke-DpTurn`'s poll loop now pumps pending
+connections each iteration (`Invoke-DpPendingRequest`, sharing the new
+`Invoke-DpClient`; `$script:DeskPilot.Listener` registers the `TcpListener`), so a
+concurrent `/stop` is serviced mid-Turn and aborts the Engine pipeline. +5 unit
+tests. Specs 020/030. Same branch as the sign-in fix above (not yet merged).
 
 ## Prior focus — Reasoning-effort HTTP 400 (SHIPPED + MERGED 2026-07-07)
 
