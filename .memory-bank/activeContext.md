@@ -3,15 +3,16 @@
 ## Current focus
 
 **Transient 403 on the Copilot session-token exchange failed the whole Turn —
-FIXED (2026-07-07), on `ai/stop-button-fix`.**
+FIXED + MERGED to `main` (2026-07-07).**
 ShellPilot exchanges the cached GitHub token for a short-lived Copilot session
 token at the start of every Turn; that endpoint intermittently returns 403
 (Forbidden), so `Invoke-Shp` threw, `EndInvoke` rethrew, and the Turn failed with
 a raw *"Session token exchange failed … 403"* — the user had to stop and resend
 (which worked, because a retry of the exchange succeeds). Fix: a bounded retry of
 the Engine call in `Invoke-DpTurn` for transient PRE-STREAM failures, so these
-blips are invisible. Next: fast-forward into `main` (local-only, once reviewed);
-the Clone Wizard (specs/080) remains the next feature.
+blips are invisible. All four fixes from `ai/stop-button-fix` are now
+fast-forwarded into `main` (`ac71cec..c89c0c7`, local-only, not pushed); the
+Clone Wizard (specs/080) is the next feature.
 
 ## Just completed (this work, on ai/stop-button-fix)
 
