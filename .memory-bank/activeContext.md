@@ -3,7 +3,7 @@
 ## Current focus
 
 **The "Working…" spinner froze into a static ring under OS "reduce motion" —
-FIXED (2026-07-07), on `ai/working-spinner-motion`.**
+FIXED + MERGED to `main` (2026-07-07).**
 The streaming activity indicator (`<span class="spinner">` set in `setStreamingUI`,
 `web/assets/app.js`) is styled `animation: spin .7s linear infinite`, but a global
 `@media (prefers-reduced-motion: reduce) { * { animation: none !important } }` rule
@@ -18,8 +18,9 @@ sweep reads clearly). A first pass used an opacity pulse (`spinner-pulse`) but t
 user found the flashing ugly and asked for something circling, so it was reverted
 to rotation (a smooth spin is also calmer/safer than a blink under reduced motion).
 The launcher serves the source `web/` folder directly (`WebRoot = repoRoot/web`, no
-built copy), so a browser hard-refresh shows it — no rebuild. Next: fast-forward
-into `main` (local-only, once reviewed).
+built copy), so a browser hard-refresh shows it — no rebuild. Fast-forwarded
+`0667920..4896066` into `main` (local-only, not pushed); `ai/working-spinner-motion`
+kept.
 
 ## Prior focus — Transient 403 on the Copilot session-token exchange (FIXED + MERGED 2026-07-07)
 
