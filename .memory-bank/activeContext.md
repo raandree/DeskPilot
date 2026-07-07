@@ -34,6 +34,13 @@ names mirror the backend allow-list. CSS + index.html button added.
 (FR-C17) / 030 / 040 updated. Verified: full Sampler build+test **305/305, 0
 failed** (16 tasks, 0 errors, 0 warnings); `app.js` ESM check OK (`.mjs`).
 
+**Follow-up (same branch):** the **Details** popover now also shows the
+**accumulated Usage** — cost, credits, and tokens summed across the Conversation's
+Messages (new `sumConversationUsage` in `app.js`; `showConversationDetails` is now
+async and fetches the full Conversation on open to sum per-Message `usage`). No
+backend change; formatting matches the Usage popover. `app.js` ESM check OK; the
+sum logic is node-verified.
+
 ## Prior focus — automatic conversation titles (SHIPPED + MERGED to `main`, 2026-07-07)
 
 A brand-new Conversation is auto-titled from its first prompt via a best-effort

@@ -62,7 +62,7 @@ accent fills so the bright dark-mode accent stays legible.
 - **⋯ action menu**, grouped by separators:
   - *Open* — **Open in new window** (deep link `/?c=<id>`), **Duplicate**.
   - *Organise* — **Pin to top** / Unpin, **Mark as unread** / Mark as read, **Archive** / Unarchive, and a **Colour** swatch row (a no-colour option plus the fixed palette).
-  - *Manage* — **Rename…**, **Copy transcript** (Markdown → clipboard), **Export as Markdown** (download), **Details** (a read-only popover: created / updated / message count / model / colour).
+  - *Manage* — **Rename…**, **Copy transcript** (Markdown → clipboard), **Export as Markdown** (download), **Details** (a read-only popover: created / updated / message count / model / colour, plus the accumulated **Usage** — cost, credits, and tokens summed across the Conversation's Messages).
 - Below the list: a **Show N archived** toggle and, when any Conversation is
   unread, a **Mark N as read** control.
 - Footer: cumulative **Usage** chip (tokens · $cost) → opens a Usage popover;

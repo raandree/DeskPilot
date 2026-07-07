@@ -648,15 +648,32 @@ function fmtConvDate(iso) {
     return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
 }
 
-// A small read-only popover with a Conversation's metadata.
-function showConversationDetails(summary, anchor) {
+// Sum the per-Message Usage (cost, credits, tokens) across a Conversation.
+function sumConversationUsage(messages) {
+    let costUSD = 0, credits = 0, totalTokens = 0;
+    for (const m of asArray(messages)) {
+        const u = m.usage || {};
+        costUSD += Number(u.costUSD) || 0;
+        credits += Number(u.credits) || 0;
+        totalTokens += Number(u.totalTokens) || 0;
+    }
+    return { costUSD, credits, totalTokens };
+}
+
+// A small read-only popover with a Conversation's metadata, including the
+// accumulated Usage (cost / credits / tokens) summed across its Messages.
+async function showConversationDetails(summary, anchor) {
     closeConvMenu();
     const pop = el('popover conv-action-menu conv-details-pop', 'div');
+    const valEls = {};
     const rows = [
         ['Title', summary.title || 'New conversation'],
         ['Messages', String(summary.messageCount != null ? summary.messageCount : '—')],
         ['Model', summary.model || 'Default'],
         ['Colour', summary.color || 'None'],
+        ['Cost', '…'],
+        ['Credits', '…'],
+        ['Tokens', '…'],
         ['Created', fmtConvDate(summary.createdUtc)],
         ['Updated', fmtConvDate(summary.updatedUtc)],
     ];
@@ -666,11 +683,23 @@ function showConversationDetails(summary, anchor) {
         const val = el('detail-val'); val.textContent = v; val.title = v;
         row.append(key, val);
         pop.appendChild(row);
+        valEls[k] = val;
     }
     document.body.appendChild(pop);
     positionConvPopover(pop, anchor);
     state._convMenu = pop;
     setTimeout(() => document.addEventListener('click', closeConvMenu, { once: true }), 0);
+    // Accumulated Usage needs the full Message list, so fetch it and fill in.
+    const setVal = (k, text) => { if (valEls[k]) { valEls[k].textContent = text; valEls[k].title = text; } };
+    try {
+        const conv = await api('GET', '/api/conversations/' + summary.id);
+        const u = sumConversationUsage(conv.messages);
+        setVal('Cost', '$' + u.costUSD.toFixed(4));
+        setVal('Credits', formatCredits(u.credits));
+        setVal('Tokens', u.totalTokens.toLocaleString());
+    } catch {
+        setVal('Cost', '—'); setVal('Credits', '—'); setVal('Tokens', '—');
+    }
 }
 
 // Build a Markdown transcript of a Conversation.

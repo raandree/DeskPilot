@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Mark N as read** control under the list, an optional **Colour** label from a
   fixed palette (shown as a dot on the row), **Copy transcript** (the Markdown
   transcript straight to the clipboard), and **Details** (a read-only popover with
-  the created/updated times, message count, model, and colour). Focused rows also
+  the created/updated times, message count, model, colour, and the accumulated
+  cost, credits, and tokens for the conversation). Focused rows also
   support keyboard shortcuts: **Enter** opens, **F2** renames, **Delete** archives.
   Deleting a conversation is unchanged (the hover **✕**). New endpoints
   `POST /api/conversations/{id}/duplicate` and `POST /api/conversations/read-all`,
