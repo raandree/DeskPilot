@@ -2031,3 +2031,66 @@ Describe 'Merge Wizard against a real repository' -Skip:(-not (Get-Command git -
         }
     }
 }
+
+Describe 'Invoke-DpPendingRequest' {
+    BeforeAll {
+        # Preserve any real server state (there is none in a unit run) so these
+        # tests can never leak a fake listener into a later Describe block.
+        $script:savedDeskPilot = $script:DeskPilot
+
+        function New-DpFakeListener
+        {
+            param([int]$Pending, [switch]$AlwaysPending)
+
+            $listener = [pscustomobject]@{ Remaining = $Pending; Accepted = 0; Always = [bool]$AlwaysPending }
+            $listener | Add-Member -MemberType ScriptMethod -Name Pending -Value {
+                if ($this.Always) { return $true }
+                return $this.Remaining -gt 0
+            }
+            $listener | Add-Member -MemberType ScriptMethod -Name AcceptTcpClient -Value {
+                $this.Remaining--
+                $this.Accepted++
+                # Unconnected on purpose: Invoke-DpClient's GetStream() throws and
+                # is swallowed, so no socket I/O happens, yet the client still
+                # satisfies the [TcpClient] parameter and gets closed.
+                [System.Net.Sockets.TcpClient]::new()
+            }
+            return $listener
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+    AfterAll { $script:DeskPilot = $script:savedDeskPilot }
+
+    It 'no-ops when there is no server state' {
+        $script:DeskPilot = $null
+        { Invoke-DpPendingRequest } | Should -Not -Throw
+    }
+
+    It 'no-ops when no listener is registered' {
+        $script:DeskPilot = @{ Listener = $null }
+        { Invoke-DpPendingRequest } | Should -Not -Throw
+    }
+
+    It 'does not accept anything when the backlog is empty' {
+        $listener = New-DpFakeListener -Pending 0
+        $script:DeskPilot = @{ Listener = $listener }
+        Invoke-DpPendingRequest
+        $listener.Accepted | Should -Be 0
+    }
+
+    It 'services every pending connection and stops once the backlog is drained' {
+        $listener = New-DpFakeListener -Pending 3
+        $script:DeskPilot = @{ Listener = $listener }
+        Invoke-DpPendingRequest
+        $listener.Accepted | Should -Be 3
+        $listener.Pending() | Should -BeFalse
+    }
+
+    It 'never services more than the cap in a single call' {
+        $listener = New-DpFakeListener -AlwaysPending
+        $script:DeskPilot = @{ Listener = $listener }
+        Invoke-DpPendingRequest -MaxRequests 4
+        $listener.Accepted | Should -Be 4
+    }
+}

@@ -118,6 +118,12 @@ function Invoke-DpTurn {
                 $lastIndex++
             }
             if ($async.IsCompleted) { break }
+            # The Host Server accepts requests inline on this single thread, so a
+            # concurrent POST /stop would otherwise wait in the backlog until this
+            # Turn ended - the Stop button would do nothing. Service any pending
+            # request here so the stopTurn handler can flip CancelRequested, which
+            # the next line then observes and aborts the Engine pipeline.
+            Invoke-DpPendingRequest
             if ($script:DeskPilot.CancelRequested) { try { $shell.Stop() } catch { $null = $_ }; break }
             Start-Sleep -Milliseconds 40
             $heartbeat++

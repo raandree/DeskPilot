@@ -441,7 +441,11 @@ The `tasks` event is emitted only when the `taskTracking` Setting is on. The
 live frames originate from structured progress events on the Engine
 Runspace's Information stream; see [020-architecture.md](020-architecture.md#in-turn-task-list).
 
-Client stops a Turn with `POST /api/conversations/{id}/stop` → `202`.
+Client stops a Turn with `POST /api/conversations/{id}/stop` → `202`. The single
+accept thread services this request mid-Turn (the streaming loop pumps pending
+connections), so the cancel flag is set while the Turn is still running; the Turn
+then aborts the Engine pipeline and closes the stream with an `error` frame
+(`{ "message": "Turn stopped." }`).
 
 ### Mid-Turn dispatch (client-only UX)
 

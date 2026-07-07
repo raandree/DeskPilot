@@ -94,6 +94,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Stop button now actually stops a running turn.** Clicking **Stop** (or
+  pressing Send while a turn is streaming with an empty composer) had no effect:
+  the Host Server handles requests one at a time on a single thread, and a running
+  turn held that thread for its whole duration, so the stop request waited
+  unhandled in the connection backlog until the turn had already finished on its
+  own. The streaming loop now services pending requests between polls, so the stop
+  is received mid-turn, cancels the Engine call, and ends the stream with a
+  *"Turn stopped."* notice. As a bonus this keeps the UI responsive to other quick
+  requests while a turn runs. +5 unit tests.
 - **Reasoning effort no longer breaks turns on models that don't support it.**
   Reasoning effort is a single setting, but support for it is per-model — for
   example `claude-haiku-4.5` supports none. When a higher effort (e.g. *max*) was

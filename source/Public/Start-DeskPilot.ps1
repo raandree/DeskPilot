@@ -70,6 +70,10 @@ function Start-DeskPilot {
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
         CancelRequested = $false
+        # The accept loop's TcpListener, set once it is started below. The Turn
+        # loop (Invoke-DpTurn) reads it through Invoke-DpPendingRequest to service
+        # a concurrent POST /stop while it holds this single accept thread.
+        Listener        = $null
         # Model capability cache, populated by the /api/models route. Keyed lookups
         # (Get-DpModelReasoningEfforts) use it to send -ReasoningEffort only to a
         # Model that advertises support, so a global reasoning-effort Setting never
@@ -140,6 +144,7 @@ function Start-DeskPilot {
 
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
     $listener.Start()
+    $script:DeskPilot.Listener = $listener
     $boundPort = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
     $url = "http://127.0.0.1:$boundPort/?t=$($script:DeskPilot.Token)"
 
@@ -167,18 +172,11 @@ function Start-DeskPilot {
                 continue
             }
             $client = $listener.AcceptTcpClient()
-            try {
-                $client.NoDelay = $true
-                $netStream = $client.GetStream()
-                $netStream.ReadTimeout = 60000
-                $request = Receive-DpHttpRequest -Stream $netStream
-                if ($request) { Invoke-DpRequest -Request $request -Stream $netStream }
-            }
-            catch { $null = $_ }
-            finally { try { $client.Close() } catch { $null = $_ } }
+            Invoke-DpClient -Client $client
         }
     }
     finally {
+        $script:DeskPilot.Listener = $null
         try { $listener.Stop() } catch { $null = $_ }
         Write-Host 'DeskPilot stopped.' -ForegroundColor DarkGray
     }

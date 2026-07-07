@@ -39,6 +39,16 @@ which lands as `InformationRecord`s on the `[PowerShell]` instance's
    Conversation, and writes a final `event: done` with the authoritative
    `.Content`, the Activity, and the Usage.
 
+**Cancellation on a single thread.** Because the accept loop is single-threaded
+and handles each request inline, a long-running Turn holds that thread for its
+whole duration. So on every poll the streaming loop also services any *pending*
+HTTP connection (`Invoke-DpPendingRequest`): a concurrent `POST /stop` is
+accepted mid-Turn, its handler sets the cancel flag, and the loop observes the
+flag on the next iteration, calls `[PowerShell].Stop()` to abort the Engine
+pipeline, and emits an `error` frame (`Turn stopped.`). Without this pump the
+stop request would wait in the TCP backlog until the Turn finished, making the
+Stop button a no-op.
+
 The **final Message text is `.Content`** (clean), not the concatenated deltas
 (which exist only for the live typing effect). `-ShowThinking` is **off** for the
 answer stream so deltas stay clean; reasoning, when requested, is shown from the
@@ -236,7 +246,9 @@ parameter splat:
   native `EventSource` in the browser.
 - **Static SPA (no build).** Nothing for a non-technical user to install.
 - **Single-threaded accept loop.** Sufficient for one local user; only the
-  Engine call is off-thread so SSE can stream while it runs.
+  Engine call is off-thread so SSE can stream while it runs. The streaming loop
+  services pending connections between polls, so a concurrent `POST /stop` (and
+  other quick requests) is handled mid-Turn rather than waiting for it to end.
 
 ## In-Turn Task List
 

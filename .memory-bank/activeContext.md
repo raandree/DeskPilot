@@ -2,42 +2,51 @@
 
 ## Current focus
 
-**Reasoning-effort HTTP 400 on Models without reasoning support — FIXED and
-MERGED to `main` (2026-07-07).**
-Reasoning effort is a single global Setting, but support is per-Model:
-`claude-haiku-4.5` advertises none, and the Copilot endpoint rejects
-`reasoning_effort` for it (`invalid_reasoning_effort`, HTTP 400). `New-DpTurnParameter`
-forwarded `-ReasoningEffort` whenever the Setting was truthy regardless of the
-effective Model, so a user who had set *max* saw every Turn on such a Model fail
-at `EndInvoke` (the reported error). Fix is defence in depth: the effort menu now
-offers only the Model's advertised levels, and the Host Server sends the effort to
-the Engine only when the effective Model advertises it. Fast-forwarded
-`a1df360..9c3c3e8` into `main` (local-only, not pushed). Next: the Clone Wizard
-(specs/080) is the next feature.
+**Stop button did nothing — FIXED (2026-07-07), on `ai/stop-button-fix`.**
+The Host Server's accept loop is single-threaded and handles each request
+inline, so a running Turn held the only thread for its whole duration. The Stop
+button's `POST /stop` therefore sat unaccepted in the TCP backlog until the Turn
+had already finished on its own, so the `CancelRequested` flag (which the Turn
+loop checks to call `[PowerShell].Stop()`) was set far too late — the button
+appeared dead. Fix: the Turn's poll loop now pumps pending HTTP connections each
+iteration, so a concurrent `/stop` is serviced mid-Turn and the next iteration
+aborts the Engine pipeline. Next: fast-forward into `main` (local-only, once
+reviewed); the Clone Wizard (specs/080) remains the next feature.
 
-## Just completed (this work, on ai/reasoning-effort-model-guard)
+## Just completed (this work, on ai/stop-button-fix)
 
-- **State cache** (`Start-DeskPilot`): added `Models` + `DefaultModel` to
-  `$script:DeskPilot`; the `/api/models` route (`Invoke-DpRouteHandler`) now
-  populates them from the Engine's `Get-ShpModel` capability list.
-- **Turn guard** (`New-DpTurnParameter`): new `-ModelReasoningEfforts` param; the
-  global reasoning-effort Setting is forwarded as `-ReasoningEffort` only when the
-  effective Model advertises the chosen effort (suppressed on empty/unknown, so a
-  global preference stays inert on Models that can't honour it — never an HTTP 400).
-- **Turn wiring** (`Invoke-DpTurn`): resolves the effective Model (Conversation →
-  Settings → Engine default) and passes its cached efforts into the parameter builder.
-- **Frontend** (`web/assets/app.js`): the Settings reasoning-effort menu is
-  model-aware — options come from the effective Model's `reasoningEfforts` (+
-  default), it refreshes when the model changes, and a hint explains when a Model
-  supports none or when a saved effort is unavailable for the current Model.
-- **Tests:** +5 `New-DpTurnParameter` unit tests (supported→passed; empty→suppressed;
-  subset-miss→suppressed; unknown→suppressed; unset→omitted).
-- **Specs:** 020 (Turn assembly guard), 030 (models route caches the capability
-  list; effort forwarded only when supported), 040 (model-aware effort menu).
+- **New `Invoke-DpClient`** (`source/Private`): extracted the accept loop's
+  per-client read → dispatch (`Invoke-DpRequest`) → close, with a `-ReadTimeoutMs`
+  param. Shared by `Start-DeskPilot` and the pump; swallows all errors so one bad
+  connection never tears down the server or an in-flight Turn.
+- **New `Invoke-DpPendingRequest`** (`source/Private`): the request pump. While
+  the registered `$script:DeskPilot.Listener` has `Pending()` connections (capped
+  at 16/call, 5s read timeout) it accepts and dispatches each via `Invoke-DpClient`.
+  No-ops when no listener is registered (unit tests / safety).
+- **`Start-DeskPilot`**: registers the `TcpListener` on
+  `$script:DeskPilot.Listener` (new field), replaced the inline accept-loop client
+  handling with `Invoke-DpClient`, and clears the listener on shutdown.
+- **`Invoke-DpTurn`**: the poll loop now calls `Invoke-DpPendingRequest` right
+  before the `CancelRequested` check, so a mid-Turn `/stop` flips the flag and is
+  observed on the same iteration (`$shell.Stop()` → `error` frame `Turn stopped.`).
+- **Tests:** +5 `Invoke-DpPendingRequest` unit tests (no state → no-op; no
+  listener → no-op; empty backlog → 0 accepts; drains a 3-deep backlog; caps at
+  MaxRequests). The fake listener returns unconnected `TcpClient`s so no socket I/O.
+- **Specs:** 020 (cancellation-on-a-single-thread note in Streaming design + the
+  single-threaded accept-loop bullet), 030 (stop serviced mid-Turn).
 
-Verified: full test suite **258/258, 0 failed** (9 tasks, 0 errors, 0 warnings);
-`app.js` parses as a valid ES module (`.mjs` + `node --check`). Root cause matches
-the screenshot: `claude-haiku-4.5` + `reasoning_effort "max"` → 400.
+Verified: full test suite **263/263, 0 failed** (16 tasks, 0 errors, 0 warnings).
+Root cause is architectural: a single-threaded inline accept loop + a
+long-running Turn = no thread free to accept the stop request until the Turn ends.
+
+## Prior focus — Reasoning-effort HTTP 400 (SHIPPED + MERGED 2026-07-07)
+
+Reasoning effort is a single global Setting, but support is per-Model
+(`claude-haiku-4.5` advertises none → Copilot rejects `reasoning_effort` with
+HTTP 400). Fix (defence in depth): the Host Server caches the `/api/models`
+capability list; `New-DpTurnParameter` forwards `-ReasoningEffort` only when the
+effective Model advertises the chosen effort; the Settings effort menu is
+model-aware. +5 unit tests. Fast-forwarded `a1df360..9c3c3e8` into `main`.
 
 ## Prior focus — No-project working-directory leak (SHIPPED + MERGED 2026-07-07)
 
