@@ -94,6 +94,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The conversation actions menu now fits its contents.** The per-conversation
+  "…" menu (Pin, Archive, Rename, Export) was rendered far too large — about as
+  wide as a dialog and stretched down most of the window — because it inherited
+  the base popover's fixed width and bottom anchor while being positioned from the
+  top. It now sizes to the items shown.
 - **An expired sign-in now offers a clear way back in.** When the cached GitHub
   Copilot sign-in expired, the model dropdown showed *"(sign in to load models)"*
   with no obvious next step: the token file still existed, so the app had already

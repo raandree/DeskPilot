@@ -45,6 +45,15 @@ let a token expire (or corrupt `~/.copilot-demo-token`), open DeskPilot, confirm
 the "Your sign-in has expired" overlay appears and Connect runs a fresh device
 flow that restores models.
 
+## Also on this branch — conversation menu sizing (FIXED 2026-07-07)
+
+The per-conversation “…” action menu (`popover popover-menu conv-action-menu`) was
+hugely oversized: JS positions it with an inline `top`, but it inherited the base
+`.popover` `width: min(420px,92vw)` and `bottom: 92px`, so it was ~420px wide and
+(top + bottom both set) stretched down the viewport. CSS-only fix on
+`.conv-action-menu`: `width: max-content` (+ `min-width:160px`, `max-width`) and
+`bottom: auto`. No JS change.
+
 ## Prior focus — Stop button did nothing (FIXED 2026-07-07, ai/stop-button-fix)
 
 The single-threaded accept loop handled each request inline, so a running Turn
