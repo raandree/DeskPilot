@@ -2,7 +2,7 @@
 
 ## Current focus
 
-**No-project working-directory leak — FIXED (2026-07-07), on `ai/no-project-cwd-leak`.**
+**No-project working-directory leak — FIXED and MERGED to `main` (2026-07-07).**
 `Invoke-DpTurn` only repositioned the long-lived Engine Runspace when a
 `workspaceFolder` was set, so a no-Project Turn ran in whatever directory the
 runspace was last left in — the folder DeskPilot was launched from (its own repo
@@ -10,9 +10,9 @@ checkout, which has a `.memory-bank/`), or a previously selected Project. An
 agent that follows a pre-flight/memory-bank convention therefore probed
 `Test-Path .memory-bank` and read DeskPilot's own Memory Bank even though the
 user had no Project selected — exactly the confusing behaviour the user reported.
-Fix: point the Engine at a deterministic working directory on every Turn. Next:
-fast-forward into `main` (still local-only, not pushed); the Clone Wizard
-(specs/080) remains the next feature.
+Fix: point the Engine at a deterministic working directory on every Turn.
+Fast-forwarded `4dc9e63..0d75a87` into `main` (local-only, not pushed). Next: the
+Clone Wizard (specs/080) is the next feature.
 
 ## Just completed (this work, on ai/no-project-cwd-leak)
 
