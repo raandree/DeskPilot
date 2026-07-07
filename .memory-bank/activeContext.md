@@ -2,14 +2,16 @@
 
 ## Current focus
 
-**Attach without a Project — SHIPPED (2026-07-07).** Removed the last place that
+**Attach without a Project — SHIPPED (2026-07-07), now on `main`.** Removed the last place that
 still forced a selected Project: attaching a file. The composer's Attach button
 (and drag-and-drop) previously toasted "Select or register a project before
 attaching files." and refused to upload when no Workspace Folder was active —
 which contradicted the just-shipped Close Project feature (no-project is now a
 legitimate state). Uploads now fall back to `<dataDir>/uploads` when no Project
-is selected. The next substantive feature remains the **Clone Wizard**
-(specs/080), then a live HTTP smoke of the merge routes.
+is selected. Fast-forwarded into `main` (`596da8b..e313da7`); `main` is local-only,
+ahead of `origin/main` by 2 commits (Close Project + this), not pushed. The next
+substantive feature remains the **Clone Wizard** (specs/080), then a live HTTP
+smoke of the merge routes.
 
 ## Just completed (this work, on ai/attach-without-project)
 
