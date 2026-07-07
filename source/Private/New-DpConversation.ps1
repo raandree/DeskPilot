@@ -17,14 +17,15 @@ function New-DpConversation {
     )
     $now = [DateTime]::UtcNow.ToString('o')
     @{
-        id         = New-DpId -Prefix 'c'
-        title      = $Title
-        model      = $Model
-        pinned     = $false
-        archived   = $false
-        createdUtc = $now
-        updatedUtc = $now
-        messages   = [System.Collections.Generic.List[object]]::new()
-        history    = [System.Collections.Generic.List[object]]::new()
+        id          = New-DpId -Prefix 'c'
+        title       = $Title
+        titleLocked = $false
+        model       = $Model
+        pinned      = $false
+        archived    = $false
+        createdUtc  = $now
+        updatedUtc  = $now
+        messages    = [System.Collections.Generic.List[object]]::new()
+        history     = [System.Collections.Generic.List[object]]::new()
     }
 }

@@ -949,6 +949,8 @@ async function _runTurn({ prompt, displayText, dispatch }) {
         maybeWarnBudget();
         if (explorerOpen()) refreshExplorer();
         promptEl.focus();
+        // Give a brand-new Conversation a concise AI title (like GitHub Copilot).
+        await maybeAutoTitle();
         // Drain one queued/steered message, if any. We only fire the next one;
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
@@ -962,6 +964,29 @@ function showInlineError(wrap, message) {
     err.textContent = '⚠ ' + message;
     wrap.classList.add('msg-error');
     refs.content.appendChild(err);
+}
+
+// After the first Turn of a new Conversation, ask the server to replace the
+// placeholder/truncated title with a concise AI summary, the way GitHub Copilot
+// auto-names a new chat. Best-effort and gated to the first exchange; the server
+// makes the final call and skips a manually renamed (title-locked) Conversation.
+async function maybeAutoTitle() {
+    if (!state.current) return;
+    const id = state.current.id;
+    const summary = state.conversations.find((c) => c.id === id);
+    if (!summary || summary.messageCount > 2) return;
+    try {
+        const r = await api('POST', '/api/conversations/' + id + '/title', {});
+        if (r && r.title) {
+            patchConvLocal(id, { title: r.title });
+            if (state.current && state.current.id === id) {
+                state.current.title = r.title;
+                const input = $('conv-title');
+                if (input) input.value = r.title;
+            }
+            renderConversationList();
+        }
+    } catch { /* best-effort: keep the fallback title */ }
 }
 
 async function stopTurn() {

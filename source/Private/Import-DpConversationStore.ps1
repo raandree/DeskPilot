@@ -35,15 +35,16 @@ function Import-DpConversationStore {
             $history = [System.Collections.Generic.List[object]]::new()
             foreach ($h in @($c.history)) { $history.Add($h) }
             $store[[string]$c.id] = @{
-                id         = [string]$c.id
-                title      = [string]$c.title
-                model      = if ($c.model) { [string]$c.model } else { $null }
-                pinned     = [bool]($c.PSObject.Properties['pinned'] -and $c.pinned)
-                archived   = [bool]($c.PSObject.Properties['archived'] -and $c.archived)
-                createdUtc = ConvertTo-DpIsoString $c.createdUtc
-                updatedUtc = ConvertTo-DpIsoString $c.updatedUtc
-                messages   = $messages
-                history    = $history
+                id          = [string]$c.id
+                title       = [string]$c.title
+                titleLocked = [bool]($c.PSObject.Properties['titleLocked'] -and $c.titleLocked)
+                model       = if ($c.model) { [string]$c.model } else { $null }
+                pinned      = [bool]($c.PSObject.Properties['pinned'] -and $c.pinned)
+                archived    = [bool]($c.PSObject.Properties['archived'] -and $c.archived)
+                createdUtc  = ConvertTo-DpIsoString $c.createdUtc
+                updatedUtc  = ConvertTo-DpIsoString $c.updatedUtc
+                messages    = $messages
+                history     = $history
             }
         }
     }

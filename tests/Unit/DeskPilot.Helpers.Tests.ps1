@@ -1862,6 +1862,86 @@ Describe 'ConvertFrom-DpMergePlan' {
     }
 }
 
+Describe 'New-DpTitlePrompt' {
+    It 'includes the user prompt and asks for a short title' {
+        $p = New-DpTitlePrompt -Prompt 'Please add a dark mode toggle to the settings page'
+        $p | Should -Match 'dark mode toggle'
+        $p | Should -Match 'short title'
+    }
+    It 'truncates a very long prompt to 800 characters of input' {
+        # 'Z' never appears in the instruction text, so counting it isolates the input.
+        $p = New-DpTitlePrompt -Prompt ('Z' * 5000)
+        ([regex]::Matches($p, 'Z')).Count | Should -Be 800
+    }
+    It 'accepts an empty prompt without throwing' {
+        { New-DpTitlePrompt -Prompt '' } | Should -Not -Throw
+    }
+}
+
+Describe 'ConvertFrom-DpTitleResult' {
+    It 'returns a plain title unchanged' {
+        ConvertFrom-DpTitleResult -Text 'Chat renaming feature request' | Should -Be 'Chat renaming feature request'
+    }
+    It 'strips surrounding straight quotes' {
+        ConvertFrom-DpTitleResult -Text '"Stop button malfunction"' | Should -Be 'Stop button malfunction'
+    }
+    It 'strips surrounding smart quotes' {
+        $smart = [char]0x201C + 'Extend menu options' + [char]0x201D
+        ConvertFrom-DpTitleResult -Text $smart | Should -Be 'Extend menu options'
+    }
+    It 'strips a leading Title: label' {
+        ConvertFrom-DpTitleResult -Text 'Title: Merge changes to main' | Should -Be 'Merge changes to main'
+    }
+    It 'strips a Markdown heading marker' {
+        ConvertFrom-DpTitleResult -Text '## Task cost inquiry' | Should -Be 'Task cost inquiry'
+    }
+    It 'unwraps a fenced code block' {
+        $fence = '```'
+        ConvertFrom-DpTitleResult -Text "$fence`nAnimate donut spinner`n$fence" | Should -Be 'Animate donut spinner'
+    }
+    It 'skips a leading label line and uses the next line' {
+        ConvertFrom-DpTitleResult -Text "Here is a concise title:`nRemove prompt history" | Should -Be 'Remove prompt history'
+    }
+    It 'collapses whitespace and strips trailing punctuation' {
+        ConvertFrom-DpTitleResult -Text 'Close   project   functionality.' | Should -Be 'Close project functionality'
+    }
+    It 'caps the word count' {
+        ConvertFrom-DpTitleResult -Text 'one two three four five six seven eight nine ten' -MaxWords 4 | Should -Be 'one two three four'
+    }
+    It 'returns empty for null, empty, or whitespace' {
+        ConvertFrom-DpTitleResult -Text $null | Should -Be ''
+        ConvertFrom-DpTitleResult -Text '' | Should -Be ''
+        ConvertFrom-DpTitleResult -Text '   ' | Should -Be ''
+    }
+    It 'applies a hard character cap with an ellipsis' {
+        $r = ConvertFrom-DpTitleResult -Text ('word ' * 40) -MaxWords 40 -MaxLength 20
+        $r.Length | Should -BeLessOrEqual 21
+        $r[-1] | Should -Be ([char]0x2026)
+    }
+}
+
+Describe 'Conversation title lock' {
+    It 'defaults titleLocked to false on a new Conversation' {
+        (New-DpConversation -Title 'X').titleLocked | Should -BeFalse
+    }
+    It 'round-trips titleLocked through Save and Import' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $conv = New-DpConversation -Title 'Locked one'
+        $conv.titleLocked = $true
+        Save-DpConversationStore -Store @{ $conv.id = $conv } -Directory $dir
+        $loaded = Import-DpConversationStore -Directory $dir
+        $loaded[$conv.id].titleLocked | Should -BeTrue
+    }
+    It 'defaults titleLocked to false for a legacy store without the field' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $legacy = @{ version = 1; conversations = @(@{ id = 'c_legacy'; title = 'Old'; createdUtc = '2026-01-01T00:00:00.0000000Z'; updatedUtc = '2026-01-01T00:00:00.0000000Z'; messages = @(); history = @() }) } | ConvertTo-Json -Depth 10
+        Set-Content -LiteralPath (Join-Path $dir 'conversations.json') -Value $legacy -Encoding utf8
+        (Import-DpConversationStore -Directory $dir)['c_legacy'].titleLocked | Should -BeFalse
+    }
+}
+
 Describe 'Merge helper guards (no git required)' {
     It 'Get-DpMergePreview reports a missing project folder' {
         (Get-DpMergePreview -Root (Join-Path $TestDrive 'no-such-mp') -Branch 'feature').error | Should -Be 'No project folder.'

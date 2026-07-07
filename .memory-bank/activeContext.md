@@ -2,25 +2,65 @@
 
 ## Current focus
 
-**The "Working…" spinner froze into a static ring under OS "reduce motion" —
-FIXED + MERGED to `main` (2026-07-07).**
-The streaming activity indicator (`<span class="spinner">` set in `setStreamingUI`,
-`web/assets/app.js`) is styled `animation: spin .7s linear infinite`, but a global
-`@media (prefers-reduced-motion: reduce) { * { animation: none !important } }` rule
-in `web/assets/styles.css` disabled it for anyone with OS animations off (e.g.
-Windows → Accessibility → Visual effects → Animation effects — a common default),
-so the donut next to "Working…" sat frozen and read as "nothing is happening". Fix
-(CSS-only, no JS): keep the rotation for normal users; add a targeted
-reduced-motion override that keeps the spinner ROTATING (`spin 1s linear infinite`
-— a smooth continuous circle, a touch slower than the .7s default; NOT a flash),
-plus a small legibility bump (13→14px, a second coloured border segment so the
-sweep reads clearly). A first pass used an opacity pulse (`spinner-pulse`) but the
-user found the flashing ugly and asked for something circling, so it was reverted
-to rotation (a smooth spin is also calmer/safer than a blink under reduced motion).
-The launcher serves the source `web/` folder directly (`WebRoot = repoRoot/web`, no
-built copy), so a browser hard-refresh shows it — no rebuild. Fast-forwarded
-`0667920..4896066` into `main` (local-only, not pushed); `ai/working-spinner-motion`
-kept.
+**Automatic conversation titles (like GitHub Copilot) — SHIPPED on
+`ai/auto-conversation-title` (2026-07-07), local-only, not yet merged.**
+Previously a brand-new Conversation was titled with a crude 60-char truncation of
+the first prompt (inline in `Invoke-DpTurn`). Now, after the first Turn, the SPA
+fires a new best-effort `POST /api/conversations/{id}/title`; the Host Server runs
+a pure-reasoning Turn with **all Tools disabled** (the Merge-Plan pattern via
+`Invoke-DpEngineCommand`) to summarise the first prompt into a few words, cleans
+it, and persists it — the sidebar + title field update in place.
+
+Design (mirrors `New-DpMergePlanPrompt` / `ConvertFrom-DpMergePlan`):
+
+- **`New-DpTitlePrompt`** (pure): a strict "few-word title only, no quotes/
+  punctuation/Markdown" instruction; the input prompt is truncated to 800 chars.
+- **`ConvertFrom-DpTitleResult`** (pure): first meaningful line (skips a leading
+  `label:` line + code fences), strips a `Title:` label / Markdown heading-list
+  markers / surrounding straight+smart quotes+backticks, collapses whitespace,
+  removes trailing punctuation, caps words (8) then length (60, `…`). Returns ''
+  when nothing usable → caller keeps the fallback title.
+- **Route `titleConversation`**: returns the current title unchanged when
+  `titleLocked` or past the first exchange (>1 user Message); `409` if a Turn is
+  running; else Engine call (Tools off) + clean + persist. Never throws.
+- **`titleLocked`** — a new Conversation field (default `$false`), set `$true` on a
+  manual rename in `patchConversation`, persisted through `New-DpConversation` /
+  `Import-DpConversationStore` / `Save-DpConversationStore` (the store whitelists
+  fields). Auto-titling never clobbers a user's chosen name.
+- **Frontend `maybeAutoTitle()`** in `_runTurn`'s `finally` (after the composer
+  re-enables), gated to `messageCount <= 2`; the server makes the final call.
+  Single-threaded server ⇒ no runspace race (a user send during title-gen queues).
+
+The instant truncation in `Invoke-DpTurn` stays as the fallback shown until the AI
+title arrives (and if titling is skipped/fails). +17 unit tests. Verified: full
+suite **299/299, 0 failed** (9 tasks, 0 errors, 0 warnings); `app.js` ESM check OK
+(`.mjs`). Specs 030 + CHANGELOG updated.
+
+## Next steps
+
+1. **Manual browser smoke of auto-titles:** start a new Conversation, send a first
+   message, confirm the sidebar title flips from the truncated prompt to a concise
+   AI summary a moment after the reply; rename it, then edit the first prompt and
+   confirm the manual name is NOT overwritten (`titleLocked`). Merge
+   `ai/auto-conversation-title` into `main` (local-only) when satisfied.
+2. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
+   main): exercise /api/git/branches, /merge/preview, a real merge, a conflict →
+   /merge/plan → /merge/apply, and /cleanup (local-only; the plan route needs the
+   Engine authenticated).
+3. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
+4. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
+   screen); `Invoke-DpGitClone`; `POST /api/projects/clone`; reuse the folder
+   picker; SSH + ambient credentials only; auto-select the new Project.
+5. Then resume the parked publish/Sampler work (Phase B/D) if desired.
+
+## Prior focus — "Working…" spinner froze under reduce-motion (FIXED + MERGED 2026-07-07)
+
+The streaming donut sat frozen for users with OS animations off (a blanket
+`@media (prefers-reduced-motion: reduce) { * { animation: none } }` in
+`styles.css` killed its rotation). CSS-only fix: a targeted `.spinner` override
+keeps it smoothly rotating (`spin 1s linear infinite`) under reduced motion, plus
+a legibility bump. Fast-forwarded `0667920..4896066` into `main` (local-only);
+`ai/working-spinner-motion` kept.
 
 ## Prior focus — Transient 403 on the Copilot session-token exchange (FIXED + MERGED 2026-07-07)
 
@@ -131,20 +171,6 @@ conflict, approved before any write; local cleanup; remote push+delete behind a
 SEPARATE confirm; Undo). Backend + 8 routes + UI on `ai/merge-wizard`
 (50b4ca5 foundation, c84f628 backend, 0612594 routes+UI). Remaining for that
 track: a live HTTP smoke of the merge routes.
-
-## Next steps
-
-1. **Live HTTP smoke of the merge routes** (recommended before merge to main):
-   start Start-DeskPilot with a real-repo Project, exercise /api/git/branches,
-   /merge/preview, a real merge, a conflict -> /merge/plan -> /merge/apply, and
-   /cleanup (local-only). The plan route needs the Engine authenticated. Helpers
-   are already real-repo-tested; this validates the HTTP + UI wiring.
-2. **Manual browser smoke** of the wizard (badges render, tooltips, each step).
-3. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
-   screen); Invoke-DpGitClone (validate URL, derive repo basename, clone via
-   Invoke-DpGitCommand, never-throw); POST /api/projects/clone; reuse the folder
-   picker; SSH + ambient credentials only; auto-select the new Project.
-4. Then resume the parked publish/Sampler work (Phase B/D) if desired.
 
 ## Design decisions in force (Merge Wizard, signed off 2026-06-12)
 

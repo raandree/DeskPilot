@@ -435,7 +435,9 @@ Returns `204`. Also removes the Conversation from the persisted store.
 
 ### `PATCH /api/conversations/{id}`
 
-Body: `{ "title"?: "…", "model"?: "…" }`. Returns the updated summary.
+Body: `{ "title"?: "…", "model"?: "…" }`. Returns the updated summary. Providing a
+`title` also **locks** it (`titleLocked`), so auto-titling never overwrites a name
+the user chose.
 
 ## Sending a Turn — **SSE**
 
@@ -462,6 +464,25 @@ accept thread services this request mid-Turn (the streaming loop pumps pending
 connections), so the cancel flag is set while the Turn is still running; the Turn
 then aborts the Engine pipeline and closes the stream with an `error` frame
 (`{ "message": "Turn stopped." }`).
+
+### `POST /api/conversations/{id}/title`
+
+Generates a concise AI **title** for a new Conversation from its first prompt —
+the way GitHub Copilot renames a new chat to a short summary. Body: `{}`. Returns
+`{ "id": "…", "title": "…" }`. Best-effort and safe to call after any Turn:
+
+- Returns the current title unchanged when it is **locked** (`titleLocked`, i.e. a
+  manual rename) or when the Conversation is past its first exchange (more than one
+  user Message).
+- Returns `409` if a Turn is already running (the title Turn shares the single
+  Engine Runspace).
+- Otherwise runs a pure-reasoning Turn with **all Tools disabled** to summarise the
+  first prompt into a few words, cleans the result (`ConvertFrom-DpTitleResult`),
+  and persists it. Any Engine failure leaves the existing fallback title (the
+  truncated first prompt) untouched.
+
+The SPA calls this once, right after the first Turn of a new Conversation
+completes; the sidebar and title field update in place when it returns.
 
 ### Mid-Turn dispatch (client-only UX)
 

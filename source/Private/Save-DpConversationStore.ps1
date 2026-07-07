@@ -27,15 +27,16 @@ function Save-DpConversationStore {
         }
         $ordered = $Store.Values | Sort-Object updatedUtc -Descending | ForEach-Object {
             @{
-                id         = $_.id
-                title      = $_.title
-                model      = $_.model
-                pinned     = [bool]$_.pinned
-                archived   = [bool]$_.archived
-                createdUtc = $_.createdUtc
-                updatedUtc = $_.updatedUtc
-                messages   = @($_.messages)
-                history    = @($_.history)
+                id          = $_.id
+                title       = $_.title
+                titleLocked = [bool]$_.titleLocked
+                model       = $_.model
+                pinned      = [bool]$_.pinned
+                archived    = [bool]$_.archived
+                createdUtc  = $_.createdUtc
+                updatedUtc  = $_.updatedUtc
+                messages    = @($_.messages)
+                history     = @($_.history)
             }
         }
         $payload = @{ version = 1; conversations = @($ordered) } | ConvertTo-Json -Depth 20 -Compress

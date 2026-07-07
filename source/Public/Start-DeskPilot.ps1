@@ -125,6 +125,7 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/regenerate'; Name = 'regenerateTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/edit'; Name = 'editTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/stop'; Name = 'stopTurn' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/title'; Name = 'titleConversation' }
             @{ Method = 'POST'; Pattern = '/api/uploads'; Name = 'uploads' }
         )
     }

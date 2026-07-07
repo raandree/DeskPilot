@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic conversation titles.** A brand-new conversation is now renamed from
+  the generic "New conversation" to a concise, few-word AI summary of your first
+  message — the way GitHub Copilot names a new chat (for example "Stop button
+  malfunction" or "Merge changes to main"). The title fills in on its own a moment
+  after the first reply; renaming a conversation yourself **locks** the name so it
+  is never overwritten. Backed by a new best-effort
+  `POST /api/conversations/{id}/title` endpoint that runs a pure-reasoning Turn
+  with all Tools disabled to summarise the first prompt.
 - **Close the active project.** The composer's project menu now offers **Close
   project** whenever a project is active, and the Settings drawer's project list
   shows a **Close** action on the selected project. Closing deselects the project

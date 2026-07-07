@@ -515,7 +515,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
                 return
             }
-            if ($Body -and $Body.PSObject.Properties['title'] -and $Body.title) { $conversation.title = [string]$Body.title }
+            if ($Body -and $Body.PSObject.Properties['title'] -and $Body.title) {
+                $conversation.title = [string]$Body.title
+                # A manual rename locks the title so auto-titling never overwrites it.
+                $conversation.titleLocked = $true
+            }
             if ($Body -and $Body.PSObject.Properties['model']) { $conversation.model = if ($Body.model) { [string]$Body.model } else { $null } }
             # Pin / archive are organisational flags; they must not reorder the list,
             # so they do not bump updatedUtc (only a title/model edit does).
@@ -603,6 +607,72 @@ function Invoke-DpRouteHandler {
         'stopTurn' {
             $state.CancelRequested = $true
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
+        }
+        'titleConversation' {
+            # Auto-title a new Conversation from its first prompt, the way GitHub
+            # Copilot renames a new chat to a short summary. Best-effort: the caller
+            # already shows a fallback title (the truncated prompt), so any failure
+            # here just leaves that in place.
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            # A manual rename wins: never overwrite a title the user set themselves.
+            if ($conversation.titleLocked) {
+                Write-DpResponse -Stream $Stream -Json @{ id = $conversation.id; title = $conversation.title }
+                return
+            }
+            # Only the first exchange is auto-titled. Later Turns leave the title
+            # alone, so a caller can safely fire this after every Turn.
+            $userMessages = @($conversation.messages | Where-Object { $_.role -eq 'user' })
+            if ($userMessages.Count -ne 1) {
+                Write-DpResponse -Stream $Stream -Json @{ id = $conversation.id; title = $conversation.title }
+                return
+            }
+            # The title Turn shares the single Engine Runspace, so refuse while a
+            # Turn is running rather than corrupting its state.
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
+                return
+            }
+            $firstPrompt = [string]$userMessages[0].text
+            $newTitle = $conversation.title
+            if (-not [string]::IsNullOrWhiteSpace($firstPrompt)) {
+                # Pure-reasoning Turn with every Tool disabled (as the Merge Plan does).
+                $engineParams = @{
+                    Prompt             = New-DpTitlePrompt -Prompt $firstPrompt
+                    DisableBrowsing    = $true
+                    DisableFileAccess  = $true
+                    DisableTerminal    = $true
+                    DisableUserPrompts = $true
+                    DisableUserTools   = $true
+                    DisableTodoList    = $true
+                }
+                $effectiveModel = if ($conversation.model) { $conversation.model } elseif ($state.Settings.model) { $state.Settings.model } else { $null }
+                if ($effectiveModel) { $engineParams.Model = $effectiveModel }
+                $state.TurnRunning = $true
+                try {
+                    $engineResult = Invoke-DpEngineCommand -Command 'Invoke-Shp' -Parameter $engineParams | Select-Object -Last 1
+                    $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
+                    $cleaned = ConvertFrom-DpTitleResult -Text $content
+                    if (-not [string]::IsNullOrWhiteSpace($cleaned)) { $newTitle = $cleaned }
+                }
+                catch {
+                    # A title failure must never surface to the user or break the
+                    # Conversation; keep whatever title is already set.
+                    $null = $_
+                }
+                finally {
+                    $state.TurnRunning = $false
+                }
+            }
+            if ($newTitle -ne $conversation.title) {
+                $conversation.title = $newTitle
+                $conversation.updatedUtc = [DateTime]::UtcNow.ToString('o')
+                Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+            }
+            Write-DpResponse -Stream $Stream -Json @{ id = $conversation.id; title = $conversation.title }
         }
         'uploads' {
             # Uploads land in the active Workspace Folder; with no Project selected
