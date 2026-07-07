@@ -15,3 +15,6 @@ Thumbs.db
 # Local secrets (never commit the Engine token)
 .copilot-demo-token
 *.token
+
+# Session-local prompt log — recreated by the agent runtime; never version-control it
+.memory-bank/promptHistory.md
