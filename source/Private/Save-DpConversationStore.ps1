@@ -35,6 +35,7 @@ function Save-DpConversationStore {
                 archived    = [bool]$_.archived
                 unread      = [bool]$_.unread
                 color       = $_.color
+                compactedUtc = $_.compactedUtc
                 createdUtc  = $_.createdUtc
                 updatedUtc  = $_.updatedUtc
                 messages    = @($_.messages)

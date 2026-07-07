@@ -50,6 +50,7 @@ function Copy-DpConversation {
         archived    = $false
         unread      = $false
         color       = $Conversation.color
+        compactedUtc = $null
         createdUtc  = $now
         updatedUtc  = $now
         messages    = $messages

@@ -74,6 +74,8 @@
                         <span class="muted tiny">Model</span>
                         <select id="model-select" aria-label="Model"></select>
                     </label>
+                    <button id="btn-context" class="context-meter hidden" type="button"
+                        title="Context window usage" aria-label="Session info and context window"></button>
                     <button id="btn-theme" class="icon-btn" title="Toggle light / dark mode"
                         aria-label="Toggle light or dark mode">☾</button>
                     <button id="btn-files" class="icon-btn" title="Toggle the project files panel"
@@ -217,6 +219,9 @@
             <div id="usage-chart" class="usage-chart"></div>
         </div>
     </div>
+
+    <!-- Session info popover (per-conversation cost + context window + compact) -->
+    <div id="session-popover" class="popover session-popover hidden" role="dialog" aria-label="Session info"></div>
 
     <!-- Settings drawer -->
     <div id="settings-backdrop" class="backdrop hidden"></div>

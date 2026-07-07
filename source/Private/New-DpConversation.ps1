@@ -25,6 +25,7 @@ function New-DpConversation {
         archived    = $false
         unread      = $false
         color       = $null
+        compactedUtc = $null
         createdUtc  = $now
         updatedUtc  = $now
         messages    = [System.Collections.Generic.List[object]]::new()

@@ -43,6 +43,7 @@ function Import-DpConversationStore {
                 archived    = [bool]($c.PSObject.Properties['archived'] -and $c.archived)
                 unread      = [bool]($c.PSObject.Properties['unread'] -and $c.unread)
                 color       = if ($c.PSObject.Properties['color'] -and $c.color) { [string]$c.color } else { $null }
+                compactedUtc = if ($c.PSObject.Properties['compactedUtc'] -and $c.compactedUtc) { ConvertTo-DpIsoString $c.compactedUtc } else { $null }
                 createdUtc  = ConvertTo-DpIsoString $c.createdUtc
                 updatedUtc  = ConvertTo-DpIsoString $c.updatedUtc
                 messages    = $messages

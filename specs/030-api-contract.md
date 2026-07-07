@@ -505,6 +505,28 @@ the way GitHub Copilot renames a new chat to a short summary. Body: `{}`. Return
 The SPA calls this once, right after the first Turn of a new Conversation
 completes; the sidebar and title field update in place when it returns.
 
+### `POST /api/conversations/{id}/compact`
+
+Compacts the Conversation's replayed context — the way GitHub Copilot offers
+"Compact Conversation". Summarises the earlier part of the Engine `-History` into a
+short briefing (a pure-reasoning Turn with **all Tools disabled**, cleaned by
+`ConvertFrom-DpCompactionResult`) and keeps only the most recent entries verbatim
+(`Compress-DpConversationHistory`), so future Turns replay far fewer tokens. The
+visible transcript (`messages`) is left untouched — nothing the user sees is lost;
+only what is replayed to the Engine shrinks. Body: `{}`.
+
+- `404` if the Conversation is missing; `409` if a Turn is running (the compaction
+  Turn shares the single Engine Runspace); `400 too_short` when there is too little
+  history to be worth summarising; `502 compaction_failed` if the summary comes
+  back empty.
+- On success, replaces `history`, sets `compactedUtc`, persists, and returns
+  `{ "ok": true, "summarised": <n>, "kept": <n>, "before": <n>, "after": <n>, "estimatedFreed": <tokens>, "compactedUtc": "…" }`. Like the organisational flags,
+  `compactedUtc` does not bump `updatedUtc` (it changes only the replayed context,
+  not the visible thread).
+
+The new nullable `compactedUtc` Conversation field is carried on the `list` and
+`GET conversation` summaries and persisted through the store.
+
 ### Mid-Turn dispatch (client-only UX)
 
 The Engine has no notion of mid-Turn injection: a `POST /messages` call while a

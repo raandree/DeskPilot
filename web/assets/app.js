@@ -500,6 +500,7 @@ function openConvMenu(summary, anchor) {
         mk('Copy transcript', () => copyTranscript(summary.id)),
         mk('Export as Markdown', () => exportConversation(summary.id)),
         mk('Details', () => showConversationDetails(summary, anchor)),
+        mk('Session info', () => openSessionInfo(anchor, summary.id)),
     );
     document.body.appendChild(menu);
     positionConvPopover(menu, anchor);
@@ -702,6 +703,226 @@ async function showConversationDetails(summary, anchor) {
     }
 }
 
+// ===== Session info: cost + context window + compaction =====
+
+// Rough token estimate for display only (~4 chars per token, the common GPT
+// heuristic). Used to split the measured context into estimated components.
+function estimateTokens(text) {
+    return Math.ceil((String(text || '').length) / 4);
+}
+
+// Compact a token count for the meter and breakdown (e.g. 128000 -> "128K").
+function fmtTokens(n) {
+    n = Number(n) || 0;
+    if (n >= 1000) {
+        const k = n / 1000;
+        return k.toLocaleString(undefined, { maximumFractionDigits: k >= 100 ? 0 : 1 }) + 'K';
+    }
+    return String(n);
+}
+
+// The effective Model capability entry for a Conversation: its own pinned Model,
+// else the Settings default, else the Engine default. Returns null when unknown.
+function effectiveContextModel(conv) {
+    const id = (conv && conv.model) || (state.settings && state.settings.model) || state.defaultModel;
+    if (!id) return null;
+    return (state.models || []).find((m) => m.id === id) || null;
+}
+
+// Compute Session Info for a Conversation: accumulated cost/credits/turns, plus
+// the context-window occupancy of the LAST Turn (the exact promptTokens the
+// Engine reported) against the Model's context window, and an estimated split of
+// that context into conversation Messages vs system/tool overhead.
+function computeSessionInfo(conv) {
+    conv = conv || state.current;
+    const messages = (conv && conv.messages) || [];
+    const usage = sumConversationUsage(messages);
+    const assistants = messages.filter((m) => m.role === 'assistant');
+    // promptTokens grows each Turn as history accumulates; the last non-zero one
+    // is the current context occupancy (system + tools + history + last prompt).
+    let measured = 0;
+    for (const m of assistants) {
+        const p = m.usage && Number(m.usage.promptTokens);
+        if (p) measured = p;
+    }
+    const model = effectiveContextModel(conv);
+    const maxTokens = (model && Number(model.maxContextWindowTokens)) || 0;
+    const maxOutput = (model && Number(model.maxOutputTokens)) || 0;
+    let rawMessagesEst = 0;
+    for (const m of messages) rawMessagesEst += estimateTokens(m.text);
+    // Everything the Engine counted beyond the visible message text — system
+    // prompt, tool schemas, tool results — is shown as one honest aggregate.
+    let messagesEst = rawMessagesEst, overheadEst = 0;
+    if (measured > 0) {
+        messagesEst = Math.min(rawMessagesEst, measured);
+        overheadEst = Math.max(0, measured - messagesEst);
+    }
+    const pct = (maxTokens > 0 && measured > 0) ? Math.min(100, (measured / maxTokens) * 100) : 0;
+    return {
+        id: conv && conv.id,
+        modelId: (model && model.id) || (conv && conv.model) || (state.settings && state.settings.model) || state.defaultModel || 'Default',
+        credits: usage.credits, cost: usage.costUSD, turns: assistants.length,
+        measured, maxTokens, maxOutput, pct, messagesEst, overheadEst,
+        compactedUtc: conv && conv.compactedUtc,
+    };
+}
+
+// Update (or hide) the glanceable context-window pill in the top bar.
+function renderContextMeter() {
+    const btn = $('btn-context');
+    if (!btn) return;
+    const info = computeSessionInfo();
+    if (!state.current || info.measured <= 0 || info.maxTokens <= 0) {
+        btn.classList.add('hidden');
+        return;
+    }
+    const pct = Math.round(info.pct);
+    btn.classList.remove('hidden');
+    btn.dataset.level = pct >= 90 ? 'high' : (pct >= 70 ? 'mid' : 'low');
+    btn.innerHTML = '';
+    const track = el('ctx-meter-track', 'span');
+    const fill = el('ctx-meter-fill', 'span');
+    fill.style.width = pct + '%';
+    track.appendChild(fill);
+    const label = el('ctx-meter-label', 'span');
+    label.textContent = pct + '%';
+    btn.append(track, label);
+    btn.title = `Context: ${info.measured.toLocaleString()} / ${info.maxTokens.toLocaleString()} tokens (${pct}%). Click for session info.`;
+}
+
+// One estimated/measured breakdown row (label, a mini-bar, and a token figure).
+function buildBreakdownRow(label, tokens, max, isEst) {
+    const row = el('bd-row');
+    const k = el('bd-k', 'span'); k.textContent = label;
+    const bar = el('bd-bar', 'span');
+    const fill = el('bd-fill', 'span');
+    fill.style.width = (max > 0 ? Math.min(100, (tokens / max) * 100) : 0).toFixed(1) + '%';
+    bar.appendChild(fill);
+    const v = el('bd-v', 'span'); v.textContent = (isEst ? '~' : '') + fmtTokens(tokens);
+    row.append(k, bar, v);
+    return row;
+}
+
+// Build the Session Info popover contents for a Conversation via DOM (never
+// innerHTML for user-authored text), the way showConversationDetails does.
+function fillSessionPopover(conv) {
+    const pop = $('session-popover');
+    const info = computeSessionInfo(conv);
+    pop.innerHTML = '';
+
+    const head = el('', 'h3'); head.textContent = 'Session info';
+    pop.appendChild(head);
+
+    const model = el('session-model muted tiny');
+    model.textContent = info.modelId + (info.maxTokens ? ' · ' + fmtTokens(info.maxTokens) + ' context' : '');
+    pop.appendChild(model);
+
+    const costRow = el('session-row session-cost');
+    const ck = el('session-k', 'span'); ck.textContent = 'Session cost';
+    const cv = el('session-v', 'span'); cv.textContent = '⚡ ' + formatCredits(info.credits) + ' credits';
+    costRow.append(ck, cv);
+    pop.appendChild(costRow);
+
+    const costSub = el('session-sub muted tiny');
+    costSub.textContent = '$' + info.cost.toFixed(4) + ' · ' + info.turns + ' turn' + (info.turns === 1 ? '' : 's');
+    pop.appendChild(costSub);
+
+    const block = el('session-block');
+    const bh = el('session-block-head'); bh.textContent = 'Context window';
+    block.appendChild(bh);
+    const hasContext = info.measured > 0 && info.maxTokens > 0;
+    if (hasContext) {
+        const barPct = Math.round(info.pct);
+        const bar = el('ctx-bar');
+        bar.dataset.level = barPct >= 90 ? 'high' : (barPct >= 70 ? 'mid' : 'low');
+        const used = el('ctx-bar-used', 'span'); used.style.width = barPct + '%';
+        const reservedPct = info.maxOutput > 0 ? Math.max(0, Math.min(100 - barPct, (info.maxOutput / info.maxTokens) * 100)) : 0;
+        const reserved = el('ctx-bar-reserved', 'span'); reserved.style.width = reservedPct.toFixed(1) + '%';
+        bar.append(used, reserved);
+        block.appendChild(bar);
+
+        const sub = el('session-sub muted tiny');
+        sub.textContent = info.measured.toLocaleString() + ' / ' + info.maxTokens.toLocaleString() + ' tokens · ' + barPct + '% (last turn)';
+        block.appendChild(sub);
+
+        const bd = el('session-breakdown');
+        bd.appendChild(buildBreakdownRow('Messages', info.messagesEst, info.maxTokens, true));
+        bd.appendChild(buildBreakdownRow('System + tools', info.overheadEst, info.maxTokens, true));
+        if (info.maxOutput > 0) bd.appendChild(buildBreakdownRow('Reserved for response', info.maxOutput, info.maxTokens, false));
+        block.appendChild(bd);
+
+        const hint = el('session-hint muted tiny');
+        hint.textContent = 'Breakdown is estimated; the total is measured at the last turn.';
+        block.appendChild(hint);
+    } else {
+        const none = el('muted tiny');
+        none.textContent = 'No turns yet — send a message to measure context use.';
+        block.appendChild(none);
+    }
+    pop.appendChild(block);
+
+    if (info.compactedUtc) {
+        const comp = el('session-compacted muted tiny');
+        comp.textContent = 'Compacted ' + fmtConvDate(info.compactedUtc);
+        pop.appendChild(comp);
+    }
+
+    const btn = el('btn btn-small session-compact-btn', 'button');
+    btn.id = 'btn-compact';
+    btn.type = 'button';
+    btn.textContent = 'Compact conversation';
+    if (!hasContext) btn.disabled = true;
+    btn.onclick = (e) => { e.stopPropagation(); compactConversation(info.id); };
+    pop.appendChild(btn);
+
+    const foot = el('session-hint muted tiny');
+    foot.textContent = 'Compacting summarises earlier turns to free the context window. Your visible messages stay intact.';
+    pop.appendChild(foot);
+}
+
+// Open (or toggle) the Session Info popover. From the top-bar pill it shows the
+// open Conversation; from a list row's menu it shows that row (fetched if needed).
+async function openSessionInfo(anchor, convId) {
+    const pop = $('session-popover');
+    if (!pop) return;
+    if (!pop.classList.contains('hidden')) { pop.classList.add('hidden'); return; }
+    let conv = state.current;
+    const targetId = convId || (state.current && state.current.id);
+    if (!targetId) { toast('Open a conversation first.'); return; }
+    if (convId && (!state.current || state.current.id !== convId)) {
+        try { conv = await api('GET', '/api/conversations/' + convId); } catch { conv = null; }
+    }
+    fillSessionPopover(conv);
+    pop.classList.remove('hidden');
+    if (anchor) positionConvPopover(pop, anchor);
+}
+
+function closeSessionInfo() {
+    const pop = $('session-popover');
+    if (pop) pop.classList.add('hidden');
+}
+
+// Compact a Conversation's replayed context (summarise earlier Turns). The
+// visible transcript is preserved; only the Engine -History shrinks, so the next
+// Turn sends fewer tokens.
+async function compactConversation(id) {
+    if (!id) return;
+    if (!window.confirm('Compact this conversation? Earlier turns are summarised to free up the context window. Your visible messages are kept.')) return;
+    try {
+        const r = await api('POST', '/api/conversations/' + id + '/compact');
+        const freed = (r && Number(r.estimatedFreed)) || 0;
+        toast(freed > 0 ? `Compacted — freed about ${fmtTokens(freed)} tokens of context.` : 'Conversation compacted.');
+        closeSessionInfo();
+        if (state.current && state.current.id === id) {
+            await refreshCurrentConversation();
+            renderContextMeter();
+        }
+        await loadConversations();
+    } catch (e) {
+        toast((e && e.message) || 'Could not compact the conversation.');
+    }
+}
+
 // Build a Markdown transcript of a Conversation.
 function buildTranscript(conv) {
     const lines = [];
@@ -779,6 +1000,7 @@ function goHome() {
     $('conv-title').value = '';
     renderConversationList();
     renderThread();
+    renderContextMeter();
     closeSidebar();
     $('prompt').focus();
 }
@@ -797,6 +1019,7 @@ async function selectConversation(id) {
     }
     renderConversationList();
     renderThread();
+    renderContextMeter();
     closeSidebar();
 }
 
@@ -3449,6 +3672,7 @@ async function _streamRerun({ endpoint, body }) {
 async function refreshCurrentConversation() {
     if (!state.current) return;
     try { state.current = await api('GET', '/api/conversations/' + state.current.id); } catch { /* keep optimistic */ }
+    renderContextMeter();
 }
 
 // ===== Voice: dictation (speech-to-text) =====
@@ -3943,6 +4167,10 @@ function wireGlobal() {
         }
         else pop.classList.add('hidden');
     };
+    $('btn-context').onclick = (e) => {
+        e.stopPropagation();
+        openSessionInfo($('btn-context'));
+    };
     $('btn-reset-lifetime').onclick = () => resetLifetime();
     document.querySelectorAll('.range-btn').forEach((b) => {
         b.addEventListener('click', (e) => { e.stopPropagation(); setUsageRange(Number(b.dataset.range)); });
@@ -4123,6 +4351,10 @@ function wireGlobal() {
         const usage = $('usage-popover');
         if (!usage.classList.contains('hidden') && !usage.contains(e.target) && !$('usage-chip').contains(e.target)) {
             usage.classList.add('hidden');
+        }
+        const session = $('session-popover');
+        if (session && !session.classList.contains('hidden') && !session.contains(e.target) && !$('btn-context').contains(e.target)) {
+            session.classList.add('hidden');
         }
         const project = $('project-popover');
         if (!project.classList.contains('hidden') && !project.contains(e.target) && !$('btn-project').contains(e.target)) {

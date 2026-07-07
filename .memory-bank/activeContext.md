@@ -2,6 +2,53 @@
 
 ## Current focus
 
+**Session Info popover + Compact conversation (GitHub-Copilot-style) — SHIPPED on
+`ai/session-info-compact` (2026-07-07, local-only, NOT yet merged to `main`).**
+The user asked for a menu like GHCP's Session Info screenshot on a Conversation.
+Delivered: a glanceable **context meter** pill in the top bar and a **Session info**
+entry in the ⋯ menu, both opening a **Session Info** popover that shows the
+Conversation's accumulated **cost** (credits + $) and turn count, a **Context
+Window** gauge (the last Turn's exact `promptTokens` ÷ the effective Model's
+`maxContextWindowTokens`, colour-graded, with a hatched *reserved for response*
+tail = `maxOutputTokens`), and an **estimated** Messages-vs-System+tools breakdown
+(client-side ~4 chars/token; the total is measured, the split is labelled
+estimated). A **Compact conversation** button runs a new
+`POST /api/conversations/{id}/compact` route: a pure-reasoning Turn (all Tools off,
+like auto-title/Merge-Plan) summarises the earlier `history` and keeps the last 4
+entries verbatim, so future Turns replay far fewer tokens — the **visible transcript
+(`messages`) is deliberately preserved**; only the Engine `-History` shrinks.
+
+Backend: 3 new pure Private helpers — `New-DpCompactionPrompt` (renders history to a
+transcript + strict summary instruction; handles hashtable & PSCustomObject entries;
+`[AllowEmptyCollection()]`), `ConvertFrom-DpCompactionResult` (strips fences/label
+lines, collapses blank lines, hard cap), `Compress-DpConversationHistory` (summary
+pair + kept tail; `changed=$false` when too short/empty; input never mutated). New
+`compactConversation` route (404/409/`400 too_short`/`502 compaction_failed`; sets a
+new nullable `compactedUtc` field without bumping `updatedUtc`; returns
+`summarised/kept/before/after/estimatedFreed`). `compactedUtc` plumbed through
+`New-DpConversation` / `Save-` / `Import-DpConversationStore` / `Copy-DpConversation`
+(reset on copy) and the `list` + `GET conversation` shapes. Route registered
+`POST /api/conversations/{id}/compact`.
+
+Frontend (`app.js`): `estimateTokens`, `fmtTokens`, `effectiveContextModel`,
+`computeSessionInfo` (last non-zero assistant `promptTokens` = occupancy),
+`renderContextMeter` (top-bar pill, hidden until a Turn has run / no window size),
+`fillSessionPopover` (DOM-built, XSS-safe like `showConversationDetails`), gauge
+`ctx-bar` + `buildBreakdownRow`, `openSessionInfo`/`closeSessionInfo`,
+`compactConversation` (confirm → POST → toast freed tokens → refresh). Wired into the
+⋯ menu, the header pill, the outside-click dismiss, and meter refresh on
+select/home/turn (via `refreshCurrentConversation`). CSS for the meter + popover +
+gauge + breakdown. index.html: `#btn-context` pill + `#session-popover`.
+
++16 unit tests. Glossary rows (Session Info, Context Window, Compact) + 3
+disambiguation notes (Compact vs `Compress`; Session Info vs Usage vs Details;
+measured vs estimated). Specs 010 (FR-C18) / 030 (compact route + `compactedUtc`) /
+040 (menu entry + context meter). CHANGELOG updated. Verified: full Sampler
+build+test **321/321, 0 failed** (16 tasks, 0 errors, 0 warnings); `app.js` ESM
+check OK (`.mjs`).
+
+## Prior focus — extended conversation ⋯ menu (SHIPPED + MERGED to `main`, 2026-07-07)
+
 **Extended the per-Conversation ⋯ menu (8-feature batch) — SHIPPED + MERGED to
 `main` (2026-07-07, local-only, not pushed).**
 The user asked to extend the conversation menu like VS Code's Chat Sessions menu
@@ -51,20 +98,29 @@ stays as the fallback.
 
 ## Next steps
 
-1. **Manual browser smoke of the new menu (now merged into `main`):** open the ⋯
-   menu, try each action — open-in-new-window (confirm the deep link `/?c=` opens
-   the right Conversation), Duplicate, mark unread + "Mark N as read", set/clear a
-   Colour, Copy transcript, Details (incl. the accumulated cost/credits/tokens);
-   and the row keyboard shortcuts (Enter/F2/Delete).
-2. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
+1. **Manual + live smoke of Session Info / Compact (`ai/session-info-compact`, not
+   yet merged):** open a Conversation with a few Turns; confirm the top-bar context
+   meter appears and the Session Info popover shows cost + a sensible context %
+   gauge (measured `promptTokens` ÷ model window) + the estimated Messages/System
+   breakdown; run **Compact conversation** and confirm the toast reports freed
+   tokens, the visible transcript is unchanged, and the next Turn's measured context
+   is smaller. Live-exercise `POST /compact` (needs the Engine authenticated):
+   `too_short` on a fresh Conversation, a real summarise on a long one, `409` while a
+   Turn runs. Then fast-forward the branch into `main`.
+2. **Manual browser smoke of the conversation ⋯ menu (already merged into `main`):**
+   open the ⋯ menu, try each action — open-in-new-window (confirm the deep link
+   `/?c=` opens the right Conversation), Duplicate, mark unread + "Mark N as read",
+   set/clear a Colour, Copy transcript, Details; and the row keyboard shortcuts
+   (Enter/F2/Delete).
+3. **Live HTTP smoke of the merge routes** (before merging the Merge Wizard to
    main): exercise /api/git/branches, /merge/preview, a real merge, a conflict →
    /merge/plan → /merge/apply, and /cleanup (local-only; the plan route needs the
    Engine authenticated).
-3. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
-4. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
+4. **Manual browser smoke** of the Merge Wizard (badges, tooltips, each step).
+5. **Clone Wizard (spec 080):** one New Project Wizard (clone-vs-local first
    screen); `Invoke-DpGitClone`; `POST /api/projects/clone`; reuse the folder
    picker; SSH + ambient credentials only; auto-select the new Project.
-5. Then resume the parked publish/Sampler work (Phase B/D) if desired.
+6. Then resume the parked publish/Sampler work (Phase B/D) if desired.
 
 ## Prior focus — "Working…" spinner froze under reduce-motion (FIXED + MERGED 2026-07-07)
 

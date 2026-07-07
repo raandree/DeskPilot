@@ -111,6 +111,7 @@ Describe 'New-DpConversation' {
         $c.archived | Should -BeFalse
         $c.unread | Should -BeFalse
         $c.color | Should -BeNullOrEmpty
+        $c.compactedUtc | Should -BeNullOrEmpty
     }
 }
 
@@ -120,6 +121,7 @@ Describe 'Copy-DpConversation' {
         $src.messages.Add(@{ id = 'm_1'; role = 'user'; text = 'hi' })
         $src.history.Add(@{ role = 'user'; content = 'hi' })
         $src.color = 'blue'
+        $src.compactedUtc = '2026-07-07T10:00:00.0000000Z'
 
         $copy = Copy-DpConversation -Conversation $src
 
@@ -132,6 +134,8 @@ Describe 'Copy-DpConversation' {
         $copy.pinned | Should -BeFalse
         $copy.archived | Should -BeFalse
         $copy.unread | Should -BeFalse
+        # A duplicate starts fresh: it inherits no compaction marker.
+        $copy.compactedUtc | Should -BeNullOrEmpty
         $copy.messages.Count | Should -Be 1
         $copy.history.Count | Should -Be 1
     }
@@ -468,6 +472,15 @@ Describe 'Conversation store persistence' {
         $loaded = Import-DpConversationStore -Directory $dir
         $loaded[$conv.id].unread | Should -BeTrue
         $loaded[$conv.id].color | Should -Be 'teal'
+    }
+    It 'round-trips the compactedUtc marker' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $conv = New-DpConversation -Title 'Compacted'
+        $conv.compactedUtc = '2026-07-07T10:00:00.0000000Z'
+        Save-DpConversationStore -Store @{ $conv.id = $conv } -Directory $dir
+        $loaded = Import-DpConversationStore -Directory $dir
+        $loaded[$conv.id].compactedUtc | Should -Be '2026-07-07T10:00:00.0000000Z'
     }
     It 'preserves ISO timestamps across a load/save cycle' {
         $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
@@ -2000,6 +2013,111 @@ Describe 'Conversation title lock' {
         $legacy = @{ version = 1; conversations = @(@{ id = 'c_legacy'; title = 'Old'; createdUtc = '2026-01-01T00:00:00.0000000Z'; updatedUtc = '2026-01-01T00:00:00.0000000Z'; messages = @(); history = @() }) } | ConvertTo-Json -Depth 10
         Set-Content -LiteralPath (Join-Path $dir 'conversations.json') -Value $legacy -Encoding utf8
         (Import-DpConversationStore -Directory $dir)['c_legacy'].titleLocked | Should -BeFalse
+    }
+}
+
+Describe 'New-DpCompactionPrompt' {
+    It 'renders the history into a transcript and asks for a summary' {
+        $p = New-DpCompactionPrompt -History @(
+            @{ role = 'user'; content = 'Refactor the parser module' },
+            @{ role = 'assistant'; content = 'Updated Parser.ps1' }
+        )
+        $p | Should -Match 'Refactor the parser module'
+        $p | Should -Match 'Parser\.ps1'
+        $p | Should -Match 'Transcript:'
+        $p | Should -Match '(?i)summar'
+    }
+    It 'renders both hashtable and PSCustomObject entries' {
+        $p = New-DpCompactionPrompt -History @(
+            @{ role = 'user'; content = 'hash entry marker' },
+            [pscustomobject]@{ role = 'assistant'; content = 'object entry marker' }
+        )
+        $p | Should -Match 'hash entry marker'
+        $p | Should -Match 'object entry marker'
+    }
+    It 'keeps the most recent content when the transcript exceeds the cap' {
+        $hist = @(
+            @{ role = 'user'; content = ('A' * 500) },
+            @{ role = 'assistant'; content = 'RECENT_MARKER' }
+        )
+        $p = New-DpCompactionPrompt -History $hist -MaxInputChars 120
+        $p | Should -Match 'RECENT_MARKER'
+    }
+    It 'accepts null or empty history without throwing' {
+        { New-DpCompactionPrompt -History @() } | Should -Not -Throw
+        { New-DpCompactionPrompt -History $null } | Should -Not -Throw
+    }
+}
+
+Describe 'ConvertFrom-DpCompactionResult' {
+    It 'returns a plain multi-line summary trimmed' {
+        ConvertFrom-DpCompactionResult -Text "  Line one`nLine two  " | Should -Be "Line one`nLine two"
+    }
+    It 'unwraps a fenced code block' {
+        $fence = '```'
+        ConvertFrom-DpCompactionResult -Text "$fence`nGoal: ship it`n$fence" | Should -Be 'Goal: ship it'
+    }
+    It 'drops a leading label line' {
+        ConvertFrom-DpCompactionResult -Text "Summary:`n- point one`n- point two" | Should -Be "- point one`n- point two"
+    }
+    It 'collapses three or more blank lines' {
+        ConvertFrom-DpCompactionResult -Text "a`n`n`n`nb" | Should -Be "a`n`nb"
+    }
+    It 'returns empty for null, empty or whitespace' {
+        ConvertFrom-DpCompactionResult -Text $null | Should -Be ''
+        ConvertFrom-DpCompactionResult -Text '' | Should -Be ''
+        ConvertFrom-DpCompactionResult -Text '   ' | Should -Be ''
+    }
+    It 'applies a hard character cap with an ellipsis' {
+        $r = ConvertFrom-DpCompactionResult -Text ('x' * 100) -MaxLength 20
+        $r.Length | Should -Be 21
+        $r[-1] | Should -Be ([char]0x2026)
+    }
+}
+
+Describe 'Compress-DpConversationHistory' {
+    BeforeAll {
+        $script:sixEntry = @(
+            @{ role = 'user'; content = 'q1' }, @{ role = 'assistant'; content = 'a1' },
+            @{ role = 'user'; content = 'q2' }, @{ role = 'assistant'; content = 'a2' },
+            @{ role = 'user'; content = 'q3' }, @{ role = 'assistant'; content = 'a3' }
+        )
+    }
+    It 'keeps the last KeepCount entries and prepends a summary pair' {
+        $r = Compress-DpConversationHistory -History $script:sixEntry -Summary 'brief' -KeepCount 4
+        $r.changed | Should -BeTrue
+        $r.summarised | Should -Be 2
+        $r.kept | Should -Be 4
+        @($r.history).Count | Should -Be 6
+        $r.history[0].role | Should -Be 'user'
+        $r.history[1].role | Should -Be 'assistant'
+        $r.history[1].content | Should -Be 'brief'
+        $r.history[2].content | Should -Be 'q2'
+        $r.history[5].content | Should -Be 'a3'
+    }
+    It 'leaves history unchanged when at or below KeepCount + 1 entries' {
+        $short = @(@{ role = 'user'; content = 'hi' }, @{ role = 'assistant'; content = 'yo' })
+        $r = Compress-DpConversationHistory -History $short -Summary 'brief' -KeepCount 4
+        $r.changed | Should -BeFalse
+        @($r.history).Count | Should -Be 2
+    }
+    It 'leaves history unchanged when the summary is empty' {
+        $r = Compress-DpConversationHistory -History $script:sixEntry -Summary '   ' -KeepCount 4
+        $r.changed | Should -BeFalse
+        @($r.history).Count | Should -Be 6
+    }
+    It 'does not mutate the input history' {
+        $copy = @($script:sixEntry)
+        $null = Compress-DpConversationHistory -History $copy -Summary 'brief' -KeepCount 4
+        @($copy).Count | Should -Be 6
+        $copy[0].content | Should -Be 'q1'
+    }
+    It 'keeps no verbatim entries when KeepCount is zero' {
+        $r = Compress-DpConversationHistory -History $script:sixEntry -Summary 'brief' -KeepCount 0
+        $r.changed | Should -BeTrue
+        $r.kept | Should -Be 0
+        @($r.history).Count | Should -Be 2
+        $r.summarised | Should -Be 6
     }
 }
 

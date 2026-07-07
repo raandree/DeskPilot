@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Session info + Compact conversation (like GitHub Copilot).** Each conversation
+  now has a **Session Info** panel — opened from a glanceable **context meter**
+  pill in the top bar or the **⋯** menu — showing the conversation's accumulated
+  cost (credits and $) and turn count, and a **Context Window** gauge: how much of
+  the model's context window the last turn used, with a hatched *reserved for
+  response* tail and an estimated split into **Messages** vs. **System + tools**.
+  The context figure is measured exactly from the Engine's reported `promptTokens`;
+  the per-part breakdown is a labelled client-side estimate. A **Compact
+  conversation** button summarises the earlier turns into a short briefing so
+  future turns send far fewer tokens — your visible messages stay intact; only what
+  is replayed to the model shrinks. New endpoint
+  `POST /api/conversations/{id}/compact` (runs a pure-reasoning turn with all tools
+  disabled) and a new `compactedUtc` conversation field. New helpers
+  `New-DpCompactionPrompt`, `ConvertFrom-DpCompactionResult`, and
+  `Compress-DpConversationHistory` (+16 unit tests).
 - **A richer conversation menu.** The per-conversation **⋯** menu is now grouped
   into clear sections with several new actions: **Open in new window** (opens the
   conversation in a separate browser window via a `/?c=<id>` deep link),

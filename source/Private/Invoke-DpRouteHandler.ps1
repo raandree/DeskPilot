@@ -482,7 +482,7 @@ function Invoke-DpRouteHandler {
             $summaries = $state.Conversations.Values |
                 Sort-Object @{ Expression = { [bool]$_.pinned }; Descending = $true }, @{ Expression = { $_.updatedUtc }; Descending = $true } |
                 ForEach-Object {
-                    @{ id = $_.id; title = $_.title; model = $_.model; pinned = [bool]$_.pinned; archived = [bool]$_.archived; unread = [bool]$_.unread; color = $_.color; createdUtc = $_.createdUtc; updatedUtc = $_.updatedUtc; messageCount = $_.messages.Count }
+                    @{ id = $_.id; title = $_.title; model = $_.model; pinned = [bool]$_.pinned; archived = [bool]$_.archived; unread = [bool]$_.unread; color = $_.color; compactedUtc = $_.compactedUtc; createdUtc = $_.createdUtc; updatedUtc = $_.updatedUtc; messageCount = $_.messages.Count }
                 }
             Write-DpResponse -Stream $Stream -Json @{ conversations = @($summaries) }
         }
@@ -505,6 +505,7 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json @{
                 id = $conversation.id; title = $conversation.title; model = $conversation.model
+                compactedUtc = $conversation.compactedUtc
                 createdUtc = $conversation.createdUtc; updatedUtc = $conversation.updatedUtc
                 messages = @($conversation.messages)
             }
@@ -569,7 +570,7 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Status 201 -Json @{
                 id = $copy.id; title = $copy.title; model = $copy.model
                 pinned = [bool]$copy.pinned; archived = [bool]$copy.archived
-                unread = [bool]$copy.unread; color = $copy.color
+                unread = [bool]$copy.unread; color = $copy.color; compactedUtc = $copy.compactedUtc
                 createdUtc = $copy.createdUtc; updatedUtc = $copy.updatedUtc; messageCount = $copy.messages.Count
             }
         }
@@ -714,6 +715,88 @@ function Invoke-DpRouteHandler {
                 Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
             }
             Write-DpResponse -Stream $Stream -Json @{ id = $conversation.id; title = $conversation.title }
+        }
+        'compactConversation' {
+            # Compact the Conversation's replayed context, the way GitHub Copilot
+            # offers "Compact Conversation": summarise the earlier part of the
+            # Engine -History into a short briefing and keep only the most recent
+            # entries verbatim, so future Turns send far fewer tokens. The visible
+            # transcript (messages) is deliberately left untouched - nothing the
+            # user can see is lost; only what is replayed to the Engine shrinks.
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            # The compaction Turn shares the single Engine Runspace, so refuse while
+            # a Turn is running rather than corrupting its state.
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
+                return
+            }
+            $keepCount = 4
+            $history = @($conversation.history)
+            # Too little to be worth a summarisation Turn (and its credit cost):
+            # there must be at least a few entries to summarise beyond the kept tail.
+            if ($history.Count -lt ($keepCount + 3)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_short'; message = 'This conversation is too short to compact.' } }
+                return
+            }
+            $summary = ''
+            # Pure-reasoning Turn with every Tool disabled (as the auto-title and
+            # Merge Plan Turns do): the Model only summarises, it never acts.
+            $engineParams = @{
+                Prompt             = New-DpCompactionPrompt -History $history
+                DisableBrowsing    = $true
+                DisableFileAccess  = $true
+                DisableTerminal    = $true
+                DisableUserPrompts = $true
+                DisableUserTools   = $true
+                DisableTodoList    = $true
+            }
+            $effectiveModel = if ($conversation.model) { $conversation.model } elseif ($state.Settings.model) { $state.Settings.model } else { $null }
+            if ($effectiveModel) { $engineParams.Model = $effectiveModel }
+            $state.TurnRunning = $true
+            try {
+                $engineResult = Invoke-DpEngineCommand -Command 'Invoke-Shp' -Parameter $engineParams | Select-Object -Last 1
+                $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
+                $summary = ConvertFrom-DpCompactionResult -Text $content
+            }
+            catch {
+                # A failed summarisation must never corrupt the Conversation; leave
+                # the history untouched and report the failure to the caller.
+                $summary = ''
+                $null = $_
+            }
+            finally {
+                $state.TurnRunning = $false
+            }
+            if ([string]::IsNullOrWhiteSpace($summary)) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'compaction_failed'; message = 'The summary could not be generated. Please try again.' } }
+                return
+            }
+            $beforeChars = ([string](@($history) | ConvertTo-Json -Depth 20 -Compress)).Length
+            $compact = Compress-DpConversationHistory -History $history -Summary $summary -KeepCount $keepCount
+            if (-not $compact.changed) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_short'; message = 'This conversation is too short to compact.' } }
+                return
+            }
+            $conversation.history = $compact.history
+            # compactedUtc is an organisational marker; it does not bump updatedUtc
+            # (compaction changes only the replayed context, not the visible thread).
+            $conversation.compactedUtc = [DateTime]::UtcNow.ToString('o')
+            Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+            $afterChars = ([string](@($compact.history) | ConvertTo-Json -Depth 20 -Compress)).Length
+            $estimatedFreed = [Math]::Max(0, [int][Math]::Round(($beforeChars - $afterChars) / 4.0))
+            Write-DpResponse -Stream $Stream -Json @{
+                ok             = $true
+                summarised     = $compact.summarised
+                kept           = $compact.kept
+                before         = $compact.before
+                after          = $compact.after
+                estimatedFreed = $estimatedFreed
+                compactedUtc   = $conversation.compactedUtc
+            }
         }
         'uploads' {
             # Uploads land in the active Workspace Folder; with no Project selected
