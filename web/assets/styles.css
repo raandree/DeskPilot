@@ -2674,6 +2674,74 @@ button.tree-row {
     padding: 16px 18px 40px;
 }
 
+/* Settings drawer tabs — a sticky, wrapping pill strip that groups the drawer's
+   fields into sections. Every panel stays in the DOM; only the active one is
+   shown, so the strip scales as settings grow without a long scroll. The
+   negative margins let it span the full drawer width; `top: -16px` cancels the
+   body's top padding so it pins flush under the drawer head on scroll. */
+.settings-tabs {
+    position: sticky;
+    top: -16px;
+    z-index: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: -16px -18px 16px;
+    padding: 12px 18px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-tab-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12.5px;
+    font-family: var(--font);
+    font-weight: 550;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.settings-tab-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+.settings-tab-btn.active {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: var(--accent);
+}
+
+.settings-tab-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.settings-tab {
+    display: none;
+    animation: settings-tab-in 0.15s ease;
+}
+
+.settings-tab.active {
+    display: block;
+}
+
+@keyframes settings-tab-in {
+    from {
+        opacity: 0;
+        transform: translateY(3px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
 .field {
     margin-bottom: 18px;
 }

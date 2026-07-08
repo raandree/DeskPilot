@@ -3255,129 +3255,153 @@ async function importSettings(file) {
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
+    // The drawer groups its fields into tabs so it stays easy to navigate as
+    // settings grow. Every panel is rendered up front (only the active one is
+    // shown) so all the field handlers below can bind by id exactly as before.
     body.innerHTML = `
-    <div class="field">
-      <label>Default model</label>
-      <select id="set-model">${(state.models.length ? state.models.map((m) => m.id) : [s.model].filter(Boolean))
+    <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" class="settings-tab-btn active" role="tab" id="stab-general" data-tab="general" aria-controls="spane-general" aria-selected="true">General</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-permissions" data-tab="permissions" aria-controls="spane-permissions" aria-selected="false" tabindex="-1">Permissions</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-projects" data-tab="projects" aria-controls="spane-projects" aria-selected="false" tabindex="-1">Projects</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-custom" data-tab="custom" aria-controls="spane-custom" aria-selected="false" tabindex="-1">Customizations</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-memory" data-tab="memory" aria-controls="spane-memory" aria-selected="false" tabindex="-1">Memory &amp; context</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-engine" data-tab="engine" aria-controls="spane-engine" aria-selected="false" tabindex="-1">Engine &amp; data</button>
+    </nav>
+    <section class="settings-tab active" id="spane-general" data-tab="general" role="tabpanel" aria-labelledby="stab-general">
+      <div class="field">
+        <label>Default model</label>
+        <select id="set-model">${(state.models.length ? state.models.map((m) => m.id) : [s.model].filter(Boolean))
             .map((id) => `<option value="${id}" ${id === s.model ? 'selected' : ''}>${id}</option>`).join('')}</select>
-      <p class="hint">Used for new conversations.</p>
-    </div>
-    <div class="field">
-      <label>Permissions</label>
-      <div class="perm-list" id="set-perms"></div>
-    </div>
-    <div class="field">
-      <label>Projects</label>
-      <div class="projects-manager" id="set-projects"></div>
-      <div class="project-add">
-        <button class="btn btn-small" id="proj-browse">📁 Add project…</button>
+        <p class="hint">Used for new conversations.</p>
       </div>
-      <p class="hint">A project is a working folder. The selected project is where the File and Terminal tools work, and is the default for new prompts.</p>
-    </div>
-    <div class="field">
-      <label>Skill folders (one path per line)</label>
-      <textarea id="set-skills" placeholder="C:\\path\\to\\skills">${escapeHtml((s.skillRoots || []).join('\n'))}</textarea>
-    </div>
-    <div class="field">
-      <label>Instruction folders (one path per line)</label>
-      <textarea id="set-instructions">${escapeHtml((s.instructionRoots || []).join('\n'))}</textarea>
-    </div>
-    <div class="field">
-      <label>Prompt folders (one path per line)</label>
-      <textarea id="set-prompts" placeholder="C:\\Users\\you\\.copilot\\prompts">${escapeHtml((s.promptRoots || []).join('\n'))}</textarea>
-      <p class="hint">Folders of <code>*.prompt.md</code> files; browse and edit them under 🧩 Customizations.</p>
-    </div>
-    <div class="field">
-      <label>Agents folder</label>
-      <input type="text" id="set-agents" value="${escapeHtml(s.agentsRoot || '')}" placeholder="C:\\Users\\you\\.copilot\\agents" />
-      <p class="hint">Folder of <code>*.agent.md</code> personas; pick one from the Agent menu in the composer.</p>
-    </div>
-    <div class="field">
-      <label>Atelier health</label>
-      <div class="atelier-health" id="set-atelier"><button class="btn btn-small" id="atelier-refresh" type="button">Check customization folders</button></div>
-      <p class="hint">Whether each <code>~/.copilot</code> customization folder resolves, and how many agents, skills, instructions and prompts were found.</p>
-    </div>
-    <div class="field">
-      <label>User profile — about you</label>
-      <textarea id="set-preferences" rows="4" placeholder="e.g. I'm a paralegal. Write in plain British English, cite sources, and keep answers concise.">${escapeHtml(s.preferences || '')}</textarea>
-      <p class="hint">A durable note <em>you</em> write about yourself — role, writing style, recurring context. Added to every turn so the agent serves you consistently.</p>
-    </div>
-    <div class="field">
-      <label>Agent memory — what DeskPilot has learned <span id="mem-updated" class="muted tiny"></span></label>
-      <textarea id="set-agent-memory" rows="8" placeholder="DeskPilot fills this in as it learns durable facts about you and your projects. You can edit or clear it."></textarea>
-      <div class="mem-row">
-        <span id="mem-count" class="muted tiny"></span>
-        <button class="btn btn-small mem-learn-btn" id="set-memory-learn" type="button">Update from this conversation</button>
+      <div class="field">
+        <label>Reasoning effort</label>
+        <select id="set-effort"></select>
+        <p class="hint" id="set-effort-hint"></p>
       </div>
-      <p class="hint">Durable notes the agent keeps about you and your environment across conversations, injected into every turn as background reference.</p>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" id="set-memory-learning" ${s.memoryLearning !== false ? 'checked' : ''} /> Let DeskPilot learn about you automatically</label>
-      <p class="hint">Every few turns, DeskPilot folds durable facts from the conversation into its agent memory (a brief background step that uses a little credit); you’ll see a note when it does. Turn this off to curate memory yourself.</p>
-    </div>
-    <div class="field">
-      <label>Reference files (one project-relative path per line)</label>
-      <textarea id="set-reffiles" rows="3" placeholder="docs/style-guide.md&#10;data/contacts.csv">${escapeHtml((s.referenceFiles || []).join('\n'))}</textarea>
-      <p class="hint">Files the agent should always treat as relevant for the selected project. Their paths are added to every turn so the agent reads them with its File tool when useful (no vector database needed).</p>
-    </div>
-    <div class="field">
-      <label>Spend warning (USD this session, 0 = off)</label>
-      <input type="number" id="set-budget" min="0" step="0.5" value="${(s.costBudgetUSD || 0)}" />
-      <p class="hint">Shows a one-time warning when this session's estimated cost crosses the amount.</p>
-    </div>
-    <div class="field">
-      <label>Reasoning effort</label>
-      <select id="set-effort"></select>
-      <p class="hint" id="set-effort-hint"></p>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" id="set-thinking" ${s.showThinking ? 'checked' : ''} /> Show the model’s thinking</label>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" id="set-tasktracking" ${s.taskTracking !== false ? 'checked' : ''} /> Track tasks for multi-step work</label>
-      <p class="hint">Lets the agent keep a live checklist of sub-tasks while it works through a turn.</p>
-    </div>
-    <div class="field">
-      <label><input type="checkbox" id="set-autocompact" ${s.autoCompaction !== false ? 'checked' : ''} /> Automatically compact long conversations</label>
-      <p class="hint">When a conversation fills most of the model’s context window, DeskPilot summarises the earlier turns to free space so it keeps working. Your visible messages are always kept, and you’ll see a note each time it happens.</p>
-    </div>
-    <div class="field">
-      <label>Compact when context reaches (%)</label>
-      <input type="number" id="set-compact-threshold" min="50" max="95" step="5" value="${Math.round((s.compactionThreshold || 0.8) * 100)}" />
-      <p class="hint">Percent of the model’s context window that triggers an automatic compaction (50–95).</p>
-    </div>
-    <div class="field">
-      <label>Recent messages to keep in full</label>
-      <input type="number" id="set-compact-keep" min="2" max="100" value="${s.compactionKeepRecent || 4}" />
-      <p class="hint">The most recent messages are never summarised, so recent detail stays intact.</p>
-    </div>
-    <div class="field">
-      <label>Max tool iterations</label>
-      <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
-    </div>
-    <div class="field">
-      <label>Theme</label>
-      <select id="set-theme">
-        ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field">
-      <label>Engine</label>
-      <div class="engine-status" id="set-engine">Checking…</div>
-      <button class="btn" id="set-reauth" style="margin-top:10px">Re-authenticate</button>
-    </div>
-    <div class="field">
-      <label>Back up &amp; restore</label>
-      <div class="backup-row">
-        <button class="btn btn-small" id="set-export">⬇ Back up settings</button>
-        <button class="btn btn-small" id="set-import">⬆ Restore settings</button>
-        <input id="set-import-file" type="file" accept="application/json,.json" class="hidden" />
+      <div class="field">
+        <label><input type="checkbox" id="set-thinking" ${s.showThinking ? 'checked' : ''} /> Show the model’s thinking</label>
       </div>
-      <p class="hint">Save your projects, permissions, agent and tool settings to a JSON file, or restore them. Restore replaces the current settings.</p>
-    </div>`;
+      <div class="field">
+        <label><input type="checkbox" id="set-tasktracking" ${s.taskTracking !== false ? 'checked' : ''} /> Track tasks for multi-step work</label>
+        <p class="hint">Lets the agent keep a live checklist of sub-tasks while it works through a turn.</p>
+      </div>
+      <div class="field">
+        <label>Max tool iterations</label>
+        <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
+      </div>
+      <div class="field">
+        <label>Theme</label>
+        <select id="set-theme">
+          ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-permissions" data-tab="permissions" role="tabpanel" aria-labelledby="stab-permissions" hidden>
+      <div class="field">
+        <label>Permissions</label>
+        <div class="perm-list" id="set-perms"></div>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-projects" data-tab="projects" role="tabpanel" aria-labelledby="stab-projects" hidden>
+      <div class="field">
+        <label>Projects</label>
+        <div class="projects-manager" id="set-projects"></div>
+        <div class="project-add">
+          <button class="btn btn-small" id="proj-browse">📁 Add project…</button>
+        </div>
+        <p class="hint">A project is a working folder. The selected project is where the File and Terminal tools work, and is the default for new prompts.</p>
+      </div>
+      <div class="field">
+        <label>Reference files (one project-relative path per line)</label>
+        <textarea id="set-reffiles" rows="3" placeholder="docs/style-guide.md&#10;data/contacts.csv">${escapeHtml((s.referenceFiles || []).join('\n'))}</textarea>
+        <p class="hint">Files the agent should always treat as relevant for the selected project. Their paths are added to every turn so the agent reads them with its File tool when useful (no vector database needed).</p>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-custom" data-tab="custom" role="tabpanel" aria-labelledby="stab-custom" hidden>
+      <div class="field">
+        <label>Skill folders (one path per line)</label>
+        <textarea id="set-skills" placeholder="C:\\path\\to\\skills">${escapeHtml((s.skillRoots || []).join('\n'))}</textarea>
+      </div>
+      <div class="field">
+        <label>Instruction folders (one path per line)</label>
+        <textarea id="set-instructions">${escapeHtml((s.instructionRoots || []).join('\n'))}</textarea>
+      </div>
+      <div class="field">
+        <label>Prompt folders (one path per line)</label>
+        <textarea id="set-prompts" placeholder="C:\\Users\\you\\.copilot\\prompts">${escapeHtml((s.promptRoots || []).join('\n'))}</textarea>
+        <p class="hint">Folders of <code>*.prompt.md</code> files; browse and edit them under 🧩 Customizations.</p>
+      </div>
+      <div class="field">
+        <label>Agents folder</label>
+        <input type="text" id="set-agents" value="${escapeHtml(s.agentsRoot || '')}" placeholder="C:\\Users\\you\\.copilot\\agents" />
+        <p class="hint">Folder of <code>*.agent.md</code> personas; pick one from the Agent menu in the composer.</p>
+      </div>
+      <div class="field">
+        <label>Atelier health</label>
+        <div class="atelier-health" id="set-atelier"><button class="btn btn-small" id="atelier-refresh" type="button">Check customization folders</button></div>
+        <p class="hint">Whether each <code>~/.copilot</code> customization folder resolves, and how many agents, skills, instructions and prompts were found.</p>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-memory" data-tab="memory" role="tabpanel" aria-labelledby="stab-memory" hidden>
+      <div class="field">
+        <label>User profile — about you</label>
+        <textarea id="set-preferences" rows="4" placeholder="e.g. I'm a paralegal. Write in plain British English, cite sources, and keep answers concise.">${escapeHtml(s.preferences || '')}</textarea>
+        <p class="hint">A durable note <em>you</em> write about yourself — role, writing style, recurring context. Added to every turn so the agent serves you consistently.</p>
+      </div>
+      <div class="field">
+        <label>Agent memory — what DeskPilot has learned <span id="mem-updated" class="muted tiny"></span></label>
+        <textarea id="set-agent-memory" rows="8" placeholder="DeskPilot fills this in as it learns durable facts about you and your projects. You can edit or clear it."></textarea>
+        <div class="mem-row">
+          <span id="mem-count" class="muted tiny"></span>
+          <button class="btn btn-small mem-learn-btn" id="set-memory-learn" type="button">Update from this conversation</button>
+        </div>
+        <p class="hint">Durable notes the agent keeps about you and your environment across conversations, injected into every turn as background reference.</p>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="set-memory-learning" ${s.memoryLearning !== false ? 'checked' : ''} /> Let DeskPilot learn about you automatically</label>
+        <p class="hint">Every few turns, DeskPilot folds durable facts from the conversation into its agent memory (a brief background step that uses a little credit); you’ll see a note when it does. Turn this off to curate memory yourself.</p>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="set-autocompact" ${s.autoCompaction !== false ? 'checked' : ''} /> Automatically compact long conversations</label>
+        <p class="hint">When a conversation fills most of the model’s context window, DeskPilot summarises the earlier turns to free space so it keeps working. Your visible messages are always kept, and you’ll see a note each time it happens.</p>
+      </div>
+      <div class="field">
+        <label>Compact when context reaches (%)</label>
+        <input type="number" id="set-compact-threshold" min="50" max="95" step="5" value="${Math.round((s.compactionThreshold || 0.8) * 100)}" />
+        <p class="hint">Percent of the model’s context window that triggers an automatic compaction (50–95).</p>
+      </div>
+      <div class="field">
+        <label>Recent messages to keep in full</label>
+        <input type="number" id="set-compact-keep" min="2" max="100" value="${s.compactionKeepRecent || 4}" />
+        <p class="hint">The most recent messages are never summarised, so recent detail stays intact.</p>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-engine" data-tab="engine" role="tabpanel" aria-labelledby="stab-engine" hidden>
+      <div class="field">
+        <label>Spend warning (USD this session, 0 = off)</label>
+        <input type="number" id="set-budget" min="0" step="0.5" value="${(s.costBudgetUSD || 0)}" />
+        <p class="hint">Shows a one-time warning when this session's estimated cost crosses the amount.</p>
+      </div>
+      <div class="field">
+        <label>Engine</label>
+        <div class="engine-status" id="set-engine">Checking…</div>
+        <button class="btn" id="set-reauth" style="margin-top:10px">Re-authenticate</button>
+      </div>
+      <div class="field">
+        <label>Back up &amp; restore</label>
+        <div class="backup-row">
+          <button class="btn btn-small" id="set-export">⬇ Back up settings</button>
+          <button class="btn btn-small" id="set-import">⬆ Restore settings</button>
+          <input id="set-import-file" type="file" accept="application/json,.json" class="hidden" />
+        </div>
+        <p class="hint">Save your projects, permissions, agent and tool settings to a JSON file, or restore them. Restore replaces the current settings.</p>
+      </div>
+    </section>`;
 
     buildPermList($('set-perms'));
     renderProjectsManager();
+    wireSettingsTabs(body);
 
     const save = async (patch) => {
         try { state.settings = await api('PUT', '/api/settings', patch); updatePermDot(); populateProjectSelect(); }
@@ -3533,6 +3557,43 @@ async function loadAtelierHealth() {
 function closeSettings() {
     $('settings-drawer').classList.add('hidden');
     $('settings-backdrop').classList.add('hidden');
+}
+
+// Wire the Settings drawer's tab strip. Every panel stays in the DOM (only the
+// active one is shown) so the field handlers keep binding by id; here we just
+// toggle which tab button/panel is active. Keyboard follows the WAI-ARIA
+// tablist pattern: Left/Right (and Home/End) move focus between tabs.
+function wireSettingsTabs(body) {
+    const btns = Array.from(body.querySelectorAll('.settings-tab-btn'));
+    const panels = Array.from(body.querySelectorAll('.settings-tab'));
+    const activate = (name) => {
+        for (const b of btns) {
+            const on = b.dataset.tab === name;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+            b.tabIndex = on ? 0 : -1;
+        }
+        for (const p of panels) {
+            const on = p.dataset.tab === name;
+            p.classList.toggle('active', on);
+            p.hidden = !on;
+        }
+        body.scrollTop = 0;
+    };
+    btns.forEach((btn, i) => {
+        btn.onclick = () => activate(btn.dataset.tab);
+        btn.onkeydown = (e) => {
+            let j = -1;
+            if (e.key === 'ArrowRight') { j = (i + 1) % btns.length; }
+            else if (e.key === 'ArrowLeft') { j = (i - 1 + btns.length) % btns.length; }
+            else if (e.key === 'Home') { j = 0; }
+            else if (e.key === 'End') { j = btns.length - 1; }
+            else { return; }
+            e.preventDefault();
+            activate(btns[j].dataset.tab);
+            btns[j].focus();
+        };
+    });
 }
 
 // ===== Auth =====

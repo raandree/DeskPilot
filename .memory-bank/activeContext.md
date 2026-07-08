@@ -2,6 +2,29 @@
 
 ## Current focus
 
+**Settings drawer reorganised into tabs — SHIPPED (2026-07-08, local-only, not
+pushed).** The user flagged that the Settings drawer had grown long (one scrollbar,
+~23 stacked fields) and asked for tabs or another organiser. Grouped the fields into
+six tabs shown as a sticky, wrapping pill strip at the top of the drawer:
+**General** (model, reasoning effort, show thinking, task tracking, max iterations,
+theme), **Permissions**, **Projects** (projects + reference files),
+**Customizations** (Skill/Instruction/Prompt roots, Agents folder, Atelier health),
+**Memory & context** (User profile, Agent memory, learn toggle, auto-compaction), and
+**Engine & data** (spend warning, Engine status, back up & restore).
+
+Key decision: **every panel stays in the DOM; only the active one is shown.** So all
+the existing field handlers (which bind by element id) keep working untouched — the
+change is purely presentational. New `wireSettingsTabs(body)` in `app.js` toggles the
+active button/panel, maintains `aria-selected` + roving `tabIndex`, and implements the
+WAI-ARIA tablist keyboard pattern (Left/Right/Home/End). CSS: `.settings-tabs`
+(sticky, `flex-wrap`, negative margins for full-bleed + `top:-16px` to cancel the
+body's top padding), `.settings-tab-btn` (pills like `.range-btn`), `.settings-tab`
+(shown only when `.active`). Frontend-only + specs/040 §6 + CHANGELOG. **Verified:
+`app.js` ESM check OK (exit 0); app.js + styles.css report 0 errors.** Not yet
+manually smoke-tested in a browser.
+
+## Prior focus — persistent memory (User Profile + Agent Memory), SHIPPED + MERGED to `main` (2026-07-08, local-only, not pushed)
+
 **Persistent memory (User Profile + Agent Memory) — SHIPPED + MERGED to `main`
 (2026-07-08, local-only, not pushed).**
 The user approved building the Hermes-style memory researched earlier, "a bit
@@ -47,12 +70,18 @@ pre-existing, not caused by the memory feature. The fix also makes the build gre
 
 ## Next steps
 
-1. **Manual + live smoke of persistent memory (now on `main`):** run a couple of
+1. **Manual browser smoke of the Settings tabs:** open Settings; confirm the six
+   tabs switch (click + Left/Right/Home/End), each field still saves (model, a
+   permission toggle, add a project, a folder path, memory edit/learn, a compaction
+   value, theme), the pill strip stays pinned under the drawer head while scrolling a
+   tall tab, and it wraps to two rows in a narrow window.
+2. **Manual + live smoke of persistent memory (now on `main`):** run a couple of
    Conversations, confirm the Agent memory fills in (auto every 5th assistant Turn +
    the manual button), confirm injection (the agent recalls a stated fact in a fresh
    Conversation), edit/clear it in Settings, and toggle learning off.
-2. **Merged to `main`** (2026-07-08, fast-forward `862bce2..a748b00`, local-only) —
-   done. Push is deferred and not performed unless explicitly requested.
+3. **Persistent memory merged to `main`** (2026-07-08, fast-forward
+   `862bce2..a748b00`, local-only) — done. Push is deferred and not performed unless
+   explicitly requested.
 
 ## Prior focus — Memory & context batch (Hermes-inspired), SHIPPED + MERGED to `main` (2026-07-08, local-only, not pushed)
 

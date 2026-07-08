@@ -111,6 +111,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings are now organised into tabs.** The Settings drawer's fields are
+  grouped into six tabs — **General**, **Permissions**, **Projects**,
+  **Customizations**, **Memory & context**, and **Engine & data** — shown as a
+  sticky pill strip at the top of the drawer, so it stays easy to navigate as
+  settings grow instead of one long scroll. Only the active tab's fields are
+  shown; every setting keeps working exactly as before. The strip follows the
+  WAI-ARIA tablist pattern (Left/Right and Home/End move between tabs, and it
+  wraps to two rows in a narrow window).
 - **Attach files without a project.** The **Attach** button (and drag-and-drop)
   no longer requires a project to be selected. When a project is active, uploads
   land in its working folder as before; with no project selected they are saved
@@ -166,6 +174,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The model's Thinking is now readable — line breaks are preserved.** When you
+  show the model's thinking, its reasoning is streamed to the browser as it is
+  produced. Each line the engine writes arrived without its trailing line break, so
+  the browser glued distinct thoughts together into one run-on wall of text (for
+  example *"…before I consolidate.GitHub code search needs auth."*). DeskPilot now
+  re-attaches the line break to each complete line the engine writes, so the
+  Thinking pane — and the streamed answer — keep their paragraphs and line breaks.
+  Streamed answer tokens are unaffected (they concatenate exactly as before).
 - **The Agents list no longer errors on an inaccessible agents folder.**
   `Get-DpAgentList` probed the configured Agents root with `Test-Path`; if the root
   pointed at a drive or path that denies access (for example a restricted mapped

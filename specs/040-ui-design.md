@@ -149,6 +149,16 @@ accent fills so the bright dark-mode accent stays legible.
 
 ### 6. Settings drawer
 
+The drawer's fields are grouped into tabs, shown as a sticky pill strip at the
+top of the drawer so it stays easy to navigate as settings grow: **General**
+(Model, reasoning effort, show thinking, task tracking, max tool iterations,
+theme), **Permissions**, **Projects** (Projects + reference files),
+**Customizations** (Skill/Instruction/Prompt roots, Agents folder, Atelier
+health), **Memory & context** (User profile, Agent memory, auto-compaction), and
+**Engine & data** (spend warning, Engine status, back up & restore). Only the
+active tab's fields are shown; the strip is a WAI-ARIA `tablist` (Left/Right and
+Home/End move between tabs).
+
 - Default Model, default Permissions, Projects (register/select/close/remove).
   The active Project row offers **Close** (deselect, keep registered) alongside
   **Remove** (unregister).
