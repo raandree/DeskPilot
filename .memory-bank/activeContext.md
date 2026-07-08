@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Thinking output line breaks — FIXED (2026-07-08, on `ai/persistent-memory`,
-local-only, not pushed).** The user reported that the model's streamed *Thinking*
+**Thinking output line breaks — FIXED + MERGED to `main` (2026-07-08, local-only,
+not pushed).** The user reported that the model's streamed *Thinking*
 sometimes ran together with no line breaks (e.g. "…before I
 consolidate.GitHub code search needs auth."), making it unreadable. Root cause was
 entirely on the DeskPilot side: the Engine emits each reasoning/trace line as one
@@ -26,7 +26,7 @@ CHANGELOG `[Unreleased] → Fixed`. **Verified: `Get-DpStreamFrame` describe 10/
 full Unit helpers file 336/336, 0 failed; AST parse 0 errors; PSScriptAnalyzer clean
 on the changed helper.**
 
-## Prior focus — Settings drawer reorganised into tabs — SHIPPED (2026-07-08, local-only, not pushed)
+## Prior focus — Settings drawer reorganised into tabs — SHIPPED + MERGED to `main` (2026-07-08, local-only, not pushed)
 
 The user flagged that the Settings drawer had grown long (one scrollbar,
 ~23 stacked fields) and asked for tabs or another organiser. Grouped the fields into
