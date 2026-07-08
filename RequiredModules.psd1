@@ -10,8 +10,10 @@
     'Sampler.GitHubTasks' = 'latest'
     MarkdownLinkCheck     = 'latest'
 
-    # Runtime dependency: the Engine. Declared here so the build/test session can
-    # import the built DeskPilot module (whose manifest requires ShellPilot >= 0.2.0),
-    # pinned to the minimum tested Gallery version.
-    ShellPilot            = '0.2.0'
+    # The Engine. DeskPilot resolves ShellPilot at runtime via
+    # Resolve-DpEngineModule; it is intentionally NOT a hard manifest
+    # RequiredModule, so importing DeskPilot never fails when ShellPilot is
+    # absent. Declared here as 'latest' so the build/test session has it
+    # available, matching the other dependencies.
+    ShellPilot            = 'latest'
 }

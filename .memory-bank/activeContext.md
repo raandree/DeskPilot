@@ -12,9 +12,10 @@ bundle the SPA into the built module. `Start-DeskPilot` dropped its public
 for hot-reload; it fails fast before binding if the bundle or index.html is
 missing. The version is derived from the manifest (no more hardcoded `0.1.0`).
 Manifest fixed for the Gallery (Author `Raimund Andree`, ProjectUri
-raandree/DeskPilot, IconUri -> logo, Description/ReleaseNotes/Tags) and pins
-`ShellPilot >= 0.2.0` in `RequiredModules`; build `RequiredModules.psd1` also
-gained ShellPilot 0.2.0 so tests can import the manifest-required module. Added
+raandree/DeskPilot, IconUri -> logo, Description/ReleaseNotes/Tags). ShellPilot
+is NOT a hard manifest dependency (that broke import when it was absent); it
+stays resolved at runtime by `Resolve-DpEngineModule`, and build
+`RequiredModules.psd1` tracks `ShellPilot = 'latest'`. Added
 MIT `LICENSE`, Gallery/CI README badges + a Gallery-install quick-start, and a
 fail-silent, non-blocking launch-time update check (`Get-DpUpdateNotice`, +5
 tests, surfaced via a background job on an idle accept-loop iteration). New

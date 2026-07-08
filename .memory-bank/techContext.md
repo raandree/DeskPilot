@@ -17,12 +17,12 @@
 - Windows, macOS, or Linux with **PowerShell 7.0+**.
 - A **GitHub account with Copilot access** (same as the Engine).
 - A modern browser (the UI runs at `http://127.0.0.1:<port>`).
-- The **Engine** available. The module manifest pins `ShellPilot` as a required
-  module (>= 0.2.0), so `Install-Module DeskPilot` installs the Engine
-  automatically. `Resolve-DpEngineModule` remains a fallback: it honours an
-  explicit `-EngineModulePath`, else an already-installed `ShellPilot` on
-  `PSModulePath`, else a fresh CurrentUser install from the Gallery
-  (preview/prerelease allowed), then imports by name.
+- The **Engine** available. DeskPilot resolves it at runtime via
+  `Resolve-DpEngineModule`: an explicit `-EngineModulePath`, else an
+  already-installed `ShellPilot` on `PSModulePath`, else a fresh CurrentUser
+  install from the Gallery (preview/prerelease allowed), then imports by name.
+  ShellPilot is intentionally NOT a hard manifest `RequiredModule`, so importing
+  DeskPilot never fails when the Engine is absent.
 
 ## Key integration facts (Engine API)
 

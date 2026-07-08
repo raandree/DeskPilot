@@ -11,9 +11,6 @@
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @()
-    RequiredModules   = @(
-        @{ ModuleName = 'ShellPilot'; ModuleVersion = '0.2.0' }
-    )
     PrivateData       = @{
         PSData = @{
             Tags         = @('Copilot', 'GitHubCopilot', 'ShellPilot', 'Agent', 'AI', 'GUI', 'AgenticOperatingModel', 'PSEdition_Core', 'Windows', 'Linux', 'macOS')
