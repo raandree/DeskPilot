@@ -26,8 +26,8 @@ Start-DeskPilot 3/3, 0 failed, 0 NotRun.** A first build was falsely green becau
 the WebAssets guards used `-ForEach`+`BeforeDiscovery` and failed discovery (2
 NotRun, which Pester does not count as failures); rewrote both as run-time loops
 inside one `It` before the clean re-run. Scope was publishable-but-NOT-published:
-no publish, no CI-gate flip (`PUBLISH_ENABLED` + secrets stay your action), no
-push/merge.
+no publish, no publish secrets set (adding the `GalleryApiToken`/`GitHubToken`
+repository secrets is the real go-live gate and stays your action), no push/merge.
 
 ## Prior focus - streaming smoothness (items 3 + 4)
 
@@ -179,8 +179,10 @@ pre-existing, not caused by the memory feature. The fix also makes the build gre
 
 1. **Review + merge `ai/gallery-web-bundle`** (Gallery-publishable, web UI
    bundled; local-only, not pushed/merged/published - your call).
-2. **Go live when ready (Phase D):** set the `PUBLISH_ENABLED` repo variable +
-   the `GalleryApiToken`/`GitHubToken` secrets in GitHub; a push to `main` then
+2. **Go live when ready (Phase D):** add the `GalleryApiToken` + `GitHubToken`
+   repository secrets in GitHub (Settings -> Secrets and variables -> Actions ->
+   Secrets). There is NO `PUBLISH_ENABLED` variable - the current ci.yml mirrors
+   ShellPilot and self-guards on the secrets' presence. A push to `main` then
    publishes a `-preview` prerelease and a `v*` tag a stable release. Validate
    with a first prerelease. Confirm the Author string + `IconUri` before a real
    publish.
