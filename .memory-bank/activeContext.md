@@ -2,9 +2,13 @@
 
 ## Current focus
 
-**Streaming smoothness (items 3 + 4) — SHIPPED (2026-07-08, on `ai/persistent-memory`,
+**Streaming smoothness (items 3 + 4) — SHIPPED + MERGED to `main` (2026-07-08,
 local-only, not pushed).** From the performance analysis (below), implemented the two
-DeskPilot-only, low-risk fixes. **Item 3:** `Invoke-DpTurn`'s Information-stream drain
+DeskPilot-only, low-risk fixes on `ai/stream-smoothness`, then fast-forwarded
+`aa95a5d..1e032ac` into `main` after a clean 348/348 build (a first re-verify build hit a
+transient file lock on the built `DeskPilot.psm1` from a lingering session that held the
+imported module; cleared by deleting the built-module folder and rebuilding — environmental,
+not code). **Item 3:** `Invoke-DpTurn`'s Information-stream drain
 poll dropped **40 ms → 10 ms**, and the emit path now **coalesces** consecutive same-kind
 text records (`delta`/`reasoning`) into one buffered SSE frame per drain (new `$flush`
 scriptblock + `pendingEvent`/`pendingText` on `$turnState`) instead of a JSON-encode +
