@@ -24,10 +24,15 @@ Describe 'Start-DeskPilot' -Tag 'Unit' {
 
         It 'Should expose the expected parameters' {
             $command = Get-Command -Name 'Start-DeskPilot' -Module $script:moduleName
-            foreach ($parameterName in 'Port', 'WebRoot', 'EngineModulePath', 'DataDir', 'NoBrowser')
+            foreach ($parameterName in 'Port', 'EngineModulePath', 'DataDir', 'NoBrowser')
             {
                 $command.Parameters.Keys | Should -Contain $parameterName
             }
+        }
+
+        It 'Should not expose a public -WebRoot parameter (the web root is resolved internally)' {
+            $command = Get-Command -Name 'Start-DeskPilot' -Module $script:moduleName
+            $command.Parameters.Keys | Should -Not -Contain 'WebRoot'
         }
     }
 }

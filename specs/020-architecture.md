@@ -13,11 +13,18 @@
 
 - The Host Server runs in the launching PowerShell process and owns the
   `HttpListener` accept loop.
-- At startup it resolves the Engine (an explicit `-EngineModulePath`, an
-  already-installed module, or a fresh PowerShell Gallery install into the
-  CurrentUser scope — preview allowed), creates **one Engine Runspace**, imports
-  the Engine into it, and checks auth. Module-scoped state (token, selected Model)
-  lives here for the Host Server's lifetime.
+- At startup the Host Server resolves the Engine via `Resolve-DpEngineModule`
+  (an explicit `-EngineModulePath`, an already-installed module, or a fresh
+  PowerShell Gallery install into the CurrentUser scope - preview allowed),
+  creates **one Engine Runspace**, imports the Engine into it, and checks auth.
+  ShellPilot is intentionally NOT a hard manifest `RequiredModule`, so importing
+  DeskPilot never fails when the Engine is absent. Module-scoped state (token,
+  selected Model) lives here for the Host Server's lifetime.
+- The web UI is bundled into the built module (ModuleBuilder `CopyPaths`), so a
+  Gallery install serves the SPA from `$PSScriptRoot/web`; a source checkout and
+  the tests override this with the `DESKPILOT_WEB_ROOT` environment variable.
+  `Start-DeskPilot` has no public `-WebRoot` parameter and fails fast if the
+  bundle is missing before binding the port.
 - Each Turn creates a fresh `[PowerShell]` instance **bound to the Engine
   Runspace**, adds `Invoke-Shp` with the assembled parameters, subscribes to its
   `Streams.Information.DataAdded`, and `BeginInvoke`s it. Per-Turn Streams are

@@ -247,4 +247,4 @@ proceeds.)*
 
 Vanilla JS modules + a single CSS file with custom properties. Markdown
 rendered by a tiny in-repo renderer or a single vendored, audited script under
-`web/assets/vendor/`. No package manager, no bundler.
+`source/web/assets/vendor/`. No package manager, no bundler.

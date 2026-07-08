@@ -5,6 +5,31 @@ BeforeAll {
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 }
 
+Describe 'Get-DpUpdateNotice' {
+    It 'returns a notice when the Gallery version is newer' {
+        $notice = Get-DpUpdateNotice -CurrentVersion '0.2.0' -LatestVersion '0.3.0'
+        $notice | Should -Not -BeNullOrEmpty
+        $notice | Should -Match '0\.3\.0'
+        $notice | Should -Match 'Update-Module DeskPilot'
+    }
+    It 'returns null when the running version is current' {
+        Get-DpUpdateNotice -CurrentVersion '0.3.0' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    }
+    It 'returns null when the running version is newer than the Gallery' {
+        Get-DpUpdateNotice -CurrentVersion '0.4.0' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    }
+    It 'returns null when the latest version is unknown or unparseable' -ForEach @(
+        @{ Latest = '' }
+        @{ Latest = $null }
+        @{ Latest = 'not-a-version' }
+    ) {
+        Get-DpUpdateNotice -CurrentVersion '0.2.0' -LatestVersion $Latest | Should -BeNullOrEmpty
+    }
+    It 'returns null when the current version is unparseable' {
+        Get-DpUpdateNotice -CurrentVersion 'x' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Get-DpDefaultSettings' {
     It 'returns Terminal off and Browsing/File on by default' {
         $s = Get-DpDefaultSettings
