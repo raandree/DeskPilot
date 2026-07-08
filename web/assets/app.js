@@ -2231,6 +2231,11 @@ function wireExplorerAutoRefresh() {
     if (_explorerAutoWired) return;
     _explorerAutoWired = true;
     const tick = () => {
+        // Skip while a Turn is streaming: the Host Server handles requests on a single
+        // thread and services this poll inline in its streaming loop, so a directory +
+        // git scan here would stall token delivery. The turn's finally refreshes the
+        // explorer once when streaming ends.
+        if (state.streaming) return;
         if (!explorerOpen() || document.visibilityState !== 'visible') return;
         const active = document.activeElement;
         if (active && $('explorer').contains(active)) return;

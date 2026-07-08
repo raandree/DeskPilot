@@ -39,23 +39,52 @@ function Invoke-DpTurn {
     # Per-Turn Task List state. This is a fresh function-local on every Turn, so one
     # Turn's list never bleeds into the next. It holds the latest list streamed live
     # from ShpProgress records and is only a fallback: the authoritative final list
-    # comes from result.TodoList (see below).
-    $turnState = @{ tasks = @(); emitted = 0 }
+    # comes from result.TodoList (see below). pendingEvent/pendingText buffer a run of
+    # same-kind text frames so a fast token stream is coalesced into one socket write
+    # per drain instead of one write per token (see $emit / $flush).
+    $turnState = @{ tasks = @(); emitted = 0; pendingEvent = $null; pendingText = [System.Text.StringBuilder]::new() }
+
+    # Flush the buffered text frame (a coalesced run of same-kind 'delta'/'reasoning'
+    # records) to the client. Idempotent: a no-op when nothing is buffered. Called
+    # after every stream drain and whenever the frame kind changes.
+    $flush = {
+        if ($turnState.pendingEvent -and $turnState.pendingText.Length -gt 0) {
+            $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $turnState.pendingText.ToString() }))
+        }
+        $turnState.pendingEvent = $null
+        [void]$turnState.pendingText.Clear()
+    }
 
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
     # Turn-local list), tool-call / unknown progress records are consumed silently,
     # and ordinary host echo becomes a 'delta' (answer) or, under -ShowThinking, a
     # 'reasoning' frame. All of that classification lives in Get-DpStreamFrame.
+    #
+    # To keep a fast token stream smooth without a JSON-encode + socket write per
+    # token, consecutive same-kind text frames are coalesced: $emit appends to a
+    # buffer and $flush (at the end of each drain) writes it as one frame. A 'tasks'
+    # frame or a change of kind flushes the buffer first, so frame ordering is
+    # preserved exactly.
     $emit = {
         param($Record)
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
         if ($null -eq $decision) { return }
-        if ($decision.event -eq 'tasks') { $turnState.tasks = $decision.Tasks }
-        # Count frames actually sent this Turn so the retry below knows whether
-        # anything has streamed yet (retrying is only safe before the first frame).
+        # Count frames produced this Turn (buffered or written) so the retry below
+        # knows whether anything has streamed yet (retrying is only safe before the
+        # first frame, so answer text is never duplicated).
         $turnState.emitted = [int]$turnState.emitted + 1
-        $writer.Write((ConvertTo-DpSseFrame -EventName $decision.event -Data $decision.data))
+        if ($decision.event -eq 'tasks') {
+            & $flush
+            $turnState.tasks = $decision.Tasks
+            $writer.Write((ConvertTo-DpSseFrame -EventName 'tasks' -Data $decision.data))
+            return
+        }
+        # A 'delta' or 'reasoning' text frame: flush first if the kind changed, then
+        # buffer this record's text for the next $flush.
+        if ($turnState.pendingEvent -and $turnState.pendingEvent -ne $decision.event) { & $flush }
+        $turnState.pendingEvent = $decision.event
+        [void]$turnState.pendingText.Append([string]$decision.data.text)
     }
 
     try {
@@ -136,6 +165,11 @@ function Invoke-DpTurn {
                     & $emit $info[$lastIndex]
                     $lastIndex++
                 }
+                # Write the coalesced text buffer for this batch, then either finish or
+                # yield briefly. A short 10 ms poll keeps streaming smooth (tokens reach
+                # the browser in ~10 ms bursts, not 40 ms) while Start-Sleep stays a
+                # cancellation checkpoint; the idle CPU cost of the poll is negligible.
+                & $flush
                 if ($async.IsCompleted) { break }
                 # The Host Server accepts requests inline on this single thread, so a
                 # concurrent POST /stop would otherwise wait in the backlog until this
@@ -144,11 +178,14 @@ function Invoke-DpTurn {
                 # the next line then observes and aborts the Engine pipeline.
                 Invoke-DpPendingRequest
                 if ($script:DeskPilot.CancelRequested) { try { $shell.Stop() } catch { $null = $_ }; break }
-                Start-Sleep -Milliseconds 40
+                Start-Sleep -Milliseconds 10
+                # ~10 s between keep-alive comments (1000 x 10 ms), unchanged in
+                # wall-clock from the prior 250 x 40 ms cadence.
                 $heartbeat++
-                if ($heartbeat -ge 250) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
+                if ($heartbeat -ge 1000) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
             }
             while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
+            & $flush
 
             if ($script:DeskPilot.CancelRequested) {
                 try { $shell.EndInvoke($async) | Out-Null } catch { $null = $_ }

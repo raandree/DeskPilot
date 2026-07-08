@@ -111,6 +111,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Smoother, faster live streaming.** The assistant's reply now streams to the
+  browser more smoothly and with less delay. The Host Server forwards streamed
+  tokens on a ~10 ms cycle instead of 40 ms and coalesces a burst of tokens into a
+  single update, so text appears fluidly rather than in visible chunks. The file
+  explorer's automatic 5-second refresh is also paused while a turn is streaming, so
+  its directory and Git scan can no longer briefly stall the token stream (it
+  refreshes once when the turn ends, as before). The Stop button and the final
+  answer text are unchanged.
 - **Settings are now organised into tabs.** The Settings drawer's fields are
   grouped into six tabs — **General**, **Permissions**, **Projects**,
   **Customizations**, **Memory & context**, and **Engine & data** — shown as a

@@ -2,6 +2,55 @@
 
 ## Current focus
 
+**Streaming smoothness (items 3 + 4) — SHIPPED (2026-07-08, on `ai/persistent-memory`,
+local-only, not pushed).** From the performance analysis (below), implemented the two
+DeskPilot-only, low-risk fixes. **Item 3:** `Invoke-DpTurn`'s Information-stream drain
+poll dropped **40 ms → 10 ms**, and the emit path now **coalesces** consecutive same-kind
+text records (`delta`/`reasoning`) into one buffered SSE frame per drain (new `$flush`
+scriptblock + `pendingEvent`/`pendingText` on `$turnState`) instead of a JSON-encode +
+auto-flushed socket write per token; a `tasks` frame or kind change flushes first so
+ordering is exact, and `emitted` counts buffered records so the transient-error retry
+still never duplicates answer text. Heartbeat kept ~10 s (1000 × 10 ms). **Item 4:** the
+explorer's 5 s auto-refresh `tick` returns early while `state.streaming`, so the
+single-threaded Host Server never runs a directory + Git scan inline in the streaming
+loop (the turn's `finally` still refreshes once on end). **Items 1 + 2 (ShellPilot: cache
+the session token; reuse a pooled `HttpClient`) were handed off as a copy-paste prompt**
+for the ShellPilot repo — Engine is sacrosanct, not changed here. **Verified: full Sampler
+build+test 348/348, 0 failed (16 tasks, 0 errors, 0 warnings); AST 0 errors; `app.js` ESM
+check exit 0.** PSSA on `Invoke-DpTurn.ps1` shows one *pre-existing*
+`PSUseBOMForUnicodeEncodedFile` warning from the `'…'` in the title-truncation fallback
+(not my code) — left unchanged. Not yet browser-smoke-tested.
+
+## Prior focus — performance analysis (DeskPilot + ShellPilot) vs GHCP VS Code (2026-07-08)
+
+**Performance analysis (DeskPilot + ShellPilot) vs the GHCP VS Code extension —
+RESEARCH ONLY, no code changed (2026-07-08).** The user reported DeskPilot "feels
+way slower" than the VS Code Copilot extension and asked for root causes across both
+repos. Findings, ranked. **Total-time (throughput) causes:** (1) ShellPilot
+`Invoke-ShpStreamRequest` / `Invoke-CopilotTurn` create a **new `HttpClient` per API
+call** and dispose it, so every tool-loop iteration pays a fresh TCP+TLS handshake to
+the Copilot endpoint (no connection pooling / HTTP-2 reuse) — the biggest hit on
+multi-step tasks; VS Code keeps one warm pooled connection. (2) ShellPilot
+`Invoke-Shp` calls **`Get-ShpSessionToken` on every Turn** (an extra HTTPS round-trip
+to `api.github.com/copilot_internal/v2/token` before the first model byte) although
+the token carries `expires_at` and could be cached until near expiry. (3) Full
+`-History` replay every Turn (DeskPilot design) grows the prompt with conversation
+length; auto-compaction mitigates. **Perceived-smoothness causes (DeskPilot side):**
+(4) `Invoke-DpTurn` drains the Engine Information stream on a **40 ms `Start-Sleep`
+poll** and does per-token regex classify (`Get-DpStreamFrame`) + `ConvertTo-Json`
+(`ConvertTo-DpSseFrame`) + auto-flushed socket write on the one thread, so streaming
+arrives in chunky 40 ms bursts rather than smoothly. (5) The **single-threaded accept
+loop** services background requests inline via `Invoke-DpPendingRequest` inside that
+same poll, so the 5 s explorer/git auto-refresh (`setInterval(tick, 5000)`) stalls the
+token stream while a directory/git scan runs. **Minor:** `[powershell]::Create()` per
+Turn; `Connection: close` (no local keep-alive); 50 ms accept idle poll. Recommended
+high-impact/low-risk fixes: cache the session token in ShellPilot until ~60 s before
+`expires_at`; reuse one pooled `HttpClient`/`SocketsHttpHandler`; drop the DeskPilot
+drain sleep to ~5–10 ms (or block on `DataAdded`) and coalesce delta frames. No files
+changed; offered to implement.
+
+## Prior focus — streamed Thinking line breaks (FIXED + MERGED 2026-07-08)
+
 **Thinking output line breaks — FIXED + MERGED to `main` (2026-07-08, local-only,
 not pushed).** The user reported that the model's streamed *Thinking*
 sometimes ran together with no line breaks (e.g. "…before I
