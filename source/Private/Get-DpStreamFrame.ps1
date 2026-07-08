@@ -28,6 +28,16 @@ function Get-DpStreamFrame {
           when ShowThinking is on, otherwise no frame.
         - Any other host text -> a 'delta' frame carrying the answer token(s).
         - Empty/whitespace text or a $null record -> no frame.
+
+        Line breaks: each Write-Host call surfaces as one record whose
+        HostInformationMessage.Message carries the text WITHOUT the trailing
+        newline - that line break lives in the separate NoNewLine flag ($false for
+        a complete line, $true for a -NoNewline streamed token). The client
+        concatenates the streamed 'reasoning'/'delta' frames, so a complete-line
+        write must re-attach its newline; otherwise distinct thinking lines glue
+        together into one unreadable run. Only an explicit NoNewLine of $false gets
+        a newline back - a $true token and an unspecified ($null) write are left to
+        concatenate as the Engine intended.
     .PARAMETER Record
         One Information record from the Engine Runspace stream.
     .PARAMETER ShowThinking
@@ -67,13 +77,19 @@ function Get-DpStreamFrame {
         return
     }
 
-    # Ordinary host echo: extract the text and optional foreground colour.
+    # Ordinary host echo: extract the text, optional foreground colour, and whether
+    # the Engine wrote a complete line. A complete-line write (NoNewLine -eq $false)
+    # must re-attach its newline so the client-side concatenation of streamed frames
+    # keeps distinct lines apart; a streamed token ($true) and an unspecified ($null)
+    # write are left untouched.
     $messageData = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
     $text = $null
     $foreground = $null
+    $completeLine = $false
     if ($messageData -is [System.Management.Automation.HostInformationMessage]) {
         $text = $messageData.Message
         $foreground = $messageData.ForegroundColor
+        $completeLine = ($messageData.NoNewLine -eq $false)
     }
     elseif ($messageData -is [string]) { $text = $messageData }
     elseif ($null -ne $messageData) { $text = "$messageData" }
@@ -103,9 +119,14 @@ function Get-DpStreamFrame {
         $clean -match '^\s*===\s*iteration\s' -or
         $clean -match '^\s*->\s'
     )
+    # Re-attach the newline the Engine's complete-line write implied so the client
+    # side concatenation preserves line breaks (the Thinking pane is white-space:
+    # pre-wrap; the answer delta is Markdown-rendered). The JSON-encoded SSE payload
+    # carries the newline as an escaped sequence, so it survives the frame flatten.
+    $emitText = if ($completeLine) { $clean + "`n" } else { $clean }
     if ($isTrace) {
-        if ($ShowThinking) { return @{ event = 'reasoning'; data = @{ text = $clean } } }
+        if ($ShowThinking) { return @{ event = 'reasoning'; data = @{ text = $emitText } } }
         return
     }
-    @{ event = 'delta'; data = @{ text = $clean } }
+    @{ event = 'delta'; data = @{ text = $emitText } }
 }

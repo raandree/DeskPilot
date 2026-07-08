@@ -441,6 +441,40 @@ Describe 'Get-DpStreamFrame' {
         $blank = [pscustomobject]@{ Tags = @('PSHOST'); MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = ''; ForegroundColor = [System.ConsoleColor]::White } }
         Get-DpStreamFrame -Record $blank | Should -BeNullOrEmpty
     }
+    It 're-attaches a newline to a complete-line reasoning trace so lines do not glue' {
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = '=== iteration 1 (chat) ==='; ForegroundColor = [System.ConsoleColor]::DarkCyan; NoNewLine = $false }
+        }
+        $d = Get-DpStreamFrame -Record $rec -ShowThinking
+        $d.event | Should -Be 'reasoning'
+        $d.data.text | Should -Be "=== iteration 1 (chat) ===`n"
+    }
+    It 'does not add a newline to a -NoNewline streamed token (concatenates as the Engine intended)' {
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = 'tok'; ForegroundColor = [System.ConsoleColor]::White; NoNewLine = $true }
+        }
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'delta'
+        $d.data.text | Should -Be 'tok'
+    }
+    It 're-attaches a newline to a complete-line answer (delta) write' {
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = 'a full answer line'; ForegroundColor = [System.ConsoleColor]::White; NoNewLine = $false }
+        }
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'delta'
+        $d.data.text | Should -Be "a full answer line`n"
+    }
+    It 'leaves an unspecified NoNewLine ($null) untouched (no trailing newline)' {
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = 'hello'; ForegroundColor = [System.ConsoleColor]::White }
+        }
+        (Get-DpStreamFrame -Record $rec).data.text | Should -Be 'hello'
+    }
 }
 
 Describe 'Get-DpStaticContent' {

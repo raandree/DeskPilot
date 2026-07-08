@@ -2,8 +2,33 @@
 
 ## Current focus
 
-**Settings drawer reorganised into tabs — SHIPPED (2026-07-08, local-only, not
-pushed).** The user flagged that the Settings drawer had grown long (one scrollbar,
+**Thinking output line breaks — FIXED (2026-07-08, on `ai/persistent-memory`,
+local-only, not pushed).** The user reported that the model's streamed *Thinking*
+sometimes ran together with no line breaks (e.g. "…before I
+consolidate.GitHub code search needs auth."), making it unreadable. Root cause was
+entirely on the DeskPilot side: the Engine emits each reasoning/trace line as one
+`Write-Host` record whose `HostInformationMessage.Message` carries the text WITHOUT
+the trailing newline — the line break lives in the separate `NoNewLine` flag
+(`$false` for a complete line, `$true` for a `-NoNewline` streamed token).
+`Get-DpStreamFrame` streamed each record's cleaned text verbatim, and the SPA
+concatenates the `reasoning`/`delta` frames, so distinct complete lines glued into
+one run-on wall. Fix (single point, `Get-DpStreamFrame`): capture
+`$completeLine = ($messageData.NoNewLine -eq $false)` and re-attach a `` `n `` to the
+emitted frame text for complete-line writes only. Streamed tokens (`$true`) and
+unspecified (`$null`, i.e. synthetic test records) are left untouched, so the answer
+token stream is unchanged and the existing tests still pass. The SSE path is safe:
+object payloads are JSON-encoded (`ConvertTo-Json -Compress`), so the real newline
+becomes an escaped `\n` sequence that survives `ConvertTo-DpSseFrame`'s newline
+flatten and is restored by the client's `JSON.parse` — the same mechanism the final
+answer Markdown already relies on. No frontend change needed (the Thinking pane is
+already `white-space: pre-wrap`; the answer is Markdown-rendered). +4 unit tests.
+CHANGELOG `[Unreleased] → Fixed`. **Verified: `Get-DpStreamFrame` describe 10/10;
+full Unit helpers file 336/336, 0 failed; AST parse 0 errors; PSScriptAnalyzer clean
+on the changed helper.**
+
+## Prior focus — Settings drawer reorganised into tabs — SHIPPED (2026-07-08, local-only, not pushed)
+
+The user flagged that the Settings drawer had grown long (one scrollbar,
 ~23 stacked fields) and asked for tabs or another organiser. Grouped the fields into
 six tabs shown as a sticky, wrapping pill strip at the top of the drawer:
 **General** (model, reasoning effort, show thinking, task tracking, max iterations,
