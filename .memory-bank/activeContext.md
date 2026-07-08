@@ -2,8 +2,8 @@
 
 ## Current focus
 
-**Persistent memory (User Profile + Agent Memory) — SHIPPED on `ai/persistent-memory`
-(2026-07-07, local-only, not merged).**
+**Persistent memory (User Profile + Agent Memory) — SHIPPED + MERGED to `main`
+(2026-07-08, local-only, not pushed).**
 The user approved building the Hermes-style memory researched earlier, "a bit
 bigger, my call on size." Delivered a persistent, cross-Conversation memory injected
 into every Turn's system prompt (fenced as reference-not-instructions), in two
@@ -47,15 +47,14 @@ pre-existing, not caused by the memory feature. The fix also makes the build gre
 
 ## Next steps
 
-1. **Manual + live smoke of persistent memory (`ai/persistent-memory`, not merged):**
-   run a couple of Conversations, confirm the Agent memory fills in (auto every 5th
-   assistant Turn + the manual button), confirm injection (the agent recalls a stated
-   fact in a fresh Conversation), edit/clear it in Settings, and toggle learning off.
-2. Merge `ai/memory-context-batch` then `ai/persistent-memory` into `main`
-   (fast-forward, local-only) once smoke-tested. Consider whether to squash the
-   `Get-DpAgentList` fix onto `main` independently.
+1. **Manual + live smoke of persistent memory (now on `main`):** run a couple of
+   Conversations, confirm the Agent memory fills in (auto every 5th assistant Turn +
+   the manual button), confirm injection (the agent recalls a stated fact in a fresh
+   Conversation), edit/clear it in Settings, and toggle learning off.
+2. **Merged to `main`** (2026-07-08, fast-forward `862bce2..a748b00`, local-only) —
+   done. Push is deferred and not performed unless explicitly requested.
 
-## Prior focus — Memory & context batch (Hermes-inspired), SHIPPED on `ai/memory-context-batch` (2026-07-07, local-only, not merged)
+## Prior focus — Memory & context batch (Hermes-inspired), SHIPPED + MERGED to `main` (2026-07-08, local-only, not pushed)
 
 The user shared screenshots of a similar local agent tool ("Hermes" — Usage,
 System, and Memory & Context screens) and asked to migrate useful ideas: update
