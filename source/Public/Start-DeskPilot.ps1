@@ -9,8 +9,6 @@ function Start-DeskPilot {
         and runs the request accept loop until the process is stopped.
     .PARAMETER Port
         The TCP port to listen on. 0 (default) picks a free port automatically.
-    .PARAMETER WebRoot
-        The folder containing the SPA assets to serve.
     .PARAMETER EngineModulePath
         Optional explicit path to the Engine (ShellPilot) module.
     .PARAMETER DataDir
@@ -20,18 +18,16 @@ function Start-DeskPilot {
     .PARAMETER NoBrowser
         Do not open the default browser on start.
     .EXAMPLE
-        Start-DeskPilot -WebRoot ./web
+        Start-DeskPilot
 
-        Starts the Host Server, picks a free port, and opens the browser.
+        Starts the Host Server, picks a free port, serves the bundled web UI,
+        and opens the browser.
     #>
     [CmdletBinding()]
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'The launcher prints the local URL and status to the console for the user.')]
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Start-DeskPilot is an interactive launcher, not a state-changing cmdlet; ShouldProcess is not meaningful.')]
     param(
         [int]$Port = 0,
-
-        [Parameter(Mandatory)]
-        [string]$WebRoot,
 
         [string]$EngineModulePath,
 
@@ -40,8 +36,28 @@ function Start-DeskPilot {
         [switch]$NoBrowser
     )
 
-    if (-not (Test-Path -LiteralPath $WebRoot)) { throw "Web root not found: $WebRoot" }
-    $webRootFull = (Resolve-Path -LiteralPath $WebRoot).Path
+    # Resolve the SPA asset root. web/ is bundled into the module by ModuleBuilder
+    # (build.yaml CopyPaths), so for a Gallery install it sits next to this
+    # module's DeskPilot.psm1 at $PSScriptRoot/web. There is no public -WebRoot
+    # knob; a source checkout and the test harness point the server at source/web
+    # via the DESKPILOT_WEB_ROOT environment variable so UI edits hot-reload
+    # without a rebuild.
+    $webRoot = if (-not [string]::IsNullOrWhiteSpace($env:DESKPILOT_WEB_ROOT)) {
+        $env:DESKPILOT_WEB_ROOT
+    }
+    else {
+        Join-Path -Path $PSScriptRoot -ChildPath 'web'
+    }
+
+    # Fail fast, before binding the port, if the bundle is missing or incomplete
+    # (corrupt package, antivirus quarantine, partial install).
+    if (-not (Test-Path -LiteralPath $webRoot -PathType Container)) {
+        throw "DeskPilot web assets were not found at '$webRoot'. The module package may be incomplete - reinstall with: Install-Module DeskPilot -Force"
+    }
+    $webRootFull = (Resolve-Path -LiteralPath $webRoot).Path
+    if (-not (Test-Path -LiteralPath (Join-Path -Path $webRootFull -ChildPath 'index.html') -PathType Leaf)) {
+        throw "DeskPilot web assets are incomplete: 'index.html' is missing under '$webRootFull'. Reinstall with: Install-Module DeskPilot -Force"
+    }
 
     Write-Host 'Starting DeskPilot...' -ForegroundColor Cyan
     $engine = Initialize-DpEngine -EngineModulePath $EngineModulePath
@@ -60,7 +76,7 @@ function Start-DeskPilot {
     $memoryStore = Import-DpMemoryStore -Directory $dataDirFull
 
     $script:DeskPilot = @{
-        Version         = '0.1.0'
+        Version         = $(if ($MyInvocation.MyCommand.Module) { $MyInvocation.MyCommand.Module.Version.ToString() } else { '0.0.0' })
         Settings        = $persistedSettings
         Conversations   = $conversations
         Usage           = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; byModel = @{} }
@@ -169,6 +185,19 @@ function Start-DeskPilot {
         try { Start-Process $url } catch { $null = $_ }
     }
 
+    # Best-effort, fail-silent check for a newer Gallery release. It runs in a
+    # background job so it never blocks serving; the result (if any) is surfaced
+    # on an idle accept-loop iteration below and the job is cleaned up in finally.
+    $currentVersion = $script:DeskPilot.Version
+    $updateJob = $null
+    try {
+        $updateJob = Start-Job -ScriptBlock {
+            try { (Find-Module -Name DeskPilot -Repository PSGallery -ErrorAction Stop).Version.ToString() }
+            catch { '' }
+        }
+    }
+    catch { $updateJob = $null }
+
     try {
         while ($true) {
             # AcceptTcpClient() blocks synchronously, and PowerShell can only act
@@ -179,6 +208,20 @@ function Start-DeskPilot {
             # itself a blocking call), so Ctrl+C is observed within one poll and
             # unwinds through the finally below that stops the listener.
             if (-not $listener.Pending()) {
+                # Surface the fail-silent update check once its background job has
+                # finished, without ever blocking the accept loop.
+                if ($updateJob -and $updateJob.State -ne 'Running') {
+                    try {
+                        $latestVersion = @($updateJob | Receive-Job -ErrorAction SilentlyContinue) | Select-Object -Last 1
+                        $notice = Get-DpUpdateNotice -CurrentVersion $currentVersion -LatestVersion ([string]$latestVersion)
+                        if ($notice) { Write-Host "  $notice" -ForegroundColor Yellow }
+                    }
+                    catch { $null = $_ }
+                    finally {
+                        $updateJob | Remove-Job -Force -ErrorAction SilentlyContinue
+                        $updateJob = $null
+                    }
+                }
                 Start-Sleep -Milliseconds 50
                 continue
             }
@@ -188,6 +231,7 @@ function Start-DeskPilot {
     }
     finally {
         $script:DeskPilot.Listener = $null
+        if ($updateJob) { $updateJob | Remove-Job -Force -ErrorAction SilentlyContinue }
         try { $listener.Stop() } catch { $null = $_ }
         Write-Host 'DeskPilot stopped.' -ForegroundColor DarkGray
     }

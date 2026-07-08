@@ -3,9 +3,10 @@
 #          ModuleBuilder Configuration             #
 ####################################################
 BuiltModuleSubdirectory: module
-# web/ assets are bundled into the built module in Phase B (CopyPaths: [web])
-# once web/ is relocated under source/. Kept empty for the Sampler bootstrap.
-CopyPaths: []
+# web/ (relocated under source/) is bundled verbatim into the built module so a
+# Gallery-installed Start-DeskPilot serves the SPA from the module folder.
+CopyPaths:
+  - web
 Encoding: UTF8
 prefix: Prefix.ps1
 VersionedOutputDirectory: true

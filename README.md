@@ -26,6 +26,9 @@ work without driving the tool stack themselves.
 <br clear="left">
 <!-- markdownlint-enable MD033 -->
 
+[![PowerShell Gallery](https://img.shields.io/powershellgallery/v/DeskPilot?label=PSGallery&logo=powershell)](https://www.powershellgallery.com/packages/DeskPilot)
+[![Downloads](https://img.shields.io/powershellgallery/dt/DeskPilot?label=downloads)](https://www.powershellgallery.com/packages/DeskPilot)
+[![CI](https://github.com/raandree/DeskPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/raandree/DeskPilot/actions/workflows/ci.yml)
 
 > **Status: experimental pre-release.** DeskPilot builds on ShellPilot, which
 > talks to internal Copilot endpoints intended for first-party editors. They may
@@ -59,18 +62,31 @@ work without driving the tool stack themselves.
 
 ## Quick start
 
+### From the PowerShell Gallery (recommended)
+
 ```powershell
-# From the repo root
+Install-Module DeskPilot -Scope CurrentUser
+Start-DeskPilot
+```
+
+`Start-DeskPilot` starts the local Host Server, prints a URL such as
+`http://127.0.0.1:8473/?t=<token>`, and opens your browser. The web UI is
+bundled in the module, so there is nothing else to download. On first run it
+walks you through GitHub sign-in (device code) from inside the window, and
+installs the ShellPilot engine from the Gallery if it is not already present.
+Use `-NoBrowser` to keep the browser from opening automatically.
+
+### From a source checkout (for development)
+
+```powershell
+# From the repository root
 ./Start-DeskPilot.ps1
 ```
 
-Or on Windows, double-click `DeskPilot.cmd`.
-
-The launcher starts the local Host Server, prints a URL such as
-`http://127.0.0.1:8473/?t=<token>`, and opens your browser. On first run it walks
-you through GitHub sign-in (device code) from inside the window. The very first
-run also builds the module (resolving build dependencies from the Gallery), which
-can take a minute.
+Or on Windows, double-click `DeskPilot.cmd`. This launcher builds the module on
+first run (resolving build dependencies from the Gallery, which can take a
+minute), imports it, and serves the UI from `source/web` so edits hot-reload on
+a browser refresh.
 
 ### Pointing at a specific engine build
 
@@ -111,8 +127,8 @@ See the [specs](specs/000-overview.md) for the full design, and the
 DeskPilot/
   .memory-bank/        Project knowledge base (brief, context, patterns, glossary)
   specs/               Product + technical specifications
-  source/              Host Server PowerShell module (Public/Private/manifest; built by Sampler)
-  web/                 Static single-page UI (no build step)
+  source/              Host Server PowerShell module (Public/Private/manifest/web; built by Sampler)
+  source/web/          Static single-page UI (no build step), bundled into the module
   tests/               Pester 5 tests: tests/QA (module quality) + tests/Unit
   output/              Build output, gitignored (built module + test results)
   build.ps1            Sampler build bootstrap

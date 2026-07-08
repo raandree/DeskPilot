@@ -17,11 +17,12 @@
 - Windows, macOS, or Linux with **PowerShell 7.0+**.
 - A **GitHub account with Copilot access** (same as the Engine).
 - A modern browser (the UI runs at `http://127.0.0.1:<port>`).
-- The **Engine** available. DeskPilot resolves it in order: an explicit
-  `-EngineModulePath`; an already-installed `ShellPilot` module on `PSModulePath`;
-  otherwise a fresh install from the PowerShell Gallery into the CurrentUser scope
-  (preview/prerelease versions allowed) via `Resolve-DpEngineModule`, then import
-  by name.
+- The **Engine** available. The module manifest pins `ShellPilot` as a required
+  module (>= 0.2.0), so `Install-Module DeskPilot` installs the Engine
+  automatically. `Resolve-DpEngineModule` remains a fallback: it honours an
+  explicit `-EngineModulePath`, else an already-installed `ShellPilot` on
+  `PSModulePath`, else a fresh CurrentUser install from the Gallery
+  (preview/prerelease allowed), then imports by name.
 
 ## Key integration facts (Engine API)
 
@@ -79,7 +80,7 @@ DeskPilot/
   .memory-bank/      # this knowledge base
   specs/             # product + technical specifications
   source/            # Host Server PowerShell module (Public/Private/manifest; built by Sampler)
-  web/               # static SPA (index.html, css, js, assets)
+    web/             # static SPA (index.html, css, js, assets); bundled into the built module via CopyPaths
   tests/             # Pester 5: tests/QA (module quality) + tests/Unit
   output/            # build output, gitignored (built module + test results)
   build.ps1          # Sampler build bootstrap

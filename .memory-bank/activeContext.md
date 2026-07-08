@@ -2,6 +2,35 @@
 
 ## Current focus
 
+**Publish DeskPilot to the PowerShell Gallery with the web UI bundled - SHIPPED
+on `ai/gallery-web-bundle` (2026-07-08, local-only; NOT merged, NOT pushed, NOT
+published).** After a fresh grill-me interview (signed off), implemented the
+Design Concept. `git mv web -> source/web` + `build.yaml` `CopyPaths: ['web']`
+bundle the SPA into the built module. `Start-DeskPilot` dropped its public
+`-WebRoot` and resolves `$PSScriptRoot/web` internally, with a
+`DESKPILOT_WEB_ROOT` env override the dev launcher + tests set to `source/web`
+for hot-reload; it fails fast before binding if the bundle or index.html is
+missing. The version is derived from the manifest (no more hardcoded `0.1.0`).
+Manifest fixed for the Gallery (Author `Raimund Andree`, ProjectUri
+raandree/DeskPilot, IconUri -> logo, Description/ReleaseNotes/Tags) and pins
+`ShellPilot >= 0.2.0` in `RequiredModules`; build `RequiredModules.psd1` also
+gained ShellPilot 0.2.0 so tests can import the manifest-required module. Added
+MIT `LICENSE`, Gallery/CI README badges + a Gallery-install quick-start, and a
+fail-silent, non-blocking launch-time update check (`Get-DpUpdateNotice`, +5
+tests, surfaced via a background job on an idle accept-loop iteration). New
+`tests/Unit/WebAssets.Tests.ps1`: bundle presence, Linux case-sensitivity guard,
+and a public-Gallery secret scan - all green, so the web/ secret audit is clean.
+Docs: CHANGELOG, techContext, specs 020/040. **Verified: full Sampler build+test
+green twice - 17 tasks, 0 errors, 0 warnings; built `0.2.0-ai`; WebAssets 4/4,
+Start-DeskPilot 3/3, 0 failed, 0 NotRun.** A first build was falsely green because
+the WebAssets guards used `-ForEach`+`BeforeDiscovery` and failed discovery (2
+NotRun, which Pester does not count as failures); rewrote both as run-time loops
+inside one `It` before the clean re-run. Scope was publishable-but-NOT-published:
+no publish, no CI-gate flip (`PUBLISH_ENABLED` + secrets stay your action), no
+push/merge.
+
+## Prior focus - streaming smoothness (items 3 + 4)
+
 **Streaming smoothness (items 3 + 4) — SHIPPED + MERGED to `main` (2026-07-08,
 local-only, not pushed).** From the performance analysis (below), implemented the two
 DeskPilot-only, low-risk fixes on `ai/stream-smoothness`, then fast-forwarded
@@ -148,7 +177,14 @@ pre-existing, not caused by the memory feature. The fix also makes the build gre
 
 ## Next steps
 
-1. **Manual browser smoke of the Settings tabs:** open Settings; confirm the six
+1. **Review + merge `ai/gallery-web-bundle`** (Gallery-publishable, web UI
+   bundled; local-only, not pushed/merged/published - your call).
+2. **Go live when ready (Phase D):** set the `PUBLISH_ENABLED` repo variable +
+   the `GalleryApiToken`/`GitHubToken` secrets in GitHub; a push to `main` then
+   publishes a `-preview` prerelease and a `v*` tag a stable release. Validate
+   with a first prerelease. Confirm the Author string + `IconUri` before a real
+   publish.
+3. **Manual browser smoke of the Settings tabs:** open Settings; confirm the six
    tabs switch (click + Left/Right/Home/End), each field still saves (model, a
    permission toggle, add a project, a folder path, memory edit/learn, a compaction
    value, theme), the pill strip stays pinned under the drawer head while scrolling a

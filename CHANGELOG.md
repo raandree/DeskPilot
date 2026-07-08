@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Publishable from the PowerShell Gallery, with the web UI bundled.** The
+  DeskPilot web UI now ships inside the module (ModuleBuilder `CopyPaths`), so
+  `Install-Module DeskPilot; Start-DeskPilot` serves the full interface from the
+  installed module with no build step and nothing extra to download. The shipped
+  `Start-DeskPilot` resolves its assets internally (`$PSScriptRoot/web`) — the
+  public `-WebRoot` parameter is gone — and fails fast with a clear message if the
+  bundle is missing or incomplete; a source checkout and the tests serve
+  `source/web` via the `DESKPILOT_WEB_ROOT` environment variable so UI edits still
+  hot-reload without a rebuild. The manifest now pins the ShellPilot engine as a
+  required module (>= 0.2.0), so installing DeskPilot pulls the engine
+  automatically, and the manifest metadata (author, project/license/icon URIs,
+  description, tags) is filled in for the Gallery listing. A fail-silent
+  launch-time check reports when a newer DeskPilot is available on the Gallery.
+  Added an MIT `LICENSE`, Gallery/CI README badges, a new `Get-DpUpdateNotice`
+  helper, and web-asset guard tests (bundle presence, Linux case-sensitivity of
+  asset references, and a no-secrets scan). The `web/` folder was relocated to
+  `source/web/`.
 - **Persistent memory (DeskPilot learns who you are).** DeskPilot now carries
   durable memory across conversations, injected into every turn. Two parts: a
   **User profile** — the note you write about yourself (the existing preferences,

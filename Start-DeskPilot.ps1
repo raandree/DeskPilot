@@ -6,8 +6,8 @@
     Developer / clone convenience entry point (it is not shipped to the PowerShell
     Gallery). On first run it builds the module with Sampler into
     output/module/DeskPilot/<version>/, imports the newest built manifest, and
-    starts the Host Server, serving the web UI from the repo's web/ folder. The
-    module function is called module-qualified (DeskPilot\Start-DeskPilot) so it
+    starts the Host Server, serving the web UI from the repo's source/web/ folder.
+    The module function is called module-qualified (DeskPilot\Start-DeskPilot) so it
     always resolves to the module, never back to this script. Gallery-installed
     users call the Start-DeskPilot cmdlet directly instead.
 .PARAMETER Port
@@ -48,9 +48,14 @@ $manifest = Get-ChildItem -Path $builtBase -Recurse -Filter 'DeskPilot.psd1' -Er
 
 Import-Module $manifest.FullName -Force
 
+# Serve the SOURCE assets (now under source/web) so UI edits hot-reload on a
+# browser refresh - no rebuild. The module resolves its own bundled copy from
+# $PSScriptRoot/web for a Gallery install; there is no public -WebRoot parameter,
+# so the dev launcher points the server at the source assets via this env var.
+$env:DESKPILOT_WEB_ROOT = Join-Path $repoRoot 'source/web'
+
 $params = @{
     Port      = $Port
-    WebRoot   = (Join-Path $repoRoot 'web')
     NoBrowser = $NoBrowser
 }
 if ($EngineModulePath) { $params.EngineModulePath = $EngineModulePath }
