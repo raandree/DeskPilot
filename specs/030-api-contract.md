@@ -651,25 +651,40 @@ returns the current `GET /api/update` payload with `202 Accepted`. The SPA polls
 Consent-gated self-update. Installs the newest DeskPilot **and** ShellPilot into
 the CurrentUser scope via `Invoke-DpSelfUpdate`; when the target is a preview
 (`targetIsPrerelease`), prereleases are allowed for **both** modules, otherwise
-both are pinned to stable. Runs **inline** on the single accept thread (like the
-Git/atelier routes), so the server is briefly unresponsive during the deliberate,
-one-off download. The new versions land in new version-scoped folders and take
-effect on the **next launch** (`restartRequired: true`). Errors: `409 no_update`
-(nothing newer is available), `409 already_installing`, `502 update_failed` (the
-DeskPilot install failed). On success:
+both are pinned to stable. It then **force-reloads ShellPilot live in the Engine
+Runspace** (`Update-DpEngineModule`), so the Engine update takes effect at once
+(safe because the runspace runs only Engine cmdlets, the token is on disk, and the
+Model is passed per Turn). DeskPilot's own host code cannot hot-swap in-process, so
+it is applied by a relaunch (`POST /api/update/restart`). Runs **inline** on the
+single accept thread (like the Git/atelier routes). Errors: `409 no_update`,
+`409 already_installing`, `409 busy` (a Turn is running — the Engine Runspace is in
+use), `502 update_failed` (the DeskPilot install failed). On success:
 
 ```json
 {
   "ok": true,
   "restartRequired": true,
   "includePrerelease": false,
+  "engineReloaded": true,
+  "engineVersion": "0.2.5",
   "modules": [
     { "name": "DeskPilot", "version": "0.3.0", "installed": true, "error": null },
     { "name": "ShellPilot", "version": "0.2.5", "installed": true, "error": null }
   ],
-  "message": "Update installed. Restart DeskPilot to use the new version."
+  "message": "Update installed. The Engine (ShellPilot) reloaded and is active now. Restart DeskPilot to finish applying the app update."
 }
 ```
+
+### `POST /api/update/restart`
+
+Relaunches DeskPilot in a fresh process (which imports the updated DeskPilot and
+ShellPilot, reusing the same data directory so Conversations carry over) and
+signals the current process's accept loop to stop (`Restart-DpHost`). This is the
+only safe way to apply the DeskPilot host update — the running module cannot
+hot-swap its own executing code. The new instance opens its own browser tab on a
+fresh port, so the calling tab loses its connection. Errors: `409 busy` (a Turn is
+running), `502 restart_failed`. On success: `{ "ok": true, "message": "DeskPilot is
+restarting. A new window will open; you can close this tab." }`.
 
 ## Memory
 

@@ -43,6 +43,25 @@ to apply"). **Follow-up (this turn):** also show the running DeskPilot version a
 muted `DeskPilot vX.Y.Z` line in the sidebar's bottom-left corner (`#app-version`,
 set from `GET /api/health`'s `version` in `init`); frontend-only (index.html + a
 `.app-version` rule + `setAppVersion`), so the build/test surface is unchanged.
+**Follow-up 2 (this turn):** made the update actually take effect. The user noted
+installing alone doesn't apply — the running session keeps the old modules loaded.
+Fix: after `Invoke-DpSelfUpdate` installs both, the `installUpdate` route now
+**force-reloads ShellPilot live in the Engine Runspace** (new `Update-DpEngineModule`
+— re-import `-Force` + re-probe the version-dependent token path; safe because that
+runspace runs only Engine cmdlets, the token is on disk, and the Model is passed per
+Turn), so the Engine update is immediate. DeskPilot's own host code cannot hot-swap
+in-process (re-importing the running module repoints route handlers to a fresh module
+scope with null `$script:DeskPilot` → breaks the live server), so it applies via a
+one-click **Restart DeskPilot**: new `Restart-DpHost` (injectable `-Launcher`; default
+spawns the current pwsh exe running `Import-Module DeskPilot -Force; Start-DeskPilot`,
+reusing `-DataDir` so Conversations carry over) sets `StopRequested`, and the accept
+loop now breaks on it. New route `POST /api/update/restart`; `installUpdate`/`restart`
+refuse mid-Turn (`409 busy`, the Engine Runspace is in use). Frontend: post-install
+banner shows **Restart DeskPilot** + Later (`restartDeskPilot`/`state.restartDismissed`).
++2 `Restart-DpHost` unit tests (`Update-DpEngineModule` is runspace-bound → integration
+level). **Verified: full Sampler build+test 385/385, 0 failed (16 tasks, 0 errors, 0
+warnings); new helpers AST+PSSA clean; `app.js` ESM OK.** Docs: CHANGELOG, specs 010
+(FR-UP2)/030 (install reload + restart route)/040/050 (T13). Local-only, not pushed.
 
 ## Prior focus — branch-merge audit
 

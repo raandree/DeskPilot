@@ -204,8 +204,9 @@ Home/End move between tabs).
   a **Check every N minutes** field (1–1440, default 5). When a newer version is
   found, a dismissible **update banner** also appears at the top of the app; its
   text is the consent disclosure (it names that **Update now** installs the newest
-  DeskPilot and ShellPilot from the Gallery and needs a restart). Once installed,
-  the banner switches to a non-dismissible **restart to apply** message. Update
+  DeskPilot and ShellPilot from the Gallery). On install, ShellPilot is reloaded
+  live and the banner switches to a **Restart DeskPilot** action that relaunches
+  the app to apply the host update. Update
   notices are web-UI only — nothing is printed to the launcher console (see FR-UP1).
 - **Back up & restore** of all settings as a JSON file.
 

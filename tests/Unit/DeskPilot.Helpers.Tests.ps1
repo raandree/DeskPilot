@@ -99,6 +99,31 @@ Describe 'Invoke-DpSelfUpdate' {
     }
 }
 
+Describe 'Restart-DpHost' {
+    BeforeEach {
+        $script:savedDeskPilot = $script:DeskPilot
+        $script:DeskPilot = @{ StopRequested = $false; DataDir = (Join-Path $TestDrive 'data') }
+    }
+    AfterEach {
+        $script:DeskPilot = $script:savedDeskPilot
+    }
+    It 'launches a replacement and signals the loop to stop' {
+        $captured = @{ called = $false }
+        $r = Restart-DpHost -Launcher { $captured.called = $true }
+        $r.Ok | Should -BeTrue
+        $r.Launched | Should -BeTrue
+        $captured.called | Should -BeTrue
+        $script:DeskPilot.StopRequested | Should -BeTrue
+    }
+    It 'leaves the running server untouched when the relaunch fails' {
+        $r = Restart-DpHost -Launcher { throw 'no pwsh' }
+        $r.Ok | Should -BeFalse
+        $r.Launched | Should -BeFalse
+        $r.Error | Should -Match 'no pwsh'
+        $script:DeskPilot.StopRequested | Should -BeFalse
+    }
+}
+
 Describe 'Get-DpDefaultSettings' {
     It 'returns Terminal off and Browsing/File on by default' {
         $s = Get-DpDefaultSettings
@@ -403,10 +428,33 @@ Describe 'ConvertFrom-DpEngineResult' {
         $m.usage.totalTokens | Should -Be 15
         $m.usage.costUSD | Should -Be 0.0123
     }
+    It 'defaults usage.iterations to 1 when the result carries no iteration count' {
+        # A single round-trip Turn: promptTokens IS the context occupancy, so the
+        # divisor must be 1 (never 0) even when the Engine omits Iterations.
+        $result = [pscustomobject]@{ Content = 'hi'; Usage = [pscustomobject]@{ PromptTokens = 100 } }
+        (ConvertFrom-DpEngineResult -Result $result).usage.iterations | Should -Be 1
+    }
+    It 'maps the Engine Iterations count onto usage.iterations' {
+        # promptTokens is the SUM across round-trips; iterations lets the UI recover
+        # a single prompt's size (context occupancy) as promptTokens / iterations.
+        $result = [pscustomobject]@{
+            Content    = 'done'
+            Iterations = 9
+            Usage      = [pscustomobject]@{ PromptTokens = 900000; CompletionTokens = 2000 }
+        }
+        $m = ConvertFrom-DpEngineResult -Result $result
+        $m.usage.iterations | Should -Be 9
+        $m.usage.promptTokens | Should -Be 900000
+    }
+    It 'clamps a non-positive Iterations count up to 1' {
+        $result = [pscustomobject]@{ Content = 'x'; Iterations = 0; Usage = [pscustomobject]@{ PromptTokens = 50 } }
+        (ConvertFrom-DpEngineResult -Result $result).usage.iterations | Should -Be 1
+    }
     It 'returns an empty shape for a null result' {
         $m = ConvertFrom-DpEngineResult -Result $null
         $m.content | Should -Be ''
         $m.usage.totalTokens | Should -Be 0
+        $m.usage.iterations | Should -Be 0
     }
     It 'does not throw and yields empty arrays when the result has no tool activity' {
         # Regression: under Set-StrictMode -Version Latest, an empty

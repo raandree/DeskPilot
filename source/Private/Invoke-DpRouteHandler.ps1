@@ -502,12 +502,19 @@ function Invoke-DpRouteHandler {
             # Consent-gated self-update: the SPA calls this only after the user
             # clicks "Update now" on the notice. It installs the newest DeskPilot
             # and ShellPilot (a preview DeskPilot target also accepts a preview
-            # ShellPilot) into the CurrentUser scope; the new versions apply on the
-            # next launch. Installing runs inline on this single accept thread -
-            # like the Git/atelier routes - so the server is briefly unresponsive
-            # during the deliberate, one-off download.
+            # ShellPilot) into the CurrentUser scope, then force-reloads ShellPilot
+            # live in the Engine Runspace so the Engine update takes effect at once.
+            # The DeskPilot host cannot hot-swap its own running code in-process, so
+            # its update applies on a relaunch (POST /api/update/restart). Installing
+            # runs inline on this single accept thread - like the Git/atelier routes.
             if ($state.Update.installing) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'already_installing'; message = 'An update is already being installed.' } }
+                return
+            }
+            if ($state.TurnRunning) {
+                # Reloading ShellPilot re-imports it in the Engine Runspace, which a
+                # running Turn is using - refuse until it finishes.
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A turn is running. Try updating again once it finishes.' } }
                 return
             }
             if (-not $state.Update.updateAvailable) {
@@ -517,6 +524,9 @@ function Invoke-DpRouteHandler {
             $state.Update.installing = $true
             try {
                 $r = Invoke-DpSelfUpdate -IncludePrerelease:([bool]$state.Update.targetIsPrerelease)
+                # Reload the Engine live so the new ShellPilot is used without a
+                # restart (only DeskPilot's own host code needs the relaunch).
+                $engineReload = if ($r.Ok) { Update-DpEngineModule } else { @{ Ok = $false; Version = $null; Error = 'Skipped (install failed).' } }
             }
             finally {
                 $state.Update.installing = $false
@@ -525,6 +535,8 @@ function Invoke-DpRouteHandler {
                 ok              = [bool]$r.Ok
                 restartRequired = [bool]$r.Ok
                 modules         = @($r.Modules)
+                engineReloaded  = [bool]$engineReload.Ok
+                engineVersion   = $engineReload.Version
                 error           = $r.Error
                 installedUtc    = [DateTime]::UtcNow.ToString('o')
             }
@@ -532,12 +544,34 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'update_failed'; message = $r.Error } }
                 return
             }
+            $engineNote = if ($engineReload.Ok) { ' The Engine (ShellPilot) reloaded and is active now.' } else { '' }
             Write-DpResponse -Stream $Stream -Json @{
                 ok                = $true
                 restartRequired   = $true
                 includePrerelease = [bool]$r.IncludePrerelease
                 modules           = @($r.Modules)
-                message           = 'Update installed. Restart DeskPilot to use the new version.'
+                engineReloaded    = [bool]$engineReload.Ok
+                engineVersion     = $engineReload.Version
+                message           = "Update installed.$engineNote Restart DeskPilot to finish applying the app update."
+            }
+        }
+        'restartUpdate' {
+            # Relaunch DeskPilot in a fresh process (which imports the updated
+            # DeskPilot + ShellPilot) and signal this one to stop. This is the only
+            # safe way to apply the DeskPilot host update - the running module cannot
+            # hot-swap its own executing code. Refuse mid-Turn.
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A turn is running. Try restarting again once it finishes.' } }
+                return
+            }
+            $restart = Restart-DpHost
+            if (-not $restart.Ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'restart_failed'; message = $restart.Error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                ok      = $true
+                message = 'DeskPilot is restarting. A new window will open; you can close this tab.'
             }
         }
         'getMemory' {

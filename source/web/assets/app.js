@@ -99,6 +99,7 @@ const state = {
     // fetch). Drives the update banner and the Settings "Updates" panel.
     update: null,
     updateDismissed: false,
+    restartDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
     // on; searchResults (when non-null) replaces the list with server search hits.
     showArchived: false,
@@ -764,20 +765,27 @@ function effectiveContextModel(conv) {
 }
 
 // Compute Session Info for a Conversation: accumulated cost/credits/turns, plus
-// the context-window occupancy of the LAST Turn (the exact promptTokens the
-// Engine reported) against the Model's context window, and an estimated split of
-// that context into conversation Messages vs system/tool overhead.
+// the context-window occupancy of the LAST Turn (its per-round-trip prompt size,
+// derived from the Engine's summed promptTokens / iterations) against the Model's
+// context window, and an estimated split of that context into conversation
+// Messages vs system/tool overhead.
 function computeSessionInfo(conv) {
     conv = conv || state.current;
     const messages = (conv && conv.messages) || [];
     const usage = sumConversationUsage(messages);
     const assistants = messages.filter((m) => m.role === 'assistant');
-    // promptTokens grows each Turn as history accumulates; the last non-zero one
-    // is the current context occupancy (system + tools + history + last prompt).
+    // The Engine's usage.promptTokens is the SUM of input tokens across every
+    // tool-calling round-trip in a Turn (each round-trip is billed, so summing is
+    // right for cost). The context window only ever holds ONE prompt at a time, so
+    // the occupancy is a single round-trip — approximated as the per-iteration
+    // average (exact when the Turn made one round-trip, usage.iterations === 1).
+    // Using the raw sum over-reports many-fold: a 9-round-trip Turn would read as
+    // ~9x the window. The last non-zero Turn is the current occupancy.
     let measured = 0;
     for (const m of assistants) {
-        const p = m.usage && Number(m.usage.promptTokens);
-        if (p) measured = p;
+        const u = m.usage || {};
+        const p = Number(u.promptTokens);
+        if (p) measured = Math.round(p / Math.max(1, Number(u.iterations) || 1));
     }
     const model = effectiveContextModel(conv);
     const maxTokens = (model && Number(model.maxContextWindowTokens)) || 0;
@@ -2403,9 +2411,18 @@ function renderUpdateBanner() {
     const u = state.update;
     if (!u) { el.classList.add('hidden'); return; }
     if (u.installResult && u.installResult.restartRequired) {
+        if (state.restartDismissed) { el.classList.add('hidden'); return; }
         const ver = u.targetVersion ? escapeHtml(String(u.targetVersion)) : 'the latest version';
-        el.innerHTML = `<span class="update-msg">DeskPilot was updated to ${ver}. Restart DeskPilot to apply it.</span>`;
+        const engineNote = u.installResult.engineReloaded ? ' The Engine reloaded and is active now.' : '';
+        el.innerHTML =
+            `<span class="update-msg">DeskPilot was updated to ${ver}.${engineNote} Restart DeskPilot to finish applying the update.</span>` +
+            '<span class="update-actions">' +
+            '<button type="button" class="btn btn-small" id="update-restart">Restart DeskPilot</button>' +
+            '<button type="button" class="btn btn-small btn-ghost" id="update-restart-later">Later</button>' +
+            '</span>';
         el.classList.remove('hidden');
+        $('update-restart').onclick = () => restartDeskPilot();
+        $('update-restart-later').onclick = () => { state.restartDismissed = true; el.classList.add('hidden'); };
         return;
     }
     if (!u.updateAvailable || state.updateDismissed) { el.classList.add('hidden'); return; }
@@ -2443,6 +2460,26 @@ async function installUpdate() {
         renderUpdateBanner();
         renderUpdatePanel();
         toast((e && e.message) || 'Update failed.');
+    }
+}
+
+// Relaunch DeskPilot so the installed update takes effect. The current process
+// exits after spawning a fresh instance, so this tab loses its connection and a
+// new window opens - hence the explicit "you can close this tab" message.
+async function restartDeskPilot() {
+    const btn = $('update-restart');
+    if (btn) { btn.disabled = true; btn.textContent = 'Restarting…'; }
+    try {
+        const r = await api('POST', '/api/update/restart');
+        const el = $('update-notice');
+        if (el) {
+            el.innerHTML = `<span class="update-msg">${escapeHtml((r && r.message) || 'DeskPilot is restarting. A new window will open; you can close this tab.')}</span>`;
+            el.classList.remove('hidden');
+        }
+        toast('Restarting DeskPilot…');
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Restart DeskPilot'; }
+        toast((e && e.message) || 'Could not restart DeskPilot.');
     }
 }
 

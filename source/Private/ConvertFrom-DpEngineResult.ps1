@@ -24,7 +24,7 @@ function ConvertFrom-DpEngineResult {
             content   = ''
             reasoning = $null
             activity  = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
-            usage     = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0 }
+            usage     = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; iterations = 0 }
             tasks     = @()
         }
     }
@@ -56,6 +56,14 @@ function ConvertFrom-DpEngineResult {
     $totalTokens = [int](Get-DpPropertyValue -InputObject $usageObj -Name @('TotalTokens', 'total_tokens', 'Total') -Default 0)
     if ($totalTokens -eq 0) { $totalTokens = $promptTokens + $completionTokens }
 
+    # The Engine's promptTokens is the SUM of input tokens across every tool-calling
+    # round-trip the Turn made (billed per call). Iterations is that round-trip
+    # count; surfacing it lets the UI recover a single prompt's size (promptTokens /
+    # iterations), which is what actually occupies the Model context window. Default
+    # 1 (a Turn always makes at least one round-trip) so the divisor is never zero.
+    $iterations = [int](Get-DpPropertyValue -InputObject $Result -Name @('Iterations', 'iterations', 'IterationCount') -Default 1)
+    if ($iterations -lt 1) { $iterations = 1 }
+
     $cost = [double](Get-DpPropertyValue -InputObject $Result -Name @('CostUSD', 'Cost') -Default 0.0)
     $credits = [double](Get-DpPropertyValue -InputObject $Result -Name @('Credits', 'Credit') -Default 0.0)
 
@@ -81,6 +89,7 @@ function ConvertFrom-DpEngineResult {
             totalTokens      = $totalTokens
             costUSD          = $cost
             credits          = $credits
+            iterations       = $iterations
         }
         tasks     = $tasks
     }

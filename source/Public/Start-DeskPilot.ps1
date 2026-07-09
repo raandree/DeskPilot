@@ -121,6 +121,11 @@ function Start-DeskPilot {
         }
         UpdateJob          = $null
         LastUpdateCheckUtc = $null
+        # Set true by Restart-DpHost (after it spawns a fresh instance) so the accept
+        # loop below breaks, the listener is released, and this process winds down -
+        # the only safe way to apply a DeskPilot host update (the running module
+        # cannot hot-swap its own executing code in-process).
+        StopRequested      = $false
         Routes          = @(
             @{ Method = 'GET'; Pattern = '/api/health'; Name = 'health' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
@@ -160,6 +165,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/update'; Name = 'getUpdate' }
             @{ Method = 'POST'; Pattern = '/api/update/check'; Name = 'checkUpdate' }
             @{ Method = 'POST'; Pattern = '/api/update/install'; Name = 'installUpdate' }
+            @{ Method = 'POST'; Pattern = '/api/update/restart'; Name = 'restartUpdate' }
             @{ Method = 'GET'; Pattern = '/api/memory'; Name = 'getMemory' }
             @{ Method = 'PUT'; Pattern = '/api/memory'; Name = 'updateMemory' }
             @{ Method = 'POST'; Pattern = '/api/memory/learn'; Name = 'learnMemory' }
@@ -219,6 +225,10 @@ function Start-DeskPilot {
 
     try {
         while ($true) {
+            # A relaunch (Restart-DpHost) sets StopRequested after spawning a fresh
+            # instance; break so the finally releases the listener and this process
+            # ends, letting the new instance (with the updated modules) take over.
+            if ($script:DeskPilot.StopRequested) { break }
             # AcceptTcpClient() blocks synchronously, and PowerShell can only act
             # on Ctrl+C (a pipeline stop) between statements - never while parked
             # inside a blocking .NET call. So poll the non-blocking Pending() and

@@ -14,17 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minutes by default, configurable in **Settings → Engine & data → Updates**, plus
   a manual **Check for updates** button) and, when one is found, shows a dismissible
   banner in the UI. Clicking **Update now** installs the newest DeskPilot **and**
-  ShellPilot into the CurrentUser scope and then prompts for a restart (the new
-  versions apply on the next launch). Full releases are offered by default; an
+  ShellPilot into the CurrentUser scope, then **force-reloads ShellPilot live in the
+  Engine Runspace** so the Engine update takes effect immediately; DeskPilot's own
+  host code can't hot-swap in-process, so a one-click **Restart DeskPilot** relaunch
+  applies it (a fresh process imports the updated modules, keeping your
+  Conversations). Full releases are offered by default; an
   opt-in **Include preview releases** setting also considers previews, and updating
   DeskPilot to a preview accepts a preview ShellPilot too — otherwise both are
   pinned to stable. The check is fail-silent and never blocks serving (it runs in a
   background job), and the notice is web-UI only (no console output). New
-  `GET /api/update`, `POST /api/update/check`, and `POST /api/update/install`
-  routes; new `updateCheckIntervalMinutes` and `updateIncludePrereleases` Settings;
-  new `Get-DpUpdateStatus`, `Invoke-DpSelfUpdate`, `Get-DpUpdatePayload` and
-  `Update-DpUpdateCheckState` helpers (replacing the launch-only, console-only
-  `Get-DpUpdateNotice`); +18 unit tests.
+  `GET /api/update`, `POST /api/update/check`, `POST /api/update/install`, and
+  `POST /api/update/restart` routes; new `updateCheckIntervalMinutes` and
+  `updateIncludePrereleases` Settings; new `Get-DpUpdateStatus`,
+  `Invoke-DpSelfUpdate`, `Get-DpUpdatePayload`, `Update-DpUpdateCheckState`,
+  `Update-DpEngineModule` (live Engine reload) and `Restart-DpHost` (relaunch)
+  helpers (replacing the launch-only, console-only `Get-DpUpdateNotice`); +20 unit
+  tests.
 - **DeskPilot version shown in the sidebar corner.** The running version (from
   `GET /api/health`) now appears as a muted `DeskPilot vX.Y.Z` line in the
   bottom-left of the sidebar, so the installed build is always visible at a glance
@@ -250,7 +255,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Sign-in now works on a clean machine.** On a machine that had never signed in
+- **Context Window gauge no longer over-reports (and auto-compaction no longer
+  fires on almost every Turn).** The Session Info gauge could show impossible
+  figures such as *9,140,447 / 1,000,000 tokens · 100%* with a nonsensical
+  "System + tools" breakdown of several million tokens. The cause: the Engine's
+  `promptTokens` is the **sum** of input tokens across every tool-calling
+  round-trip in a Turn (correct for cost — each round-trip is billed), but DeskPilot
+  read it as the size of a single prompt. A Turn that made nine tool calls therefore
+  read as roughly nine times the context window. DeskPilot now divides that sum by
+  the Turn's round-trip count (`iterations`, newly surfaced on each Message's usage)
+  to recover a single prompt's size — the amount that actually occupies the context
+  window (exact for a Turn with no tool calls). Because automatic compaction watches
+  the same occupancy, this also stops it from triggering on nearly every Turn.
+  Cost, credit, and token totals are unaffected — they still reflect the full billed
+  usage.
+
   before, completing the GitHub device-code flow left you stuck on *"Sign-in did
   not complete. Try again."* — every attempt looped without ever entering the app.
   The cause: the engine (ShellPilot) renamed the file it caches your sign-in token
