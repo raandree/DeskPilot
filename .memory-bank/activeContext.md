@@ -26,7 +26,12 @@ user must restart DeskPilot ONCE to load this build; thereafter no restart is
 needed. **Verified: full Sampler build+test 367/367, 0 failed (16 tasks, 0
 errors, 0 warnings); new helper AST+PSSA clean; `app.js` ESM check OK.** Docs:
 CHANGELOG (Added), specs 030 (agents route) / 040 (Agent dropdown). Not yet
-browser-smoke-tested.
+browser-smoke-tested. **Follow-up (this turn):** removed the now-redundant
+"Refresh agents" button from the CopilotAtelier setup result modal (the
+auto-refresh makes it unnecessary, and it also removes an `atelier-refresh` id
+collision with the Settings Atelier-health button) and reworded the success copy
+to say new agents appear in the Agent menu automatically. JS-only; `app.js` ESM
+check OK.
 
 ## Prior focus — CopilotAtelier setup
 

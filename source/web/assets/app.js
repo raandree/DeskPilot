@@ -2198,8 +2198,9 @@ function renderAtelierConsent() {
     $('atelier-run').onclick = () => runAtelierSetup();
 }
 
-// Step 2 — run it. POSTs to the consent-gated backend route, then reports the
-// outcome and offers to refresh the agent list once the script has finished.
+// Step 2 — run it. POSTs to the consent-gated backend route and reports the
+// outcome. New agents appear in the menu on their own (the list auto-refreshes),
+// so there is no manual refresh button.
 async function runAtelierSetup() {
     const body = $('atelier-body');
     const foot = $('atelier-foot');
@@ -2224,21 +2225,14 @@ async function runAtelierSetup() {
         body.innerHTML =
             '<div class="merge-ok">✓ Setup started.</div>' +
             '<p>A PowerShell window opened and is running the setup. Follow any prompts there. ' +
-            'When it says <em>“Restart VS Code to apply changes”</em>, come back and refresh.</p>' + where;
+            'When it finishes, your new agents appear in the Agent menu automatically — no restart needed.</p>' + where;
     } else {
         body.innerHTML =
             '<div class="merge-ok">✓ Downloaded.</div>' +
             `<p>${escapeHtml(data.message || 'Run Setup-CopilotSettings.ps1 from the downloaded folder to finish.')}</p>` + where;
     }
-    foot.innerHTML =
-        '<button class="btn" id="atelier-cancel" type="button">Close</button>' +
-        '<button class="btn btn-primary" id="atelier-refresh" type="button">Refresh agents</button>';
+    foot.innerHTML = '<button class="btn btn-primary" id="atelier-cancel" type="button">Close</button>';
     $('atelier-cancel').onclick = () => closeAtelierSetup();
-    $('atelier-refresh').onclick = async () => {
-        await loadAgents();
-        loadAtelierHealth();
-        toast('Refreshed agents.');
-    };
 }
 
 const shortText = (s, n) => (s && s.length > n ? s.slice(0, n - 1).trim() + '…' : (s || ''));
