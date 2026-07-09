@@ -100,6 +100,27 @@ function Start-DeskPilot {
         # reaches a Model that rejects it (HTTP 400 invalid_reasoning_effort).
         Models          = @()
         DefaultModel    = $null
+        # Update state. The Host Server polls the Gallery for a newer DeskPilot in a
+        # background job (Update-DpUpdateCheckState) and caches the result here for
+        # GET /api/update; the SPA surfaces it and drives the consent-gated install
+        # (Invoke-DpSelfUpdate) via POST /api/update/install. UpdateJob is the
+        # in-flight check job; LastUpdateCheckUtc paces the periodic poll.
+        Update          = @{
+            currentVersion     = $(if ($MyInvocation.MyCommand.Module) { $MyInvocation.MyCommand.Module.Version.ToString() } else { '0.0.0' })
+            latestStable       = $null
+            latestPrerelease   = $null
+            includePrereleases = [bool]$persistedSettings.updateIncludePrereleases
+            updateAvailable    = $false
+            targetVersion      = $null
+            targetIsPrerelease = $false
+            notice             = $null
+            checkedUtc         = $null
+            checking           = $false
+            installing         = $false
+            installResult      = $null
+        }
+        UpdateJob          = $null
+        LastUpdateCheckUtc = $null
         Routes          = @(
             @{ Method = 'GET'; Pattern = '/api/health'; Name = 'health' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
@@ -136,6 +157,9 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/atelier/setup'; Name = 'atelierSetup' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
+            @{ Method = 'GET'; Pattern = '/api/update'; Name = 'getUpdate' }
+            @{ Method = 'POST'; Pattern = '/api/update/check'; Name = 'checkUpdate' }
+            @{ Method = 'POST'; Pattern = '/api/update/install'; Name = 'installUpdate' }
             @{ Method = 'GET'; Pattern = '/api/memory'; Name = 'getMemory' }
             @{ Method = 'PUT'; Pattern = '/api/memory'; Name = 'updateMemory' }
             @{ Method = 'POST'; Pattern = '/api/memory/learn'; Name = 'learnMemory' }
@@ -186,18 +210,12 @@ function Start-DeskPilot {
         try { Start-Process $url } catch { $null = $_ }
     }
 
-    # Best-effort, fail-silent check for a newer Gallery release. It runs in a
-    # background job so it never blocks serving; the result (if any) is surfaced
-    # on an idle accept-loop iteration below and the job is cleaned up in finally.
-    $currentVersion = $script:DeskPilot.Version
-    $updateJob = $null
-    try {
-        $updateJob = Start-Job -ScriptBlock {
-            try { (Find-Module -Name DeskPilot -Repository PSGallery -ErrorAction Stop).Version.ToString() }
-            catch { '' }
-        }
-    }
-    catch { $updateJob = $null }
+    # Best-effort, fail-silent check for a newer Gallery release, surfaced only in
+    # the web UI (GET /api/update), never printed to this console. It runs in a
+    # background job so it never blocks serving; Update-DpUpdateCheckState kicks off
+    # the first check now and, on idle accept-loop iterations below, reaps the
+    # finished job and re-triggers the poll every updateCheckIntervalMinutes.
+    try { Update-DpUpdateCheckState -Force } catch { $null = $_ }
 
     try {
         while ($true) {
@@ -209,20 +227,9 @@ function Start-DeskPilot {
             # itself a blocking call), so Ctrl+C is observed within one poll and
             # unwinds through the finally below that stops the listener.
             if (-not $listener.Pending()) {
-                # Surface the fail-silent update check once its background job has
-                # finished, without ever blocking the accept loop.
-                if ($updateJob -and $updateJob.State -ne 'Running') {
-                    try {
-                        $latestVersion = @($updateJob | Receive-Job -ErrorAction SilentlyContinue) | Select-Object -Last 1
-                        $notice = Get-DpUpdateNotice -CurrentVersion $currentVersion -LatestVersion ([string]$latestVersion)
-                        if ($notice) { Write-Host "  $notice" -ForegroundColor Yellow }
-                    }
-                    catch { $null = $_ }
-                    finally {
-                        $updateJob | Remove-Job -Force -ErrorAction SilentlyContinue
-                        $updateJob = $null
-                    }
-                }
+                # Reap a finished update check and re-trigger it when due, without
+                # ever blocking the accept loop (the Gallery call is off-thread).
+                try { Update-DpUpdateCheckState } catch { $null = $_ }
                 Start-Sleep -Milliseconds 50
                 continue
             }
@@ -232,7 +239,7 @@ function Start-DeskPilot {
     }
     finally {
         $script:DeskPilot.Listener = $null
-        if ($updateJob) { $updateJob | Remove-Job -Force -ErrorAction SilentlyContinue }
+        if ($script:DeskPilot.UpdateJob) { $script:DeskPilot.UpdateJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.UpdateJob = $null }
         try { $listener.Stop() } catch { $null = $_ }
         Write-Host 'DeskPilot stopped.' -ForegroundColor DarkGray
     }

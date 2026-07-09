@@ -55,5 +55,13 @@ function Get-DpDefaultSettings {
         # User Profile is the manual preferences block above; the Agent Memory store
         # lives in agent-memory.json, not in Settings.
         memoryLearning       = $true
+        # Updates. The Host Server polls the PowerShell Gallery for a newer
+        # DeskPilot every updateCheckIntervalMinutes minutes (and on demand); the
+        # newest stable release is offered by default. updateIncludePrereleases
+        # opts into preview releases - and a preview update also accepts a preview
+        # ShellPilot. The update is only ever applied on explicit user consent and
+        # takes effect on the next launch (see Invoke-DpSelfUpdate).
+        updateCheckIntervalMinutes = 5
+        updateIncludePrereleases   = $false
     }
 }

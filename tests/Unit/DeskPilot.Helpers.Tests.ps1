@@ -5,28 +5,97 @@ BeforeAll {
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 }
 
-Describe 'Get-DpUpdateNotice' {
-    It 'returns a notice when the Gallery version is newer' {
-        $notice = Get-DpUpdateNotice -CurrentVersion '0.2.0' -LatestVersion '0.3.0'
-        $notice | Should -Not -BeNullOrEmpty
-        $notice | Should -Match '0\.3\.0'
-        $notice | Should -Match 'Update-Module DeskPilot'
+Describe 'Get-DpUpdateStatus' {
+    It 'offers the newer stable release as the target' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '0.3.0'
+        $s.updateAvailable | Should -BeTrue
+        $s.targetVersion | Should -Be '0.3.0'
+        $s.targetIsPrerelease | Should -BeFalse
+        $s.notice | Should -Match '0\.3\.0'
     }
-    It 'returns null when the running version is current' {
-        Get-DpUpdateNotice -CurrentVersion '0.3.0' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    It 'reports no update when the running version is current' {
+        (Get-DpUpdateStatus -CurrentVersion '0.3.0' -LatestStable '0.3.0').updateAvailable | Should -BeFalse
     }
-    It 'returns null when the running version is newer than the Gallery' {
-        Get-DpUpdateNotice -CurrentVersion '0.4.0' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    It 'reports no update when the running version is newer than the Gallery' {
+        (Get-DpUpdateStatus -CurrentVersion '0.4.0' -LatestStable '0.3.0').updateAvailable | Should -BeFalse
     }
-    It 'returns null when the latest version is unknown or unparseable' -ForEach @(
+    It 'tolerates an unknown or unparseable latest version' -ForEach @(
         @{ Latest = '' }
         @{ Latest = $null }
         @{ Latest = 'not-a-version' }
     ) {
-        Get-DpUpdateNotice -CurrentVersion '0.2.0' -LatestVersion $Latest | Should -BeNullOrEmpty
+        (Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable $Latest).updateAvailable | Should -BeFalse
     }
-    It 'returns null when the current version is unparseable' {
-        Get-DpUpdateNotice -CurrentVersion 'x' -LatestVersion '0.3.0' | Should -BeNullOrEmpty
+    It 'reports no update when the current version is unparseable' {
+        (Get-DpUpdateStatus -CurrentVersion 'x' -LatestStable '0.3.0').updateAvailable | Should -BeFalse
+    }
+    It 'does not offer a preview when previews are not included' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '0.2.0' -LatestPrerelease '0.3.0-preview0001'
+        $s.updateAvailable | Should -BeFalse
+    }
+    It 'offers a strictly-newer preview when previews are included' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '0.2.0' -LatestPrerelease '0.3.0-preview0001' -IncludePrereleases
+        $s.updateAvailable | Should -BeTrue
+        $s.targetVersion | Should -Be '0.3.0-preview0001'
+        $s.targetIsPrerelease | Should -BeTrue
+        $s.notice | Should -Match 'preview'
+    }
+    It 'prefers a newer stable over an older preview even with previews on' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '0.3.0' -LatestPrerelease '0.3.0-preview0001' -IncludePrereleases
+        $s.updateAvailable | Should -BeTrue
+        $s.targetVersion | Should -Be '0.3.0'
+        $s.targetIsPrerelease | Should -BeFalse
+    }
+    It 'treats a stable release as newer than its own prerelease' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0-preview0002' -LatestStable '0.2.0'
+        $s.updateAvailable | Should -BeTrue
+        $s.targetVersion | Should -Be '0.2.0'
+    }
+    It 'parses two- and four-part version strings via the [version] fallback' {
+        (Get-DpUpdateStatus -CurrentVersion '0.2' -LatestStable '0.3.0').updateAvailable | Should -BeTrue
+        (Get-DpUpdateStatus -CurrentVersion '0.2.0.0' -LatestStable '0.2.0.0').updateAvailable | Should -BeFalse
+    }
+}
+
+Describe 'Invoke-DpSelfUpdate' {
+    It 'updates DeskPilot then ShellPilot with prereleases disabled by default' {
+        $calls = [System.Collections.Generic.List[object]]::new()
+        $r = Invoke-DpSelfUpdate `
+            -Installer { param($Name, $AllowPrerelease) $calls.Add(@{ name = $Name; pre = $AllowPrerelease }) } `
+            -VersionReader { param($Name) '9.9.9' }
+        $r.Ok | Should -BeTrue
+        $calls.Count | Should -Be 2
+        $calls[0].name | Should -Be 'DeskPilot'
+        $calls[1].name | Should -Be 'ShellPilot'
+        $calls[0].pre | Should -BeFalse
+        $calls[1].pre | Should -BeFalse
+        $r.Modules[0].version | Should -Be '9.9.9'
+    }
+    It 'allows prereleases for BOTH modules when the target is a preview' {
+        $calls = [System.Collections.Generic.List[object]]::new()
+        $r = Invoke-DpSelfUpdate -IncludePrerelease `
+            -Installer { param($Name, $AllowPrerelease) $calls.Add(@{ name = $Name; pre = $AllowPrerelease }) } `
+            -VersionReader { param($Name) '1.0.0' }
+        $r.Ok | Should -BeTrue
+        $r.IncludePrerelease | Should -BeTrue
+        $calls[0].pre | Should -BeTrue
+        $calls[1].pre | Should -BeTrue
+    }
+    It 'fails the whole update when DeskPilot cannot install' {
+        $r = Invoke-DpSelfUpdate `
+            -Installer { param($Name, $AllowPrerelease) if ($Name -eq 'DeskPilot') { throw 'boom' } } `
+            -VersionReader { param($Name) '1.0.0' }
+        $r.Ok | Should -BeFalse
+        $r.Error | Should -Match 'DeskPilot'
+    }
+    It 'still succeeds but reports when only ShellPilot fails' {
+        $r = Invoke-DpSelfUpdate `
+            -Installer { param($Name, $AllowPrerelease) if ($Name -eq 'ShellPilot') { throw 'nope' } } `
+            -VersionReader { param($Name) '1.0.0' }
+        $r.Ok | Should -BeTrue
+        $r.Error | Should -Match 'ShellPilot'
+        $r.Modules[0].installed | Should -BeTrue
+        $r.Modules[1].error | Should -Match 'nope'
     }
 }
 
@@ -50,6 +119,11 @@ Describe 'Get-DpDefaultSettings' {
         $s.autoCompaction | Should -BeTrue
         $s.compactionThreshold | Should -Be 0.8
         $s.compactionKeepRecent | Should -Be 4
+    }
+    It 'defaults the update check to every 5 minutes, stable-only' {
+        $s = Get-DpDefaultSettings
+        $s.updateCheckIntervalMinutes | Should -Be 5
+        $s.updateIncludePrereleases | Should -BeFalse
     }
 }
 
@@ -109,6 +183,22 @@ Describe 'Merge-DpSettings auto-compaction' {
             Should -Throw -ExpectedMessage '*between 2 and 100*'
         { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ compactionKeepRecent = 101 }) } |
             Should -Throw -ExpectedMessage '*between 2 and 100*'
+    }
+}
+
+Describe 'Merge-DpSettings updates' {
+    It 'toggles updateIncludePrereleases off and on' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ updateIncludePrereleases = $true })).updateIncludePrereleases | Should -BeTrue
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ updateIncludePrereleases = $false })).updateIncludePrereleases | Should -BeFalse
+    }
+    It 'accepts an in-range check interval' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ updateCheckIntervalMinutes = 30 })).updateCheckIntervalMinutes | Should -Be 30
+    }
+    It 'rejects a check interval below 1 or above 1440' {
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ updateCheckIntervalMinutes = 0 }) } |
+            Should -Throw -ExpectedMessage '*between 1 and 1440*'
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ updateCheckIntervalMinutes = 5000 }) } |
+            Should -Throw -ExpectedMessage '*between 1 and 1440*'
     }
 }
 

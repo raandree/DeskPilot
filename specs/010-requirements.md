@@ -72,7 +72,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 
 | ID | Priority | Requirement |
 | --- | --- | --- |
-| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap, auto-compaction toggle/threshold/keep-recent, memory-learning toggle) to disk and load them on startup so the user's choices stick between sessions. |
+| FR-S1 | M | Persist Settings (Model, Permissions, Projects and the selected Project, Agents folder and selected Agent, Skill/Instruction/Prompt roots, reasoning effort, show-thinking, tool-iteration cap, auto-compaction toggle/threshold/keep-recent, memory-learning toggle, update-check interval and include-previews toggle) to disk and load them on startup so the user's choices stick between sessions. |
 | FR-S2 | S | Let the user back up all Settings to a JSON file and restore them from one (restore is a full replace onto defaults). |
 | FR-S3 | S | Show a collapsible file explorer of the selected Project's folders and files; collapsed and not expandable when no Project is selected. |
 | FR-S4 | C | Show an **Atelier health** panel: whether each configured Customization root (`~/.copilot/{agents,skills,instructions,prompts}` by default) resolves, how many Customizations were discovered in each, and a flag when a root is missing or an unreadable reparse point. |
@@ -98,6 +98,13 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-U3 | M | Track a **lifetime** Usage counter (credits, cost, tokens, turns) that persists to disk across sessions and is never reset automatically. |
 | FR-U4 | M | Let the user reset the lifetime counter manually; record the date it has counted since. |
 | FR-U5 | S | In the Usage panel, show the **tokens in / tokens out** split (prompt vs. completion) alongside the totals for both the session and lifetime counters, a **Top models** list (this session, ranked by tokens), and a 7-/14-/**30-day** credits-per-day chart. |
+
+### Software updates
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-UP1 | S | Check the PowerShell Gallery for a newer DeskPilot **periodically** (default every 5 minutes, configurable 1–1440) and **on demand** (a Check-for-updates button), off the accept thread so serving is never blocked. Offer the newest **full release** by default; consider **previews** only when the user opts in (`updateIncludePrereleases`) and the preview is strictly newer. Surface the result in the **web UI only** (a dismissible banner + a Settings status line) — never on the launcher console. |
+| FR-UP2 | S | Apply an update only on **explicit user consent** (an Update-now action after a notice that discloses what will be installed). Installing updates **both** DeskPilot and the Engine (ShellPilot) from the Gallery into the CurrentUser scope; when DeskPilot is updated to a **preview**, ShellPilot previews are accepted too, otherwise both are pinned to stable. The new versions take effect on the **next launch** (the UI then shows a restart prompt). |
 
 ### Generative UI
 

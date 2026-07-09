@@ -95,6 +95,14 @@ function Merge-DpSettings {
                 $merged.compactionKeepRecent = $keep
             }
             'memoryLearning' { $merged.memoryLearning = [bool]$value }
+            'updateCheckIntervalMinutes' {
+                $minutes = [int]$value
+                if ($minutes -lt 1 -or $minutes -gt 1440) {
+                    throw 'updateCheckIntervalMinutes must be between 1 and 1440.'
+                }
+                $merged.updateCheckIntervalMinutes = $minutes
+            }
+            'updateIncludePrereleases' { $merged.updateIncludePrereleases = [bool]$value }
             'skillRoots' { $merged.skillRoots = @($value | ForEach-Object { [string]$_ }) }
             'instructionRoots' { $merged.instructionRoots = @($value | ForEach-Object { [string]$_ }) }
             'promptRoots' { $merged.promptRoots = @($value | ForEach-Object { [string]$_ }) }

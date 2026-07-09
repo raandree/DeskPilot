@@ -51,6 +51,8 @@ synonym.
 | User Profile | The durable note the **user** writes about themselves (role, style, recurring context) — the `preferences` Setting — injected into every Turn. | preferences (in UI copy), bio, about-me |
 | Agent Memory | Durable, declarative notes the **agent** curates about the user and their environment across Conversations (conventions, tools, observed preferences, lessons), bounded and injected into every Turn. Learned automatically (throttled) or edited by hand. | memory (bare), agent notes, the memory bank |
 | CopilotAtelier | The sibling repository (`raandree/CopilotAtelier`) of curated Customizations (agents, skills, instructions, prompt files) that DeskPilot can download and register into `~/.copilot` via an opt-in, consent-gated **CopilotAtelier setup** in the Agent menu. | plugin pack, marketplace, extension store, the atelier (bare) |
+| Update | Replacing the installed DeskPilot — and, in lock-step, the Engine (ShellPilot) — with a newer PowerShell Gallery release. DeskPilot checks for one periodically and on demand, but only ever installs on explicit user consent, and the new version takes effect on the next launch. | upgrade, patch, self-update (in UI copy) |
+| Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
 
 ## Notes
 
@@ -144,3 +146,15 @@ synonym.
   same roots resolve. One provisions; the other inspects. Use **CopilotAtelier**
   for the repository/feature and never call the setup a "plugin install" or
   "marketplace".
+- **Preview vs. the `prerelease` field.** UI copy, docs, and prose use **Preview**
+  for a prerelease Gallery version; the wire/JSON fields and code identifiers use
+  `prerelease` to match the PowerShell Gallery boundary — `updateIncludePrereleases`,
+  `targetIsPrerelease`, the `-AllowPrerelease` install flag, and
+  `Invoke-DpSelfUpdate -IncludePrerelease`. This mirrors the Colour / `color`
+  boundary note: the friendly term is canonical, the technical field name is an
+  accepted boundary spelling.
+- **Update vs. CopilotAtelier setup.** Both fetch first-party content over HTTPS
+  on consent, but they are different: **Update** replaces the DeskPilot and
+  ShellPilot **modules** from the PowerShell Gallery (`Install-Module`), while the
+  **CopilotAtelier setup** provisions the `~/.copilot` Customization **roots** from
+  a repository zip. Keep them distinct in code and copy.

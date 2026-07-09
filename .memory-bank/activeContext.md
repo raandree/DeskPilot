@@ -2,6 +2,47 @@
 
 ## Current focus
 
+**Automatic update mechanism (consent-gated, web-UI only) — SHIPPED this turn
+(2026-07-09, local-only; NOT merged, NOT pushed).** The user asked for DeskPilot to
+poll the PowerShell Gallery every ~5 min for a newer version, prefer full releases
+but also consider previews, and — when installing — also update ShellPilot, with a
+DeskPilot prerelease update accepting ShellPilot prereleases. Four decisions were
+confirmed via askQuestions: (1) **consent-gated** notice + "Update now" (no
+auto-install); (2) notice is **web-UI only** (no console); (3) **5-min configurable
+interval + a manual Check-for-updates button**; (4) **stable-first, previews behind
+an opt-in "include previews"** setting — and a preview target accepts a preview
+Engine. **Design:** replaced the launch-only, console-only `Get-DpUpdateNotice`
+with a periodic, UI-surfaced, install-capable mechanism. New Private helpers:
+`Get-DpUpdateStatus` (PURE, `[semver]`-based stable-first/preview-opt-in decision;
+robust 2-/4-part `[version]` fallback), `Invoke-DpSelfUpdate` (installs DeskPilot +
+ShellPilot, `-AllowPrerelease` on BOTH iff the target is a preview; injectable
+`-Installer`/`-VersionReader` for tests; never throws; DeskPilot failure fails the
+op, a later ShellPilot failure is reported but non-fatal), `Get-DpUpdatePayload`
+(wire shape), and `Update-DpUpdateCheckState [-Force]` (reaps the finished
+background `Start-Job` and re-triggers on the interval, on idle accept-loop ticks —
+Gallery is only ever queried off-thread). New Settings `updateCheckIntervalMinutes`
+(5, 1–1440) + `updateIncludePrereleases` ($false). Three routes: `GET /api/update`,
+`POST /api/update/check` (202, force), `POST /api/update/install` (409 no_update /
+already_installing; `Invoke-DpSelfUpdate` **inline** on the accept thread, like the
+Git/atelier routes; 200 restartRequired / 502 update_failed). Accept loop no longer
+prints an update notice. **Frontend:** `#update-notice` banner (the banner text IS
+the consent disclosure) + `refreshUpdateStatus`/`renderUpdateBanner`/`installUpdate`/
+`checkForUpdates`/`renderUpdatePanel`/`wireUpdateAutoRefresh` (60s + focus poll of
+the cheap local `/api/update`); Settings → Engine & data gains an **Updates** panel
+(status, Check-for-updates, Update-now, include-previews checkbox, interval field).
+**Verified: full Sampler build+test 380/380, 0 failed (16 tasks, 0 errors, 0
+warnings); the 4 new helpers AST+PSSA clean (one false-positive
+`PSUseUsingScopeModifierInNewRunspaces` suppressed with justification — the
+Start-Job block takes input via param()+-ArgumentList); `app.js` ESM check exit 0;
+web files language-service clean.** Not yet browser-smoke-tested. Docs: CHANGELOG
+(Added), specs 010 (FR-UP1/FR-UP2, FR-S1) / 030 (Updates section + settings) / 040
+(banner + Updates panel) / 050 (T13), glossary (Update + Preview rows + boundary
+notes). **Note:** the running module can't hot-swap itself; the install writes new
+version-scoped folders and applies on the next launch (the UI then shows "restart
+to apply").
+
+## Prior focus — branch-merge audit
+
 **Branch-merge audit (2026-07-09, read-only, no code changed).** The user asked
 which feature branches still hold unmerged work. Verified against live git (not
 the append-only log, which had drifted): only **three** local branches exist —

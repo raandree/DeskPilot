@@ -487,6 +487,59 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpUsagePayload)
         }
+        'getUpdate' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpUpdatePayload)
+        }
+        'checkUpdate' {
+            # Manual "Check for updates": force an immediate Gallery check
+            # off-thread (Update-DpUpdateCheckState starts a background job unless
+            # one is already running) and return the current status; the SPA polls
+            # GET /api/update until 'checking' clears.
+            try { Update-DpUpdateCheckState -Force } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Status 202 -Json (Get-DpUpdatePayload)
+        }
+        'installUpdate' {
+            # Consent-gated self-update: the SPA calls this only after the user
+            # clicks "Update now" on the notice. It installs the newest DeskPilot
+            # and ShellPilot (a preview DeskPilot target also accepts a preview
+            # ShellPilot) into the CurrentUser scope; the new versions apply on the
+            # next launch. Installing runs inline on this single accept thread -
+            # like the Git/atelier routes - so the server is briefly unresponsive
+            # during the deliberate, one-off download.
+            if ($state.Update.installing) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'already_installing'; message = 'An update is already being installed.' } }
+                return
+            }
+            if (-not $state.Update.updateAvailable) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_update'; message = 'No newer version is available to install.' } }
+                return
+            }
+            $state.Update.installing = $true
+            try {
+                $r = Invoke-DpSelfUpdate -IncludePrerelease:([bool]$state.Update.targetIsPrerelease)
+            }
+            finally {
+                $state.Update.installing = $false
+            }
+            $state.Update.installResult = @{
+                ok              = [bool]$r.Ok
+                restartRequired = [bool]$r.Ok
+                modules         = @($r.Modules)
+                error           = $r.Error
+                installedUtc    = [DateTime]::UtcNow.ToString('o')
+            }
+            if (-not $r.Ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'update_failed'; message = $r.Error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                ok                = $true
+                restartRequired   = $true
+                includePrerelease = [bool]$r.IncludePrerelease
+                modules           = @($r.Modules)
+                message           = 'Update installed. Restart DeskPilot to use the new version.'
+            }
+        }
         'getMemory' {
             Write-DpResponse -Stream $Stream -Json (Get-DpMemoryPayload)
         }

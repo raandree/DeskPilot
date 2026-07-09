@@ -168,7 +168,7 @@ top of the drawer so it stays easy to navigate as settings grow: **General**
 theme), **Permissions**, **Projects** (Projects + reference files),
 **Customizations** (Skill/Instruction/Prompt roots, Agents folder, Atelier
 health), **Memory & context** (User profile, Agent memory, auto-compaction), and
-**Engine & data** (spend warning, Engine status, back up & restore). Only the
+**Engine & data** (spend warning, updates, Engine status, back up & restore). Only the
 active tab's fields are shown; the strip is a WAI-ARIA `tablist` (Left/Right and
 Home/End move between tabs).
 
@@ -198,6 +198,15 @@ Home/End move between tabs).
   reference (see FR-M7, FR-M12, FR-M13).
 - Theme (system/light/dark).
 - Engine status (path, version, auth) + a **Re-authenticate** action.
+- **Updates**: a status line (up to date / update available / checking / restart
+  required), a **Check for updates** button, an **Update now** button (shown only
+  when a newer version is available), an **Include preview releases** checkbox, and
+  a **Check every N minutes** field (1–1440, default 5). When a newer version is
+  found, a dismissible **update banner** also appears at the top of the app; its
+  text is the consent disclosure (it names that **Update now** installs the newest
+  DeskPilot and ShellPilot from the Gallery and needs a restart). Once installed,
+  the banner switches to a non-dismissible **restart to apply** message. Update
+  notices are web-UI only — nothing is printed to the launcher console (see FR-UP1).
 - **Back up & restore** of all settings as a JSON file.
 
 ### 6a. Project file explorer (right panel)

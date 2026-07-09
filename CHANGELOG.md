@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic update checks with a consent-gated in-app update.** DeskPilot now
+  polls the PowerShell Gallery for a newer release in the background (every 5
+  minutes by default, configurable in **Settings → Engine & data → Updates**, plus
+  a manual **Check for updates** button) and, when one is found, shows a dismissible
+  banner in the UI. Clicking **Update now** installs the newest DeskPilot **and**
+  ShellPilot into the CurrentUser scope and then prompts for a restart (the new
+  versions apply on the next launch). Full releases are offered by default; an
+  opt-in **Include preview releases** setting also considers previews, and updating
+  DeskPilot to a preview accepts a preview ShellPilot too — otherwise both are
+  pinned to stable. The check is fail-silent and never blocks serving (it runs in a
+  background job), and the notice is web-UI only (no console output). New
+  `GET /api/update`, `POST /api/update/check`, and `POST /api/update/install`
+  routes; new `updateCheckIntervalMinutes` and `updateIncludePrereleases` Settings;
+  new `Get-DpUpdateStatus`, `Invoke-DpSelfUpdate`, `Get-DpUpdatePayload` and
+  `Update-DpUpdateCheckState` helpers (replacing the launch-only, console-only
+  `Get-DpUpdateNotice`); +18 unit tests.
 - **Set up CopilotAtelier from the Agent menu.** The Agent dropdown has a new
   **Set up CopilotAtelier…** action that provisions the
   [CopilotAtelier](https://github.com/raandree/CopilotAtelier) customization set —

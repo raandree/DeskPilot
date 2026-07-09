@@ -1866,6 +1866,61 @@ button.tree-row {
     z-index: 40;
 }
 
+/* Update-available notice: friendlier accent colour and an inline action row. */
+.update-banner {
+    background: var(--accent);
+    color: var(--on-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.update-banner .update-msg {
+    max-width: 820px;
+}
+
+.update-banner .update-actions {
+    display: inline-flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.update-banner .btn {
+    margin: 0;
+    width: auto;
+}
+
+.update-banner .btn-ghost {
+    background: transparent;
+    color: var(--on-accent);
+    border: 1px solid var(--on-accent);
+}
+
+/* Settings -> Engine & data "Updates" panel. */
+.update-panel {
+    font-size: 13px;
+    color: var(--text);
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.update-interval-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.update-interval-row input {
+    width: 90px;
+    flex: 0 0 auto;
+}
+
 /* ===== Popover ===== */
 .popover {
     position: fixed;

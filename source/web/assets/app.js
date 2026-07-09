@@ -95,6 +95,10 @@ const state = {
     pendingAttachments: [],
     agents: [],
     usageRange: 14,
+    // Latest cached update status from GET /api/update (or null before the first
+    // fetch). Drives the update banner and the Settings "Updates" panel.
+    update: null,
+    updateDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
     // on; searchResults (when non-null) replaces the list with server search hits.
     showArchived: false,
@@ -204,6 +208,8 @@ async function enterApp() {
     wireAgentsAutoRefresh();
     await loadConversations();
     await refreshUsage();
+    refreshUpdateStatus();
+    wireUpdateAutoRefresh();
     // Deep link: /?c=<id> opens that Conversation directly (used by "Open in new
     // window"), else fall back to the most recent, else a fresh Conversation.
     const deepId = new URLSearchParams(location.search).get('c');
@@ -2361,6 +2367,123 @@ function wireAgentsAutoRefresh() {
     setInterval(tick, 15000);
 }
 
+// ===== Updates =====
+let _updateAutoWired = false;
+
+// Poll the Host Server's cached Gallery-update status and re-render the surfaces.
+// The server runs the actual (throttled) Gallery check in the background; the SPA
+// only reflects it, so this is a cheap local request.
+async function refreshUpdateStatus() {
+    try { state.update = await api('GET', '/api/update'); }
+    catch { return; }
+    renderUpdateBanner();
+    renderUpdatePanel();
+}
+
+function wireUpdateAutoRefresh() {
+    if (_updateAutoWired) return;
+    _updateAutoWired = true;
+    const tick = () => {
+        if (document.visibilityState !== 'visible') return;
+        refreshUpdateStatus();
+    };
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+    setInterval(tick, 60000);
+}
+
+// The dismissible "update available" banner. Once installed it flips to a
+// "restart to apply" message that cannot be dismissed (the update only takes
+// effect on the next launch), so the user always sees the next step. The banner
+// text is the consent disclosure: it names what "Update now" will install.
+function renderUpdateBanner() {
+    const el = $('update-notice');
+    if (!el) return;
+    const u = state.update;
+    if (!u) { el.classList.add('hidden'); return; }
+    if (u.installResult && u.installResult.restartRequired) {
+        const ver = u.targetVersion ? escapeHtml(String(u.targetVersion)) : 'the latest version';
+        el.innerHTML = `<span class="update-msg">DeskPilot was updated to ${ver}. Restart DeskPilot to apply it.</span>`;
+        el.classList.remove('hidden');
+        return;
+    }
+    if (!u.updateAvailable || state.updateDismissed) { el.classList.add('hidden'); return; }
+    const kind = u.targetIsPrerelease ? ' preview' : '';
+    const ver = escapeHtml(String(u.targetVersion || ''));
+    el.innerHTML =
+        `<span class="update-msg">DeskPilot ${ver}${kind} is available. Updating installs the newest DeskPilot and ShellPilot from the PowerShell Gallery and needs a restart.</span>` +
+        '<span class="update-actions">' +
+        '<button type="button" class="btn btn-small" id="update-now">Update now</button>' +
+        '<button type="button" class="btn btn-small btn-ghost" id="update-dismiss">Dismiss</button>' +
+        '</span>';
+    el.classList.remove('hidden');
+    $('update-now').onclick = () => installUpdate();
+    $('update-dismiss').onclick = () => { state.updateDismissed = true; el.classList.add('hidden'); };
+    if (u.installing) { $('update-now').disabled = true; $('update-now').textContent = 'Updating…'; }
+}
+
+// POST the consent-gated install. The request blocks until the Gallery install
+// finishes (the single-threaded server is briefly busy), so show progress and
+// then the restart prompt.
+async function installUpdate() {
+    const btn = $('update-now');
+    if (btn) { btn.disabled = true; btn.textContent = 'Updating…'; }
+    if (state.update) { state.update.installing = true; }
+    renderUpdatePanel();
+    toast('Updating DeskPilot and ShellPilot…');
+    try {
+        const r = await api('POST', '/api/update/install');
+        state.update = await api('GET', '/api/update');
+        renderUpdateBanner();
+        renderUpdatePanel();
+        toast((r && r.message) || 'Update installed. Restart DeskPilot to apply.');
+    } catch (e) {
+        if (state.update) { state.update.installing = false; }
+        renderUpdateBanner();
+        renderUpdatePanel();
+        toast((e && e.message) || 'Update failed.');
+    }
+}
+
+// The manual "Check for updates" button: trigger a server-side Gallery check,
+// then poll the cached status until the check clears.
+async function checkForUpdates() {
+    const btn = $('update-check');
+    if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+    try { await api('POST', '/api/update/check'); } catch { /* fail-silent */ }
+    for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        try { state.update = await api('GET', '/api/update'); } catch { break; }
+        renderUpdateBanner();
+        renderUpdatePanel();
+        if (!state.update || !state.update.checking) break;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = 'Check for updates'; }
+}
+
+// Reflect update status in the Settings -> Engine & data "Updates" panel (present
+// in the DOM only while the drawer is open, so this is a no-op otherwise).
+function renderUpdatePanel() {
+    const status = $('set-update-status');
+    if (!status) return;
+    const u = state.update;
+    const now = $('set-update-now');
+    if (!u) { status.textContent = 'Checking…'; return; }
+    if (u.installResult && u.installResult.restartRequired) {
+        status.textContent = `Updated to ${u.targetVersion || 'the latest version'} — restart DeskPilot to apply.`;
+    } else if (u.installing) {
+        status.textContent = 'Installing update…';
+    } else if (u.checking) {
+        status.textContent = 'Checking the PowerShell Gallery…';
+    } else if (u.updateAvailable) {
+        const kind = u.targetIsPrerelease ? ' (preview)' : '';
+        status.textContent = `Update available: ${u.targetVersion}${kind} (installed ${u.currentVersion}).`;
+    } else {
+        status.textContent = `Up to date (installed ${u.currentVersion || '—'}).`;
+    }
+    if (now) now.classList.toggle('hidden', !(u.updateAvailable && !(u.installResult && u.installResult.restartRequired)));
+}
+
 // ===== Git bar (in the explorer) =====
 async function refreshGitBar(silent) {
     const bar = $('git-bar');
@@ -3504,6 +3627,21 @@ function openSettings() {
         <p class="hint">Shows a one-time warning when this session's estimated cost crosses the amount.</p>
       </div>
       <div class="field">
+        <label>Updates</label>
+        <div class="update-panel" id="set-update-status">Checking…</div>
+        <div class="backup-row">
+          <button class="btn btn-small" id="update-check" type="button">Check for updates</button>
+          <button class="btn btn-small btn-primary hidden" id="set-update-now" type="button">Update now</button>
+        </div>
+        <label style="margin-top:10px"><input type="checkbox" id="set-update-prerelease" ${s.updateIncludePrereleases ? 'checked' : ''} /> Include preview releases</label>
+        <div class="update-interval-row">
+          <label for="set-update-interval">Check every</label>
+          <input type="number" id="set-update-interval" min="1" max="1440" step="1" value="${(s.updateCheckIntervalMinutes || 5)}" />
+          <span class="muted tiny">minutes</span>
+        </div>
+        <p class="hint">DeskPilot checks the PowerShell Gallery for a newer version. Updating also updates ShellPilot; a preview update accepts ShellPilot previews. Changes apply after you restart DeskPilot.</p>
+      </div>
+      <div class="field">
         <label>Engine</label>
         <div class="engine-status" id="set-engine">Checking…</div>
         <button class="btn" id="set-reauth" style="margin-top:10px">Re-authenticate</button>
@@ -3625,6 +3763,12 @@ function openSettings() {
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
+    $('update-check').onclick = () => checkForUpdates();
+    $('set-update-now').onclick = () => installUpdate();
+    $('set-update-prerelease').onchange = async (e) => { await save({ updateIncludePrereleases: e.target.checked }); checkForUpdates(); };
+    $('set-update-interval').onchange = (e) => { let v = parseInt(e.target.value, 10); if (!v || v < 1) { v = 5; } if (v > 1440) { v = 1440; } e.target.value = v; save({ updateCheckIntervalMinutes: v }); };
+    renderUpdatePanel();
+    refreshUpdateStatus();
     $('set-export').onclick = () => exportSettings();
     $('set-import').onclick = () => $('set-import-file').click();
     $('set-import-file').addEventListener('change', (e) => {

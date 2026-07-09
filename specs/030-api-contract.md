@@ -94,6 +94,10 @@ The memory-and-context keys are validated on write: `autoCompaction` (boolean),
 percent ÷ 100), and `compactionKeepRecent` (an integer 2–100). Out-of-range values
 return `400`.
 
+The update keys are validated on write: `updateCheckIntervalMinutes` (an integer
+1–1440; out of range returns `400`) and `updateIncludePrereleases` (boolean). They
+control the background Gallery check (see **Updates**).
+
 Projects are managed through this endpoint: send `projects` (an array of
 `{ id?, name?, path }`; a missing `id` is generated and a missing `name`
 defaults to the path leaf) and/or `selectedProjectId` (must reference a known
@@ -604,6 +608,68 @@ are rounded to 4 decimals and cost to 6 to avoid floating-point drift.
 Resets a counter to zero. Body: `{ "scope": "lifetime" | "session" }`
 (defaults to `lifetime`). Resetting `lifetime` also sets a new `sinceUtc` and
 rewrites `lifetime-usage.json`. Returns the same payload as `GET /api/usage`.
+
+## Updates
+
+DeskPilot checks the PowerShell Gallery for a newer release in a background job
+(never inline on the accept thread) and surfaces the result **only in the web
+UI**. The check is paced by `updateCheckIntervalMinutes` (default 5) and can be
+forced on demand. The newest **stable** release is the default target; a preview
+is offered only when `updateIncludePrereleases` is on and it is strictly newer
+than both the running version and the newest stable (`Get-DpUpdateStatus`).
+
+### `GET /api/update`
+
+Returns the cached update status (`Get-DpUpdatePayload`):
+
+```json
+{
+  "currentVersion": "0.2.0",
+  "latestStable": "0.3.0",
+  "latestPrerelease": null,
+  "includePrereleases": false,
+  "intervalMinutes": 5,
+  "updateAvailable": true,
+  "targetVersion": "0.3.0",
+  "targetIsPrerelease": false,
+  "notice": "DeskPilot 0.3.0 is available (installed: 0.2.0).",
+  "checkedUtc": "2026-07-09T12:00:00Z",
+  "checking": false,
+  "installing": false,
+  "installResult": null
+}
+```
+
+### `POST /api/update/check`
+
+Forces an immediate background Gallery check (unless one is already running) and
+returns the current `GET /api/update` payload with `202 Accepted`. The SPA polls
+`GET /api/update` until `checking` clears. Drives the **Check for updates** button.
+
+### `POST /api/update/install`
+
+Consent-gated self-update. Installs the newest DeskPilot **and** ShellPilot into
+the CurrentUser scope via `Invoke-DpSelfUpdate`; when the target is a preview
+(`targetIsPrerelease`), prereleases are allowed for **both** modules, otherwise
+both are pinned to stable. Runs **inline** on the single accept thread (like the
+Git/atelier routes), so the server is briefly unresponsive during the deliberate,
+one-off download. The new versions land in new version-scoped folders and take
+effect on the **next launch** (`restartRequired: true`). Errors: `409 no_update`
+(nothing newer is available), `409 already_installing`, `502 update_failed` (the
+DeskPilot install failed). On success:
+
+```json
+{
+  "ok": true,
+  "restartRequired": true,
+  "includePrerelease": false,
+  "modules": [
+    { "name": "DeskPilot", "version": "0.3.0", "installed": true, "error": null },
+    { "name": "ShellPilot", "version": "0.2.5", "installed": true, "error": null }
+  ],
+  "message": "Update installed. Restart DeskPilot to use the new version."
+}
+```
 
 ## Memory
 
