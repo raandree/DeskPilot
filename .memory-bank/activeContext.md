@@ -3,8 +3,9 @@
 ## Current focus
 
 **Fixed clean-machine sign-in — the Engine token-file rename broke DeskPilot's
-auth detection (2026-07-09, on `ai/fix-clean-machine-auth`, local-only; NOT
-pushed/merged).** A user reported that authenticating in DeskPilot on a new clean
+auth detection (2026-07-09; fix `458e250` now MERGED into `main` via merge commit
+`734e646` — clean, no conflicts; `main` is 2 ahead of `origin/main`, local-only,
+NOT pushed).** A user reported that authenticating in DeskPilot on a new clean
 machine never completed (they had installed ShellPilot `0.2.1-preview0001`
 first). Root cause: ShellPilot renamed its cached OAuth token file from
 `.copilot-demo-token` to `.shellpilot-token` in 0.2.1, but `Initialize-DpEngine`
