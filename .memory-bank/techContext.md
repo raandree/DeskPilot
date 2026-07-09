@@ -40,8 +40,14 @@
   stores one history array per Conversation and replays it each Turn — this
   isolates Conversations and avoids the Engine's module-scoped running chat.
 - Model control: `Get-ShpModel`, `Get-ShpModelName`, `Select-ShpModel`.
-- Auth: `Initialize-Shp` runs the GitHub device-code flow once; the token is
-  cached at `$env:USERPROFILE\.copilot-demo-token`.
+- Auth: `Initialize-Shp` runs the GitHub device-code flow once; the Engine caches
+  the token as a hidden dot-file in the user's home directory. The filename is the
+  Engine's own default and is NOT stable across versions (ShellPilot renamed it
+  from `.copilot-demo-token` to `.shellpilot-token` in 0.2.1), so DeskPilot never
+  hardcodes it: `Initialize-DpEngine` probes the imported Engine's
+  `$script:DefaultTokenPath` and uses that for the "signed in?" check
+  (`Test-Path`), falling back to the current name — preferring an existing legacy
+  token — when the probe is unavailable.
 - Skills/instructions: `-SkillPath`, `-InstructionRoot`, `-InstructionPath`.
 - No native Agent or System-prompt-file concept beyond `-SystemPrompt` /
   `-SystemPromptPath`; DeskPilot's **Agents** are `*.agent.md` files (default

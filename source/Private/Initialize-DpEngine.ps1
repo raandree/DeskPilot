@@ -52,11 +52,44 @@ function Initialize-DpEngine {
         $importShell.Dispose()
     }
 
-    $tokenPath = if ($env:USERPROFILE) {
-        Join-Path $env:USERPROFILE '.copilot-demo-token'
+    # DeskPilot detects a completed sign-in by the presence of the Engine's
+    # cached OAuth token file, so it must look at the exact path the Engine
+    # writes. That default is NOT stable across Engine versions - ShellPilot
+    # renamed it from '.copilot-demo-token' to '.shellpilot-token' - and a
+    # hardcoded name silently drifts: the user completes the device flow, the
+    # Engine writes the new file, DeskPilot checks the old name, finds nothing,
+    # and reports "sign-in did not complete" on every attempt. So ask the
+    # imported Engine for its own default instead. $script:DefaultTokenPath is
+    # the Engine's single source of truth (every -TokenPath parameter defaults
+    # to it); read it in the module's own scope. Fall back to a best-effort path
+    # only when the probe is unavailable (Engine not imported, or a future
+    # rename of that variable).
+    $tokenPath = $null
+    if ($imported) {
+        $probeShell = [powershell]::Create()
+        $probeShell.Runspace = $runspace
+        try {
+            $null = $probeShell.AddScript('$m = Get-Module -Name ShellPilot | Select-Object -First 1; if ($m) { & $m { $script:DefaultTokenPath } }')
+            $probed = $probeShell.Invoke()
+            if (-not $probeShell.HadErrors -and $probed.Count -gt 0) {
+                $candidate = [string]($probed | Select-Object -First 1)
+                if (-not [string]::IsNullOrWhiteSpace($candidate)) { $tokenPath = $candidate }
+            }
+        }
+        catch { $null = $_ }
+        finally { $probeShell.Dispose() }
     }
-    else {
-        Join-Path $HOME '.copilot-demo-token'
+
+    if (-not $tokenPath) {
+        # Prefer the current Engine token name; still recognise an existing
+        # legacy token so a machine signed in with an older Engine keeps counting
+        # as authenticated; otherwise default to the current name.
+        $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+        $currentTokenName = Join-Path $userHome '.shellpilot-token'
+        $legacyTokenName = Join-Path $userHome '.copilot-demo-token'
+        $tokenPath = if (Test-Path -LiteralPath $currentTokenName) { $currentTokenName }
+            elseif (Test-Path -LiteralPath $legacyTokenName) { $legacyTokenName }
+            else { $currentTokenName }
     }
 
     @{

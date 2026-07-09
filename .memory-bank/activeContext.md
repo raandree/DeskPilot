@@ -2,6 +2,38 @@
 
 ## Current focus
 
+**Fixed clean-machine sign-in — the Engine token-file rename broke DeskPilot's
+auth detection (2026-07-09, on `ai/fix-clean-machine-auth`, local-only; NOT
+pushed/merged).** A user reported that authenticating in DeskPilot on a new clean
+machine never completed (they had installed ShellPilot `0.2.1-preview0001`
+first). Root cause: ShellPilot renamed its cached OAuth token file from
+`.copilot-demo-token` to `.shellpilot-token` in 0.2.1, but `Initialize-DpEngine`
+hardcoded the old name into `Engine.TokenPath`. On a clean machine — the ONLY
+path that runs the real device-code flow, since a machine with a stale token
+short-circuits in `Invoke-DpAuthFlow` as "already signed in" — the flow
+completed and the Engine wrote `~/.shellpilot-token`, but the post-auth
+`Test-Path Engine.TokenPath` (and `/api/health`, `/api/auth/status`) checked
+`~/.copilot-demo-token`, found nothing, and returned `authenticated:false`, so
+the SPA showed *"Sign-in did not complete. Try again."* on every attempt — an
+inescapable loop. Fix (single point, `Initialize-DpEngine`): after importing the
+Engine, probe its own `$script:DefaultTokenPath` in the module's scope
+(`& (Get-Module ShellPilot) { $script:DefaultTokenPath }`) and use that for
+`Engine.TokenPath`; fall back to `~/.shellpilot-token` (preferring an existing
+legacy `~/.copilot-demo-token`) only when the probe is unavailable. DeskPilot is
+now version-agnostic to the Engine's token filename — it always checks the file
+the Engine actually writes — and the one change fixes all four `Engine.TokenPath`
+consumers. **Verified: the probe was reproduced live against ShellPilot 0.2.0 on
+disk (returns `...\.copilot-demo-token`, 0.2.0's default — proving it reads
+whatever the imported Engine uses; 0.2.1 returns `.shellpilot-token`);
+`Initialize-DpEngine.ps1` AST parse 0 errors + PSScriptAnalyzer clean; full Unit
+suite 207/207, `Test-DpAuthError`/`Test-DpTransientEngineError` 19/19.** The
+attached video could not be decoded here; the diagnosis was reconstructed from
+the DeskPilot auth path plus the current ShellPilot source (its CHANGELOG rename
+note). Docs: CHANGELOG (Fixed), techContext auth fact, specs/050 T4; the two
+classifier test sample strings were refreshed to the current filename.
+
+## Prior focus — Gallery publish (web UI bundled)
+
 **Publish DeskPilot to the PowerShell Gallery with the web UI bundled - SHIPPED
 on `ai/gallery-web-bundle` (2026-07-08, local-only; NOT merged, NOT pushed, NOT
 published).** After a fresh grill-me interview (signed off), implemented the

@@ -2582,7 +2582,7 @@ Describe 'Test-DpAuthError' {
         Test-DpAuthError -ErrorRecord 'Session token exchange failed: some detail' | Should -BeTrue
     }
     It 'flags a missing token-file message' {
-        Test-DpAuthError -ErrorRecord 'Token file not found: C:\Users\me\.copilot-demo-token. Run Initialize-Shp first.' | Should -BeTrue
+        Test-DpAuthError -ErrorRecord 'Token file not found: C:\Users\me\.shellpilot-token. Run Initialize-Shp first.' | Should -BeTrue
     }
     It 'recognises an auth failure wrapped in an inner exception' {
         $inner = [System.Exception]::new('Response status code does not indicate success: 401 (Unauthorized).')
@@ -2630,7 +2630,7 @@ Describe 'Test-DpTransientEngineError' {
         Test-DpTransientEngineError -ErrorRecord 'Session token exchange failed: Response status code does not indicate success: 401 (Unauthorized).' | Should -BeFalse
     }
     It 'does NOT flag a missing token file' {
-        Test-DpTransientEngineError -ErrorRecord 'Token file not found: C:\Users\me\.copilot-demo-token. Run Initialize-Shp first.' | Should -BeFalse
+        Test-DpTransientEngineError -ErrorRecord 'Token file not found: C:\Users\me\.shellpilot-token. Run Initialize-Shp first.' | Should -BeFalse
     }
     It 'does NOT flag an unrelated engine error' {
         Test-DpTransientEngineError -ErrorRecord 'The model returned an empty response.' | Should -BeFalse

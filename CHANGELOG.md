@@ -200,6 +200,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sign-in now works on a clean machine.** On a machine that had never signed in
+  before, completing the GitHub device-code flow left you stuck on *"Sign-in did
+  not complete. Try again."* — every attempt looped without ever entering the app.
+  The cause: the engine (ShellPilot) renamed the file it caches your sign-in token
+  in from `.copilot-demo-token` to `.shellpilot-token` (in 0.2.1), but DeskPilot
+  still checked the old name, so it never saw the token the engine had just
+  written. DeskPilot no longer hardcodes that filename — it asks the engine for the
+  path it actually uses — so sign-in is recognised regardless of the engine's token
+  filename (and machines already signed in with an older engine keep working). If
+  you hit this, just sign in once more; it now completes.
 - **The model's Thinking is now readable — line breaks are preserved.** When you
   show the model's thinking, its reasoning is streamed to the browser as it is
   produced. Each line the engine writes arrived without its trailing line break, so
