@@ -793,6 +793,17 @@ button.tree-row {
     gap: 8px;
 }
 
+/* Muted DeskPilot version in the sidebar's bottom-left corner. */
+.app-version {
+    padding: 2px 12px 9px;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--muted);
+    text-align: center;
+    letter-spacing: .3px;
+    user-select: text;
+}
+
 .usage-chip {
     border: 1px solid var(--border);
     background: var(--surface);

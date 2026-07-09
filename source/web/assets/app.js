@@ -195,6 +195,7 @@ async function init() {
     let health = null;
     try { health = await api('GET', '/api/health'); } catch { /* offline */ }
     if (!health) { showBanner('Cannot reach the DeskPilot Host Server. Is it still running?'); return; }
+    setAppVersion(health.version);
     if (health.engineError) showBanner('Engine not loaded: ' + health.engineError);
     try { await loadSettings(); } catch { /* defaults */ }
     if (health.authenticated) await enterApp();
@@ -3925,6 +3926,12 @@ function showBanner(msg) {
     const b = $('engine-notice');
     b.textContent = msg;
     b.classList.remove('hidden');
+}
+
+// Show the running DeskPilot version in the sidebar corner (from /api/health).
+function setAppVersion(v) {
+    const el = $('app-version');
+    if (el) { el.textContent = v ? ('DeskPilot v' + v) : ''; }
 }
 
 async function startAuth() {

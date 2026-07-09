@@ -39,7 +39,10 @@ web files language-service clean.** Not yet browser-smoke-tested. Docs: CHANGELO
 (banner + Updates panel) / 050 (T13), glossary (Update + Preview rows + boundary
 notes). **Note:** the running module can't hot-swap itself; the install writes new
 version-scoped folders and applies on the next launch (the UI then shows "restart
-to apply").
+to apply"). **Follow-up (this turn):** also show the running DeskPilot version as a
+muted `DeskPilot vX.Y.Z` line in the sidebar's bottom-left corner (`#app-version`,
+set from `GET /api/health`'s `version` in `init`); frontend-only (index.html + a
+`.app-version` rule + `setAppVersion`), so the build/test surface is unchanged.
 
 ## Prior focus — branch-merge audit
 

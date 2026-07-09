@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   new `Get-DpUpdateStatus`, `Invoke-DpSelfUpdate`, `Get-DpUpdatePayload` and
   `Update-DpUpdateCheckState` helpers (replacing the launch-only, console-only
   `Get-DpUpdateNotice`); +18 unit tests.
+- **DeskPilot version shown in the sidebar corner.** The running version (from
+  `GET /api/health`) now appears as a muted `DeskPilot vX.Y.Z` line in the
+  bottom-left of the sidebar, so the installed build is always visible at a glance
+  (and easy to quote alongside the update banner).
 - **Set up CopilotAtelier from the Agent menu.** The Agent dropdown has a new
   **Set up CopilotAtelier…** action that provisions the
   [CopilotAtelier](https://github.com/raandree/CopilotAtelier) customization set —
