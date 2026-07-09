@@ -1033,6 +1033,29 @@ function Invoke-DpRouteHandler {
         'atelierHealth' {
             Write-DpResponse -Stream $Stream -Json (Get-DpAtelierHealth -Settings $state.Settings)
         }
+        'atelierSetup' {
+            # Opt-in and consent-gated: download CopilotAtelier and run its
+            # Setup-CopilotSettings.ps1. The SPA requires an explicit confirmation
+            # (a modal that spells out what the script changes) before calling
+            # this, so it is never a one-click action. Downloading blocks this
+            # single accept thread briefly, like the Git routes - acceptable for a
+            # deliberate, one-time action.
+            $r = Invoke-DpAtelierSetup
+            if (-not $r.Ok) {
+                $code = if ($r.Code) { $r.Code } else { 'atelier_setup_failed' }
+                $status = if ($code -eq 'download_failed') { 502 } else { 500 }
+                Write-DpResponse -Stream $Stream -Status $status -Json @{ error = @{ code = $code; message = $r.Error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                ok         = $true
+                launched   = $r.Launched
+                windows    = $r.Windows
+                sourcePath = $r.SourcePath
+                scriptPath = $r.ScriptPath
+                message    = $r.Message
+            }
+        }
         default {
             Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = "Unknown handler '$Name'." } }
         }

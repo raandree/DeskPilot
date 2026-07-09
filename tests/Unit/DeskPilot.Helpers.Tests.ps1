@@ -1554,6 +1554,45 @@ Describe 'Get-DpAtelierHealth' {
     }
 }
 
+Describe 'Invoke-DpAtelierSetup' {
+    It 'returns a script_missing error when the source has no setup script' {
+        $src = Join-Path $TestDrive 'atelier-empty'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        $r = Invoke-DpAtelierSetup -SourcePath $src -IsWindowsPlatform $true -Launcher { param($p) }
+        $r.Ok | Should -BeFalse
+        $r.Code | Should -Be 'script_missing'
+    }
+    It 'does not launch on a non-Windows host but returns the downloaded path' {
+        $src = Join-Path $TestDrive 'atelier-nix'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $src 'Setup-CopilotSettings.ps1') -Value '# noop' -Encoding utf8
+        $r = Invoke-DpAtelierSetup -SourcePath $src -IsWindowsPlatform $false -Launcher { param($p) throw 'should not run' }
+        $r.Ok | Should -BeTrue
+        $r.Launched | Should -BeFalse
+        $r.SourcePath | Should -Be $src
+    }
+    It 'launches the setup script on Windows via the injected launcher' {
+        $src = Join-Path $TestDrive 'atelier-win'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        $scriptPath = Join-Path $src 'Setup-CopilotSettings.ps1'
+        Set-Content -LiteralPath $scriptPath -Value '# noop' -Encoding utf8
+        $captured = @{ path = $null }
+        $r = Invoke-DpAtelierSetup -SourcePath $src -IsWindowsPlatform $true -Launcher { param($p) $captured.path = $p }
+        $r.Ok | Should -BeTrue
+        $r.Launched | Should -BeTrue
+        $r.ScriptPath | Should -Be $scriptPath
+        $captured.path | Should -Be $scriptPath
+    }
+    It 'reports a launch_failed code when the launcher throws' {
+        $src = Join-Path $TestDrive 'atelier-fail'
+        New-Item -ItemType Directory -Path $src -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $src 'Setup-CopilotSettings.ps1') -Value '# noop' -Encoding utf8
+        $r = Invoke-DpAtelierSetup -SourcePath $src -IsWindowsPlatform $true -Launcher { param($p) throw 'boom' }
+        $r.Ok | Should -BeFalse
+        $r.Code | Should -Be 'launch_failed'
+    }
+}
+
 Describe 'Get-DpGitDiff' {
     It 'reports no project folder when the root is missing' {
         $r = Get-DpGitDiff -Root (Join-Path $TestDrive 'no-such') -Path 'x.txt'

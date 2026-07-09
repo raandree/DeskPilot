@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Set up CopilotAtelier from the Agent menu.** The Agent dropdown has a new
+  **Set up CopilotAtelier…** action that provisions the
+  [CopilotAtelier](https://github.com/raandree/CopilotAtelier) customization set —
+  the curated agents, skills, instructions and prompt files that feed the very
+  menu it lives in. Because CopilotAtelier is a repository rather than an
+  installable module, DeskPilot downloads it (a zip of the `main` branch over
+  HTTPS from the fixed first-party URL, extracted under the data directory) and
+  runs its `Setup-CopilotSettings.ps1`, which links
+  `~/.copilot/{agents,instructions,skills,prompts}` to a synced copy. It is
+  deliberately **not a one-click action**: choosing the menu item first opens a
+  consent dialog that spells out exactly what the script changes (the `~/.copilot`
+  junctions, VS Code `settings.json`/`keybindings.json`, and the
+  `COPILOT_ALLOW_ALL` user environment variable) before anything is downloaded or
+  run, and the script then runs in a visible PowerShell console the user drives so
+  its own safety prompts (OneDrive account choice, replacing a non-empty folder)
+  work. Windows only — the script uses NTFS junctions; on other platforms the
+  files are fetched for a manual run. New `POST /api/atelier/setup` route and
+  `Get-DpAtelierSource` / `Invoke-DpAtelierSetup` helpers (+4 unit tests).
 - **Publishable from the PowerShell Gallery, with the web UI bundled.** The
   DeskPilot web UI now ships inside the module (ModuleBuilder `CopyPaths`), so
   `Install-Module DeskPilot; Start-DeskPilot` serves the full interface from the

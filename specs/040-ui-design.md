@@ -127,6 +127,16 @@ accent fills so the bright dark-mode accent stays legible.
   reads **No project**. Registering opens a **folder picker** modal (drive
   switcher, breadcrumb path, Up/Home, a scrollable sub-folder list, and New
   folder) so the user browses to a folder instead of typing an absolute path.
+- **Agent** dropdown to pick a persona (an `*.agent.md` under the Agents folder);
+  its body becomes the Turn's system prompt. The menu also has a **Set up
+  CopilotAtelier…** action that opens a consent dialog and, once confirmed,
+  downloads the [CopilotAtelier](https://github.com/raandree/CopilotAtelier)
+  repository and runs its `Setup-CopilotSettings.ps1` to populate
+  `~/.copilot/{agents,instructions,skills,prompts}` — so this very menu fills with
+  agents. It is never one click: the dialog spells out that DeskPilot downloads
+  and runs code that changes the machine (the `~/.copilot` junctions, VS Code
+  `settings.json`/`keybindings.json`, the `COPILOT_ALLOW_ALL` env var), and the
+  script then runs in a PowerShell console the user drives. Windows only.
 - **Attach** button to upload files (into the selected Project, or a
   data-directory uploads folder when no Project is active).
 - **Send** turns into **Stop** while a Turn streams.

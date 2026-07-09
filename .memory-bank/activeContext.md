@@ -2,6 +2,44 @@
 
 ## Current focus
 
+**Added an opt-in CopilotAtelier setup to the Agent menu — SHIPPED on
+`ai/atelier-setup` (2026-07-09, local-only; NOT merged, NOT pushed).** The user
+asked for a way to set up [CopilotAtelier](https://github.com/raandree/CopilotAtelier)
+from the Agent picker (the "No agent" popover in the composer). Since it is a
+repository, not an installable module, DeskPilot now downloads it and runs its
+`Setup-CopilotSettings.ps1` — but only after explicit consent (the user's
+requirement: "ask for permission, not one-click"). **Design:** the Agent menu
+(`buildAgentMenu`) always shows a **Set up CopilotAtelier…** action (below the
+agents/divider), which opens a dedicated consent modal (`#atelier-modal`) that
+spells out exactly what the script changes — the `~/.copilot/{agents,
+instructions,skills,prompts}` NTFS junctions, VS Code `settings.json`/
+`keybindings.json`, and the `COPILOT_ALLOW_ALL` user env var — before anything is
+fetched or run. On confirm it POSTs `/api/atelier/setup`. **Backend:** two new
+Private helpers — `Get-DpAtelierSource` (downloads the `main` zipball over HTTPS
+from the fixed first-party URL via `Invoke-WebRequest`, extracts it, and
+normalises the folder to the canonical `CopilotAtelier` name the setup script
+derives its OneDrive target from; under `<dataDir>/atelier`; never throws) and
+`Invoke-DpAtelierSetup` (locates `Setup-CopilotSettings.ps1` and, **on Windows**,
+launches it in a **visible `pwsh` console the user drives** so the script's own
+`Read-Host` prompts — OneDrive account choice, replacing a non-empty folder —
+work and DeskPilot never answers them; on non-Windows it returns the path for a
+manual run). The launcher and `$IsWindows` are injectable params (`-Launcher`,
+`-IsWindowsPlatform`) so the orchestration is unit-tested without a real process
+or network. Route `POST /api/atelier/setup` (token-gated like all `/api/*`) →
+`atelierSetup` handler. **Frontend:** `openAtelierSetup`/`renderAtelierConsent`/
+`runAtelierSetup` + a Refresh-agents step that re-loads the agent list and Atelier
+health once setup finishes. **Security:** downloading+executing remote code is the
+requested function; mitigated by the fixed first-party HTTPS URL (no
+user-supplied URL → no SSRF/injection), the explicit consent gate, the
+user-driven console, and Windows-scoping the auto-run (specs/050 T12).
+**Verified: full Sampler build+test 364/364, 0 failed (16 tasks, 0 errors, 0
+warnings); both new helpers AST-parse + PSSA clean; `app.js` ESM check OK; web
+files language-service clean.** Not yet browser-smoke-tested. Docs: CHANGELOG
+(Added), specs 010 (FR-X7) / 040 (Agent dropdown) / 050 (T12), glossary
+(CopilotAtelier row + note).
+
+## Prior focus — clean-machine sign-in fix
+
 **Fixed clean-machine sign-in — the Engine token-file rename broke DeskPilot's
 auth detection (2026-07-09; fix `458e250` now MERGED into `main` via merge commit
 `734e646` — clean, no conflicts; `main` is 2 ahead of `origin/main`, local-only,

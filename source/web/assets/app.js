@@ -2088,24 +2088,32 @@ function buildAgentMenu() {
             ? 'No agents found in the Agents folder.'
             : 'Set an Agents folder in Settings.';
         menu.appendChild(empty);
-        return;
+    } else {
+        menu.appendChild(el('menu-divider'));
+        for (const a of state.agents) {
+            const isSel = a.id === selId;
+            const item = document.createElement('button');
+            item.className = 'menu-item' + (isSel ? ' selected' : '');
+            item.setAttribute('role', 'menuitemradio');
+            item.setAttribute('aria-checked', isSel ? 'true' : 'false');
+            item.title = a.description || a.name;
+            const sub = a.description ? shortText(a.description, 64) : a.id;
+            item.innerHTML = `<span class="check">${isSel ? '✓' : ''}</span><span class="menu-text"><span class="menu-name">${escapeHtml(a.name)}</span><span class="menu-sub muted tiny">${escapeHtml(sub)}</span></span>`;
+            item.onclick = () => selectAgent(a.id);
+            menu.appendChild(item);
+        }
     }
 
-    const divider = el('menu-divider');
-    menu.appendChild(divider);
-
-    for (const a of state.agents) {
-        const isSel = a.id === selId;
-        const item = document.createElement('button');
-        item.className = 'menu-item' + (isSel ? ' selected' : '');
-        item.setAttribute('role', 'menuitemradio');
-        item.setAttribute('aria-checked', isSel ? 'true' : 'false');
-        item.title = a.description || a.name;
-        const sub = a.description ? shortText(a.description, 64) : a.id;
-        item.innerHTML = `<span class="check">${isSel ? '✓' : ''}</span><span class="menu-text"><span class="menu-name">${escapeHtml(a.name)}</span><span class="menu-sub muted tiny">${escapeHtml(sub)}</span></span>`;
-        item.onclick = () => selectAgent(a.id);
-        menu.appendChild(item);
-    }
+    // Always offer the CopilotAtelier setup: it is how a user populates the
+    // ~/.copilot folders that feed this very menu. Not a one-click action — it
+    // opens a consent modal explaining what the setup script changes first.
+    menu.appendChild(el('menu-divider'));
+    const atelier = document.createElement('button');
+    atelier.className = 'menu-item menu-item-action';
+    atelier.setAttribute('role', 'menuitem');
+    atelier.innerHTML = '<span class="check">🎨</span><span class="menu-text"><span class="menu-name">Set up CopilotAtelier…</span><span class="menu-sub muted tiny">Download &amp; register agents, skills, instructions, prompts</span></span>';
+    atelier.onclick = () => { closeAgentMenu(); openAtelierSetup(); };
+    menu.appendChild(atelier);
 }
 
 function openAgentMenu() {
@@ -2139,6 +2147,93 @@ async function selectAgent(id) {
         state.settings = await api('PUT', '/api/settings', { selectedAgent: id || null });
         updateAgentChip();
     } catch (e) { toast(e.message); updateAgentChip(); }
+}
+
+// ===== CopilotAtelier setup =====
+// An opt-in flow reached from the Agent menu. It downloads the CopilotAtelier
+// repository and runs its Setup-CopilotSettings.ps1, which links the well-known
+// ~/.copilot/{agents,instructions,skills,prompts} folders to a synced copy so
+// this agent picker (and the Customizations surface) fill with real content.
+// Because it downloads and runs code that changes the machine, the user must
+// confirm explicitly first — the menu item only ever opens the consent modal.
+const ATELIER_REPO_URL = 'https://github.com/raandree/CopilotAtelier';
+
+function openAtelierSetup() {
+    renderAtelierConsent();
+    $('atelier-modal').classList.remove('hidden');
+    $('atelier-backdrop').classList.remove('hidden');
+}
+
+function closeAtelierSetup() {
+    $('atelier-modal').classList.add('hidden');
+    $('atelier-backdrop').classList.add('hidden');
+}
+
+// Step 1 — the consent screen. It spells out exactly what the setup script does
+// before anything is downloaded or run, so the user gives informed permission.
+function renderAtelierConsent() {
+    const body = $('atelier-body');
+    const foot = $('atelier-foot');
+    body.innerHTML =
+        '<p>CopilotAtelier is a curated set of Copilot <strong>agents, skills, instructions and prompt files</strong>. ' +
+        'Setting it up fills this Agent menu (and the Customizations view) with ready-to-use personas.</p>' +
+        '<p>DeskPilot will download the repository from ' +
+        `<a href="${ATELIER_REPO_URL}" target="_blank" rel="noopener noreferrer">${escapeHtml(ATELIER_REPO_URL)}</a> ` +
+        'and run its <code>Setup-CopilotSettings.ps1</code> script <strong>with your user privileges</strong>. That script:</p>' +
+        '<ul class="atelier-changes">' +
+        '<li>Links <code>~/.copilot/{agents,instructions,skills,prompts}</code> to a synced copy (OneDrive when present, otherwise your home folder) using NTFS junctions.</li>' +
+        '<li>Updates VS Code <code>settings.json</code> and <code>keybindings.json</code> — a timestamped backup is made first.</li>' +
+        '<li>Sets the <code>COPILOT_ALLOW_ALL</code> user environment variable to <code>1</code>.</li>' +
+        '</ul>' +
+        '<p class="muted tiny">A PowerShell window opens so you can watch it run and answer any prompts (for example, replacing an existing non-empty <code>~/.copilot</code> folder). Windows only.</p>';
+    foot.innerHTML =
+        '<button class="btn" id="atelier-cancel" type="button">Cancel</button>' +
+        '<button class="btn btn-primary" id="atelier-run" type="button">Download &amp; run setup</button>';
+    $('atelier-cancel').onclick = () => closeAtelierSetup();
+    $('atelier-run').onclick = () => runAtelierSetup();
+}
+
+// Step 2 — run it. POSTs to the consent-gated backend route, then reports the
+// outcome and offers to refresh the agent list once the script has finished.
+async function runAtelierSetup() {
+    const body = $('atelier-body');
+    const foot = $('atelier-foot');
+    body.innerHTML = '<div class="atelier-busy"><span class="merge-spinner"></span> Downloading CopilotAtelier and starting the setup…</div>';
+    foot.innerHTML = '';
+    let data;
+    try {
+        data = await api('POST', '/api/atelier/setup');
+    } catch (e) {
+        body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(e.message)}</div>`;
+        foot.innerHTML =
+            '<button class="btn" id="atelier-cancel" type="button">Close</button>' +
+            '<button class="btn btn-primary" id="atelier-retry" type="button">Try again</button>';
+        $('atelier-cancel').onclick = () => closeAtelierSetup();
+        $('atelier-retry').onclick = () => renderAtelierConsent();
+        return;
+    }
+    const where = data.sourcePath
+        ? `<p class="muted tiny">Files: <span class="path">${escapeHtml(data.sourcePath)}</span></p>`
+        : '';
+    if (data.launched) {
+        body.innerHTML =
+            '<div class="merge-ok">✓ Setup started.</div>' +
+            '<p>A PowerShell window opened and is running the setup. Follow any prompts there. ' +
+            'When it says <em>“Restart VS Code to apply changes”</em>, come back and refresh.</p>' + where;
+    } else {
+        body.innerHTML =
+            '<div class="merge-ok">✓ Downloaded.</div>' +
+            `<p>${escapeHtml(data.message || 'Run Setup-CopilotSettings.ps1 from the downloaded folder to finish.')}</p>` + where;
+    }
+    foot.innerHTML =
+        '<button class="btn" id="atelier-cancel" type="button">Close</button>' +
+        '<button class="btn btn-primary" id="atelier-refresh" type="button">Refresh agents</button>';
+    $('atelier-cancel').onclick = () => closeAtelierSetup();
+    $('atelier-refresh').onclick = async () => {
+        await loadAgents();
+        loadAtelierHealth();
+        toast('Refreshed agents.');
+    };
 }
 
 const shortText = (s, n) => (s && s.length > n ? s.slice(0, n - 1).trim() + '…' : (s || ''));
@@ -4451,6 +4546,13 @@ function wireGlobal() {
     $('file-view-raw').onclick = () => setFileViewMode('raw');
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !$('file-modal').classList.contains('hidden')) closeFileViewer();
+    });
+
+    // CopilotAtelier setup (opt-in, consent-gated)
+    $('atelier-close').onclick = () => closeAtelierSetup();
+    $('atelier-backdrop').onclick = () => closeAtelierSetup();
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !$('atelier-modal').classList.contains('hidden')) closeAtelierSetup();
     });
 
     // Customizations (manage AI resources)

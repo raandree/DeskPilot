@@ -133,6 +133,7 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/git/merge/undo'; Name = 'gitMergeUndo' }
             @{ Method = 'POST'; Pattern = '/api/git/cleanup'; Name = 'gitCleanup' }
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
+            @{ Method = 'POST'; Pattern = '/api/atelier/setup'; Name = 'atelierSetup' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
             @{ Method = 'GET'; Pattern = '/api/memory'; Name = 'getMemory' }

@@ -2280,6 +2280,49 @@ button.tree-row {
     font-size: 13px;
 }
 
+/* CopilotAtelier setup */
+.atelier-body {
+    padding: 14px 16px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.atelier-body p {
+    margin: 0 0 10px;
+}
+
+.atelier-body code {
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 1px 5px;
+}
+
+.atelier-changes {
+    margin: 0 0 10px;
+    padding-left: 20px;
+}
+
+.atelier-changes li {
+    margin: 4px 0;
+}
+
+.atelier-body .path {
+    font-family: var(--mono, ui-monospace, monospace);
+    word-break: break-all;
+}
+
+.atelier-busy {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    padding: 18px 4px;
+}
+
 /* File viewer */
 .file-modal {
     width: min(880px, 94vw);

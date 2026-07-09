@@ -87,6 +87,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-X4 | M | Confine every Customization read, write, and create to a configured root and the category's file pattern, so the surface can never read or write an arbitrary file. |
 | FR-X5 | C | Preview a Customization's rendered Markdown alongside the editor. |
 | FR-X6 | C | Explain a Customization in plain language: open a new Conversation pre-filled with the file's content and a request to explain it, then send. |
+| FR-X7 | C | Offer an opt-in **CopilotAtelier setup** from the Agent menu: after an explicit consent step that spells out what it changes, download the CopilotAtelier repository and run its `Setup-CopilotSettings.ps1` to link the `~/.copilot` Customization roots (agents, instructions, skills, prompts) so the Agent picker and Customizations surface fill with real content. Never a one-click action; the setup script runs in a console the user drives, and the auto-run is Windows only. |
 
 ### Usage & cost
 

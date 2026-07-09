@@ -50,6 +50,7 @@ synonym.
 | Memory | DeskPilot's persistent, cross-Conversation memory injected into every Turn's system prompt. Has two parts: the **User Profile** and the **Agent Memory**. Not the same as the developer-facing `.memory-bank/` (DeskPilot's own project knowledge base used to *build* DeskPilot). | context, history, the memory bank (the dev knowledge base) |
 | User Profile | The durable note the **user** writes about themselves (role, style, recurring context) — the `preferences` Setting — injected into every Turn. | preferences (in UI copy), bio, about-me |
 | Agent Memory | Durable, declarative notes the **agent** curates about the user and their environment across Conversations (conventions, tools, observed preferences, lessons), bounded and injected into every Turn. Learned automatically (throttled) or edited by hand. | memory (bare), agent notes, the memory bank |
+| CopilotAtelier | The sibling repository (`raandree/CopilotAtelier`) of curated Customizations (agents, skills, instructions, prompt files) that DeskPilot can download and register into `~/.copilot` via an opt-in, consent-gated **CopilotAtelier setup** in the Agent menu. | plugin pack, marketplace, extension store, the atelier (bare) |
 
 ## Notes
 
@@ -136,3 +137,10 @@ synonym.
   breakdown (Messages vs. System + tools) is a client-side estimate
   (~4 chars per token) because the Engine does not itemise the context. Always
   label the breakdown as estimated.
+- **CopilotAtelier setup vs. Atelier health.** **CopilotAtelier setup** is the
+  opt-in action in the Agent menu that downloads the **CopilotAtelier** repository
+  and runs its `Setup-CopilotSettings.ps1` to provision the `~/.copilot` roots.
+  **Atelier health** is the read-only Settings panel that reports whether those
+  same roots resolve. One provisions; the other inspects. Use **CopilotAtelier**
+  for the repository/feature and never call the setup a "plugin install" or
+  "marketplace".
