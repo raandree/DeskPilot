@@ -5,6 +5,35 @@ BeforeAll {
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 }
 
+Describe 'Get-DpModuleVersionString' {
+    It 'composes the base version with a prerelease label' {
+        Get-DpModuleVersionString -Version '0.2.0' -Prerelease 'preview0004' | Should -Be '0.2.0-preview0004'
+    }
+    It 'returns the base version unchanged when no label is supplied' -ForEach @(
+        @{ Label = '' }
+        @{ Label = $null }
+        @{ Label = '   ' }
+    ) {
+        Get-DpModuleVersionString -Version '0.3.0' -Prerelease $Label | Should -Be '0.3.0'
+    }
+    It 'does not double-append when the base version is already a full SemVer' {
+        Get-DpModuleVersionString -Version '0.2.0-preview0005' -Prerelease 'preview0004' | Should -Be '0.2.0-preview0005'
+    }
+    It 'tolerates a leading hyphen on the label' {
+        Get-DpModuleVersionString -Version '0.2.0' -Prerelease '-preview0004' | Should -Be '0.2.0-preview0004'
+    }
+    It 'trims surrounding whitespace' {
+        Get-DpModuleVersionString -Version ' 0.2.0 ' -Prerelease ' preview0004 ' | Should -Be '0.2.0-preview0004'
+    }
+    It 'returns an empty string for a missing base version' -ForEach @(
+        @{ Version = '' }
+        @{ Version = $null }
+        @{ Version = '   ' }
+    ) {
+        Get-DpModuleVersionString -Version $Version -Prerelease 'preview0004' | Should -Be ''
+    }
+}
+
 Describe 'Get-DpUpdateStatus' {
     It 'offers the newer stable release as the target' {
         $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '0.3.0'
@@ -50,6 +79,19 @@ Describe 'Get-DpUpdateStatus' {
         $s = Get-DpUpdateStatus -CurrentVersion '0.2.0-preview0002' -LatestStable '0.2.0'
         $s.updateAvailable | Should -BeTrue
         $s.targetVersion | Should -Be '0.2.0'
+    }
+    It 'offers a newer preview over the running preview of the same base (the reported bug)' {
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0-preview0004' -LatestStable '' -LatestPrerelease '0.2.0-preview0005' -IncludePrereleases
+        $s.updateAvailable | Should -BeTrue
+        $s.targetVersion | Should -Be '0.2.0-preview0005'
+        $s.targetIsPrerelease | Should -BeTrue
+    }
+    It 'reports up to date if a running preview label is dropped (regression guard)' {
+        # A running preview reported without its label ('0.2.0') looks like the
+        # matching stable, which outranks every 0.2.0-preview*, so no update is
+        # offered - exactly why the running version must keep its prerelease label.
+        $s = Get-DpUpdateStatus -CurrentVersion '0.2.0' -LatestStable '' -LatestPrerelease '0.2.0-preview0005' -IncludePrereleases
+        $s.updateAvailable | Should -BeFalse
     }
     It 'parses two- and four-part version strings via the [version] fallback' {
         (Get-DpUpdateStatus -CurrentVersion '0.2' -LatestStable '0.3.0').updateAvailable | Should -BeTrue

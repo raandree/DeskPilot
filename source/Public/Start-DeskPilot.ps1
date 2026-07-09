@@ -75,8 +75,26 @@ function Start-DeskPilot {
     $persistedSettings = Import-DpSettings -Directory $dataDirFull
     $memoryStore = Import-DpMemoryStore -Directory $dataDirFull
 
+    # The running module's full version, including any prerelease label. Module.Version
+    # is a [System.Version], which cannot hold a '-preview0004' suffix; that label lives
+    # in PrivateData.PSData.Prerelease. Without recombining them a preview install reports
+    # itself as the matching stable release and the update check never offers a newer
+    # preview (see Get-DpModuleVersionString / Get-DpUpdateStatus).
+    $runningModule = $MyInvocation.MyCommand.Module
+    $runningVersion = '0.0.0'
+    if ($runningModule) {
+        $prereleaseLabel = ''
+        if ($runningModule.PrivateData -is [hashtable] -and $runningModule.PrivateData.ContainsKey('PSData')) {
+            $psData = $runningModule.PrivateData['PSData']
+            if ($psData -is [hashtable] -and $psData.ContainsKey('Prerelease')) {
+                $prereleaseLabel = [string]$psData['Prerelease']
+            }
+        }
+        $runningVersion = Get-DpModuleVersionString -Version $runningModule.Version.ToString() -Prerelease $prereleaseLabel
+    }
+
     $script:DeskPilot = @{
-        Version         = $(if ($MyInvocation.MyCommand.Module) { $MyInvocation.MyCommand.Module.Version.ToString() } else { '0.0.0' })
+        Version         = $runningVersion
         Settings        = $persistedSettings
         Conversations   = $conversations
         Usage           = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; byModel = @{} }
@@ -106,7 +124,7 @@ function Start-DeskPilot {
         # (Invoke-DpSelfUpdate) via POST /api/update/install. UpdateJob is the
         # in-flight check job; LastUpdateCheckUtc paces the periodic poll.
         Update          = @{
-            currentVersion     = $(if ($MyInvocation.MyCommand.Module) { $MyInvocation.MyCommand.Module.Version.ToString() } else { '0.0.0' })
+            currentVersion     = $runningVersion
             latestStable       = $null
             latestPrerelease   = $null
             includePrereleases = [bool]$persistedSettings.updateIncludePrereleases

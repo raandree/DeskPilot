@@ -2,6 +2,34 @@
 
 ## Current focus
 
+**Fixed the update check reporting "up to date" on a preview when a newer preview
+exists (2026-07-09, local-only; NOT merged, NOT pushed).** A user on
+`0.2.0-preview0004` with previews enabled was told they were up to date though
+`0.2.0-preview0005` was on the Gallery. **Root cause (confirmed empirically):**
+`Start-DeskPilot` set the running version from
+`$MyInvocation.MyCommand.Module.Version` — a `[System.Version]` that CANNOT hold a
+prerelease label — so a preview build reported itself as the *stable* `0.2.0`. In
+`Get-DpUpdateStatus` a stable release outranks its own previews, so no
+`0.2.0-preview*` was ever seen as newer → "up to date." (The Gallery side is fine
+here: PowerShellGet 2.2.5's `Find-Module -AllowPrerelease .Version` returns the full
+`0.2.0-preview0005` string; the running-version label lives in
+`PrivateData.PSData.Prerelease`, verified live against AutomatedLab which returned
+`'preview'`.) **Fix:** new pure, tested Private helper `Get-DpModuleVersionString`
+recombines `Module.Version` + `PrivateData.PSData.Prerelease` into the full SemVer;
+`Start-DeskPilot` now computes `$runningVersion` once (StrictMode-safe `-is [hashtable]`
++ `ContainsKey` reads) and uses it for BOTH `$state.Version` (which also feeds the
+`/api/health` sidebar version line) and `Update.currentVersion`. Also hardened
+`Invoke-DpSelfUpdate`'s default `VersionReader` to compose the label and pick the
+newest prerelease-aware, so the post-install result shows the true preview version.
+No change to `Update-DpUpdateCheckState`'s Gallery job (the label survives on this
+provider). **Verified: full Sampler build+test 397/397, 0 failed (0 errors, 0
+warnings); the 3 changed source files PSSA-clean; +12 unit tests (10
+`Get-DpModuleVersionString` cases + 2 `Get-DpUpdateStatus` regression tests — one
+reproducing the exact preview→preview scenario, one guarding the dropped-label
+failure mode).** Docs: CHANGELOG (Fixed). Not browser-smoke-tested.
+
+## Prior focus — automatic update mechanism
+
 **Automatic update mechanism (consent-gated, web-UI only) — SHIPPED this turn
 (2026-07-09, local-only; NOT merged, NOT pushed).** The user asked for DeskPilot to
 poll the PowerShell Gallery every ~5 min for a newer version, prefer full releases

@@ -67,10 +67,23 @@ function Invoke-DpSelfUpdate {
     if (-not $VersionReader) {
         $VersionReader = {
             param([string]$Name)
-            $module = Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue |
-                Sort-Object -Property Version -Descending |
+            # Report the newest INSTALLED version including its prerelease label.
+            # Module.Version (a [System.Version]) drops the label and cannot order
+            # two prereleases sharing a base version, so compose the full SemVer
+            # string (Get-DpModuleVersionString) and sort prerelease-aware.
+            Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $label = ''
+                    if ($_.PrivateData -is [hashtable] -and $_.PrivateData.ContainsKey('PSData')) {
+                        $psData = $_.PrivateData['PSData']
+                        if ($psData -is [hashtable] -and $psData.ContainsKey('Prerelease')) {
+                            $label = [string]$psData['Prerelease']
+                        }
+                    }
+                    Get-DpModuleVersionString -Version $_.Version.ToString() -Prerelease $label
+                } |
+                Sort-Object -Property { $sem = $null; $null = [System.Management.Automation.SemanticVersion]::TryParse($_, [ref] $sem); $sem } -Descending |
                 Select-Object -First 1
-            if ($module) { $module.Version.ToString() } else { $null }
         }
     }
 

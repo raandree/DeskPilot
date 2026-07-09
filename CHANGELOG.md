@@ -255,6 +255,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Update check no longer reports "up to date" when a newer preview exists.** With
+  **Include preview releases** enabled, a preview install (for example
+  `0.2.0-preview0004`) was never offered a newer preview (for example
+  `0.2.0-preview0005`). DeskPilot read the running version from the module's
+  `[System.Version]`, which cannot carry a prerelease label, so a preview build
+  reported itself as the matching **stable** release (`0.2.0`); because a stable
+  release outranks its own previews, no `0.2.0-preview*` was ever seen as newer.
+  DeskPilot now recombines the base version with its `PrivateData.PSData.Prerelease`
+  label (new `Get-DpModuleVersionString` helper) so the Update check — and the
+  sidebar version line, both fed from the running version — reflect the true running
+  preview, and the post-install result reports the full preview version. +12 unit
+  tests.
+
 - **Context Window gauge no longer over-reports (and auto-compaction no longer
   fires on almost every Turn).** The Session Info gauge could show impossible
   figures such as *9,140,447 / 1,000,000 tokens · 100%* with a nonsensical
