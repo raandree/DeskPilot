@@ -2,6 +2,26 @@
 
 ## Current focus
 
+**Branch-merge audit (2026-07-09, read-only, no code changed).** The user asked
+which feature branches still hold unmerged work. Verified against live git (not
+the append-only log, which had drifted): only **three** local branches exist —
+`main`, `ai/fix-clean-machine-auth`, `ai/atelier-setup`. **`main` is in sync with
+`origin/main`** at tag `v0.2.0-preview0002` (0 ahead / 0 behind) — so `main` IS
+pushed, contradicting the older "local-only, not pushed" notes below.
+**`ai/atelier-setup` (HEAD) is the ONLY branch with unmerged work** — 3 commits
+(`bb4f018` CopilotAtelier setup, `bd95a80` agent auto-refresh, `81dfdad` drop the
+Refresh-agents button), 17 files, +668 lines; merge-base == `main` tip so it is a
+clean **fast-forward** (`git merge --ff-only ai/atelier-setup`). **`ai/fix-clean-
+machine-auth` has NO unmerged work** — `git cherry` marks its commit `-` and a
+direct tip-to-tip diff of `source/`+`tests/`+`specs/`+`CHANGELOG.md` against `main`
+is empty (the fix reached `main` under a different SHA on the preview0002 line,
+NOT via the recorded merge commit `734e646`, which now survives only as a dangling
+object); safe to delete. All older `ai/*` branches (gallery-web-bundle, stream-
+smoothness, settings-tabs, persistent-memory, session-info-compact, merge-wizard,
+etc.) no longer exist locally — their work is already in `main`.
+
+## Prior focus — CopilotAtelier agent auto-refresh
+
 **Made the Agent list refresh without a restart (CopilotAtelier follow-up) — on
 `ai/atelier-setup` (2026-07-09, local-only, not merged/pushed).** After shipping
 the CopilotAtelier setup, the user reported the Agent menu still needed a
