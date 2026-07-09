@@ -109,7 +109,16 @@ function Invoke-DpRouteHandler {
             }
         }
         'agents' {
-            $root = $state.Settings.agentsRoot
+            # Resolve the effective Agents folder. When none is configured but the
+            # conventional ~/.copilot/agents now exists (e.g. after CopilotAtelier
+            # setup created the junction), adopt and persist it so the agents
+            # appear - and a selected Agent reaches Turn assembly - without a
+            # restart. A refresh (manual or the periodic client poll) picks this up.
+            $root = Resolve-DpAgentsRoot -Settings $state.Settings
+            if ($root -and $root -ne $state.Settings.agentsRoot) {
+                $state.Settings.agentsRoot = $root
+                if ($state.DataDir) { Save-DpSettings -Settings $state.Settings -Directory $state.DataDir }
+            }
             $agentList = @(Get-DpAgentList -Root $root | ForEach-Object { @{ id = $_.id; name = $_.name; description = $_.description } })
             Write-DpResponse -Stream $Stream -Json @{ agents = $agentList; selected = $state.Settings.selectedAgent; root = $root }
         }

@@ -129,6 +129,12 @@ the API; they enumerate and create directories only (never file contents).
 Lists the Agents discovered under the configured Agents folder
 (`settings.agentsRoot`, default `~/.copilot/agents`).
 
+When no Agents folder is configured but the conventional `~/.copilot/agents` now
+exists (for example after a CopilotAtelier setup created the junction), the route
+adopts and persists it, so agents that appear after startup are listed — and a
+selected Agent reaches the Turn — without a restart. The SPA also re-fetches this
+endpoint on a short interval and on window focus/visibility.
+
 ```json
 {
   "agents": [ { "id": "tax-researcher.agent.md", "name": "tax-researcher", "description": "…" } ],

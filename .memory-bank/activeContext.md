@@ -2,6 +2,34 @@
 
 ## Current focus
 
+**Made the Agent list refresh without a restart (CopilotAtelier follow-up) — on
+`ai/atelier-setup` (2026-07-09, local-only, not merged/pushed).** After shipping
+the CopilotAtelier setup, the user reported the Agent menu still needed a
+DeskPilot restart to show the newly-installed agents, and asked for the list to
+auto-refresh (interval or folder-watch). **Root cause:** `agentsRoot` is resolved
+once at startup via `Get-DpCopilotDefaults`, which returns `$null` when
+`~/.copilot/agents` does not exist — exactly the fresh-machine case where you run
+CopilotAtelier — so after the setup created the junction the running session
+still had a null root and `GET /api/agents` returned nothing until a restart
+re-ran the resolver. **Fix (two parts):** (1) new `Resolve-DpAgentsRoot` Private
+helper resolves the effective Agents folder — the configured root as-is, else the
+conventional `~/.copilot/agents` ONLY when it now exists (no phantom path) — and
+the `agents` route adopts + persists it, so the junction is picked up live and a
+selected Agent also reaches Turn assembly; (2) frontend `wireAgentsAutoRefresh`
+polls `loadAgents` every 15s while the tab is visible and on window
+focus/visibilitychange (so returning from the setup console refreshes it),
+skipping while a Turn streams or the menu is open; `loadAgents` now keeps the
+previous list on a transient error to avoid flicker. Chose client polling over a
+server-side FileSystemWatcher because the Host Server is single-threaded with no
+persistent SSE outside a Turn. +3 `Resolve-DpAgentsRoot` unit tests. **Note:** the
+user must restart DeskPilot ONCE to load this build; thereafter no restart is
+needed. **Verified: full Sampler build+test 367/367, 0 failed (16 tasks, 0
+errors, 0 warnings); new helper AST+PSSA clean; `app.js` ESM check OK.** Docs:
+CHANGELOG (Added), specs 030 (agents route) / 040 (Agent dropdown). Not yet
+browser-smoke-tested.
+
+## Prior focus — CopilotAtelier setup
+
 **Added an opt-in CopilotAtelier setup to the Agent menu — SHIPPED on
 `ai/atelier-setup` (2026-07-09, local-only; NOT merged, NOT pushed).** The user
 asked for a way to set up [CopilotAtelier](https://github.com/raandree/CopilotAtelier)

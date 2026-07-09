@@ -1593,6 +1593,25 @@ Describe 'Invoke-DpAtelierSetup' {
     }
 }
 
+Describe 'Resolve-DpAgentsRoot' {
+    It 'returns the configured Agents root unchanged when Settings has one' {
+        $configured = Join-Path $TestDrive 'my-agents'
+        $r = Resolve-DpAgentsRoot -Settings @{ agentsRoot = $configured } -HomeDirectory $TestDrive
+        $r | Should -Be $configured
+    }
+    It 'falls back to ~/.copilot/agents when it exists and none is configured' {
+        $copilotAgents = Join-Path $TestDrive '.copilot/agents'
+        New-Item -ItemType Directory -Path $copilotAgents -Force | Out-Null
+        $r = Resolve-DpAgentsRoot -Settings @{ agentsRoot = $null } -HomeDirectory $TestDrive
+        $r | Should -Be $copilotAgents
+    }
+    It 'returns null when none is configured and ~/.copilot/agents does not exist' {
+        $empty = Join-Path $TestDrive 'no-copilot-here'
+        New-Item -ItemType Directory -Path $empty -Force | Out-Null
+        Resolve-DpAgentsRoot -Settings @{ agentsRoot = '' } -HomeDirectory $empty | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Get-DpGitDiff' {
     It 'reports no project folder when the root is missing' {
         $r = Get-DpGitDiff -Root (Join-Path $TestDrive 'no-such') -Path 'x.txt'

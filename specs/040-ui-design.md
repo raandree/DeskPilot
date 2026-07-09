@@ -136,7 +136,10 @@ accent fills so the bright dark-mode accent stays legible.
   agents. It is never one click: the dialog spells out that DeskPilot downloads
   and runs code that changes the machine (the `~/.copilot` junctions, VS Code
   `settings.json`/`keybindings.json`, the `COPILOT_ALLOW_ALL` env var), and the
-  script then runs in a PowerShell console the user drives. Windows only.
+  script then runs in a PowerShell console the user drives. Windows only. The
+  Agent list auto-refreshes (a short interval plus on window focus/visibility),
+  so agents created after startup — e.g. by the CopilotAtelier setup — appear
+  without a restart.
 - **Attach** button to upload files (into the selected Project, or a
   data-directory uploads folder when no Project is active).
 - **Send** turns into **Stop** while a Turn streams.

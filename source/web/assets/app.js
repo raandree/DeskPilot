@@ -201,6 +201,7 @@ async function enterApp() {
     hideAuth();
     await loadModels();
     await loadAgents();
+    wireAgentsAutoRefresh();
     await loadConversations();
     await refreshUsage();
     // Deep link: /?c=<id> opens that Conversation directly (used by "Open in new
@@ -2053,7 +2054,11 @@ async function loadAgents() {
     try {
         const data = await api('GET', '/api/agents');
         state.agents = data.agents || [];
-    } catch { state.agents = []; }
+    } catch {
+        // Keep the previous list on a transient failure (e.g. a poll landing
+        // mid-turn) so an auto-refresh never flickers the menu to empty.
+        if (!Array.isArray(state.agents)) state.agents = [];
+    }
     updateAgentChip();
 }
 
@@ -2339,6 +2344,27 @@ function wireExplorerAutoRefresh() {
     window.addEventListener('focus', tick);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
     setInterval(tick, 5000);
+}
+
+// Auto-refresh the Agent list so agents added after startup (for example by the
+// CopilotAtelier setup, which runs in a separate console) appear without a
+// restart. Polling fits the single-threaded, no-persistent-SSE Host Server
+// better than a server-side folder watcher, and a focus/visibility refresh
+// catches the common case of returning to the tab after running the setup.
+let _agentsAutoWired = false;
+function wireAgentsAutoRefresh() {
+    if (_agentsAutoWired) return;
+    _agentsAutoWired = true;
+    const tick = () => {
+        if (state.streaming) return;
+        if (document.visibilityState !== 'visible') return;
+        // Don't rebuild the menu out from under the user while it is open.
+        if (!$('agent-popover').classList.contains('hidden')) return;
+        loadAgents();
+    };
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+    setInterval(tick, 15000);
 }
 
 // ===== Git bar (in the explorer) =====

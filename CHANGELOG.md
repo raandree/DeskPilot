@@ -27,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   work. Windows only — the script uses NTFS junctions; on other platforms the
   files are fetched for a manual run. New `POST /api/atelier/setup` route and
   `Get-DpAtelierSource` / `Invoke-DpAtelierSetup` helpers (+4 unit tests).
+- **The Agent list now refreshes without a restart.** Agents that appear after
+  startup — most notably from the new CopilotAtelier setup, which runs in a
+  separate console — now show up in the Agent menu on their own. The SPA
+  re-checks the list on a short interval and whenever the window regains focus or
+  the tab becomes visible (so returning from the setup console refreshes it), and
+  `GET /api/agents` now adopts the conventional `~/.copilot/agents` folder the
+  moment it exists even if it was absent at startup (new `Resolve-DpAgentsRoot`
+  helper), so a selected Agent also reaches the Turn. Previously the Agents folder
+  was resolved once at startup, so a freshly-created `~/.copilot/agents` (e.g. the
+  CopilotAtelier junction) stayed invisible until DeskPilot was restarted. Polling
+  was chosen over a server-side folder watcher to fit the single-threaded,
+  no-persistent-SSE Host Server. (+3 unit tests.)
 - **Publishable from the PowerShell Gallery, with the web UI bundled.** The
   DeskPilot web UI now ships inside the module (ModuleBuilder `CopyPaths`), so
   `Install-Module DeskPilot; Start-DeskPilot` serves the full interface from the
