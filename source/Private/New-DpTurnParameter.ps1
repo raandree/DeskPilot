@@ -9,6 +9,9 @@ function New-DpTurnParameter {
         the tool-iteration cap.
     .PARAMETER Prompt
         The user prompt for this Turn.
+    .PARAMETER Image
+        Paths to image Attachments passed through the Engine's native Image
+        parameter for Vision-capable Models.
     .PARAMETER History
         The Conversation history array ({ role, content } items); may be empty.
     .PARAMETER Settings
@@ -31,6 +34,9 @@ function New-DpTurnParameter {
         [Parameter(Mandatory)]
         [string]$Prompt,
 
+        [AllowEmptyCollection()]
+        [string[]]$Image = @(),
+
         [object[]]$History,
 
         [Parameter(Mandatory)]
@@ -47,6 +53,7 @@ function New-DpTurnParameter {
 
     $params = @{ Prompt = $Prompt }
 
+    if ($Image.Count -gt 0) { $params.Image = $Image }
     if ($History -and $History.Count -gt 0) { $params.History = $History }
 
     $effectiveModel = if ($Model) { $Model } elseif ($Settings.model) { $Settings.model } else { $null }

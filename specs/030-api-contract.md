@@ -479,8 +479,13 @@ literal `read-all` path matches ahead of the `{id}` wildcard.
 
 ### `POST /api/conversations/{id}/messages`
 
-Body: `{ "prompt": "…" }`. Response is `text/event-stream`. Returns `409` if a
-Turn is already running.
+Body: `{ "prompt": "…", "images"?: ["C:/path/uploaded-image.png"] }`. Response
+is `text/event-stream`. `images` contains paths returned by `POST /api/uploads`
+during the current Host Server launch. Each path must be absolute, still exist,
+and be registered with an `image/*` content type; a Project change after upload
+does not invalidate it. Valid paths are passed to the Engine's native `-Image`
+parameter. An unregistered, relative, missing, or non-image path returns
+`400 invalid_attachment`. Returns `409` if a Turn is already running.
 
 | event | data | when |
 | --- | --- | --- |

@@ -792,7 +792,23 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_prompt'; message = 'A prompt is required.' } }
                 return
             }
-            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
+
+            $imagePaths = @()
+            if ($Body -and $Body.PSObject.Properties['images']) {
+                $requestedImagePaths = @($Body.images | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                if ($requestedImagePaths.Count -gt 0) {
+                    try {
+                        $imagePaths = @(Resolve-DpAttachmentPath -Path $requestedImagePaths -AttachmentStore $state.Attachments)
+                    }
+                    catch {
+                        $attachmentError = $_
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'invalid_attachment'; message = $attachmentError.Exception.Message } }
+                        return
+                    }
+                }
+            }
+
+            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Image $imagePaths -Stream $Stream
         }
         'regenerateTurn' {
             $conversation = $state.Conversations[$RouteParams.id]
@@ -1023,10 +1039,12 @@ function Invoke-DpRouteHandler {
                     }
                     $target = Get-DpUniqueFilePath -Directory $workspace -Name $part.FileName
                     [System.IO.File]::WriteAllBytes($target, $part.Content)
+                    $registeredPath = [System.IO.Path]::GetFullPath($target)
+                    $state.Attachments[$registeredPath] = [string]$part.ContentType
                     $saved.Add(@{
                             name        = $part.FileName
-                            savedAs     = [System.IO.Path]::GetFileName($target)
-                            path        = $target
+                            savedAs     = [System.IO.Path]::GetFileName($registeredPath)
+                            path        = $registeredPath
                             bytes       = $part.Content.Length
                             contentType = $part.ContentType
                         })

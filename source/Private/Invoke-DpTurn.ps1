@@ -13,6 +13,8 @@ function Invoke-DpTurn {
         The Conversation hashtable to run the Turn against.
     .PARAMETER Prompt
         The user prompt.
+    .PARAMETER Image
+        Paths to image Attachments for the Engine's native Vision input.
     .PARAMETER Stream
         The network stream to write SSE frames to.
     #>
@@ -23,6 +25,9 @@ function Invoke-DpTurn {
 
         [Parameter(Mandatory)]
         [string]$Prompt,
+
+        [AllowEmptyCollection()]
+        [string[]]$Image = @(),
 
         [Parameter(Mandatory)]
         [System.IO.Stream]$Stream
@@ -126,7 +131,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # Reposition the long-lived Engine Runspace every Turn, not only when a

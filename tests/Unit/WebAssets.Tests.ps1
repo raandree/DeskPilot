@@ -14,9 +14,55 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'markdown.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'markdown.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
+    }
+
+    It 'extracts clipboard files without intercepting text-only paste data' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'attachments.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { getClipboardFiles, getImagePaths, wireClipboardAttachments } = await import(pathToFileURL(process.argv[1]).href);
+const screenshot = { name: 'image.png', type: 'image/png' };
+const documentFile = { name: 'brief.pdf', type: 'application/pdf' };
+
+assert.deepEqual(getClipboardFiles({ files: [screenshot], items: [] }), [screenshot]);
+assert.deepEqual(getClipboardFiles({
+    files: [],
+    items: [
+        { kind: 'string', getAsFile: () => null },
+        { kind: 'file', getAsFile: () => documentFile },
+    ],
+}), [documentFile]);
+assert.deepEqual(getClipboardFiles({ files: [], items: [{ kind: 'string' }] }), []);
+assert.deepEqual(getImagePaths([
+    { path: 'C:/uploads/image.png', contentType: 'image/png' },
+    { path: 'C:/uploads/brief.pdf', contentType: 'application/pdf' },
+]), ['C:/uploads/image.png']);
+
+let pasteHandler;
+const uploaded = [];
+const target = { addEventListener: (name, handler) => { if (name === 'paste') pasteHandler = handler; } };
+wireClipboardAttachments(target, (files) => uploaded.push(...files));
+
+let prevented = false;
+pasteHandler({ clipboardData: { files: [screenshot] }, preventDefault: () => { prevented = true; } });
+assert.equal(prevented, true);
+assert.deepEqual(uploaded, [screenshot]);
+
+prevented = false;
+pasteHandler({ clipboardData: { files: [], items: [{ kind: 'string' }] }, preventDefault: () => { prevented = true; } });
+assert.equal(prevented, false);
+assert.deepEqual(uploaded, [screenshot]);
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 }
 

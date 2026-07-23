@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Paste files and images into the prompt box as Attachments.** Clipboard files
+  now use the same upload and pending-chip flow as the Attach button and
+  drag-and-drop, while text-only clipboard content continues to paste normally.
+  Uploaded images from any of those three entry points are also sent through the
+  Engine's native `-Image` input for Vision-capable Models. The Message route
+  accepts only absolute, existing `image/*` files recorded by the current Host
+  Server's upload route before forwarding them (`400 invalid_attachment` for an
+  unregistered, relative, missing, or non-image path). That per-launch registry
+  also keeps a pending Attachment valid when the selected Project changes. Adds
+  a small `attachments.js` browser module and twelve focused unit tests.
 - **Automatic update checks with a consent-gated in-app update.** DeskPilot now
   polls the PowerShell Gallery for a newer release in the background (every 5
   minutes by default, configurable in **Settings → Engine & data → Updates**, plus

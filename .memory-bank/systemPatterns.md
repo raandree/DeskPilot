@@ -103,6 +103,11 @@ sequenceDiagram
   never re-implement the check; they call the gate. Saves are edit-only and
   atomic (temp + `Move-Item -Force`); creates validate the name as a single safe
   segment and refuse an existing target.
+- **Attachment eligibility follows the upload event.** Successful uploads are
+  recorded in a per-launch, OS-case-aware registry keyed by normalized absolute
+  path with MIME type. Native Vision input resolves against this registry, not
+  the currently selected Project, so a pending Attachment survives Project
+  switching while an arbitrary local path never reaches `Invoke-Shp -Image`.
 
 ## Anti-patterns to avoid
 

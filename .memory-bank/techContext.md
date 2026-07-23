@@ -40,6 +40,9 @@
   stores one history array per Conversation and replays it each Turn — this
   isolates Conversations and avoids the Engine's module-scoped running chat.
 - Model control: `Get-ShpModel`, `Get-ShpModelName`, `Select-ShpModel`.
+- Native Vision input: `Invoke-Shp -Image <string[]>` accepts local image paths
+  or HTTP(S) URLs. DeskPilot forwards only local image Attachment paths that the
+  current Host Server launch successfully accepted through `/api/uploads`.
 - Auth: `Initialize-Shp` runs the GitHub device-code flow once; the Engine caches
   the token as a hidden dot-file in the user's home directory. The filename is the
   Engine's own default and is NOT stable across versions (ShellPilot renamed it

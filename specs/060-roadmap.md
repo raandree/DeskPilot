@@ -26,12 +26,15 @@ task, see Activity and Usage — all from the window.
 - ~~Persist Settings (model, permissions, Workspace Folder) across sessions too.~~
   **Done** (FR-S1).
 - ~~File uploads (FR-C9).~~ **Done** — Upload button saves files to the Workspace
-  Folder and the agent reads them through its existing File Tool.
+  Folder and the agent reads them through its existing File Tool; drag-and-drop
+  and clipboard paste use the same Attachment flow.
 - Confirm-before-run gate for Terminal and out-of-folder writes.
 
 ## Phase 2 — Reach & richness
 
-- Vision (image attachments) and structured-output surfaces.
+- ~~Vision for image Attachments.~~ **Done** — uploaded images are passed to the
+  Engine's native `-Image` input for Vision-capable Models.
+- Structured-output surfaces.
 - User Tool management UI (`Register-ShpTool`).
 - Skill/Instruction browser (discover, preview, enable).
 - ~~Per-Conversation system prompt / agent file.~~ **Partly done** — an **Agent**
@@ -48,7 +51,8 @@ local-first, single-user constraints (most need no new dependency):
 - ~~Pin / archive Conversations (FR-C11).~~ **Done.**
 - ~~Export a Conversation as a Markdown transcript (FR-C12).~~ **Done.**
 - ~~Voice: dictation + read-aloud via the browser speech APIs (FR-C13).~~ **Done.**
-- ~~Drag-and-drop attachments onto the composer (FR-C14).~~ **Done.**
+- ~~Drag-and-drop and clipboard-paste Attachments in the composer (FR-C14).~~
+  **Done.** Text-only paste remains normal text input.
 - ~~Durable user **Preferences** injected into the system prompt (FR-M7).~~ **Done.**
 - ~~Prompt File `/` menu and `#file` mention in the composer (FR-M8).~~ **Done.**
 - ~~"Explain this Customization" (FR-X6).~~ **Done.**

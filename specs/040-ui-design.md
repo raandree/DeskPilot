@@ -141,7 +141,10 @@ accent fills so the bright dark-mode accent stays legible.
   so agents created after startup — e.g. by the CopilotAtelier setup — appear
   without a restart.
 - **Attach** button to upload files (into the selected Project, or a
-  data-directory uploads folder when no Project is active).
+  data-directory uploads folder when no Project is active). The same Attachment
+  flow accepts files dropped onto the composer or pasted into the prompt box;
+  text-only clipboard content still pastes as text. Uploaded images are sent
+  through the Engine's native Vision input as well as being named in the prompt.
 - **Send** turns into **Stop** while a Turn streams.
 - **Mid-Turn dispatch.** When a Turn is streaming and the user starts typing,
   a chevron (`▾`) appears next to **Stop** and opens a small popover with three

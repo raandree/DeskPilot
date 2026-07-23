@@ -33,7 +33,8 @@ synonym.
 | Task | A single tracked sub-step the agent plans and completes within a Turn. Has an id, a short action-oriented title, and a status of `not-started`, `in-progress`, or `completed`. | todo, step, item, checkbox |
 | Task List | The ordered set of Tasks the agent maintains during one Turn; at most one Task is `in-progress`. Streamed live and persisted on the assistant Message. | todos, checklist, plan, TODO list |
 | Preferences | A durable, user-authored note about the user (role, writing style, recurring context) injected into every Turn's system prompt. One per install; persists across Conversations and sessions. | profile, persona (that is an Agent), memory, about-me (in identifiers) |
-| Reference File | A project-relative file path the user marks as always-relevant; its path (not its content) is injected into every Turn's system prompt so the agent reads it with its File Tool on demand. | attachment, upload, knowledge base, RAG doc |
+| Reference File | A project-relative file path the user marks as always-relevant; its path (not its content) is injected into every Turn's system prompt so the agent reads it with its File Tool on demand. | upload, knowledge base, RAG doc |
+| Attachment | A file added to one Turn through the Attach button, drag-and-drop, or clipboard paste. DeskPilot uploads it before sending the prompt; image Attachments are also passed to the Engine's native Vision input. | Reference File, Artifact, embedded file |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
@@ -128,6 +129,10 @@ synonym.
   the *agent learns* (curated automatically or by hand, its own `agent-memory.json`
   store). Both are injected every Turn but have different authors and stores; keep
   the terms distinct.
+- **Attachment vs. Reference File.** An **Attachment** is uploaded for one Turn
+  from the composer. A **Reference File** is a persistent Project setting whose
+  path is injected into every Turn. An image Attachment also uses the Engine's
+  native Vision input; a Reference File is only read on demand with the File Tool.
 - **Session Info vs. Usage vs. Details.** **Usage** is the global credits/cost
   counter (this-session and all-time) in the sidebar. **Session Info** is
   per-Conversation: its accumulated cost plus its Context Window occupancy and the

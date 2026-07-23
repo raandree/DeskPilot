@@ -386,6 +386,14 @@ Describe 'New-DpTurnParameter' {
         (New-DpTurnParameter -Prompt 'hi' -History @() -Settings (Get-DpDefaultSettings)).ContainsKey('History') | Should -BeFalse
         (New-DpTurnParameter -Prompt 'hi' -History @(@{ role = 'user'; content = 'x' }) -Settings (Get-DpDefaultSettings)).ContainsKey('History') | Should -BeTrue
     }
+    It 'passes image Attachment paths through the Engine Image parameter' {
+        $imagePaths = @('C:\uploads\diagram.png', 'C:\uploads\photo.jpg')
+        $p = New-DpTurnParameter -Prompt 'describe these' -Image $imagePaths -Settings (Get-DpDefaultSettings)
+        $p.Image | Should -Be $imagePaths
+    }
+    It 'omits the Engine Image parameter when no image Attachments are supplied' {
+        (New-DpTurnParameter -Prompt 'hi' -Image @() -Settings (Get-DpDefaultSettings)).ContainsKey('Image') | Should -BeFalse
+    }
     It 'lets a Conversation Model override the Settings Model' {
         $s = Get-DpDefaultSettings
         $s.model = 'settings-model'
@@ -947,6 +955,44 @@ Describe 'Get-DpUploadDir' {
         $fakeData = Join-Path $TestDrive 'data-ws'
         Mock Get-DpDataDir { $fakeData }
         Get-DpUploadDir -WorkspaceFolder '   ' | Should -Be (Join-Path $fakeData 'uploads')
+    }
+}
+
+Describe 'Resolve-DpAttachmentPath' {
+    BeforeEach {
+        $attachmentRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $attachmentRoot | Out-Null
+        $attachmentPath = Join-Path $attachmentRoot 'pasted-image.png'
+        Set-Content -LiteralPath $attachmentPath -Value 'image bytes'
+        $attachmentStore = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        $attachmentStore[[System.IO.Path]::GetFullPath($attachmentPath)] = 'image/png'
+    }
+
+    It 'returns an existing image Attachment recorded by the upload route' {
+        Resolve-DpAttachmentPath -Path $attachmentPath -AttachmentStore $attachmentStore | Should -Be ([System.IO.Path]::GetFullPath($attachmentPath))
+    }
+
+    It 'rejects a file that was not recorded by the upload route' {
+        $unregisteredPath = Join-Path $attachmentRoot 'unregistered.png'
+        Set-Content -LiteralPath $unregisteredPath -Value 'unregistered'
+
+        { Resolve-DpAttachmentPath -Path $unregisteredPath -AttachmentStore $attachmentStore } | Should -Throw '*not a current upload*'
+    }
+
+    It 'rejects a recorded Attachment that no longer exists' {
+        Remove-Item -LiteralPath $attachmentPath
+
+        { Resolve-DpAttachmentPath -Path $attachmentPath -AttachmentStore $attachmentStore } | Should -Throw '*does not exist*'
+    }
+
+    It 'rejects a recorded Attachment that is not an image' {
+        $attachmentStore[[System.IO.Path]::GetFullPath($attachmentPath)] = 'text/plain'
+
+        { Resolve-DpAttachmentPath -Path $attachmentPath -AttachmentStore $attachmentStore } | Should -Throw '*is not an image*'
+    }
+
+    It 'rejects a relative Attachment path' {
+        { Resolve-DpAttachmentPath -Path 'pasted-image.png' -AttachmentStore $attachmentStore } | Should -Throw '*must be absolute*'
     }
 }
 

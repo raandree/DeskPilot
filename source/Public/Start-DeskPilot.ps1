@@ -93,6 +93,8 @@ function Start-DeskPilot {
         $runningVersion = Get-DpModuleVersionString -Version $runningModule.Version.ToString() -Prerelease $prereleaseLabel
     }
 
+    $attachmentPathComparer = if ($IsWindows) { [System.StringComparer]::OrdinalIgnoreCase } else { [System.StringComparer]::Ordinal }
+
     $script:DeskPilot = @{
         Version         = $runningVersion
         Settings        = $persistedSettings
@@ -108,6 +110,11 @@ function Start-DeskPilot {
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
         CancelRequested = $false
+        # Files accepted by POST /api/uploads during this Host Server launch,
+        # mapped by normalized path to MIME type. Native Vision inputs must match
+        # this registry, so they survive Project switching without allowing a
+        # crafted Message to nominate an arbitrary local file.
+        Attachments     = [System.Collections.Generic.Dictionary[string, string]]::new($attachmentPathComparer)
         # The accept loop's TcpListener, set once it is started below. The Turn
         # loop (Invoke-DpTurn) reads it through Invoke-DpPendingRequest to service
         # a concurrent POST /stop while it holds this single accept thread.

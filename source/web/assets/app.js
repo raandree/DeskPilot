@@ -1,3 +1,4 @@
+import { getImagePaths, wireClipboardAttachments } from './attachments.js';
 import { renderMarkdown } from './markdown.js';
 
 // ===== Session token =====
@@ -1363,9 +1364,11 @@ async function send() {
     recordPrompt(userPrompt);
 
     let prompt = userPrompt;
+    let images = [];
     if (state.pendingAttachments.length) {
         const count = state.pendingAttachments.length;
         const hasWorkspace = !!(state.settings && state.settings.workspaceFolder);
+        images = getImagePaths(state.pendingAttachments);
         // With a Project active the agent's working directory is the Workspace
         // Folder, so relative names suffice; with no Project the uploads live
         // elsewhere, so name their absolute paths instead.
@@ -1379,13 +1382,13 @@ async function send() {
 
     promptEl.value = '';
     autoGrow(promptEl);
-    await _runTurn({ prompt, displayText: prompt });
+    await _runTurn({ prompt, displayText: prompt, images });
 }
 
 // Core Turn runner. `prompt` is what the server sees; `displayText` is what the
 // user bubble shows; `dispatch` (optional) is 'queued' or 'steered' and renders
 // a small badge below the bubble so the user sees how the message was sent.
-async function _runTurn({ prompt, displayText, dispatch }) {
+async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     const promptEl = $('prompt');
     setSendEnabled(false);
 
@@ -1416,7 +1419,9 @@ async function _runTurn({ prompt, displayText, dispatch }) {
     };
 
     try {
-        await streamPost('/api/conversations/' + state.current.id + '/messages', { prompt }, {
+        const messageBody = { prompt };
+        if (images.length) messageBody.images = images;
+        await streamPost('/api/conversations/' + state.current.id + '/messages', messageBody, {
             start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
                 raw += (d && d.text) || '';
@@ -4855,6 +4860,7 @@ function wireGlobal() {
     }
 
     const promptEl = $('prompt');
+    wireClipboardAttachments(promptEl, uploadFiles);
     promptEl.addEventListener('input', () => {
         // Real typing exits history navigation (programmatic value sets don't fire input).
         state.historyIndex = -1;

@@ -173,7 +173,15 @@ back to an `uploads` folder in the per-user data directory (resolved by
 browser sends the upload before the prompt; the prompt then includes a brief
 "attached files" note that names the files (relative names inside the Workspace
 Folder, else their absolute paths) so the agent's existing File Tool reads them
-on its first iteration. No new model API or Tool is added.
+on its first iteration. The SPA also includes uploaded image paths in the Message
+request's optional `images` array. The Host Server resolves those paths through
+`Resolve-DpAttachmentPath`, which requires an absolute, existing image recorded
+in a per-launch Attachment registry populated only after `POST /api/uploads`
+successfully writes the file. The registry retains the normalized path and MIME
+type, so a pending Attachment remains valid if the user switches Projects while
+preventing a crafted Message from nominating an arbitrary local file. Valid image
+paths map to the Engine's native `Invoke-Shp -Image` parameter. This gives image
+Attachments to Vision-capable Models directly; no new Tool is added.
 
 ## Data directory
 
