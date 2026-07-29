@@ -58,7 +58,7 @@ jobs:
       nuGetVersion: ${{ steps.gitversion.outputs.NuGetVersionV2 }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # GitVersion needs the full history to calculate the version.
           fetch-depth: 0
@@ -88,7 +88,7 @@ jobs:
         run: ./build.ps1 -ResolveDependency -Tasks pack
 
       - name: Publish Build Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ env.buildArtifactName }}
           path: output/
@@ -108,12 +108,12 @@ jobs:
           - macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download Build Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ env.buildArtifactName }}
           path: output/
@@ -124,7 +124,7 @@ jobs:
 
       - name: Publish Test Results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: CodeCoverage-${{ matrix.os }}
           path: output/testResults/
@@ -146,12 +146,12 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download Build Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ env.buildArtifactName }}
           path: output/
