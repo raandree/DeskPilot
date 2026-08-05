@@ -181,9 +181,8 @@ first run.
 
 ## Roadmap
 
-Stop-a-turn and live activity, disk persistence, an Ask-you card in the thread,
-structured output, a user-tool manager, and a WebView2 single-window shell. See
-[specs/060-roadmap.md](specs/060-roadmap.md).
+Live Activity, structured-output surfaces, a user-tool manager, and a WebView2
+single-window shell. See [specs/060-roadmap.md](specs/060-roadmap.md).
 
 ## License
 

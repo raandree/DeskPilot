@@ -451,6 +451,165 @@ Describe 'New-DpTurnParameter' {
     }
 }
 
+Describe 'Initialize-DpUserPromptBridge' {
+    It 'pauses Engine Read-Host until DeskPilot submits the matching answer' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $shell = $null
+        $bridge = $null
+        try {
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $bridge.BeginTurn('c_1')
+            $bridge.CaptureQuestion('Which city should I search?')
+
+            $shell = [powershell]::Create()
+            $shell.Runspace = $runspace
+            $null = $shell.AddScript("Read-Host -Prompt 'Your answer'")
+            $async = $shell.BeginInvoke()
+
+            [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting }, 1000) | Should -BeTrue
+            $request = $bridge.GetPendingRequest()
+            $request.ConversationId | Should -Be 'c_1'
+            $request.Question | Should -Be 'Which city should I search?'
+            $async.IsCompleted | Should -BeFalse
+
+            $bridge.SubmitAnswer('c_other', $request.Id, 'Munich') | Should -BeFalse
+            $bridge.SubmitAnswer('c_1', 'q_stale', 'Munich') | Should -BeFalse
+            $async.IsCompleted | Should -BeFalse
+            $bridge.SubmitAnswer('c_1', $request.Id, 'Berlin') | Should -BeTrue
+            $bridge.SubmitAnswer('c_1', $request.Id, 'Hamburg') | Should -BeFalse
+            @($shell.EndInvoke($async))[0].ToString() | Should -Be 'Berlin'
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel() }
+            if ($shell) { $shell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+
+    It 'supports two sequential questions in one Turn' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $bridge = $null
+        try {
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $bridge.BeginTurn('c_2')
+            $answers = [System.Collections.Generic.List[string]]::new()
+
+            foreach ($round in @(
+                    @{ Question = 'Which city?'; Answer = 'Berlin' }
+                    @{ Question = 'How many days?'; Answer = 'Three' }
+                )) {
+                $bridge.CaptureQuestion($round.Question)
+                $shell = [powershell]::Create()
+                $shell.Runspace = $runspace
+                $null = $shell.AddScript("Read-Host -Prompt 'Your answer'")
+                $async = $shell.BeginInvoke()
+                try {
+                    [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting }, 1000) | Should -BeTrue
+                    $request = $bridge.GetPendingRequest()
+                    $request.Question | Should -Be $round.Question
+                    $bridge.SubmitAnswer('c_2', $request.Id, $round.Answer) | Should -BeTrue
+                    $answers.Add(@($shell.EndInvoke($async))[0].ToString())
+                }
+                finally {
+                    $shell.Dispose()
+                }
+            }
+
+            $answers | Should -Be @('Berlin', 'Three')
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel() }
+            $runspace.Dispose()
+        }
+    }
+
+    It 'cancels a pending question without leaving the Engine pipeline blocked' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $shell = $null
+        $bridge = $null
+        try {
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $bridge.BeginTurn('c_3')
+            $bridge.CaptureQuestion('Continue?')
+            $shell = [powershell]::Create()
+            $shell.Runspace = $runspace
+            $null = $shell.AddScript("Read-Host -Prompt 'Your answer'")
+            $async = $shell.BeginInvoke()
+
+            [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting }, 1000) | Should -BeTrue
+            $bridge.Cancel()
+            [System.Threading.SpinWait]::SpinUntil({ $async.IsCompleted }, 1000) | Should -BeTrue
+            $shell.EndInvoke($async) | Should -BeNullOrEmpty
+            $shell.HadErrors | Should -BeTrue
+            ($shell.Streams.Error | Select-Object -First 1).ToString() | Should -Match 'cancelled'
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel() }
+            if ($shell) { $shell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+
+    It 'bridges the real ShellPilot Ask-User helper without a console' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $shell = $null
+        $bridge = $null
+        try {
+            $engineModule = Get-Module -ListAvailable ShellPilot |
+                Sort-Object Version -Descending |
+                Select-Object -First 1
+            $engineModule | Should -Not -BeNullOrEmpty
+
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $engineModule.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.HadErrors | Should -BeFalse
+            $importShell.Dispose()
+
+            $bridge.BeginTurn('c_engine')
+            $shell = [powershell]::Create()
+            $shell.Runspace = $runspace
+            $engineScript = @'
+$module = Get-Module ShellPilot
+& $module { Read-ShpUserInput -Question 'Which city should I search?' }
+'@
+            $null = $shell.AddScript($engineScript)
+            $async = $shell.BeginInvoke()
+
+            [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting -or $async.IsCompleted }, 3000) |
+                Should -BeTrue
+            $toolCallRecord = [pscustomobject]@{
+                Tags        = @('ShpProgress')
+                MessageData = [pscustomobject]@{
+                    Kind      = 'ToolCall'
+                    Name      = 'ask_user'
+                    Arguments = '{"question":"Which city should I search?"}'
+                }
+            }
+            $bridge.CaptureQuestion((Get-DpUserPromptText -Record $toolCallRecord))
+            $request = $bridge.GetPendingRequest()
+            $request.Question | Should -Be 'Which city should I search?'
+
+            $bridge.SubmitAnswer('c_engine', $request.Id, 'Berlin') | Should -BeTrue
+            [System.Threading.SpinWait]::SpinUntil({ $async.IsCompleted }, 3000) | Should -BeTrue
+            $result = @($shell.EndInvoke($async))[-1] | ConvertFrom-Json
+            $result.answered | Should -BeTrue
+            $result.answer | Should -Be 'Berlin'
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel() }
+            if ($shell) { $shell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+}
+
 Describe 'Get-DpPropertyValue' {
     It 'returns the first present candidate' {
         $o = [pscustomobject]@{ Content = 'hello' }
@@ -690,6 +849,141 @@ Describe 'Get-DpStreamFrame' {
     }
 }
 
+Describe 'Get-DpUserPromptText' {
+    It 'returns the model question from a structured ask_user ToolCall record' {
+        $record = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'ask_user'
+                Arguments = '{"question":"Which city should I search?"}'
+            }
+        }
+
+        Get-DpUserPromptText -Record $record | Should -Be 'Which city should I search?'
+    }
+
+    It 'ignores host text and progress for other Tools' {
+        $hostRecord = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{
+                Message = 'Which city should I search?'
+                ForegroundColor = [System.ConsoleColor]::Yellow
+            }
+        }
+        $progressRecord = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'read_file'
+                Arguments = '{"path":"notes.md"}'
+            }
+        }
+
+        Get-DpUserPromptText -Record $hostRecord | Should -BeNullOrEmpty
+        Get-DpUserPromptText -Record $progressRecord | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-DpStoppedTurnUsage' {
+    It 'prefers an exact Engine Usage delta when the cancelled call was recorded' {
+        $before = [pscustomobject]@{
+            Calls = 2; PromptTokens = 100; CompletionTokens = 20
+            TotalTokens = 120; CostUSD = 0.01; Credits = 1.0
+        }
+        $after = [pscustomobject]@{
+            Calls = 3; PromptTokens = 180; CompletionTokens = 45
+            TotalTokens = 225; CostUSD = 0.019; Credits = 1.9
+        }
+        $estimate = [pscustomobject]@{
+            EstimatedInputTokens = 999
+            EstimatedInputCostUSD = 0.1
+            EstimatedInputCredits = 10
+        }
+
+        $usage = Get-DpStoppedTurnUsage -Before $before -After $after -Estimate $estimate
+
+        $usage.promptTokens | Should -Be 80
+        $usage.completionTokens | Should -Be 25
+        $usage.totalTokens | Should -Be 105
+        $usage.costUSD | Should -Be 0.009
+        $usage.credits | Should -Be 0.9
+        $usage.iterations | Should -Be 1
+        $usage.estimated | Should -BeFalse
+        $usage.partial | Should -BeTrue
+    }
+
+    It 'falls back to a clearly marked input estimate when hard cancellation records no Usage' {
+        $summary = [pscustomobject]@{
+            Calls = 2; PromptTokens = 100; CompletionTokens = 20
+            TotalTokens = 120; CostUSD = 0.01; Credits = 1.0
+        }
+        $estimate = [pscustomobject]@{
+            EstimatedInputTokens = 400
+            EstimatedInputCostUSD = 0.02
+            EstimatedInputCredits = 2.0
+        }
+
+        $usage = Get-DpStoppedTurnUsage -Before $summary -After $summary -Estimate $estimate
+
+        $usage.promptTokens | Should -Be 400
+        $usage.completionTokens | Should -Be 0
+        $usage.totalTokens | Should -Be 400
+        $usage.costUSD | Should -Be 0.02
+        $usage.credits | Should -Be 2.0
+        $usage.estimated | Should -BeTrue
+        $usage.estimateScope | Should -Be 'input-only'
+        $usage.partial | Should -BeTrue
+    }
+
+    It 'uses the estimate when the pre-Turn Engine Usage baseline is missing' {
+        $after = [pscustomobject]@{
+            Calls = 12; PromptTokens = 5000; CompletionTokens = 900
+            TotalTokens = 5900; CostUSD = 0.45; Credits = 45.0
+        }
+        $estimate = [pscustomobject]@{
+            EstimatedInputTokens = 60
+            EstimatedInputCostUSD = 0.0003
+            EstimatedInputCredits = 0.03
+        }
+
+        $usage = Get-DpStoppedTurnUsage -Before $null -After $after -Estimate $estimate
+
+        $usage.promptTokens | Should -Be 60
+        $usage.credits | Should -Be 0.03
+        $usage.estimated | Should -BeTrue
+        $usage.estimateScope | Should -Be 'input-only'
+    }
+}
+
+Describe 'Get-DpStoppedTurnEstimateText' {
+    It 'uses the prompt when the optional SystemPrompt key is absent' {
+        $estimateTextParams = @{
+            TurnParameter = @{ Prompt = 'hello' }
+            History       = @()
+            Prompt        = 'hello'
+        }
+
+        Get-DpStoppedTurnEstimateText @estimateTextParams | Should -Be 'hello'
+    }
+
+    It 'combines system context, history, and the current prompt in order' {
+        $history = @(
+            @{ role = 'user'; content = 'first' }
+            [pscustomobject]@{ role = 'assistant'; content = 'second' }
+        )
+
+        $estimateTextParams = @{
+            TurnParameter = @{ Prompt = 'current'; SystemPrompt = 'system' }
+            History       = $history
+            Prompt        = 'current'
+        }
+        $text = Get-DpStoppedTurnEstimateText @estimateTextParams
+
+        $text | Should -Be "system`n`nfirst`n`nsecond`n`ncurrent"
+    }
+}
+
 Describe 'Get-DpStaticContent' {
     BeforeAll {
         Set-Content -Path (Join-Path $TestDrive 'index.html') -Value '<html></html>' -NoNewline
@@ -751,6 +1045,25 @@ Describe 'Conversation store persistence' {
         $loaded = Import-DpConversationStore -Directory $dir
         $loaded[$conv.id].unread | Should -BeTrue
         $loaded[$conv.id].color | Should -Be 'teal'
+    }
+    It 'round-trips a stopped assistant Message and its estimated Usage' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $conv = New-DpConversation -Title 'Stopped'
+        $conv.messages.Add(@{
+                id = 'm_stop'; role = 'assistant'; text = ''; stopped = $true
+                stopReason = 'Turn stopped.'
+                usage = @{ credits = 2.0; estimated = $true; estimateScope = 'input-only' }
+            })
+
+        Save-DpConversationStore -Store @{ $conv.id = $conv } -Directory $dir
+        $loaded = Import-DpConversationStore -Directory $dir
+
+        $message = $loaded[$conv.id].messages[0]
+        $message.stopped | Should -BeTrue
+        $message.stopReason | Should -Be 'Turn stopped.'
+        $message.usage.credits | Should -Be 2.0
+        $message.usage.estimated | Should -BeTrue
     }
     It 'round-trips the compactedUtc marker' {
         $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))

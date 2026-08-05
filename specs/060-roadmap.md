@@ -16,10 +16,14 @@ task, see Activity and Usage — all from the window.
 ## Phase 1 — Robustness & trust
 
 - ~~Stop-a-Turn end to end.~~ **Done** — a Stop button cancels the running Turn
-  (`POST /api/conversations/{id}/stop` sets a cancel flag the Turn loop honors,
-  stopping the Engine shell and emitting a "Turn stopped." error frame; FR-C6).
+  immediately in the UI, then the Host Server stops the Engine pipeline
+  asynchronously and persists a stopped Message with partial Usage. When a hard
+  stop prevents exact provider totals, the credits are labelled as an input-only
+  estimate (`POST /api/conversations/{id}/stop`; FR-C6).
 - Live Activity events during a Turn (not just at `done`).
-- Ask-User Tool routed into the thread (FR-T4).
+- ~~Ask-User Tool routed into the thread (FR-T4).~~ **Done** — a structured
+  Engine Tool event opens an in-thread answer card; the correlated response
+  resumes the same Turn without an interactive console.
 - ~~Disk persistence of Conversations (FR-C7).~~ **Done** — Conversations and a
   lifetime Usage counter now persist to a per-user data directory; the lifetime
   counter has a manual reset (FR-C7, FR-C8, FR-U3, FR-U4).

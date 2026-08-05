@@ -248,9 +248,10 @@ category's file pattern; the surface can never open or write an arbitrary file.
 ### 7. Ask-User prompt (in-thread)
 
 When the agent calls the Ask-User Tool, an inline card appears in the thread
-with the question and an input; the answer is sent back and the Turn resumes.
-*(Depends on FR-T4; if not wired in v1, the Tool reports no console and the agent
-proceeds.)*
+with the question, a multiline answer input, and an **Answer** button. Submitting
+locks the answer into the card, sends it to the matching pending question, and
+resumes the same Turn. Repeated Ask-User calls append cards so a short profile
+interview can proceed in multiple rounds. Stop also cancels a pending question.
 
 ## States
 
@@ -258,6 +259,7 @@ proceeds.)*
 | --- | --- |
 | Idle | composer focused, Send enabled. |
 | Streaming | Stop button, blinking caret, live Activity hints. |
+| Stopping | **Stopping…** disabled immediately; caret and Activity spinner hidden; buffered stream updates ignored. |
 | Tool running | "Working… (using tools)" pill under the streaming Message. |
 | Error | red inline card with the message + Retry. |
 | Unauthenticated | Authenticate screen replaces the thread. |

@@ -204,6 +204,7 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/messages'; Name = 'postMessage' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/regenerate'; Name = 'regenerateTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/edit'; Name = 'editTurn' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/question'; Name = 'submitUserPrompt' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/stop'; Name = 'stopTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/title'; Name = 'titleConversation' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/duplicate'; Name = 'duplicateConversation' }

@@ -493,6 +493,9 @@ parameter. An unregistered, relative, missing, or non-image path returns
 | `delta` | `{ "text": "partial answer…" }` | each streamed answer chunk. |
 | `activity` | `{ "kind": "tool", "name": "read_file", "detail": "./notes.md" }` | best-effort live Tool signal (optional in v1). |
 | `tasks` | `{ "tasks": [ { "id": 1, "title": "…", "status": "in-progress" } ] }` | Task List update during the Turn; the **full** list is sent each time (idempotent replace, not a delta). At most one Task is `in-progress`. Status is one of `not-started`, `in-progress`, `completed`. |
+| `question` | `{ "id": "…", "question": "Which city?" }` | The Ask-User Tool is waiting. The client renders an answer card and submits the response through the correlated question route below. |
+| `stopping` | `{ "message": "Turn stopped." }` | Stop was accepted; the client immediately freezes the live Message while the Engine pipeline unwinds. |
+| `stopped` | stopped assistant Message | Cancellation complete. Persisted with `stopped: true`, `stopReason`, and partial Usage. When the Engine has no final Usage record, `usage.estimated: true` and `estimateScope: "input-only"` mark the preflight input estimate. |
 | `done` | full assistant Message (same shape as in `GET conversation`) | Turn complete. The Message's `tasks` field is the authoritative final list (possibly empty). |
 | `error` | `{ "message": "…" }` | Turn failed; history unchanged. |
 
@@ -503,8 +506,23 @@ Runspace's Information stream; see [020-architecture.md](020-architecture.md#in-
 Client stops a Turn with `POST /api/conversations/{id}/stop` → `202`. The single
 accept thread services this request mid-Turn (the streaming loop pumps pending
 connections), so the cancel flag is set while the Turn is still running; the Turn
-then aborts the Engine pipeline and closes the stream with an `error` frame
-(`{ "message": "Turn stopped." }`).
+then stops the Engine pipeline asynchronously. The browser switches to
+**Stopping…** as soon as the button is clicked, ignores any buffered deltas, and
+receives `stopping` followed by `stopped`. The stopped Message is persisted so
+its Usage footer survives refresh. ShellPilot receives provider token counts in
+the final stream frame, which a hard stop may prevent; when no exact Engine Usage
+delta exists, DeskPilot records and labels an input-only preflight estimate
+instead of displaying zero or presenting the estimate as exact.
+
+### `POST /api/conversations/{id}/question`
+
+Supplies an answer while the Ask-User Tool is blocking the active Turn. Body:
+`{ "questionId": "…", "answer": "Berlin" }`. Returns `202` with
+`{ "accepted": true }`, after which the Engine resumes the same Turn and the
+original SSE response stays open. Returns `400 bad_answer` for a missing id or
+blank answer, `404` for an unknown Conversation, and `409 stale_question` when
+there is no matching pending question. Both the Conversation id and random
+question id must match, so a delayed response cannot answer another Turn.
 
 ### `POST /api/conversations/{id}/title`
 

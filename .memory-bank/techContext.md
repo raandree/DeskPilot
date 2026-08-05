@@ -1,3 +1,11 @@
+---
+schema-version: 1
+status: accepted
+owner: shared
+last-verified: 2026-08-05
+source: repository evidence
+---
+
 # Tech Context — DeskPilot
 
 ## Stack
@@ -32,10 +40,18 @@
 - Tools are **on by default**; disabled per category with `-DisableBrowsing`,
   `-DisableFileAccess`, `-DisableTerminal`, `-DisableUserPrompts`,
   `-DisableUserTools`.
+- ShellPilot 0.4.0's built-in `ask_user` emits a structured `ShpProgress`
+  `ToolCall` containing the question, then calls private `Read-ShpUserInput`,
+  which blocks on `Read-Host`. DeskPilot adapts that console contract inside the
+  Engine Runspace and resumes the same Turn through a correlated answer route.
 - Streaming is **on by default**: answer tokens are echoed to the host via
   `Write-Host`; the full text is always on `.Content`. DeskPilot captures the
   host echo through the `[PowerShell]` instance's `Streams.Information` to drive
   live SSE deltas, and uses `.Content` as the authoritative final text.
+- A hard pipeline Stop can prevent ShellPilot from receiving the provider's
+  final token/Usage frame. DeskPilot uses an exact pre/post Engine Usage delta
+  only when both snapshots exist; otherwise it persists and labels ShellPilot's
+  preflight input-only cost estimate (`estimated`, `partial`, `estimateScope`).
 - Stateless multi-turn via `-History` (an array of `{role, content}`). DeskPilot
   stores one history array per Conversation and replays it each Turn — this
   isolates Conversations and avoids the Engine's module-scoped running chat.

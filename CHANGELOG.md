@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stop now reacts immediately and preserves the interrupted Turn's Usage.**
+  Clicking Stop freezes further streamed text at once, disables the button as
+  **Stopping…**, and cancels the Engine pipeline asynchronously so the Host
+  Server can keep processing requests while it unwinds. The resulting stopped
+  Message is persisted with its credits and cost. Exact Engine Usage is used
+  when available; hard-stopped streams that never receive the provider's final
+  token frame show a clearly labelled input-only estimate instead of zero.
+- **Ask you now pauses for an in-thread answer instead of reporting that no
+  interactive console is available.** DeskPilot captures ShellPilot's structured
+  `ask_user` Tool event, renders a correlated answer card, feeds the response to
+  the waiting Engine Runspace, and resumes the same Turn. Repeated questions can
+  form a multi-round interview, stale answers are rejected, and Stop cancels a
+  pending question. Adds a `POST /api/conversations/{id}/question` route and
+  focused Host Server, Engine-contract, and web-asset tests.
 - **The GitHub sign-in screen no longer hides the device code behind its own
   progress output.** The Engine writes one line per poll while it waits for you
   to authorise, and the sign-in panel appended every one of them, so the

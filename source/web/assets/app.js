@@ -94,6 +94,7 @@ const state = {
     defaultModel: null,
     authForce: false,
     streaming: false,
+    stopRequested: false,
     pendingAttachments: [],
     agents: [],
     usageRange: 14,
@@ -1163,18 +1164,24 @@ function buildAssistantEl(m) {
     thinking.innerHTML = '<summary>Thinking</summary><div class="disclosure-body"></div>';
     const content = el('content');
     const tasks = el('tasks-panel hidden');
+    const userPrompts = el('user-prompts hidden');
+    userPrompts.setAttribute('aria-live', 'polite');
     const activity = el('disclosure activity hidden', 'details');
     const usage = el('usage-foot hidden');
-    wrap.append(role, thinking, content, tasks, activity, usage);
-    wrap._refs = { content, thinking, tasks, activity, usage, actions };
+    wrap.append(role, thinking, content, tasks, userPrompts, activity, usage);
+    wrap._refs = { content, thinking, tasks, userPrompts, activity, usage, actions };
     return wrap;
 }
 
 function finalizeAssistant(wrap, m, opts) {
     const r = wrap._refs;
-    r.content.innerHTML = renderMarkdown(m.text || '');
-    hydrateCopies(r.content);
-    decorateArtifacts(r.content);
+    if (m.stopped) {
+        showInlineError(wrap, m.stopReason || 'Turn stopped.');
+    } else {
+        r.content.innerHTML = renderMarkdown(m.text || '');
+        hydrateCopies(r.content);
+        decorateArtifacts(r.content);
+    }
     if (r.actions) buildMessageActions(r.actions, m, opts && opts.isLast);
     if (m.reasoning) {
         wrap.querySelector('.thinking').classList.remove('hidden');
@@ -1310,12 +1317,68 @@ function renderTasks(node, tasks) {
     node.innerHTML = `<div class="tasks-head">Tasks — ${completed}/${total}</div><div class="task-list">${rows}</div>`;
 }
 
+function renderUserPrompt(node, request, conversationId) {
+    if (!node || !request || !request.id || !request.question) return;
+    const requestId = String(request.id);
+    if (Array.from(node.children).some((child) => child.dataset.questionId === requestId)) return;
+
+    const card = el('user-prompt-card');
+    card.dataset.questionId = requestId;
+    const label = el('user-prompt-label');
+    label.textContent = 'Your input is needed';
+    const question = el('user-prompt-question');
+    question.textContent = String(request.question);
+    const form = el('user-prompt-form', 'form');
+    const input = el('user-prompt-input', 'textarea');
+    input.rows = 2;
+    input.placeholder = 'Type your answer';
+    input.setAttribute('aria-label', 'Answer');
+    const submit = el('btn btn-primary user-prompt-submit', 'button');
+    submit.type = 'submit';
+    submit.textContent = 'Answer';
+    const status = el('user-prompt-status');
+    form.append(input, submit);
+    card.append(label, question, form, status);
+    node.classList.remove('hidden');
+    node.appendChild(card);
+    scrollThread();
+    input.focus();
+
+    form.onsubmit = async (event) => {
+        event.preventDefault();
+        const answer = input.value.trim();
+        if (!answer) { input.focus(); return; }
+        input.disabled = true;
+        submit.disabled = true;
+        status.textContent = 'Sending…';
+        status.classList.remove('error-text');
+        try {
+            await api('POST', `/api/conversations/${encodeURIComponent(conversationId)}/question`, {
+                questionId: requestId,
+                answer,
+            });
+            const answered = el('user-prompt-answer');
+            answered.textContent = answer;
+            form.replaceWith(answered);
+            status.textContent = 'Answered';
+            card.classList.add('answered');
+        } catch (error) {
+            input.disabled = false;
+            submit.disabled = false;
+            status.textContent = error.message || String(error);
+            status.classList.add('error-text');
+            input.focus();
+        }
+    };
+}
+
 function renderUsage(node, m) {
     const u = m.usage || {};
     const bits = [];
-    if (u.totalTokens) bits.push(`${u.totalTokens.toLocaleString()} tokens`);
-    if (u.costUSD) bits.push(`$${u.costUSD.toFixed(4)}`);
-    if (u.credits) bits.push(`${u.credits} credits`);
+    if (u.totalTokens) bits.push(`${u.estimated ? '~' : ''}${u.totalTokens.toLocaleString()} ${u.estimated ? 'input ' : ''}tokens`);
+    if (u.costUSD) bits.push(`${u.estimated ? '~' : ''}$${u.costUSD.toFixed(4)}`);
+    if (u.credits) bits.push(`${u.estimated ? '~' : ''}${u.credits} credits${u.estimateScope === 'input-only' ? ' (input estimate)' : ''}`);
+    if (u.estimated && !u.totalTokens && !u.costUSD && !u.credits) bits.push('Usage estimate unavailable');
     if (m.model) bits.push(escapeHtml(m.model));
     if (m.durationMs) bits.push(`${(m.durationMs / 1000).toFixed(1)}s`);
     if (!bits.length) { node.classList.add('hidden'); return; }
@@ -1406,15 +1469,20 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     scrollThread();
 
     state.streaming = true;
+    state.stopRequested = false;
     state.streamEndPromise = new Promise((resolve) => { state.streamEndResolve = resolve; });
     setStreamingUI(true);
     let raw = '';
     let think = '';
+    let turnCompleted = false;
+    let turnStopped = false;
+    const conversationId = state.current.id;
     // Render the live answer as Markdown, but coalesce to one paint per frame so a
     // fast token stream doesn't re-parse the whole message on every delta.
     let renderScheduled = false;
     const renderLive = () => {
         renderScheduled = false;
+        if (state.stopRequested || turnStopped) return;
         wrap._refs.content.innerHTML = renderMarkdown(raw);
         scrollThread();
     };
@@ -1422,9 +1490,10 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     try {
         const messageBody = { prompt };
         if (images.length) messageBody.images = images;
-        await streamPost('/api/conversations/' + state.current.id + '/messages', messageBody, {
+        await streamPost('/api/conversations/' + conversationId + '/messages', messageBody, {
             start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
+                if (state.stopRequested) return;
                 raw += (d && d.text) || '';
                 if (!renderScheduled) {
                     renderScheduled = true;
@@ -1432,12 +1501,29 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
                 }
             },
             reasoning: (d) => {
+                if (state.stopRequested) return;
                 think += (d && d.text) || '';
                 wrap.querySelector('.thinking').classList.remove('hidden');
                 wrap.querySelector('.thinking .disclosure-body').textContent = think;
             },
-            tasks: (d) => { if (d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
+            stopping: (d) => {
+                turnStopped = true;
+                state.stopRequested = true;
+                setStoppingUI();
+                wrap._refs.content.classList.remove('stream-caret');
+                showInlineError(wrap, (d && d.message) || 'Turn stopped.');
+            },
+            stopped: (m) => {
+                turnStopped = true;
+                wrap._refs.content.classList.remove('stream-caret');
+                finalizeAssistant(wrap, m, { isLast: true });
+                markLastAssistant();
+                scrollThread();
+            },
             done: (m) => {
+                turnCompleted = true;
                 wrap._refs.content.classList.remove('stream-caret');
                 finalizeAssistant(wrap, m, { isLast: true });
                 markLastAssistant();
@@ -1453,6 +1539,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
         showInlineError(wrap, e.message || String(e));
     } finally {
         state.streaming = false;
+        state.stopRequested = false;
         setStreamingUI(false);
         const resolveEnd = state.streamEndResolve;
         state.streamEndPromise = null;
@@ -1468,14 +1555,13 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
         maybeWarnBudget();
         if (explorerOpen()) refreshExplorer();
         promptEl.focus();
-        // Give a brand-new Conversation a concise AI title (like GitHub Copilot).
-        await maybeAutoTitle();
-        // Auto-compact when the context window is filling up, so a long
-        // Conversation keeps working instead of overflowing the Model window.
-        await maybeAutoCompact();
-        // Fold durable facts from the conversation into the agent's persistent
-        // Memory (throttled by turn count), when automatic learning is on.
-        await maybeLearnMemory();
+        if (turnCompleted) {
+            // These follow-ups belong only to a successfully completed Turn. A
+            // Stop must not trigger fresh Model calls or additional credit spend.
+            await maybeAutoTitle();
+            await maybeAutoCompact();
+            await maybeLearnMemory();
+        }
         // Drain one queued/steered message, if any. We only fire the next one;
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
@@ -1584,9 +1670,29 @@ async function maybeLearnMemory() {
 }
 
 async function stopTurn() {
-    if (!state.current) return;
-    try { await api('POST', '/api/conversations/' + state.current.id + '/stop'); } catch { /* ignore */ }
+    if (!state.current || !state.streaming || state.stopRequested) return;
+    state.stopRequested = true;
+    setStoppingUI();
     toast('Stopping…');
+    try {
+        await api('POST', '/api/conversations/' + state.current.id + '/stop');
+    } catch (error) {
+        state.stopRequested = false;
+        setStreamingUI(true);
+        toast(error.message || 'Could not stop the Turn.');
+    }
+}
+
+function setStoppingUI() {
+    const btn = $('btn-send');
+    btn.textContent = 'Stopping…';
+    btn.classList.add('stop');
+    btn.disabled = true;
+    const dispatchBtn = $('btn-dispatch');
+    if (dispatchBtn) dispatchBtn.classList.add('hidden');
+    const hint = $('activity-hint');
+    hint.classList.add('hidden');
+    document.querySelectorAll('.stream-caret').forEach((node) => node.classList.remove('stream-caret'));
 }
 
 function setStreamingUI(on) {
@@ -4247,18 +4353,29 @@ async function _streamRerun({ endpoint, body }) {
     markLastAssistant();
     scrollThread();
     state.streaming = true;
+    state.stopRequested = false;
     state.streamEndPromise = new Promise((resolve) => { state.streamEndResolve = resolve; });
     setStreamingUI(true);
+    const conversationId = state.current.id;
     let raw = '';
     let think = '';
+    let turnStopped = false;
     let renderScheduled = false;
-    const renderLive = () => { renderScheduled = false; wrap._refs.content.innerHTML = renderMarkdown(raw); scrollThread(); };
+    const renderLive = () => {
+        renderScheduled = false;
+        if (state.stopRequested || turnStopped) return;
+        wrap._refs.content.innerHTML = renderMarkdown(raw);
+        scrollThread();
+    };
     try {
-        await streamPost('/api/conversations/' + state.current.id + endpoint, body, {
+        await streamPost('/api/conversations/' + conversationId + endpoint, body, {
             start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; },
-            delta: (d) => { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } },
-            reasoning: (d) => { think += (d && d.text) || ''; wrap.querySelector('.thinking').classList.remove('hidden'); wrap.querySelector('.thinking .disclosure-body').textContent = think; },
-            tasks: (d) => { if (d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            delta: (d) => { if (!state.stopRequested) { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
+            reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; wrap.querySelector('.thinking').classList.remove('hidden'); wrap.querySelector('.thinking .disclosure-body').textContent = think; } },
+            tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
+            stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
+            stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); scrollThread(); },
             done: (m) => { wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); scrollThread(); },
             error: (d) => { wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Something went wrong.'); },
         });
@@ -4267,6 +4384,7 @@ async function _streamRerun({ endpoint, body }) {
         showInlineError(wrap, e.message || String(e));
     } finally {
         state.streaming = false;
+        state.stopRequested = false;
         setStreamingUI(false);
         const resolveEnd = state.streamEndResolve;
         state.streamEndPromise = null; state.streamEndResolve = null;

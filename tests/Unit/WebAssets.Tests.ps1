@@ -109,6 +109,30 @@ assert.equal(progress.status, AUTH_WAITING_STATUS, 'applyAuthLine must not mutat
 
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
+
+    It 'renders Ask-User questions and submits answers while a Turn streams' {
+        $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $styles = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        $app | Should -Match 'question:\s*\(d\)\s*=>'
+        $app | Should -Match '/question'
+        $app | Should -Match 'userPrompts'
+        $styles | Should -Match '\.user-prompt-card'
+    }
+
+    It 'switches to an immediate stopping state and renders stopped Turn Usage' {
+        $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $app | Should -Match 'stopRequested:\s*false'
+        $app | Should -Match 'function\s+setStoppingUI\s*\('
+        $app | Should -Match 'stopping:\s*\(d\)\s*=>'
+        $app | Should -Match 'stopped:\s*\(m\)\s*=>'
+        $app | Should -Match 'estimateScope'
+        ([regex]::Matches($app, 'let\s+turnStopped\s*=\s*false;')).Count | Should -Be 2
+        ([regex]::Matches($app, 'turnStopped\s*=\s*true;')).Count | Should -Be 4
+        ([regex]::Matches($app, 'renderScheduled\s*=\s*false;\s*if\s*\(state\.stopRequested\s*\|\|\s*turnStopped\)\s*return;')).Count |
+            Should -Be 2
+    }
 }
 
 Describe 'Web asset reference casing' -Tag 'Unit' {

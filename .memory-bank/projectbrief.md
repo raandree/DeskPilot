@@ -1,3 +1,11 @@
+---
+schema-version: 1
+status: accepted
+owner: shared
+last-verified: 2026-08-05
+source: repository evidence
+---
+
 # Project Brief — DeskPilot
 
 ## What

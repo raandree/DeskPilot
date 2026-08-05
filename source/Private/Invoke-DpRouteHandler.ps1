@@ -855,8 +855,40 @@ function Invoke-DpRouteHandler {
             }
             Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
         }
+        'submitUserPrompt' {
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{
+                    error = @{ code = 'not_found'; message = 'Conversation not found.' }
+                }
+                return
+            }
+
+            $questionId = [string](Get-DpPropertyValue -InputObject $Body -Name @('questionId') -Default '')
+            $answer = [string](Get-DpPropertyValue -InputObject $Body -Name @('answer') -Default '')
+            if ([string]::IsNullOrWhiteSpace($questionId) -or [string]::IsNullOrWhiteSpace($answer)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{
+                    error = @{ code = 'bad_answer'; message = 'A questionId and non-empty answer are required.' }
+                }
+                return
+            }
+
+            $bridge = $state.Engine.UserPromptBridge
+            $accepted = $state.TurnRunning -and $bridge -and
+                $bridge.SubmitAnswer([string]$conversation.id, $questionId, $answer.Trim())
+            if (-not $accepted) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                    error = @{ code = 'stale_question'; message = 'That question is no longer waiting for an answer.' }
+                }
+                return
+            }
+
+            Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
+        }
         'stopTurn' {
             $state.CancelRequested = $true
+            $bridge = $state.Engine.UserPromptBridge
+            if ($bridge) { $bridge.Cancel() }
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
         }
         'titleConversation' {

@@ -40,3 +40,40 @@ won't be caught by any syntax check — after a large multi-edit, grep for scram
 signatures (`^[^/].*=====`, `function [A-Z][a-z]+ [a-z]`, stray `$n` artifacts)
 and read the touched regions back.
 
+## Bridge Engine `Read-Host` prompts through the Host Server (2026-08-05)
+
+**Symptom:** A prompt asking DeskPilot to interview the user produced prose or
+continued best-effort instead of an interactive questionnaire, even though the
+Ask-User Permission was enabled.
+
+**Root cause:** Permission wiring only offered ShellPilot's `ask_user` Tool.
+ShellPilot 0.4.0 then wrote the question and called `Read-Host`; DeskPilot runs
+`Invoke-Shp` in an Engine pipeline with no interactive console, so the helper
+returned `answered=false`. Enabling a Tool is not enough when its host I/O
+contract is console-specific.
+
+**Fix + rule:** Adapt the host boundary. Use ShellPilot's structured
+`ShpProgress` `ToolCall` arguments as the semantic question source, shadow
+`Read-Host` only in the Engine Runspace during an active Turn, and rendezvous
+with a token-gated, Conversation/question-correlated HTTP answer. The Turn loop
+must keep pumping pending requests while the Engine waits, and Stop must cancel
+the wait. Never parse `Write-Host` colors for Tool semantics.
+
+## Preserve Usage when stopping an Engine pipeline (2026-08-05)
+
+**Symptom:** Stop was acknowledged quickly but the browser stayed active while
+`PowerShell.Stop()` unwound, and interrupted Turns showed no credits.
+
+**Root cause:** The Turn loop stopped the child pipeline synchronously and its
+cancellation branch returned before creating a Message or calling
+`Update-DpUsage`. ShellPilot receives provider Usage in the final stream frame
+and appends its Usage log only on normal return, so a hard stop may have no exact
+token record.
+
+**Fix + rule:** Freeze the UI synchronously and stop the child pipeline through
+`BeginStop`/`EndStop` while the Host Server keeps pumping requests. Persist a
+stopped Message. Prefer an exact cumulative Engine Usage delta only when both
+pre/post snapshots exist; otherwise use and visibly label an input-only estimate.
+Never treat a missing baseline as zero, or all prior Engine Usage can be charged
+again. Skip post-Turn Model calls after Stop, and guard already-scheduled paints
+with a Turn-local stopped latch.

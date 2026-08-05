@@ -318,6 +318,27 @@ verbatim. They are mapped to `Task` and `Task List` (and the matching
 `tasks` JSON/SSE field, `Get-DpTaskList` etc.) immediately as they cross
 into DeskPilot code, persistence, UI copy and docs (Ubiquitous Language).
 
+## In-Turn Ask-User bridge
+
+ShellPilot's `ask_user` Tool is console-oriented: it emits a structured
+`ShpProgress` `ToolCall`, then calls `Read-Host` and waits for one answer.
+DeskPilot adapts that contract without changing or reimplementing the Engine:
+
+1. `Get-DpUserPromptText` accepts only a structured `ToolCall` whose name is
+  `ask_user`, parses its JSON arguments, and captures the `question`. Host
+  colors and display text are never parsed for semantics.
+2. The Engine Runspace has a Runspace-local `Read-Host` adapter backed by a
+  thread-safe `UserPromptBridge`. The adapter delegates to native `Read-Host`
+  outside an active Turn; during a Turn it waits on the bridge.
+3. The Turn loop pairs the captured question with the waiting `Read-Host`, emits
+  one `question` SSE event containing a random question id, and continues
+  pumping pending HTTP requests while the Engine pipeline is paused.
+4. `POST /api/conversations/{id}/question` accepts only the matching active
+  Conversation and question id, supplies the answer, and releases the same
+  Engine pipeline. Stale or cross-Conversation answers return `409`.
+5. Stopping the Turn cancels the pending bridge wait before stopping the Engine
+  pipeline, so Ask-User never makes Stop hang.
+
 ## Failure handling
 
 - Engine import or auth failure → `/api/health` reports it; UI shows a guided

@@ -27,6 +27,7 @@ function Initialize-DpEngine {
 
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.Open()
+    $userPromptBridge = Initialize-DpUserPromptBridge -Runspace $runspace
 
     $importShell = [powershell]::Create()
     $importShell.Runspace = $runspace
@@ -93,11 +94,12 @@ function Initialize-DpEngine {
     }
 
     @{
-        Runspace    = $runspace
-        Imported    = $imported
-        Installed   = $resolution.Installed
-        ModulePath  = $resolved
-        ImportError = $importError
-        TokenPath   = $tokenPath
+        Runspace         = $runspace
+        Imported         = $imported
+        Installed        = $resolution.Installed
+        ModulePath       = $resolved
+        ImportError      = $importError
+        TokenPath        = $tokenPath
+        UserPromptBridge = $userPromptBridge
     }
 }

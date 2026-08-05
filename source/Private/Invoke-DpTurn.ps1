@@ -40,6 +40,9 @@ function Invoke-DpTurn {
     $assistantId = New-DpId -Prefix 'm'
     $settings = $script:DeskPilot.Settings
     $shell = $null
+    $userPromptBridge = $script:DeskPilot.Engine.UserPromptBridge
+    $engineUsageBefore = $null
+    $stoppedUsageEstimate = $null
 
     # Per-Turn Task List state. This is a fresh function-local on every Turn, so one
     # Turn's list never bleeds into the next. It holds the latest list streamed live
@@ -60,6 +63,22 @@ function Invoke-DpTurn {
         [void]$turnState.pendingText.Clear()
     }
 
+    # Publish a pending Engine Read-Host request once. GetPendingRequest marks
+    # the request emitted, so this can run on every 10 ms stream drain without
+    # duplicating the in-thread card. The matching answer arrives through the
+    # mid-Turn request pump and releases the Engine pipeline on the bridge.
+    $emitUserPrompt = {
+        if (-not $userPromptBridge) { return }
+        $request = $userPromptBridge.GetPendingRequest()
+        if ($null -eq $request) { return }
+        & $flush
+        $turnState.emitted = [int]$turnState.emitted + 1
+        $writer.Write((ConvertTo-DpSseFrame -EventName 'question' -Data @{
+                    id       = $request.Id
+                    question = $request.Question
+                }))
+    }
+
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
     # Turn-local list), tool-call / unknown progress records are consumed silently,
@@ -73,6 +92,10 @@ function Invoke-DpTurn {
     # preserved exactly.
     $emit = {
         param($Record)
+        if ($userPromptBridge) {
+            $questionText = Get-DpUserPromptText -Record $Record
+            if ($questionText) { $userPromptBridge.CaptureQuestion($questionText) }
+        }
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
         if ($null -eq $decision) { return }
         # Count frames produced this Turn (buffered or written) so the retry below
@@ -134,6 +157,26 @@ function Invoke-DpTurn {
         $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
+        # A hard pipeline stop can interrupt the Engine before its normal result
+        # and Usage-log append. Capture a pre-Turn Usage summary and an input-cost
+        # estimate while the Runspace is idle. On cancellation, an exact summary
+        # delta wins; the estimate is an explicitly labelled fallback.
+        try {
+            $usageCommandParams = @{
+                Command   = 'Get-ShpUsage'
+                Parameter = @{ Summary = $true }
+            }
+            $engineUsageBefore = Invoke-DpEngineCommand @usageCommandParams |
+                Select-Object -Last 1
+        }
+        catch {
+            $usageProbeError = $_
+            Write-Verbose "Could not capture pre-Turn Engine Usage: $usageProbeError"
+        }
+        if ($userPromptBridge -and [bool]$settings.permissions.askUser) {
+            $userPromptBridge.BeginTurn([string]$Conversation.id)
+        }
+
         # Reposition the long-lived Engine Runspace every Turn, not only when a
         # Project is selected. The runspace keeps whatever working directory it
         # was last given, so a no-Project Turn would otherwise inherit the folder
@@ -170,6 +213,7 @@ function Invoke-DpTurn {
                     & $emit $info[$lastIndex]
                     $lastIndex++
                 }
+                & $emitUserPrompt
                 # Write the coalesced text buffer for this batch, then either finish or
                 # yield briefly. A short 10 ms poll keeps streaming smooth (tokens reach
                 # the browser in ~10 ms bursts, not 40 ms) while Start-Sleep stays a
@@ -182,7 +226,30 @@ function Invoke-DpTurn {
                 # request here so the stopTurn handler can flip CancelRequested, which
                 # the next line then observes and aborts the Engine pipeline.
                 Invoke-DpPendingRequest
-                if ($script:DeskPilot.CancelRequested) { try { $shell.Stop() } catch { $null = $_ }; break }
+                if ($script:DeskPilot.CancelRequested) {
+                    & $flush
+                    try {
+                        $writer.Write((ConvertTo-DpSseFrame -EventName 'stopping' -Data @{ message = 'Turn stopped.' }))
+                    }
+                    catch {
+                        $streamError = $_
+                        Write-Verbose "Could not stream the stopping event: $streamError"
+                    }
+                    try {
+                        $stopAsync = $shell.BeginStop($null, $null)
+                        while (-not $stopAsync.IsCompleted) {
+                            Invoke-DpPendingRequest
+                            Start-Sleep -Milliseconds 10
+                        }
+                        $shell.EndStop($stopAsync)
+                    }
+                    catch {
+                        $stopError = $_
+                        Write-Verbose "Asynchronous Engine stop failed: $stopError"
+                        try { $shell.Stop() } catch { $null = $_ }
+                    }
+                    break
+                }
                 Start-Sleep -Milliseconds 10
                 # ~10 s between keep-alive comments (1000 x 10 ms), unchanged in
                 # wall-clock from the prior 250 x 40 ms cadence.
@@ -190,11 +257,77 @@ function Invoke-DpTurn {
                 if ($heartbeat -ge 1000) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
             }
             while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
+            & $emitUserPrompt
             & $flush
 
             if ($script:DeskPilot.CancelRequested) {
                 try { $shell.EndInvoke($async) | Out-Null } catch { $null = $_ }
-                $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = 'Turn stopped.' }))
+
+                $engineUsageAfter = $null
+                try {
+                    $usageCommandParams = @{
+                        Command   = 'Get-ShpUsage'
+                        Parameter = @{ Summary = $true }
+                    }
+                    $engineUsageAfter = Invoke-DpEngineCommand @usageCommandParams |
+                        Select-Object -Last 1
+                }
+                catch {
+                    $usageProbeError = $_
+                    Write-Verbose "Could not capture post-stop Engine Usage: $usageProbeError"
+                }
+                try {
+                    $estimateTextParams = @{
+                        TurnParameter = $params
+                        History       = @($Conversation.history)
+                        Prompt        = $Prompt
+                    }
+                    $estimateText = Get-DpStoppedTurnEstimateText @estimateTextParams
+                    $estimateParams = @{ Text = $estimateText }
+                    if ($effectiveModelId) { $estimateParams.Model = $effectiveModelId }
+                    $estimateCommandParams = @{
+                        Command   = 'Get-ShpCostEstimate'
+                        Parameter = $estimateParams
+                    }
+                    $stoppedUsageEstimate = Invoke-DpEngineCommand @estimateCommandParams |
+                        Select-Object -Last 1
+                }
+                catch {
+                    $estimateError = $_
+                    Write-Verbose "Could not estimate stopped-Turn Usage: $estimateError"
+                }
+                $stoppedUsageParams = @{
+                    Before   = $engineUsageBefore
+                    After    = $engineUsageAfter
+                    Estimate = $stoppedUsageEstimate
+                }
+                $stoppedUsage = Get-DpStoppedTurnUsage @stoppedUsageParams
+                $usedModel = if ($effectiveModelId) { $effectiveModelId } else { $settings.model }
+                $stoppedMessage = @{
+                    id         = $assistantId
+                    role       = 'assistant'
+                    text       = ''
+                    stopped    = $true
+                    stopReason = 'Turn stopped.'
+                    reasoning  = $null
+                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+                    usage      = $stoppedUsage
+                    tasks      = $turnState.tasks
+                    model      = $usedModel
+                    durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
+                    createdUtc = [DateTime]::UtcNow.ToString('o')
+                }
+                $Conversation.messages.Add($stoppedMessage)
+                $Conversation.updatedUtc = $stoppedMessage.createdUtc
+                Update-DpUsage -Usage $stoppedUsage -Model $usedModel
+                if ($script:DeskPilot.DataDir) {
+                    $saveParams = @{
+                        Store     = $script:DeskPilot.Conversations
+                        Directory = $script:DeskPilot.DataDir
+                    }
+                    Save-DpConversationStore @saveParams
+                }
+                $writer.Write((ConvertTo-DpSseFrame -EventName 'stopped' -Data $stoppedMessage))
                 return
             }
 
@@ -271,6 +404,7 @@ function Invoke-DpTurn {
         try { $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = $message })) } catch { $null = $_ }
     }
     finally {
+        if ($userPromptBridge) { $userPromptBridge.EndTurn() }
         $script:DeskPilot.TurnRunning = $false
         $script:DeskPilot.CancelRequested = $false
         if ($shell) { try { $shell.Dispose() } catch { $null = $_ } }

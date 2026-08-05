@@ -1177,6 +1177,96 @@ button.tree-row {
     font-weight: 600;
 }
 
+/* in-Turn Ask-User cards */
+.user-prompts {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 12px;
+}
+
+.user-prompt-card {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 12px;
+}
+
+.user-prompt-card.answered {
+    border-left-color: var(--ok);
+}
+
+.user-prompt-label {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 650;
+    margin-bottom: 4px;
+}
+
+.user-prompt-question {
+    font-family: var(--font-read);
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 10px;
+    white-space: pre-wrap;
+}
+
+.user-prompt-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 8px;
+}
+
+.user-prompt-input {
+    width: 100%;
+    min-height: 58px;
+    max-height: 180px;
+    resize: vertical;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    line-height: 1.4;
+    padding: 8px 10px;
+}
+
+.user-prompt-input:focus {
+    border-color: var(--accent);
+    outline: 2px solid var(--accent-soft);
+    outline-offset: 1px;
+}
+
+.user-prompt-submit {
+    min-height: 38px;
+}
+
+.user-prompt-answer {
+    border-left: 2px solid var(--border);
+    color: var(--text);
+    padding-left: 10px;
+    white-space: pre-wrap;
+}
+
+.user-prompt-status {
+    color: var(--muted);
+    font-size: 12px;
+    min-height: 18px;
+    margin-top: 5px;
+}
+
+@media (max-width: 620px) {
+    .user-prompt-form {
+        grid-template-columns: 1fr;
+    }
+
+    .user-prompt-submit {
+        justify-self: start;
+    }
+}
+
 /* Dispatch chevron + popover (Stop and Send / Add to Queue / Steer) */
 .composer-actions {
     position: relative;
