@@ -2,41 +2,41 @@
 
 ## Current focus
 
-**Clipboard and native Vision Attachments implemented (2026-07-23; uncommitted
-on `main`, not pushed).** The prompt box now accepts files from clipboard paste
-through the same upload and pending-chip flow as the Attach button and
-drag-and-drop. Text-only paste remains normal text input. Uploaded image
-Attachments from all three entry points are sent to the Engine through
-`Invoke-Shp -Image` for Vision-capable Models; non-image Attachments retain the
-existing File Tool path note.
+**GitHub sign-in screen fixed (2026-08-05; uncommitted on `main` at the user's
+request, not pushed).** A user reported the initial authentication failing. The
+engine's per-poll heartbeat lines were appended to the sign-in box, so the
+verification link and the user code scrolled out of the 200px scroller within
+seconds; with the code auto-copied to the clipboard by the Engine and GitHub
+asking for a two-factor code first, the user pasted the device code into the 2FA
+field and GitHub rejected it ("Please match the requested format").
 
-The Message request accepts optional `images` paths. The Host Server records each
-successfully written upload in a per-launch, OS-case-aware Attachment registry
-(`normalized path -> MIME type`). `Resolve-DpAttachmentPath` permits only
-absolute, existing, registered `image/*` paths, preventing a crafted Message from
-nominating arbitrary local files while allowing a pending Attachment to survive
-a Project switch. Invalid inputs return `400 invalid_attachment`.
+Sign-in progress is now a reduced, pinned panel: new `source/web/assets/auth.js`
+folds the engine output stream into `{url, code, status}`, `renderAuthProgress`
+keeps step 1 (link) and step 2 (code + **Copy code**) in place, and the heartbeat
+only rewrites one status line. The code step states that GitHub's password/2FA
+prompts are the normal sign-in and that the device code belongs only in the
+**Device activation** box. A tokenless end now reports a likely expired code.
 
 ## Verification
 
-- TDD red baselines captured for clipboard extraction/wiring, Engine `Image`
-  forwarding, path validation, route forwarding, upload registration, MIME
-  enforcement, and Project switching.
-- Focused helper + route suite: **391 passed**, 0 failed/skipped/not-run.
-- Browser asset tests: **5 passed**; `app.js` and `attachments.js` parse as ES
-  modules.
-- Final full Sampler build: **409 passed**, 0 failed/skipped/not-run; **17 tasks,
-  0 errors, 0 warnings**.
-- Final route rerun after formatting: **4 passed**; changed route and registry
-  files are PSScriptAnalyzer-clean.
-- Live HTTP smoke on port 4280: `/api/health` returned `status=ok` with the Engine
-  imported, and `/assets/attachments.js` returned 200 with the paste handler.
-- Two focused security reviews: no Blocker or Major findings after the registry
-  hardening. Residual risk is limited to user-declared upload MIME types in this
-  local, token-gated flow.
-- The Host Server remains running on port 4280 for a manual browser interaction
-  smoke; no automated browser interaction was available.
+- TDD red baseline captured (2 failing web-asset tests: missing `auth.js`).
+- Full Unit suite after the fix: **400 passed**, 0 failed/skipped/not-run.
+- `app.js` and `auth.js` parse as ES modules (`node --check` on `.mjs` copies,
+  exit 0); app.js/auth.js/styles.css/WebAssets tests are language-service clean.
+- Frontend-only change; the launcher serves `source/web` through
+  `DESKPILOT_WEB_ROOT`, so a hard refresh shows it without a rebuild.
+- Not browser-smoke-tested against a live device flow.
 
 ## Next step
 
-Review or manually smoke-test paste behavior, then commit only when the user asks.
+Smoke-test a real sign-in in the browser, then commit only when the user asks.
+
+## Previous focus
+
+Clipboard and native Vision Attachments (2026-07-23; uncommitted on `main`). The
+prompt box accepts files from clipboard paste through the same upload and
+pending-chip flow as the Attach button and drag-and-drop; uploaded image
+Attachments are sent to the Engine through `Invoke-Shp -Image` for Vision-capable
+Models. `Resolve-DpAttachmentPath` permits only absolute, existing, registered
+`image/*` paths; invalid inputs return `400 invalid_attachment`.
+

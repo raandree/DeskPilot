@@ -1808,8 +1808,44 @@ button.tree-row {
     padding: 12px 14px;
     margin: 16px 0;
     font-size: 13px;
-    max-height: 200px;
-    overflow-y: auto;
+}
+
+.auth-step {
+    margin-bottom: 12px;
+}
+
+.auth-step-label {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.auth-code-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.auth-copy {
+    padding: 5px 10px;
+    font-size: 12px;
+}
+
+.auth-hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 6px;
+}
+
+.auth-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+}
+
+.auth-status .spinner {
+    flex: none;
 }
 
 .auth-steps .code-pill {

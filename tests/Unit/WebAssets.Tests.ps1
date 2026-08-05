@@ -14,7 +14,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'markdown.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'markdown.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
     }
@@ -57,6 +57,51 @@ prevented = false;
 pasteHandler({ clipboardData: { files: [], items: [{ kind: 'string' }] }, preventDefault: () => { prevented = true; } });
 assert.equal(prevented, false);
 assert.deepEqual(uploaded, [screenshot]);
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+    }
+
+    It 'keeps the device code and link pinned while the sign-in poll runs' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'auth.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { parseAuthLine, createAuthProgress, applyAuthLine, AUTH_WAITING_STATUS } =
+    await import(pathToFileURL(process.argv[1]).href);
+
+assert.deepEqual(parseAuthLine('1. Open: https://github.com/login/device'),
+    { kind: 'url', value: 'https://github.com/login/device' });
+assert.deepEqual(parseAuthLine('2. Code: 5D02-A273'), { kind: 'code', value: '5D02-A273' });
+assert.deepEqual(parseAuthLine('.'), { kind: 'progress', value: '' });
+assert.deepEqual(parseAuthLine('. . .'), { kind: 'progress', value: '' });
+assert.deepEqual(parseAuthLine('  '), { kind: 'progress', value: '' });
+assert.deepEqual(parseAuthLine('Requesting device code from GitHub'),
+    { kind: 'status', value: 'Requesting device code from GitHub' });
+
+let progress = createAuthProgress();
+for (const line of [
+    'Requesting device code from GitHub',
+    '1. Open: https://github.com/login/device',
+    '2. Code: 5D02-A273',
+    '(code copied to clipboard)',
+    '.', '.', '.', '.',
+]) {
+    progress = applyAuthLine(progress, line);
+}
+assert.equal(progress.url, 'https://github.com/login/device');
+assert.equal(progress.code, '5D02-A273');
+assert.equal(progress.status, AUTH_WAITING_STATUS);
+
+const later = applyAuthLine(progress, 'Exchanging the code for a token');
+assert.equal(later.status, 'Exchanging the code for a token');
+assert.equal(later.code, '5D02-A273');
+assert.equal(later.url, 'https://github.com/login/device');
+assert.equal(progress.status, AUTH_WAITING_STATUS, 'applyAuthLine must not mutate its input');
 '@
 
         $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1

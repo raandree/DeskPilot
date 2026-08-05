@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GitHub sign-in screen no longer hides the device code behind its own
+  progress output.** The Engine writes one line per poll while it waits for you
+  to authorise, and the sign-in panel appended every one of them, so the
+  verification link and the user code scrolled out of the small box within
+  seconds and the screen looked stuck. Sign-in progress is now a fixed panel:
+  the link and the code stay pinned with a **Copy code** button, and the poll
+  heartbeat only updates a single status line. The code step also spells out
+  that GitHub's password and two-factor prompts are the normal sign-in and that
+  the device code belongs only in the **Device activation** box — pasting it
+  into the two-factor field is rejected by GitHub. A sign-in that ends without a
+  token now says the code may have expired instead of only "Try again". Adds a
+  small `auth.js` browser module and one focused unit test.
+
 ## [0.3.0] - 2026-07-23
 
 ### Added

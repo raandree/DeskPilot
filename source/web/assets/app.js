@@ -1,4 +1,5 @@
 import { getImagePaths, wireClipboardAttachments } from './attachments.js';
+import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import { renderMarkdown } from './markdown.js';
 
 // ===== Session token =====
@@ -3981,15 +3982,25 @@ async function startAuth() {
     const errEl = $('auth-error');
     errEl.classList.add('hidden');
     steps.classList.remove('hidden');
-    steps.innerHTML = '<div class="muted">Starting…</div>';
+    let progress = createAuthProgress();
+    renderAuthProgress(steps, progress);
     $('auth-connect').disabled = true;
     try {
         await streamPost('/api/auth/start', { force: !!state.authForce }, {
-            waiting: (d) => { steps.innerHTML = `<div class="muted">${escapeHtml((d && d.message) || 'Working…')}</div>`; },
-            code: (d) => { appendAuthLine(steps, (d && d.message) || ''); },
+            waiting: (d) => {
+                progress = { ...progress, status: (d && d.message) || progress.status };
+                renderAuthProgress(steps, progress);
+            },
+            code: (d) => {
+                progress = applyAuthLine(progress, (d && d.message) || '');
+                renderAuthProgress(steps, progress);
+            },
             done: async (d) => {
                 if (d && d.authenticated) { toast('Signed in.'); await enterApp(); }
-                else { errEl.textContent = 'Sign-in did not complete. Try again.'; errEl.classList.remove('hidden'); }
+                else {
+                    errEl.textContent = 'Sign-in did not complete. The code may have expired — choose Connect to get a new one.';
+                    errEl.classList.remove('hidden');
+                }
             },
             error: (d) => { errEl.textContent = (d && d.message) || 'Sign-in failed.'; errEl.classList.remove('hidden'); },
         });
@@ -4001,20 +4012,63 @@ async function startAuth() {
     }
 }
 
-function appendAuthLine(container, line) {
-    if (container.querySelector('.muted')) container.innerHTML = '';
-    const codeMatch = line.match(/\b([A-Z0-9]{4}-[A-Z0-9]{4})\b/);
-    const urlMatch = line.match(/https?:\/\/\S+/);
-    const div = document.createElement('div');
-    if (codeMatch) {
-        div.innerHTML = escapeHtml(line.replace(codeMatch[1], '')).trim() + `<div class="code-pill">${codeMatch[1]}</div>`;
-    } else if (urlMatch) {
-        const safe = urlMatch[0].replace(/"/g, '%22');
-        div.innerHTML = escapeHtml(line.replace(urlMatch[0], '')).trim() + ` <a href="${safe}" target="_blank" rel="noopener noreferrer">${escapeHtml(urlMatch[0])}</a>`;
-    } else {
-        div.textContent = line;
+// Render the sign-in panel from the reduced progress state. The link and the
+// code stay pinned in place: the engine's poll heartbeat only updates the
+// single status line, so nothing scrolls out of view while the user is on
+// GitHub.
+function renderAuthProgress(container, progress) {
+    const statusText = container.querySelector('.auth-status-text');
+    // Rebuilding on every heartbeat would restart the spinner animation, so
+    // only the status line is touched while the link and code are unchanged.
+    if (statusText && container.dataset.authUrl === progress.url && container.dataset.authCode === progress.code) {
+        statusText.textContent = progress.status || AUTH_WAITING_STATUS;
+        return;
     }
-    container.appendChild(div);
+    container.textContent = '';
+    container.dataset.authUrl = progress.url;
+    container.dataset.authCode = progress.code;
+    if (progress.url) {
+        const step = el('auth-step');
+        const label = el('auth-step-label');
+        label.textContent = '1. Open this page in your browser';
+        const link = el('', 'a');
+        link.href = progress.url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = progress.url;
+        step.append(label, link);
+        container.appendChild(step);
+    }
+    if (progress.code) {
+        const step = el('auth-step');
+        const label = el('auth-step-label');
+        label.textContent = '2. Enter this code on that page';
+        const row = el('auth-code-row');
+        const pill = el('code-pill');
+        pill.textContent = progress.code;
+        const copy = el('btn auth-copy', 'button');
+        copy.type = 'button';
+        copy.textContent = 'Copy code';
+        copy.onclick = () => copyAuthCode(progress.code);
+        row.append(pill, copy);
+        const hint = el('auth-hint');
+        hint.textContent = 'GitHub may ask for your password and two-factor code first — that is your normal sign-in. ' +
+            'This code belongs only in the "Device activation" box that comes after it.';
+        step.append(label, row, hint);
+        container.appendChild(step);
+    }
+    const status = el('auth-status');
+    status.appendChild(el('spinner', 'span'));
+    const text = el('auth-status-text', 'span');
+    text.textContent = progress.status || AUTH_WAITING_STATUS;
+    status.appendChild(text);
+    container.appendChild(status);
+}
+
+function copyAuthCode(code) {
+    navigator.clipboard.writeText(code).then(
+        () => toast('Code copied.'),
+        () => toast('Copy failed — type the code manually.'));
 }
 
 // ===== Examples =====
