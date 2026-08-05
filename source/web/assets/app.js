@@ -1,5 +1,13 @@
 import { getImagePaths, wireClipboardAttachments } from './attachments.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
+import {
+    newFileRows,
+    parseUnifiedDiff,
+    splitRelPath,
+    statusGlyph,
+    statusLabel,
+    suggestCommitMessage,
+} from './diff.js';
 import { renderMarkdown } from './markdown.js';
 import {
     createQuestionnaireState,
@@ -1176,10 +1184,11 @@ function buildAssistantEl(m) {
     const tasks = el('tasks-panel hidden');
     const userPrompts = el('user-prompts hidden');
     userPrompts.setAttribute('aria-live', 'polite');
+    const changes = el('changes-card hidden');
     const activity = el('disclosure activity hidden', 'details');
     const usage = el('usage-foot hidden');
-    wrap.append(role, thinking, content, tasks, userPrompts, activity, usage);
-    wrap._refs = { content, thinking, tasks, userPrompts, activity, usage, actions };
+    wrap.append(role, thinking, content, tasks, userPrompts, changes, activity, usage);
+    wrap._refs = { content, thinking, tasks, userPrompts, changes, activity, usage, actions };
     return wrap;
 }
 
@@ -1199,6 +1208,7 @@ function finalizeAssistant(wrap, m, opts) {
     }
     renderTasks(r.tasks, m.tasks);
     renderActivity(r.activity, m.activity);
+    renderChanges(r.changes, m);
     renderUsage(r.usage, m);
     return wrap;
 }
@@ -1229,68 +1239,144 @@ function renderActivity(node, activity) {
     if (items.length === 0 && toolCount === 0) { node.classList.add('hidden'); return; }
     node.classList.remove('hidden');
     const n = items.length || toolCount;
-    const undoBtn = (gitOn && written.length > 0)
-        ? `<button class="btn btn-small git-undo-btn" type="button" title="Revert these file changes using Git">↩ Undo file changes</button>`
-        : '';
     node.innerHTML =
         `<summary>Activity — ${n} action${n === 1 ? '' : 's'}</summary>` +
-        `<div class="disclosure-body"><div class="activity-list">${items.join('') || '<span class="muted tiny">' + toolCount + ' tool call(s)</span>'}</div>${undoBtn}</div>`;
+        `<div class="disclosure-body"><div class="activity-list">${items.join('') || '<span class="muted tiny">' + toolCount + ' tool call(s)</span>'}</div></div>`;
     node.querySelectorAll('.git-diff-btn').forEach((btn) => {
-        btn.onclick = (e) => { e.preventDefault(); toggleGitDiff(btn.dataset.path, btn.closest('.activity-item')); };
+        btn.onclick = (e) => { e.preventDefault(); openDiffViewer(written.map((p) => ({ rel: p })), btn.dataset.path); };
     });
-    const undo = node.querySelector('.git-undo-btn');
-    if (undo) undo.onclick = (e) => { e.preventDefault(); undoTurnFiles(written, undo); };
 }
 
-// Toggle an inline, colourised Git diff for a written file beneath its row.
-async function toggleGitDiff(path, row) {
-    if (!row) return;
-    const existing = row.nextElementSibling;
-    if (existing && existing.classList.contains('git-diff-block')) { existing.remove(); return; }
+// ===== Changes review (what this Turn wrote, with per-file counts) =====
+// Mirrors the review a developer gets in an IDE: a "N files changed +A −D"
+// header, one row per file, click to see the diff, then Keep (commit) or Undo.
+// Painted after the Turn finalizes because it needs a Git read per Turn, and
+// only for the newest Turn: an older card would describe a working tree that
+// has since moved on, and would cost one Git read per message on every render.
+async function renderChanges(node, m) {
+    if (!node) return;
+    node.classList.add('hidden');
+    node.innerHTML = '';
+    const written = asArray(m && m.activity && m.activity.filesWritten).map(String);
+    if (!written.length) return;
+    if (!(state.settings && state.settings.workspaceFolder)) return;
+    if (!isNewestAssistant(m)) return;
+
     let data;
-    try { data = await api('GET', '/api/git/diff?path=' + encodeURIComponent(path)); }
-    catch (e) { toast(e.message); return; }
-    if (data.error) { toast(data.error); return; }
-    const block = el('git-diff-block');
-    if (data.untracked) {
-        if (data.binary) { block.innerHTML = '<div class="muted tiny">New binary file (no text preview).</div>'; }
-        else {
-            const pre = el('git-diff', 'pre');
-            pre.appendChild(diffLine('New file:', 'meta'));
-            for (const ln of (data.content || '').split('\n')) pre.appendChild(diffLine(ln, 'add'));
-            block.appendChild(pre);
-        }
-    } else if (!data.diff || !data.diff.trim()) {
-        block.innerHTML = '<div class="muted tiny">No tracked changes against the last commit.</div>';
-    } else {
-        const pre = el('git-diff', 'pre');
-        for (const ln of data.diff.split('\n')) {
-            const cls = ln.startsWith('+') && !ln.startsWith('+++') ? 'add'
-                : ln.startsWith('-') && !ln.startsWith('---') ? 'del'
-                    : ln.startsWith('@@') ? 'hunk'
-                        : /^(diff |index |--- |\+\+\+ )/.test(ln) ? 'meta' : '';
-            pre.appendChild(diffLine(ln, cls));
-        }
-        block.appendChild(pre);
-    }
-    row.insertAdjacentElement('afterend', block);
+    try { data = await api('GET', '/api/git/changes?paths=' + encodeURIComponent(written.join('\n'))); }
+    catch { return; }
+    if (!data || data.error || !data.files || !data.files.length) return;
+
+    paintChangesCard(node, data, m);
 }
 
-function diffLine(text, cls) {
-    const span = document.createElement('span');
-    span.className = 'diff-line' + (cls ? ' diff-' + cls : '');
-    span.textContent = text === '' ? '\u200b' : text;
-    return span;
+function isNewestAssistant(m) {
+    const messages = (state.current && state.current.messages) || [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i] && messages[i].role !== 'user') return messages[i] === m || (!!m.id && messages[i].id === m.id);
+    }
+    return false;
+}
+
+// The prompt that produced a Turn is the best commit-message suggestion there
+// is, so look back for the user message immediately before this one.
+function precedingUserText(m) {
+    const messages = (state.current && state.current.messages) || [];
+    const idx = messages.findIndex((x) => x === m || (!!m.id && x && x.id === m.id));
+    for (let i = (idx < 0 ? messages.length : idx) - 1; i >= 0; i--) {
+        if (messages[i] && messages[i].role === 'user') return messages[i].text || '';
+    }
+    return '';
+}
+
+function paintChangesCard(node, data, m) {
+    const files = data.files || [];
+    // Trust the server's counts: the file list is capped, fileCount is not.
+    const fileCount = Number(data.fileCount || files.length);
+    node.classList.remove('hidden');
+    node.innerHTML = '';
+
+    const head = el('changes-head');
+    head.innerHTML =
+        `<span class="changes-count">${fileCount} file${fileCount === 1 ? '' : 's'} changed</span>` +
+        `<span class="changes-stat changes-add">+${escapeHtml(String(data.totalAdded || 0))}</span>` +
+        `<span class="changes-stat changes-del">\u2212${escapeHtml(String(data.totalDeleted || 0))}</span>`;
+    const actions = el('changes-acts');
+    const keep = document.createElement('button');
+    keep.className = 'btn btn-small btn-primary';
+    keep.type = 'button';
+    keep.textContent = 'Keep';
+    keep.title = 'Save these changes as a Git commit so they cannot be lost';
+    keep.onclick = (e) => { e.preventDefault(); keepChanges(node, files, m, keep); };
+    const undo = document.createElement('button');
+    undo.className = 'btn btn-small';
+    undo.type = 'button';
+    undo.textContent = 'Undo';
+    undo.title = 'Revert these file changes using Git';
+    undo.onclick = (e) => { e.preventDefault(); undoTurnFiles(files.map((f) => f.rel), undo, node); };
+    actions.append(keep, undo);
+    head.appendChild(actions);
+    node.appendChild(head);
+
+    const list = el('changes-list');
+    for (const f of files) list.appendChild(buildChangeRow(f, files));
+    node.appendChild(list);
+    if (data.truncated) {
+        const more = el('muted tiny changes-more');
+        more.textContent = '…and more.';
+        node.appendChild(more);
+    }
+}
+
+function buildChangeRow(f, files) {
+    const parts = splitRelPath(f.rel);
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'changes-row';
+    row.title = statusLabel(f.status) + ' — click to see what changed';
+    row.innerHTML =
+        `<span class="changes-badge st-${escapeHtml(f.status || 'modified')}">${escapeHtml(statusGlyph(f.status))}</span>` +
+        `<span class="changes-name">${escapeHtml(parts.name)}</span>` +
+        `<span class="changes-dir muted tiny">${escapeHtml(parts.dir)}</span>` +
+        (f.binary
+            ? '<span class="changes-stat muted tiny">binary</span>'
+            : `<span class="changes-stat changes-add">${f.added ? '+' + escapeHtml(String(f.added)) : ''}</span>` +
+              `<span class="changes-stat changes-del">${f.deleted ? '\u2212' + escapeHtml(String(f.deleted)) : ''}</span>`);
+    row.onclick = (e) => { e.preventDefault(); openDiffViewer(files, f.rel); };
+    return row;
+}
+
+// "Keep" = commit. Without a commit, an Undo elsewhere (or the next Turn) can
+// still take the work away, so this is the step that makes it durable.
+async function keepChanges(node, files, m, btn) {
+    const suggestion = suggestCommitMessage(precedingUserText(m), files);
+    const message = (window.prompt('Save these changes with a short description:', suggestion) || '').trim();
+    if (!message) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+        const r = await api('POST', '/api/git/commit', { message, paths: files.map((f) => f.rel) });
+        const skipped = (r && r.skipped && r.skipped.length) || 0;
+        if (r && r.nothingToCommit) toast('Nothing to save — those changes are already committed.');
+        else toast('Saved as ' + ((r && r.shortSha) || 'a commit') + '.' + (skipped ? ` ${skipped} file(s) skipped.` : ''));
+        await refreshChangesCard(node, m);
+        refreshGitBar();
+    } catch (e) { toast(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Keep'; } }
+}
+
+async function refreshChangesCard(node, m) {
+    if (!node) return;
+    await renderChanges(node, m);
 }
 
 // Undo the file changes a Turn made: revert tracked files to the last commit and
 // delete files the Turn newly created. Confirmed first because it is destructive.
-async function undoTurnFiles(paths, btn) {
+async function undoTurnFiles(paths, btn, node) {
     const list = asArray(paths).map(String);
     if (list.length === 0) return;
-    const msg = 'Undo file changes from this turn?\n\n' +
+    const msg = 'Undo these file changes?\n\n' +
         'Tracked files are reverted to the last Git commit, and files this turn created are deleted. ' +
-        'Anything you have not committed will be lost.\n\nFiles:\n' + list.map((p) => '• ' + p).join('\n');
+        'Anything you have not saved with Keep will be lost.\n\nFiles:\n' + list.map((p) => '• ' + p).join('\n');
     if (!window.confirm(msg)) return;
     if (btn) { btn.disabled = true; btn.textContent = 'Undoing…'; }
     try {
@@ -1301,9 +1387,134 @@ async function undoTurnFiles(paths, btn) {
         if (r.skipped && r.skipped.length) parts.push(r.skipped.length + ' skipped');
         toast(parts.length ? 'Undo: ' + parts.join(', ') + '.' : 'Nothing to undo.');
         if (state.explorerPath) refreshExplorer();
-        if (typeof refreshGitBar === 'function') { try { refreshGitBar(); } catch { /* optional */ } }
+        if (node) { node.classList.add('hidden'); node.innerHTML = ''; }
+        refreshGitBar();
     } catch (e) { toast(e.message); }
-    finally { if (btn) { btn.disabled = false; btn.textContent = '↩ Undo file changes'; } }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Undo'; } }
+}
+
+// ===== Diff viewer =====
+// One modal for "show me what changed in this file", with the file list beside
+// it so a reviewer can walk a whole change set without reopening anything.
+const diffView = { files: [], index: 0 };
+
+function openDiffViewer(files, selectRel) {
+    const list = asArray(files).map((f) => (typeof f === 'string' ? { rel: f } : f)).filter((f) => f && f.rel);
+    if (!list.length) { toast('Nothing to show.'); return; }
+    diffView.files = list;
+    const idx = list.findIndex((f) => f.rel === selectRel);
+    diffView.index = idx >= 0 ? idx : 0;
+    $('diff-backdrop').classList.remove('hidden');
+    $('diff-modal').classList.remove('hidden');
+    renderDiffFileList();
+    loadDiffFile();
+}
+
+function closeDiffViewer() {
+    $('diff-backdrop').classList.add('hidden');
+    $('diff-modal').classList.add('hidden');
+}
+
+function renderDiffFileList() {
+    const wrap = $('diff-files');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    wrap.classList.toggle('hidden', diffView.files.length < 2);
+    if (diffView.files.length < 2) return;
+    diffView.files.forEach((f, i) => {
+        const parts = splitRelPath(f.rel);
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'diff-file' + (i === diffView.index ? ' active' : '');
+        row.title = f.rel;
+        row.innerHTML =
+            `<span class="changes-badge st-${escapeHtml(f.status || 'modified')}">${escapeHtml(statusGlyph(f.status))}</span>` +
+            `<span class="diff-file-name">${escapeHtml(parts.name)}</span>` +
+            `<span class="diff-file-dir muted tiny">${escapeHtml(parts.dir)}</span>`;
+        row.onclick = () => { diffView.index = i; renderDiffFileList(); loadDiffFile(); };
+        wrap.appendChild(row);
+    });
+}
+
+function diffStep(delta) {
+    if (diffView.files.length < 2) return;
+    diffView.index = (diffView.index + delta + diffView.files.length) % diffView.files.length;
+    renderDiffFileList();
+    loadDiffFile();
+}
+
+async function loadDiffFile() {
+    const current = diffView.files[diffView.index];
+    if (!current) return;
+    const body = $('diff-body');
+    const title = $('diff-title');
+    const stat = $('diff-stat');
+    const foot = $('diff-foot');
+    title.textContent = current.rel;
+    title.title = current.rel;
+    stat.textContent = '';
+    body.innerHTML = '<div class="muted tiny diff-msg">Loading…</div>';
+    foot.innerHTML = '';
+
+    let data;
+    try { data = await api('GET', '/api/git/diff?path=' + encodeURIComponent(current.rel)); }
+    catch (e) { body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(e.message)}</div>`; return; }
+    if (data.error) { body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(data.error)}</div>`; return; }
+
+    let rows = [];
+    let added = 0;
+    let deleted = 0;
+    if (data.untracked) {
+        if (data.binary) {
+            body.innerHTML = '<div class="muted tiny diff-msg">New binary file — there is no text to compare.</div>';
+        } else {
+            rows = newFileRows(data.content);
+            added = rows.length;
+        }
+    } else if (!data.diff || !data.diff.trim()) {
+        body.innerHTML = '<div class="muted tiny diff-msg">No changes against the last commit.</div>';
+    } else {
+        const parsed = parseUnifiedDiff(data.diff);
+        rows = parsed.rows;
+        added = parsed.added;
+        deleted = parsed.deleted;
+    }
+
+    if (rows.length) {
+        stat.innerHTML = `<span class="changes-add">+${added}</span> <span class="changes-del">\u2212${deleted}</span>`;
+        body.innerHTML = '';
+        body.appendChild(buildDiffTable(rows));
+    }
+
+    const undoBtn = document.createElement('button');
+    undoBtn.className = 'btn';
+    undoBtn.type = 'button';
+    undoBtn.textContent = 'Undo this file';
+    undoBtn.onclick = () => undoTurnFiles([current.rel], undoBtn);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn btn-primary';
+    closeBtn.type = 'button';
+    closeBtn.textContent = 'Close';
+    closeBtn.onclick = () => closeDiffViewer();
+    foot.append(undoBtn, closeBtn);
+}
+
+function buildDiffTable(rows) {
+    const table = el('diff-table');
+    for (const r of rows) {
+        const line = el('diff-row diff-' + r.type);
+        const oldNo = el('diff-gutter', 'span');
+        oldNo.textContent = r.oldNo == null ? '' : String(r.oldNo);
+        const newNo = el('diff-gutter', 'span');
+        newNo.textContent = r.newNo == null ? '' : String(r.newNo);
+        const sign = el('diff-sign', 'span');
+        sign.textContent = r.type === 'add' ? '+' : r.type === 'del' ? '\u2212' : '';
+        const text = el('diff-text', 'span');
+        text.textContent = r.text === '' ? '\u200b' : r.text;
+        line.append(oldNo, newNo, sign, text);
+        table.appendChild(line);
+    }
+    return table;
 }
 
 // Renders the in-Turn Task List as a compact, always-visible checklist. The full
@@ -2848,7 +3059,7 @@ async function refreshGitBar(silent) {
     if (status && status.isRepo) {
         try { branchData = await api('GET', '/api/git/branches'); } catch { /* fall back to status */ }
     }
-    renderGitBar(status, branchData);
+    renderGitBar(status, branchData, silent);
 }
 
 function gitLegendText(def) {
@@ -2872,7 +3083,7 @@ function branchTitle(b, def) {
     return s;
 }
 
-function renderGitBar(status, branchData) {
+function renderGitBar(status, branchData, silent) {
     const bar = $('git-bar');
     if (!bar) return;
     bar.innerHTML = '';
@@ -2945,18 +3156,63 @@ function renderGitBar(status, branchData) {
         bar.append(legend);
     }
 
-    // The "Merge into <default>…" entry point opens the guided Merge Wizard.
-    // Hidden when the Default Branch is already the current branch: there is no
-    // feature branch to bring in, so "Merge into main" while on main is moot.
-    const currentBranch = (branchData && branchData.currentBranch) || (status.detached ? null : status.branch);
-    if (def && currentBranch !== def) {
-        const mergeBtn = document.createElement('button');
-        mergeBtn.className = 'btn btn-small git-merge-btn';
-        mergeBtn.textContent = `Merge into ${def}…`;
-        mergeBtn.title = `Merge a branch into ${def} with a guided wizard`;
-        mergeBtn.onclick = () => openMergeWizard();
-        bar.append(mergeBtn);
+    // The Branch Wizard is the single entry point for everything a non-expert
+    // needs to do with branches: create, switch, delete, merge and sync.
+    const branchBtn = document.createElement('button');
+    branchBtn.className = 'btn btn-small git-branch-btn';
+    branchBtn.textContent = 'Branches…';
+    branchBtn.title = 'Create, switch, delete, merge and sync branches';
+    branchBtn.onclick = () => openBranchWizard();
+    bar.append(branchBtn);
+
+    // A compact, always-visible summary of uncommitted work, so changes made
+    // outside the newest Turn are still reviewable.
+    const changesBtn = document.createElement('button');
+    changesBtn.className = 'btn btn-small git-changes-btn hidden';
+    changesBtn.onclick = () => openRepoChanges();
+    bar.append(changesBtn);
+    refreshGitChangeCount(changesBtn, !silent);
+}
+
+// The explorer re-renders the Git bar every few seconds, and the Host Server
+// handles requests on one thread, so the change count is cached: it paints from
+// the last reading immediately (no flicker, no cost) and only re-reads on an
+// explicit refresh or once the reading is stale.
+const gitChanges = { has: false, fileCount: 0, added: 0, deleted: 0, at: 0 };
+const GIT_CHANGE_MAX_AGE_MS = 20000;
+
+function paintGitChangeButton(btn) {
+    if (!btn) return;
+    if (!gitChanges.has || !gitChanges.fileCount) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    btn.textContent = `${gitChanges.fileCount} change${gitChanges.fileCount === 1 ? '' : 's'}`;
+    btn.title = `Review ${gitChanges.fileCount} changed file(s): +${gitChanges.added} / \u2212${gitChanges.deleted}`;
+}
+
+async function refreshGitChangeCount(btn, force) {
+    paintGitChangeButton(btn);
+    if (!force && gitChanges.at && (Date.now() - gitChanges.at) < GIT_CHANGE_MAX_AGE_MS) return;
+    let data;
+    try { data = await api('GET', '/api/git/changes'); } catch { return; }
+    gitChanges.at = Date.now();
+    if (!data || data.error || !data.files) { gitChanges.has = false; }
+    else {
+        gitChanges.has = true;
+        gitChanges.fileCount = Number(data.fileCount || data.files.length);
+        gitChanges.added = Number(data.totalAdded || 0);
+        gitChanges.deleted = Number(data.totalDeleted || 0);
     }
+    paintGitChangeButton(btn);
+}
+
+// Opens the diff viewer over every uncommitted file in the repository.
+async function openRepoChanges() {
+    let data;
+    try { data = await api('GET', '/api/git/changes'); }
+    catch (e) { toast(e.message); return; }
+    if (!data || data.error) { toast((data && data.error) || 'Could not read the changes.'); return; }
+    if (!data.files || !data.files.length) { toast('Nothing has changed since the last save.'); return; }
+    openDiffViewer(data.files, data.files[0].rel);
 }
 
 async function gitInit() {
@@ -2973,6 +3229,453 @@ async function switchBranch(branch) {
         toast('Switched to ' + branch + '.');
         refreshExplorer();
     } catch (e) { toast(e.message); refreshGitBar(); }
+}
+
+// ===== Branch Wizard =====
+// One guided place for everything a non-expert does with branches: see where
+// they are, create a branch, switch, delete, merge, and sync with the server.
+// Git vocabulary is translated at the surface ("get"/"send" rather than
+// pull/push) while the underlying operations stay ordinary git.
+const branchWiz = {
+    step: 'home', branches: null, defaultBranch: '', sync: null,
+    busyLabel: '', target: '', conflict: null, deleteTarget: null, error: '',
+};
+
+function openBranchWizard() {
+    branchWiz.step = 'home';
+    branchWiz.branches = null;
+    branchWiz.defaultBranch = '';
+    branchWiz.sync = null;
+    branchWiz.conflict = null;
+    branchWiz.deleteTarget = null;
+    branchWiz.error = '';
+    $('branch-backdrop').classList.remove('hidden');
+    $('branch-modal').classList.remove('hidden');
+    renderBranchWizard();
+    branchWizLoad();
+}
+
+function closeBranchWizard() {
+    $('branch-backdrop').classList.add('hidden');
+    $('branch-modal').classList.add('hidden');
+    refreshGitBar();
+}
+
+async function branchWizLoad() {
+    try {
+        const [branches, sync] = await Promise.all([
+            api('GET', '/api/git/branches?fetch=1'),
+            api('GET', '/api/git/sync/status'),
+        ]);
+        branchWiz.branches = branches.branches || [];
+        branchWiz.defaultBranch = branches.defaultBranch || '';
+        branchWiz.sync = sync;
+        // A conflict left behind by a merge or a sync is the most urgent thing
+        // in the repository; surface it before anything else.
+        if (sync && sync.inMerge && (sync.conflictFiles || []).length && branchWiz.step === 'home') {
+            branchWizGoConflict();
+            return;
+        }
+    } catch (e) {
+        branchWiz.error = e.message;
+        branchWiz.branches = branchWiz.branches || [];
+    }
+    renderBranchWizard();
+}
+
+function renderBranchWizard() {
+    const body = $('branch-body');
+    const foot = $('branch-foot');
+    const title = $('branch-title');
+    if (!body || !foot) return;
+    body.innerHTML = '';
+    foot.innerHTML = '';
+    switch (branchWiz.step) {
+        case 'home': renderBranchHome(body, foot, title); break;
+        case 'create': renderBranchCreate(body, foot, title); break;
+        case 'delete': renderBranchDelete(body, foot, title); break;
+        case 'conflict': renderBranchConflict(body, foot, title); break;
+        case 'busy':
+            title.textContent = 'Working';
+            body.innerHTML = `<div class="merge-busy"><span class="merge-spinner"></span> ${escapeHtml(branchWiz.busyLabel)}</div>`;
+            break;
+        default: body.textContent = '';
+    }
+}
+
+function branchWizBtn(label, cls, onclick, disabled) {
+    const b = document.createElement('button');
+    b.className = 'btn ' + (cls || '');
+    b.type = 'button';
+    b.textContent = label;
+    if (disabled) b.disabled = true;
+    if (onclick) b.onclick = onclick;
+    return b;
+}
+
+function renderBranchHome(body, foot, title) {
+    title.textContent = 'Branches';
+    if (branchWiz.error) {
+        const err = el('merge-error');
+        err.textContent = '⚠ ' + branchWiz.error;
+        body.appendChild(err);
+    }
+    if (!branchWiz.branches) {
+        const loading = el('muted tiny merge-msg');
+        loading.textContent = 'Loading branches…';
+        body.appendChild(loading);
+        foot.appendChild(branchWizBtn('Close', '', closeBranchWizard));
+        return;
+    }
+
+    body.appendChild(buildSyncPanel());
+
+    const def = branchWiz.defaultBranch || '';
+    const intro = el('branch-intro muted tiny');
+    intro.textContent = 'A branch is a separate line of work. Changes on one branch do not affect another until you merge them.';
+    body.appendChild(intro);
+
+    const list = el('branch-list');
+    for (const b of branchWiz.branches) list.appendChild(buildBranchRow(b, def));
+    if (!branchWiz.branches.length) {
+        const empty = el('muted tiny merge-msg');
+        empty.textContent = 'No branches yet.';
+        list.appendChild(empty);
+    }
+    body.appendChild(list);
+
+    const legend = el('branch-legend muted tiny');
+    legend.textContent = gitLegendText(def);
+    body.appendChild(legend);
+
+    foot.appendChild(branchWizBtn('Close', '', closeBranchWizard));
+    foot.appendChild(branchWizBtn('New branch…', '', () => { branchWiz.step = 'create'; renderBranchWizard(); }));
+    foot.appendChild(branchWizBtn('Merge a branch…', 'btn-primary', () => { closeBranchWizard(); openMergeWizard(); }));
+}
+
+function buildSyncPanel() {
+    const s = branchWiz.sync || {};
+    const panel = el('branch-sync');
+    const where = el('branch-sync-where');
+    where.innerHTML = s.detached
+        ? '<strong>Not on a branch</strong> <span class="muted tiny">(detached) — switch to a branch to work normally.</span>'
+        : `You are on <strong>${escapeHtml(s.branch || '—')}</strong>`;
+    panel.appendChild(where);
+
+    const state_ = el('branch-sync-state muted tiny');
+    if (!s.hasRemote) {
+        state_.textContent = 'This project has no server (remote), so there is nothing to sync with.';
+    } else if (!s.hasUpstream) {
+        state_.textContent = s.ahead
+            ? `${s.ahead} save${s.ahead === 1 ? '' : 's'} on this branch have never been sent to the server.`
+            : 'This branch is not on the server yet.';
+    } else {
+        const bits = [];
+        if (s.ahead) bits.push(`${s.ahead} to send`);
+        if (s.behind) bits.push(`${s.behind} to get`);
+        state_.textContent = bits.length ? bits.join(' · ') + ` (server: ${s.upstream})` : `Up to date with ${s.upstream}.`;
+    }
+    panel.appendChild(state_);
+
+    if (s.dirty) {
+        const dirty = el('branch-sync-dirty muted tiny');
+        dirty.textContent = `${s.changeCount} unsaved change${s.changeCount === 1 ? '' : 's'} in your files. Use Review changes to keep or undo them.`;
+        panel.appendChild(dirty);
+    }
+
+    const acts = el('branch-sync-acts');
+    if (s.hasRemote) {
+        acts.appendChild(branchWizBtn('Sync', 'btn-small btn-primary', () => branchWizSync('sync'), !!s.detached));
+        acts.appendChild(branchWizBtn('Get from server', 'btn-small', () => branchWizSync('pull'), !!s.detached));
+        acts.appendChild(branchWizBtn('Send to server', 'btn-small', () => branchWizSync('push'), !!s.detached));
+    }
+    if (s.dirty) acts.appendChild(branchWizBtn('Review changes…', 'btn-small', () => { closeBranchWizard(); openRepoChanges(); }));
+    if (acts.children.length) panel.appendChild(acts);
+    return panel;
+}
+
+function buildBranchRow(b, def) {
+    const row = el('branch-row');
+    const badgeCls = b.merged === true ? 'is-merged' : (b.merged === false ? 'is-unmerged' : 'is-unknown');
+    const badgeCh = b.merged === true ? '\u2713' : (b.merged === false ? '\u2757' : '\u2022');
+    row.innerHTML =
+        `<span class="merge-badge ${badgeCls}" title="${escapeHtml(branchTitle(b, def))}">${badgeCh}</span>` +
+        `<span class="branch-name">${escapeHtml(b.display)}</span>` +
+        (b.isCurrent ? '<span class="merge-tag muted tiny">current</span>' : '') +
+        (b.isDefault ? '<span class="merge-tag muted tiny">main</span>' : '') +
+        (b.isRemote ? '<span class="merge-tag muted tiny">server only</span>' : '');
+    const acts = el('branch-row-acts');
+    if (!b.isCurrent && !b.isRemote) {
+        acts.appendChild(branchWizBtn('Switch', 'btn-small', () => branchWizSwitch(b.name)));
+    }
+    if (!b.isDefault && !b.isRemote) {
+        acts.appendChild(branchWizBtn('Delete', 'btn-small', () => {
+            branchWiz.deleteTarget = b;
+            branchWiz.step = 'delete';
+            renderBranchWizard();
+        }, !!b.isCurrent && !branchWiz.defaultBranch));
+    }
+    row.appendChild(acts);
+    return row;
+}
+
+async function branchWizSwitch(name) {
+    branchWiz.busyLabel = 'Switching branch…';
+    branchWiz.step = 'busy';
+    renderBranchWizard();
+    try {
+        await api('POST', '/api/git/checkout', { branch: name });
+        toast('Switched to ' + name + '.');
+        refreshExplorer();
+    } catch (e) { toast(e.message); }
+    branchWiz.step = 'home';
+    await branchWizLoad();
+}
+
+function renderBranchCreate(body, foot, title) {
+    title.textContent = 'New branch';
+    const def = branchWiz.defaultBranch || 'main';
+    const current = (branchWiz.sync && branchWiz.sync.branch) || def;
+    const intro = el('merge-msg');
+    intro.innerHTML = 'A new branch starts as a copy of an existing one. Work on it freely — nothing changes on the other branch until you merge.';
+    body.appendChild(intro);
+
+    const field = el('branch-field');
+    field.innerHTML =
+        '<label for="branch-new-name">Name</label>' +
+        '<input id="branch-new-name" class="branch-input" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. draft-report" />' +
+        '<p class="muted tiny">Letters, digits, dashes and slashes. No spaces.</p>';
+    body.appendChild(field);
+
+    const from = el('branch-field');
+    const options = [];
+    const names = new Set();
+    for (const b of (branchWiz.branches || [])) {
+        if (b.isRemote || names.has(b.name)) continue;
+        names.add(b.name);
+        options.push(`<option value="${escapeHtml(b.name)}"${b.name === current ? ' selected' : ''}>${escapeHtml(b.name)}${b.isDefault ? ' (main)' : ''}${b.isCurrent ? ' — where you are now' : ''}</option>`);
+    }
+    from.innerHTML =
+        '<label for="branch-new-from">Start from</label>' +
+        `<select id="branch-new-from" class="branch-input">${options.join('')}</select>`;
+    body.appendChild(from);
+
+    const opt = el('merge-clean-opt', 'label');
+    opt.innerHTML = '<input type="checkbox" id="branch-new-switch" checked> Switch to the new branch right away';
+    body.appendChild(opt);
+
+    foot.appendChild(branchWizBtn('Back', '', () => { branchWiz.step = 'home'; renderBranchWizard(); }));
+    foot.appendChild(branchWizBtn('Create', 'btn-primary', branchWizCreate));
+    setTimeout(() => { const input = $('branch-new-name'); if (input) input.focus(); }, 0);
+}
+
+async function branchWizCreate() {
+    const name = ($('branch-new-name') ? $('branch-new-name').value : '').trim();
+    const from = $('branch-new-from') ? $('branch-new-from').value : '';
+    const checkout = $('branch-new-switch') ? $('branch-new-switch').checked : true;
+    if (!name) { toast('Give the branch a name.'); return; }
+    branchWiz.busyLabel = 'Creating the branch…';
+    branchWiz.step = 'busy';
+    renderBranchWizard();
+    try {
+        const r = await api('POST', '/api/git/branch/create', { name, from, checkout });
+        // The branch can be created while the switch fails (for example when an
+        // uncommitted change would be overwritten); say so rather than claiming
+        // an unqualified success.
+        if (r.error) toast(r.error);
+        else toast(r.checkedOut ? `Created ${r.name} and switched to it.` : `Created ${r.name}.`);
+        refreshExplorer();
+    } catch (e) {
+        toast(e.message);
+        branchWiz.step = 'create';
+        renderBranchWizard();
+        return;
+    }
+    branchWiz.step = 'home';
+    await branchWizLoad();
+}
+
+function renderBranchDelete(body, foot, title) {
+    title.textContent = 'Delete branch';
+    const b = branchWiz.deleteTarget || {};
+    const def = escapeHtml(branchWiz.defaultBranch || 'main');
+    const name = escapeHtml(b.display || b.name);
+    const warn = el(b.merged === true ? 'merge-msg' : 'merge-precond');
+    warn.innerHTML = b.merged === true
+        ? `<strong>${name}</strong> is already merged into <strong>${def}</strong>, so deleting it loses nothing.`
+        : b.merged === false
+            ? `<strong>${name}</strong> has commits that are <strong>not</strong> in ${def}. Deleting it throws that work away.`
+            : `DeskPilot could not tell whether <strong>${name}</strong> is merged into ${def}. It will try the safe delete first and ask again if Git objects.`;
+    body.appendChild(warn);
+
+    if (branchWiz.sync && branchWiz.sync.hasRemote) {
+        const opt = el('merge-clean-opt', 'label');
+        opt.innerHTML = '<input type="checkbox" id="branch-del-remote"> Also delete it on the server <span class="muted tiny">(affects everyone using this repository)</span>';
+        body.appendChild(opt);
+    }
+
+    foot.appendChild(branchWizBtn('Back', '', () => { branchWiz.step = 'home'; renderBranchWizard(); }));
+    foot.appendChild(branchWizBtn('Delete', 'btn-primary', () => branchWizDelete(false)));
+}
+
+// Always attempt the safe delete first. Git's own refusal of an unmerged branch
+// — surfaced as 409 — is the only trustworthy signal, so the force is offered
+// there rather than guessed from a merged flag that can be unknown.
+async function branchWizDelete(force) {
+    const b = branchWiz.deleteTarget || {};
+    const remote = $('branch-del-remote') ? $('branch-del-remote').checked : false;
+    if (remote && !window.confirm(`Also delete ${b.name} on the server? Everyone using this repository loses that branch.`)) return;
+    branchWiz.busyLabel = 'Deleting the branch…';
+    branchWiz.step = 'busy';
+    renderBranchWizard();
+    try {
+        const r = await api('POST', '/api/git/branch/delete', { name: b.name, force: !!force, deleteRemote: remote });
+        const bits = [];
+        if (r.deleted) bits.push('deleted locally');
+        if (r.remoteDeleted) bits.push('deleted on the server');
+        if (r.remoteError) bits.push('server delete failed: ' + r.remoteError);
+        toast(bits.length ? b.name + ' — ' + bits.join(', ') + '.' : 'Nothing to delete.');
+        refreshExplorer();
+    } catch (e) {
+        if (e.status === 409 && !force) {
+            branchWiz.step = 'delete';
+            renderBranchWizard();
+            if (window.confirm(e.message + '\n\nDelete it anyway and lose those commits?')) {
+                await branchWizDelete(true);
+            }
+            return;
+        }
+        toast(e.message);
+    }
+    branchWiz.step = 'home';
+    await branchWizLoad();
+}
+
+async function branchWizSync(action) {
+    const labels = { sync: 'Syncing with the server…', pull: 'Getting the server\u2019s changes…', push: 'Sending your changes…' };
+    branchWiz.busyLabel = labels[action] || 'Working…';
+    branchWiz.step = 'busy';
+    renderBranchWizard();
+    let r;
+    try { r = await api('POST', '/api/git/sync', { action, autostash: false }); }
+    catch (e) { toast(e.message); branchWiz.step = 'home'; await branchWizLoad(); return; }
+
+    if (r.status === 'blocked' && (r.reasons || []).includes('dirty')) {
+        branchWiz.step = 'home';
+        renderBranchWizard();
+        if (window.confirm('You have unsaved changes.\n\nDeskPilot can set them aside, sync, and put them back. Continue?')) {
+            branchWiz.busyLabel = branchWiz.busyLabel || 'Syncing…';
+            branchWiz.step = 'busy';
+            renderBranchWizard();
+            try { r = await api('POST', '/api/git/sync', { action, autostash: true }); }
+            catch (e) { toast(e.message); branchWiz.step = 'home'; await branchWizLoad(); return; }
+        } else {
+            await branchWizLoad();
+            return;
+        }
+    }
+
+    if (r.status === 'conflict') {
+        branchWiz.target = r.upstream || 'the server';
+        branchWizGoConflict();
+        return;
+    }
+    if (r.status === 'blocked' || r.status === 'error') {
+        toast(r.error || 'The sync could not run.');
+        branchWiz.step = 'home';
+        await branchWizLoad();
+        return;
+    }
+    const bits = [];
+    if (r.pulled) bits.push(r.fastForward ? 'got the server\u2019s changes' : 'merged the server\u2019s changes');
+    if (r.published) bits.push('published this branch');
+    else if (r.pushed) bits.push('sent your changes');
+    if (r.stashPopConflict) bits.push('your set-aside changes need attention');
+    toast(bits.length ? 'Sync: ' + bits.join(', ') + '.' : 'Already up to date.');
+    refreshExplorer();
+    branchWiz.step = 'home';
+    await branchWizLoad();
+}
+
+// A conflict is where a non-expert gets stuck, so DeskPilot prepares the exact
+// prompt that gets the agent to fix it. Nothing is sent until the user says so.
+async function branchWizGoConflict() {
+    branchWiz.step = 'busy';
+    branchWiz.busyLabel = 'Preparing a fix…';
+    renderBranchWizard();
+    try {
+        branchWiz.conflict = await api('GET', '/api/git/conflict/prompt?branch=' + encodeURIComponent(branchWiz.target || ''));
+    } catch (e) {
+        toast(e.message);
+        branchWiz.step = 'home';
+        await branchWizLoad();
+        return;
+    }
+    branchWiz.step = 'conflict';
+    renderBranchWizard();
+}
+
+function renderBranchConflict(body, foot, title) {
+    title.textContent = 'Conflicting changes';
+    const c = branchWiz.conflict || {};
+    const files = c.files || [];
+    const intro = el('merge-precond');
+    intro.innerHTML =
+        `<strong>The same lines were changed in two places</strong>, so Git cannot decide on its own. ` +
+        `${files.length} file${files.length === 1 ? '' : 's'} need${files.length === 1 ? 's' : ''} a decision.`;
+    body.appendChild(intro);
+
+    const list = el('merge-file-list', 'ul');
+    for (const f of files) {
+        const li = document.createElement('li');
+        li.textContent = f;
+        list.appendChild(li);
+    }
+    body.appendChild(list);
+
+    const hint = el('muted tiny merge-msg');
+    hint.textContent = 'DeskPilot has written a prompt that asks the agent to resolve these conflicts. Review it, edit it if you like, then send it.';
+    body.appendChild(hint);
+
+    const box = document.createElement('textarea');
+    box.id = 'branch-conflict-prompt';
+    box.className = 'branch-prompt';
+    box.rows = 10;
+    box.spellcheck = false;
+    box.value = c.prompt || '';
+    body.appendChild(box);
+
+    foot.appendChild(branchWizBtn('Copy', '', () => {
+        const text = ($('branch-conflict-prompt') || {}).value || '';
+        navigator.clipboard.writeText(text).then(() => toast('Prompt copied.'), () => toast('Could not copy.'));
+    }));
+    foot.appendChild(branchWizBtn('Abort the merge', '', branchWizAbortMerge));
+    foot.appendChild(branchWizBtn('Ask DeskPilot to fix it', 'btn-primary', branchWizSendConflictPrompt));
+}
+
+function branchWizSendConflictPrompt() {
+    const text = ($('branch-conflict-prompt') || {}).value || '';
+    if (!text.trim()) { toast('The prompt is empty.'); return; }
+    closeBranchWizard();
+    const promptEl = $('prompt');
+    promptEl.value = text;
+    autoGrow(promptEl);
+    setSendEnabled(true);
+    promptEl.focus();
+    send();
+}
+
+async function branchWizAbortMerge() {
+    if (!window.confirm('Abort the merge and put the files back the way they were before it started?')) return;
+    branchWiz.busyLabel = 'Aborting the merge…';
+    branchWiz.step = 'busy';
+    renderBranchWizard();
+    try { await api('POST', '/api/git/merge/abort', {}); toast('Merge aborted.'); }
+    catch (e) { toast(e.message); }
+    refreshExplorer();
+    branchWiz.step = 'home';
+    branchWiz.conflict = null;
+    await branchWizLoad();
 }
 
 // ===== Merge Wizard =====
@@ -5175,6 +5878,27 @@ function wireGlobal() {
     $('merge-backdrop').onclick = () => closeMergeWizard();
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !$('merge-modal').classList.contains('hidden')) closeMergeWizard();
+    });
+
+    // Branch Wizard
+    $('branch-close').onclick = () => closeBranchWizard();
+    $('branch-backdrop').onclick = () => closeBranchWizard();
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !$('branch-modal').classList.contains('hidden')) closeBranchWizard();
+    });
+
+    // Diff viewer
+    $('diff-close').onclick = () => closeDiffViewer();
+    $('diff-backdrop').onclick = () => closeDiffViewer();
+    $('diff-prev').onclick = () => diffStep(-1);
+    $('diff-next').onclick = () => diffStep(1);
+    document.addEventListener('keydown', (e) => {
+        if ($('diff-modal').classList.contains('hidden')) return;
+        if (e.key === 'Escape') { closeDiffViewer(); return; }
+        const inField = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '');
+        if (inField) return;
+        if (e.key === 'ArrowDown' || e.key === 'j') { e.preventDefault(); diffStep(1); }
+        else if (e.key === 'ArrowUp' || e.key === 'k') { e.preventDefault(); diffStep(-1); }
     });
 
     // Composer insert menu (/ prompt files, # project files)

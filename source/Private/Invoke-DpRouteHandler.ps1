@@ -259,6 +259,143 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpBranchList -Path $root -Fetch:$doFetch)
         }
+        'gitChanges' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            # The optional filter is newline-separated: a path can contain a comma
+            # or a semicolon on every supported platform, but never a newline.
+            $rawPaths = if ($Request -and $Request.Query -and $Request.Query.ContainsKey('paths')) { [string]$Request.Query['paths'] } else { '' }
+            if ([string]::IsNullOrWhiteSpace($rawPaths)) {
+                Write-DpResponse -Stream $Stream -Json (Get-DpGitChanges -Root $root)
+            }
+            else {
+                $wanted = @($rawPaths -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+                Write-DpResponse -Stream $Stream -Json (Get-DpGitChanges -Root $root -Paths $wanted)
+            }
+        }
+        'gitCommit' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $message = [string](Get-DpPropertyValue -InputObject $Body -Name @('message') -Default '')
+            if ([string]::IsNullOrWhiteSpace($message)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_message'; message = 'A commit message is required.' } }
+                return
+            }
+            $paths = @()
+            if ($Body -and $Body.PSObject.Properties['paths'] -and $Body.paths) { $paths = @($Body.paths | ForEach-Object { [string]$_ }) }
+            $commit = if ($paths.Count -gt 0) {
+                Invoke-DpGitCommit -Root $root -Message $message -Paths $paths
+            }
+            else {
+                Invoke-DpGitCommit -Root $root -Message $message
+            }
+            if ($commit.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'commit_failed'; message = $commit.error }; result = $commit }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $commit
+        }
+        'gitBranchCreate' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $branchName = [string](Get-DpPropertyValue -InputObject $Body -Name @('name') -Default '')
+            $from = [string](Get-DpPropertyValue -InputObject $Body -Name @('from') -Default '')
+            $checkout = [bool](Get-DpPropertyValue -InputObject $Body -Name @('checkout') -Default $true)
+            $created = if ([string]::IsNullOrWhiteSpace($from)) {
+                New-DpGitBranch -Root $root -Name $branchName -Checkout:$checkout
+            }
+            else {
+                New-DpGitBranch -Root $root -Name $branchName -From $from -Checkout:$checkout
+            }
+            if ($created.error -and -not $created.created) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'branch_create_failed'; message = $created.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $created
+        }
+        'gitBranchDelete' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $branchName = [string](Get-DpPropertyValue -InputObject $Body -Name @('name', 'branch') -Default '')
+            if ([string]::IsNullOrWhiteSpace($branchName)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_branch'; message = 'A branch name is required.' } }
+                return
+            }
+            $force = [bool](Get-DpPropertyValue -InputObject $Body -Name @('force') -Default $false)
+            $deleteRemote = [bool](Get-DpPropertyValue -InputObject $Body -Name @('deleteRemote') -Default $false)
+            $removed = Remove-DpGitBranch -Root $root -Name $branchName -Force:$force -DeleteRemote:$deleteRemote
+            if ($removed.error) {
+                # notMerged is a recoverable refusal, not a failure: answer 409 so the
+                # UI can offer an explicit force instead of showing a dead end.
+                $statusCode = if ($removed.notMerged) { 409 } else { 400 }
+                Write-DpResponse -Stream $Stream -Status $statusCode -Json @{ error = @{ code = 'branch_delete_failed'; message = $removed.error; notMerged = $removed.notMerged }; result = $removed }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json $removed
+        }
+        'gitSyncStatus' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $doFetch = $false
+            if ($Request -and $Request.Query -and $Request.Query.ContainsKey('fetch')) {
+                $fv = [string]$Request.Query['fetch']
+                $doFetch = ($fv -eq '1' -or $fv -eq 'true')
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpGitSyncStatus -Path $root -Fetch:$doFetch)
+        }
+        'gitSync' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $action = [string](Get-DpPropertyValue -InputObject $Body -Name @('action') -Default 'sync')
+            if ($action -notin @('pull', 'push', 'sync')) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_action'; message = "Unknown sync action '$action'." } }
+                return
+            }
+            $autostash = [bool](Get-DpPropertyValue -InputObject $Body -Name @('autostash') -Default $false)
+            $syncResult = Invoke-DpGitSync -Root $root -Action $action -Autostash:$autostash
+            Write-DpResponse -Stream $Stream -Json $syncResult
+        }
+        'gitConflictPrompt' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $sync = Get-DpGitSyncStatus -Path $root
+            if (-not $sync.isRepo) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'not_a_repo'; message = 'This project is not a Git repository.' } }
+                return
+            }
+            $conflictFiles = @($sync.conflictFiles)
+            $sourceBranch = if ($Request -and $Request.Query -and $Request.Query.ContainsKey('branch')) { [string]$Request.Query['branch'] } else { '' }
+            $targetBranch = if ($sync.branch) { $sync.branch } else { '' }
+            $promptText = New-DpConflictPrompt -Files $conflictFiles -SourceBranch $sourceBranch -TargetBranch $targetBranch -Root $root
+            Write-DpResponse -Stream $Stream -Json @{
+                inMerge      = $sync.inMerge
+                files        = $conflictFiles
+                sourceBranch = $sourceBranch
+                targetBranch = $targetBranch
+                prompt       = $promptText
+            }
+        }
         'gitMergePreview' {
             $root = $state.Settings.workspaceFolder
             if ([string]::IsNullOrWhiteSpace($root)) {

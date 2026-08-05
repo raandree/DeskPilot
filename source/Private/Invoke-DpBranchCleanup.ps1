@@ -58,6 +58,9 @@ function Invoke-DpBranchCleanup {
     if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) { $result.error = 'No project folder.'; return $result }
     try { $rootFull = [System.IO.Path]::GetFullPath($Root) } catch { $result.error = 'Invalid project folder.'; return $result }
 
+    $valid = Test-DpGitBranchName -Name $Branch
+    if (-not $valid.ok) { $result.error = $valid.error; return $result }
+
     $status = Get-DpGitStatus -Path $rootFull
     if (-not $status.gitAvailable) { $result.error = 'Git is not installed or not on PATH.'; return $result }
     if (-not $status.isRepo) { $result.error = 'This project is not a Git repository.'; return $result }
@@ -70,11 +73,15 @@ function Invoke-DpBranchCleanup {
     if ($remotes.Ok) { $remoteNames = @($remotes.StdOut -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
     $hasRemote = $remoteNames.Count -gt 0
 
-    # Resolve the short branch name (strip a leading "<remote>/").
-    $shortName = $Branch
-    $slash = $Branch.IndexOf('/')
-    if ($slash -ge 0 -and ($remoteNames -contains $Branch.Substring(0, $slash))) {
-        $shortName = $Branch.Substring($slash + 1)
+    # Resolve the short branch name (strip a leading "<remote>/"), re-validating
+    # the token the strip produces - only the original name was checked.
+    $shortName = $valid.name
+    $slash = $shortName.IndexOf('/')
+    if ($slash -ge 0 -and ($remoteNames -contains $shortName.Substring(0, $slash))) {
+        $shortName = $shortName.Substring($slash + 1)
+        $shortValid = Test-DpGitBranchName -Name $shortName
+        if (-not $shortValid.ok) { $result.error = $shortValid.error; return $result }
+        $shortName = $shortValid.name
     }
 
     # Local delete (only if a local branch by that name exists).
@@ -99,7 +106,7 @@ function Invoke-DpBranchCleanup {
         if (-not $hasRemote) { $result.pushError = 'No remote configured.' }
         elseif (-not $default) { $result.pushError = 'Could not determine the default branch.' }
         else {
-            $push = Invoke-DpGitCommand -Path $rootFull -Arguments @('push', $RemoteName, $default)
+            $push = Invoke-DpGitCommand -Path $rootFull -Arguments @('push', $RemoteName, $default) -TimeoutSeconds 120
             if ($push.Ok) { $result.defaultPushed = $true }
             else { $result.pushError = $push.StdErr.Trim() }
         }
@@ -108,7 +115,7 @@ function Invoke-DpBranchCleanup {
     if ($DeleteRemote) {
         if (-not $hasRemote) { $result.remoteError = 'No remote configured.' }
         else {
-            $rdel = Invoke-DpGitCommand -Path $rootFull -Arguments @('push', $RemoteName, '--delete', $shortName)
+            $rdel = Invoke-DpGitCommand -Path $rootFull -Arguments @('push', $RemoteName, '--delete', '--', $shortName) -TimeoutSeconds 120
             if ($rdel.Ok) { $result.remoteDeleted = $true }
             else { $result.remoteError = $rdel.StdErr.Trim() }
         }

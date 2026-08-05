@@ -292,6 +292,148 @@ against the live branch list) and returns the new status. `400` for an unknown
 branch or no Project; `409` when the checkout fails (for example uncommitted
 changes would be overwritten).
 
+## Git Workbench (selected Project)
+
+These power the Changes review, the Diff viewer and the Branch Wizard (spec 090).
+
+### `GET /api/git/changes`
+
+Optional query `paths=<newline-separated list>` restricts the result to those
+files (relative to the Project, or absolute inside it; a path outside is ignored).
+A path can contain a comma or a semicolon on every supported platform but never a
+newline, which is why the separator is a newline.
+
+```json
+{ "gitAvailable": true, "isRepo": true, "branch": "main",
+  "files": [
+    { "rel": "src/app.js", "from": null, "status": "modified", "staged": false,
+      "directory": false, "added": 12, "deleted": 4, "binary": false },
+    { "rel": "notes.md", "from": null, "status": "untracked", "staged": false,
+      "directory": false, "added": 30, "deleted": 0, "binary": false }
+  ],
+  "fileCount": 2, "totalAdded": 42, "totalDeleted": 4, "truncated": false,
+  "error": null }
+```
+
+`status` is one of `added`, `modified`, `deleted`, `renamed`, `untracked`,
+`conflicted`. Line counts come from `git diff HEAD --numstat`; an untracked file
+has no diff against HEAD, so its count is measured from the file itself (a NUL
+byte makes it `binary` with zero lines).
+
+`rel` is **Project-relative**, matching every other file endpoint. Git reports
+paths relative to the repository root, so when the Project is a subdirectory of a
+larger repository the paths are rebased and anything outside the Project is
+dropped.
+
+Without a `paths` filter, an untracked **folder** is reported as a single entry
+(`rel` ends with `/`, `directory: true`, no line count) rather than expanded file
+by file — expanding an un-ignored `node_modules` on the Host Server's single
+accept thread is exactly the cost this endpoint must not pay. Supplying `paths`
+switches to per-file expansion so an exact match is possible.
+
+The list is capped at 500 files **while it is built** (`truncated: true`).
+`fileCount` is exact; `totalAdded` and `totalDeleted` cover the returned files.
+
+### `POST /api/git/commit`
+
+Body `{ "message": "<text>", "paths": [ "<rel>", … ] }`. Stages the given files
+(or the whole working tree when `paths` is omitted) and commits. This is the
+"Keep" action: it is what makes an agent's edits durable and pushable.
+
+```json
+{ "committed": true, "sha": "…", "shortSha": "a1b2c3d",
+  "summary": "[main a1b2c3d] keep the edit", "nothingToCommit": false,
+  "skipped": [], "error": null }
+```
+
+`nothingToCommit` is `true` (with `committed: false` and no error) when there was
+nothing staged. `400` for an empty message, a merge in progress, or when no given
+path is inside the Project.
+
+### `POST /api/git/branch/create`
+
+Body `{ "name": "<name>", "from": "<ref>", "checkout": true }`. The name is
+validated against git's ref rules **before** git sees it, so a bad name yields a
+sentence rather than a `fatal:`. `from` defaults to the current HEAD; a repository
+with no commits yet is created with `checkout -b`.
+
+```json
+{ "created": true, "checkedOut": true, "name": "draft-report",
+  "from": "main", "error": null }
+```
+
+`400` for an invalid name, an existing branch, or an unknown starting point.
+
+### `POST /api/git/branch/delete`
+
+Body `{ "name": "<name>", "force": false, "deleteRemote": false }`. Refuses the
+Default Branch. Switches to the Default Branch first when the branch to delete is
+checked out. Uses the safe `git branch -d` unless `force` is set.
+
+```json
+{ "name": "draft-report", "deleted": true, "notMerged": false,
+  "switchedTo": "main", "remoteDeleted": false, "remoteError": null,
+  "error": null }
+```
+
+`409` with `error.notMerged: true` when the branch has commits that are not in the
+Default Branch, so the caller can offer an explicit force. The remote delete is
+opt-in and reported separately so a remote failure never undoes the local result.
+
+### `GET /api/git/sync/status`
+
+Optional query `fetch=1` refreshes the remote-tracking refs first (best effort).
+
+```json
+{ "gitAvailable": true, "isRepo": true, "branch": "main", "detached": false,
+  "hasRemote": true, "remoteName": "origin", "upstream": "origin/main",
+  "hasUpstream": true, "ahead": 2, "behind": 1, "dirty": true,
+  "changeCount": 3, "inMerge": false, "conflictFiles": [],
+  "fetched": true, "fetchError": null, "error": null }
+```
+
+With no upstream, `ahead` counts the commits that are not on the remote's Default
+Branch, so the UI can say "N saves have never been sent" instead of "no upstream".
+
+### `POST /api/git/sync`
+
+Body `{ "action": "pull" | "push" | "sync", "autostash": false }`. `sync` pulls
+then pushes — pushing first is what produces the rejection a non-expert cannot
+read. A pull fast-forwards when it can and otherwise creates a merge commit. A
+first push uses `push -u` and reports `published`.
+
+```json
+{ "status": "success", "action": "sync", "branch": "main",
+  "upstream": "origin/main", "published": false, "pulled": true,
+  "pushed": true, "fastForward": true, "ahead": 0, "behind": 0,
+  "conflictFiles": [], "stashed": false, "stashPopConflict": false,
+  "reasons": [], "error": null }
+```
+
+`status` is `success`, `conflict` (with `conflictFiles`), `blocked` (with
+`reasons`: `dirty`, `detached`, `in-merge`, `no-remote`, `push-rejected`,
+`conflict-with-local-changes`), or `error`. A dirty tree blocks a pull unless
+`autostash` is set; a conflict *on top of* an autostash is unwound (abort + pop)
+and reported as `conflict-with-local-changes`, because that mixed state is not
+recoverable by the target user. Whenever a set-aside restore fails, `stashed`
+stays `true`, `stashPopConflict` is set, and the message says the work is still
+in the Git stash — never that it was restored.
+
+Networked git runs with a timeout and with `GIT_TERMINAL_PROMPT=0`, so a stalled
+remote or a credential prompt can never hang the single-threaded Host Server.
+
+### `GET /api/git/conflict/prompt`
+
+Optional query `branch=<incoming ref>` names the incoming side in the text.
+Returns the conflicted files and a **prepared prompt** the user can review, edit
+and send so the agent resolves the conflict with its File Tools. DeskPilot never
+sends it automatically.
+
+```json
+{ "inMerge": true, "files": [ "shared.txt" ], "sourceBranch": "origin/main",
+  "targetBranch": "main", "prompt": "Please resolve the Git merge conflicts…" }
+```
+
 ## Merge Wizard (selected Project)
 
 These power the non-expert Branch Merge Wizard (spec 070). All operate on the

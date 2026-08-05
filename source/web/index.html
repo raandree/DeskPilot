@@ -386,6 +386,36 @@
         <div id="merge-foot" class="modal-foot"></div>
     </div>
 
+    <!-- Branch Wizard (create, switch, delete, merge and sync branches) -->
+    <div id="branch-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="branch-modal" class="modal branch-modal hidden" role="dialog" aria-modal="true" aria-label="Branches">
+        <div class="modal-head">
+            <h2 id="branch-title">Branches</h2>
+            <button id="branch-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div id="branch-body" class="branch-body"></div>
+        <div id="branch-foot" class="modal-foot"></div>
+    </div>
+
+    <!-- Diff viewer (what changed in one file, with a file list) -->
+    <div id="diff-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="diff-modal" class="modal diff-modal hidden" role="dialog" aria-modal="true" aria-label="File changes">
+        <div class="modal-head">
+            <h2 id="diff-title">Changes</h2>
+            <div class="file-head-actions">
+                <span id="diff-stat" class="diff-headstat muted tiny"></span>
+                <button id="diff-prev" class="icon-btn" title="Previous file" aria-label="Previous file">↑</button>
+                <button id="diff-next" class="icon-btn" title="Next file" aria-label="Next file">↓</button>
+                <button id="diff-close" class="icon-btn" aria-label="Close">✕</button>
+            </div>
+        </div>
+        <div class="diff-split">
+            <div id="diff-files" class="diff-files" role="listbox" aria-label="Changed files"></div>
+            <div id="diff-body" class="diff-body"></div>
+        </div>
+        <div id="diff-foot" class="modal-foot"></div>
+    </div>
+
     <script type="module" src="/assets/app.js"></script>
 </body>
 

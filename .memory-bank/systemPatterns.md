@@ -84,6 +84,31 @@ source: repository evidence
   client paints on click; unwind through `BeginStop` while pumping requests;
   persist a stopped Message. Use exact Usage only with paired snapshots, else a
   labelled partial input estimate. Never treat a missing baseline as zero.
+- **Every git call goes through one hardened runner.** `Invoke-DpGitCommand` owns
+  the process: argument list (no shell), closed stdin, `GIT_TERMINAL_PROMPT=0`,
+  `GIT_LITERAL_PATHSPECS=1`, a timeout on *every* call, deadline-bounded async
+  reads, disposal. The accept loop is single-threaded, so "this git command can
+  block" and "the whole UI freezes" are the same sentence.
+- **A ref name is validated before git sees it, and again after it is rewritten.**
+  `Test-DpGitBranchName` enforces git's own rules in plain language; anything that
+  *derives* a new token (stripping a `<remote>/` prefix) re-validates, and the
+  command carries `--`. A name that survived validation once is not a name.
+- **Git speaks repo-relative; DeskPilot speaks Project-relative.** Porcelain and
+  numstat report paths from the repository root, so `Get-DpGitChanges` rebases
+  them onto the Project and drops anything outside it. Every file endpoint then
+  shares one path frame, and a Project inside a bigger repository is ordinary.
+- **Bound the work while building it, not after.** The change list caps as it is
+  assembled and only measures what it reports; the repository-wide read collapses
+  an untracked folder into one entry. A cap applied after the loop is a cap that
+  already paid for the work.
+- **A failed recovery is reported as failed.** An autostash restore lives in one
+  place (`Restore-DpSyncStash`); when the pop fails it keeps `stashed` true, sets
+  `stashPopConflict`, and names the stash. Telling a non-expert their work was
+  restored when it is in `refs/stash` is worse than telling them nothing.
+- **A generated prompt is a suggestion, never an action.** The conflict prompt is
+  returned as text, shown in an editable box, and sent only by an explicit click.
+  Its wording ("do not run git") is a guardrail, not a control - the real
+  injection surface is the file content the agent then reads.
 
 ## Anti-patterns to avoid
 
@@ -92,3 +117,8 @@ source: repository evidence
 - Binding the Host Server to `0.0.0.0` — localhost only unless explicitly opted
   in with auth.
 - Leaking one Conversation's history into another via the Engine's running chat.
+- Recomputing on the client what the server already computed exactly. The SPA
+  reads `fileCount` / `totalAdded` / `totalDeleted` from the API; deriving them
+  from a capped list silently understates the truth.
+- Running two Sampler builds at once. They both write
+  `output/module/DeskPilot`; the second one dies mid-build with no useful error.

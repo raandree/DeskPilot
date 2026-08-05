@@ -47,6 +47,21 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-T5 | C | Manage User Tools (`Register-ShpTool`/`Unregister-ShpTool`) from the UI. |
 | FR-T6 | S | When the selected Project is a Git repository, let the user undo the file changes a Turn made: revert tracked files the Turn wrote and remove files it newly created, after an explicit confirm. Confined to the Workspace Folder. |
 | FR-T7 | S | When the selected Project is a Git repository, let the user view the Git diff of a file the Turn wrote, inline from the Activity panel. |
+| FR-T8 | S | Show a **Changes** card under the newest assistant Message listing every file that Turn changed, with a per-file and total added/deleted line count and a plain-language status, and let the user **Keep** them (commit exactly those files with a short description) or **Undo** them. Confined to the Workspace Folder. |
+| FR-T9 | S | Let the user open any changed file in a **Diff viewer** showing a unified diff with both old and new line numbers, step through the whole change set, and undo a single file. A new file is shown as all additions; a binary file says so. |
+| FR-T10 | S | Show the number of uncommitted changes in the Git bar and let the user review them all, not only those from the newest Turn. |
+
+### Branches and the server (Git Workbench)
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-B1 | S | Provide a **Branch Wizard** that shows the current Branch, the Branch list with merged badges, and per-Branch **Switch** and **Delete** actions. |
+| FR-B2 | S | Let the user **create** a Branch from a chosen starting point, optionally switching to it. Validate the name against Git's ref rules in plain language before Git sees it. |
+| FR-B3 | S | Let the user **delete** a Branch safely: never the Default Branch; switch off it first when it is checked out; refuse an unmerged Branch with an explicit "delete anyway" instead of a dead end; make the remote delete a separate opt-in with its own confirm. |
+| FR-B4 | S | Let the user **sync** with the server in plain language — get, send, or both — including publishing a Branch that has no upstream, and offering to set uncommitted changes aside and restore them around a pull. |
+| FR-B5 | S | Report how many saves are waiting to be sent or received, and whether the working tree is dirty or a merge is unresolved. |
+| FR-B6 | S | When a conflict appears outside the Merge Wizard, **generate a prompt** that asks the agent to resolve it, show it for review and editing, and send it only when the user chooses to. Also offer aborting the merge. |
+| FR-B7 | M | Never let a Git call block the Host Server: networked Git runs with a timeout and with terminal prompting disabled, and DeskPilot stores no Git credentials. |
 
 ### Models, Skills, Instructions, behaviour
 

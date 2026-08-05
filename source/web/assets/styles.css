@@ -3897,7 +3897,7 @@ button.tree-row {
     font-variant-numeric: tabular-nums;
 }
 
-/* ===== Git diff (inline in the Activity panel) ===== */
+/* ===== Git diff button (Activity panel) ===== */
 .git-diff-btn {
     margin-left: 8px;
     border: 1px solid var(--border);
@@ -3914,50 +3914,391 @@ button.tree-row {
     color: var(--text);
 }
 
-.git-undo-btn {
-    margin-top: 10px;
-}
-
-.git-diff-block {
-    margin: 6px 0 10px;
+/* ===== Changes review card (below an assistant message) ===== */
+.changes-card {
+    margin: 10px 0 4px;
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 10px;
     overflow: hidden;
+    background: var(--surface);
 }
 
-.git-diff {
-    margin: 0;
-    padding: 8px 10px;
+.changes-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.changes-acts {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.changes-stat {
     font-family: var(--mono);
     font-size: 12px;
-    line-height: 1.5;
-    overflow-x: auto;
-    background: var(--bg);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.changes-add {
+    color: var(--ok, #2dd4bf);
+}
+
+.changes-del {
+    color: var(--danger, #b42318);
+}
+
+.changes-list {
+    display: flex;
+    flex-direction: column;
     max-height: 320px;
     overflow-y: auto;
 }
 
-.diff-line {
-    display: block;
+.changes-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.changes-row:last-child {
+    border-bottom: 0;
+}
+
+.changes-row:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.changes-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.changes-dir {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.changes-more {
+    padding: 6px 12px;
+}
+
+.changes-badge {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+}
+
+.changes-badge.st-added,
+.changes-badge.st-untracked {
+    background: color-mix(in srgb, var(--ok) 18%, transparent);
+    color: var(--ok);
+}
+
+.changes-badge.st-deleted,
+.changes-badge.st-conflicted {
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    color: var(--danger);
+}
+
+/* ===== Diff viewer ===== */
+.diff-modal {
+    width: min(1040px, 96vw);
+    max-height: min(90vh, 900px);
+}
+
+.diff-split {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+}
+
+.diff-files {
+    flex: none;
+    width: 250px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.diff-file {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.diff-file:hover {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.diff-file.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    font-weight: 600;
+}
+
+.diff-file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.diff-file-dir {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+}
+
+.diff-body {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+    background: var(--bg);
+}
+
+.diff-msg {
+    padding: 16px;
+}
+
+.diff-headstat {
+    font-family: var(--mono);
+    white-space: nowrap;
+}
+
+.diff-table {
+    display: table;
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.diff-row {
+    display: flex;
     white-space: pre;
 }
 
+.diff-gutter {
+    flex: none;
+    width: 46px;
+    padding: 0 6px;
+    text-align: right;
+    color: var(--muted);
+    opacity: .75;
+    user-select: none;
+    border-right: 1px solid var(--border);
+}
+
+.diff-sign {
+    flex: none;
+    width: 16px;
+    text-align: center;
+    user-select: none;
+}
+
+.diff-text {
+    flex: 1;
+    min-width: 0;
+    padding-right: 12px;
+}
+
 .diff-add {
-    background: color-mix(in srgb, var(--ok) 16%, transparent);
+    background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+
+.diff-add .diff-sign,
+.diff-add .diff-text {
     color: var(--ok);
 }
 
 .diff-del {
-    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.diff-del .diff-sign,
+.diff-del .diff-text {
     color: var(--danger);
 }
 
 .diff-hunk {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent);
 }
 
 .diff-meta {
     color: var(--muted);
+}
+
+/* ===== Branch Wizard ===== */
+.git-branch-btn,
+.git-changes-btn {
+    margin-top: 0;
+    width: auto;
+}
+
+.git-branch-btn {
+    margin-left: auto;
+}
+
+.branch-modal {
+    width: min(680px, 94vw);
+    max-height: min(88vh, 860px);
+}
+
+.branch-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.branch-sync {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+.branch-sync-where {
+    font-size: 14px;
+}
+
+.branch-sync-acts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.branch-sync-acts .btn {
+    margin-top: 0;
+    width: auto;
+}
+
+.branch-list {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.branch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+
+.branch-row:last-child {
+    border-bottom: 0;
+}
+
+.branch-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.branch-row-acts {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.branch-row-acts .btn {
+    margin-top: 0;
+    width: auto;
+}
+
+.branch-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.branch-field label {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.branch-field p {
+    margin: 0;
+}
+
+.branch-input {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 9px;
+    font: inherit;
+    font-size: 13px;
+}
+
+.branch-prompt {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.branch-legend {
+    padding-top: 2px;
 }
 
 /* ===== Atelier health panel ===== */

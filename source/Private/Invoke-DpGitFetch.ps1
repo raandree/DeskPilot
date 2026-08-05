@@ -34,7 +34,7 @@ function Invoke-DpGitFetch {
         return $result
     }
 
-    $fetch = Invoke-DpGitCommand -Path $Path -Arguments @('fetch', '--prune')
+    $fetch = Invoke-DpGitCommand -Path $Path -Arguments @('fetch', '--prune') -TimeoutSeconds 60
     if ($fetch.Ok) {
         $result.ok = $true
     }

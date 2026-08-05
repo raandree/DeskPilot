@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A Changes card under every new answer, with Keep and Undo.** When the agent
+  edits files in a Git project, the answer now carries a
+  `N files changed  +A  −D` summary and one row per file with its status and its
+  own added/deleted line counts. **Keep** saves exactly those files as a commit
+  (with a description pre-filled from your prompt) so the work cannot be lost;
+  **Undo** reverts them after a confirm. The Git bar also shows a live count of
+  uncommitted changes for work made outside the newest turn.
+- **A diff viewer.** Clicking a changed file opens a unified diff with both old
+  and new line numbers, colour-coded additions and removals, and a file list to
+  step through the whole change set (`↑`/`↓`). A brand-new file is shown as all
+  additions; a binary file says so instead of showing bytes.
+- **A Branch Wizard for people who do not know Git.** One place to see where you
+  are, create a branch (with the name validated in plain language before Git
+  sees it), switch, delete (never the default branch; unmerged work needs an
+  explicit "delete anyway"; the remote delete is a separate opt-in), merge (hands
+  off to the existing Merge Wizard), and sync with the server — *get*, *send*, or
+  both, including publishing a branch that has never been sent. Uncommitted work
+  can be set aside and restored around a sync.
+- **A generated prompt for merge conflicts.** When the same lines were changed in
+  two places outside the Merge Wizard, DeskPilot writes the prompt that asks the
+  agent to resolve it, shows it for review and editing, and sends it only when
+  you choose to. Copy and Abort-the-merge are offered alongside.
 - **Ask you now opens a Questionnaire wizard for related questions.** The Model
   can bundle up to ten questions into one in-thread flow with numbered choices,
   radio-style single selection, checkmarked multi-selection, conditional custom
@@ -17,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a one-step fallback. Answers return to the same Turn as one correlated JSON
   payload, and the completed Activity shows the Questionnaire title instead of
   protocol JSON.
+
+### Changed
+
+- **Git can no longer hang DeskPilot.** Every Git call now reads its output
+  asynchronously and runs with terminal prompting disabled, and networked calls
+  (fetch, push, remote delete) carry a timeout. Previously a stalled remote or a
+  credential prompt could freeze the single-threaded Host Server, and with it the
+  whole UI.
+- The per-turn file diff moved from an inline block in the Activity panel into
+  the new diff viewer, and the Activity panel's "Undo file changes" button moved
+  into the Changes card as **Undo**.
 
 ### Fixed
 

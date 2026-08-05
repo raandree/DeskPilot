@@ -14,9 +14,92 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'markdown.js', 'questionnaire.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
+    }
+
+    It 'parses a unified diff into rows with old and new line numbers' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const {
+    parseUnifiedDiff, newFileRows, splitRelPath, statusGlyph, statusLabel,
+    suggestCommitMessage,
+} = await import(pathToFileURL(process.argv[1]).href);
+
+const diff = [
+    'diff --git a/notes.txt b/notes.txt',
+    'index 1111111..2222222 100644',
+    '--- a/notes.txt',
+    '+++ b/notes.txt',
+    '@@ -1,3 +1,4 @@',
+    ' keep me',
+    '-old line',
+    '+new line',
+    '+extra line',
+    ' tail',
+].join('\n');
+
+const parsed = parseUnifiedDiff(diff);
+assert.equal(parsed.added, 2);
+assert.equal(parsed.deleted, 1);
+
+const meta = parsed.rows.filter((r) => r.type === 'meta');
+assert.equal(meta.length, 4, 'the git file header stays as meta rows');
+
+const hunk = parsed.rows.find((r) => r.type === 'hunk');
+assert.equal(hunk.text, '@@ -1,3 +1,4 @@');
+
+const body = parsed.rows.filter((r) => r.type !== 'meta' && r.type !== 'hunk');
+assert.deepEqual(body.map((r) => [r.type, r.oldNo, r.newNo, r.text]), [
+    ['ctx', 1, 1, 'keep me'],
+    ['del', 2, null, 'old line'],
+    ['add', null, 2, 'new line'],
+    ['add', null, 3, 'extra line'],
+    ['ctx', 3, 4, 'tail'],
+]);
+
+// A single-line hunk header has no comma-count; both forms must parse.
+const short = parseUnifiedDiff('@@ -7 +9 @@\n-a\n+b');
+assert.deepEqual(short.rows.filter((r) => r.type !== 'hunk').map((r) => [r.type, r.oldNo, r.newNo]), [
+    ['del', 7, null],
+    ['add', null, 9],
+]);
+
+// An empty diff must not invent rows.
+assert.deepEqual(parseUnifiedDiff('').rows, []);
+
+// A brand new file is shown as all additions, numbered from one.
+assert.deepEqual(newFileRows('a\nb\n'), [
+    { type: 'add', oldNo: null, newNo: 1, text: 'a' },
+    { type: 'add', oldNo: null, newNo: 2, text: 'b' },
+]);
+
+assert.deepEqual(splitRelPath('src/deep/file.ts'), { name: 'file.ts', dir: 'src/deep' });
+assert.deepEqual(splitRelPath('root.md'), { name: 'root.md', dir: '' });
+assert.deepEqual(splitRelPath('win\\style\\path.txt'), { name: 'path.txt', dir: 'win/style' });
+
+assert.equal(statusGlyph('added'), 'A');
+assert.equal(statusGlyph('untracked'), 'U');
+assert.equal(statusGlyph('deleted'), 'D');
+assert.equal(statusGlyph('conflicted'), '!');
+assert.equal(statusGlyph('modified'), 'M');
+assert.equal(statusGlyph('anything-else'), 'M');
+assert.match(statusLabel('conflicted'), /conflict/i);
+
+assert.equal(suggestCommitMessage('  \nFix the report totals\nmore text', []), 'Fix the report totals');
+assert.equal(suggestCommitMessage('', [{ rel: 'a/b.txt' }]), 'Update b.txt');
+assert.equal(suggestCommitMessage('', [{ rel: 'a.txt' }, { rel: 'b.txt' }]), 'Update 2 files');
+assert.ok(suggestCommitMessage('x'.repeat(200), []).length <= 72);
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
     It 'extracts clipboard files without intercepting text-only paste data' {

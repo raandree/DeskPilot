@@ -3498,3 +3498,550 @@ Describe 'Test-DpTransientEngineError' {
         Test-DpTransientEngineError -ErrorRecord $null | Should -BeFalse
     }
 }
+
+
+Describe 'Test-DpGitBranchName' {
+    It 'accepts an ordinary feature branch name' {
+        $r = Test-DpGitBranchName -Name 'draft-report'
+        $r.ok | Should -BeTrue
+        $r.name | Should -Be 'draft-report'
+    }
+    It 'accepts a namespaced name and trims surrounding whitespace' {
+        $r = Test-DpGitBranchName -Name '  ai/git-workbench  '
+        $r.ok | Should -BeTrue
+        $r.name | Should -Be 'ai/git-workbench'
+    }
+    It 'rejects an empty name' {
+        (Test-DpGitBranchName -Name '   ').error | Should -Be 'A branch name is required.'
+    }
+    It 'rejects a name with a space' {
+        $r = Test-DpGitBranchName -Name 'my branch'
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'spaces'
+    }
+    It 'rejects a leading dash so git cannot read it as an option' {
+        $r = Test-DpGitBranchName -Name '--force'
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'dash'
+    }
+    It 'rejects the ref sequences git forbids' {
+        (Test-DpGitBranchName -Name 'a..b').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name 'a//b').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name 'a@{b').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name 'feature.lock').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name '/feature').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name 'feature/').ok | Should -BeFalse
+        (Test-DpGitBranchName -Name '.feature').ok | Should -BeFalse
+    }
+    It 'rejects each forbidden character' {
+        foreach ($bad in @('a~b', 'a^b', 'a:b', 'a?b', 'a*b', 'a[b', 'a\b')) {
+            (Test-DpGitBranchName -Name $bad).ok | Should -BeFalse -Because "'$bad' is not a legal ref name"
+        }
+    }
+}
+
+Describe 'Measure-DpFileLine' {
+    It 'counts the lines of a text file ending with a newline' {
+        $p = Join-Path $TestDrive 'lines-a.txt'
+        [System.IO.File]::WriteAllText($p, "one`ntwo`nthree`n")
+        $m = Measure-DpFileLine -Path $p
+        $m.lines | Should -Be 3
+        $m.binary | Should -BeFalse
+    }
+    It 'counts a trailing line that has no newline' {
+        $p = Join-Path $TestDrive 'lines-b.txt'
+        [System.IO.File]::WriteAllText($p, "one`ntwo")
+        (Measure-DpFileLine -Path $p).lines | Should -Be 2
+    }
+    It 'reports an empty file as zero lines' {
+        $p = Join-Path $TestDrive 'lines-c.txt'
+        [System.IO.File]::WriteAllText($p, '')
+        (Measure-DpFileLine -Path $p).lines | Should -Be 0
+    }
+    It 'flags a file containing a NUL byte as binary' {
+        $p = Join-Path $TestDrive 'lines-d.bin'
+        [System.IO.File]::WriteAllBytes($p, [byte[]](1, 2, 0, 3, 10))
+        $m = Measure-DpFileLine -Path $p
+        $m.binary | Should -BeTrue
+        $m.lines | Should -Be 0
+    }
+    It 'reports a missing file as zero lines rather than throwing' {
+        (Measure-DpFileLine -Path (Join-Path $TestDrive 'no-such-file.txt')).lines | Should -Be 0
+    }
+}
+
+Describe 'New-DpConflictPrompt' {
+    It 'names every conflicted file and both branches' {
+        $p = New-DpConflictPrompt -Files @('src/a.txt', 'docs/b.md') -SourceBranch 'origin/main' -TargetBranch 'feature' -Root 'C:\repo'
+        $p | Should -Match 'src/a.txt'
+        $p | Should -Match 'docs/b.md'
+        $p | Should -Match 'origin/main into feature'
+        $p | Should -Match 'C:\\repo'
+        $p | Should -Match 'Conflicted files: 2'
+    }
+    It 'tells the agent to remove the markers and not to run git' {
+        $p = New-DpConflictPrompt -Files @('a.txt')
+        $p | Should -Match '<<<<<<<'
+        $p | Should -Match 'Do not run any git commands'
+        $p | Should -Match 'Conflicted file: 1'
+    }
+    It 'survives an empty file list' {
+        { New-DpConflictPrompt -Files @() } | Should -Not -Throw
+    }
+}
+
+Describe 'Git workbench guards (no git required)' {
+    It 'Get-DpGitChanges reports a missing project folder' {
+        (Get-DpGitChanges -Root (Join-Path $TestDrive 'no-such-gc')).error | Should -Be 'No project folder.'
+    }
+    It 'New-DpGitBranch reports a missing project folder' {
+        (New-DpGitBranch -Root (Join-Path $TestDrive 'no-such-nb') -Name 'x').error | Should -Be 'No project folder.'
+    }
+    It 'New-DpGitBranch rejects a bad name before touching git' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (New-DpGitBranch -Root $dir -Name 'bad name').error | Should -Match 'spaces'
+    }
+    It 'Remove-DpGitBranch reports a missing project folder' {
+        (Remove-DpGitBranch -Root (Join-Path $TestDrive 'no-such-rb') -Name 'x').error | Should -Be 'No project folder.'
+    }
+    It 'Remove-DpGitBranch rejects an option-shaped name before touching git' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (Remove-DpGitBranch -Root $dir -Name '--receive-pack=calc.exe').error | Should -Match 'dash'
+    }
+    It 'Invoke-DpBranchCleanup rejects an option-shaped name before touching git' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (Invoke-DpBranchCleanup -Root $dir -Branch '--upload-pack=calc.exe').error | Should -Match 'dash'
+    }
+    It 'Invoke-DpGitSync reports a missing project folder' {
+        (Invoke-DpGitSync -Root (Join-Path $TestDrive 'no-such-sy')).error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpGitCommit reports a missing project folder' {
+        (Invoke-DpGitCommit -Root (Join-Path $TestDrive 'no-such-ci') -Message 'x').error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpGitCommit refuses an empty message' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (Invoke-DpGitCommit -Root $dir -Message '   ').error | Should -Be 'A commit message is required.'
+    }
+    It 'Get-DpGitSyncStatus reports a folder that is not a repository' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $dir | Out-Null
+        (Get-DpGitSyncStatus -Path $dir).isRepo | Should -BeFalse
+    }
+}
+
+Describe 'ConvertTo-DpProjectRelativePath' {
+    BeforeAll {
+        $script:repoTop = Join-Path $TestDrive 'repo'
+        $script:projTop = Join-Path $TestDrive 'repo' 'app'
+    }
+    It 'passes a path through when the Project is the repository root' {
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:repoTop -Path 'src/a.txt' |
+            Should -Be 'src/a.txt'
+    }
+    It 'rebases a repository-relative path onto a Project subdirectory' {
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:projTop -Path 'app/src/a.txt' |
+            Should -Be 'src/a.txt'
+    }
+    It 'drops a file outside the Project folder' {
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:projTop -Path 'docs/b.md' |
+            Should -BeNullOrEmpty
+    }
+    It 'does not treat a sibling with a shared prefix as inside' {
+        $sibling = Join-Path $TestDrive 'repo' 'app-extra'
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:projTop -Path 'app-extra/c.txt' |
+            Should -BeNullOrEmpty
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $sibling -Path 'app-extra/c.txt' |
+            Should -Be 'c.txt'
+    }
+    It 'drops the Project folder itself' {
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:projTop -Path 'app' |
+            Should -BeNullOrEmpty
+    }
+    It 'keeps the trailing slash git uses for an untracked folder' {
+        ConvertTo-DpProjectRelativePath -RepositoryRoot $script:repoTop -ProjectRoot $script:repoTop -Path 'build/' |
+            Should -Be 'build/'
+    }
+}
+
+Describe 'Restore-DpSyncStash' {
+    It 'does nothing when no changes were set aside' {
+        $r = @{ stashed = $false; stashPopConflict = $false }
+        Restore-DpSyncStash -Root 'C:\nowhere' -Result $r | Should -BeNullOrEmpty
+        $r.stashPopConflict | Should -BeFalse
+    }
+    It 'clears the flag when the stash pops cleanly' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $true; ExitCode = 0; StdOut = ''; StdErr = '' } }
+        $r = @{ stashed = $true; stashPopConflict = $false }
+        Restore-DpSyncStash -Root 'C:\nowhere' -Result $r | Should -BeNullOrEmpty
+        $r.stashed | Should -BeFalse
+        $r.stashPopConflict | Should -BeFalse
+    }
+    It 'keeps the changes flagged as stashed and says where they are when the pop fails' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = 'conflict' } }
+        $r = @{ stashed = $true; stashPopConflict = $false }
+        $message = Restore-DpSyncStash -Root 'C:\nowhere' -Result $r
+        $r.stashed | Should -BeTrue
+        $r.stashPopConflict | Should -BeTrue
+        $message | Should -Match 'git stash'
+    }
+}
+
+Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    BeforeAll {
+        function New-WorkbenchRepo {
+            param([string]$Path)
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+            & git -C $Path init -q 2>$null
+            & git -C $Path symbolic-ref HEAD refs/heads/main 2>$null
+            & git -C $Path config user.email 'test@example.com' 2>$null
+            & git -C $Path config user.name 'Test' 2>$null
+            & git -C $Path config commit.gpgsign false 2>$null
+        }
+    }
+
+    Context 'changes, commit and undo' {
+        BeforeAll {
+            $script:wbA = Join-Path $TestDrive 'wbA'
+            New-WorkbenchRepo -Path $script:wbA
+            [System.IO.File]::WriteAllText((Join-Path $script:wbA 'tracked.txt'), "one`ntwo`nthree`n")
+            & git -C $script:wbA add . 2>$null
+            & git -C $script:wbA commit -q -m 'init' 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $script:wbA 'tracked.txt'), "one`nTWO`nthree`nfour`n")
+            [System.IO.File]::WriteAllText((Join-Path $script:wbA 'brand-new.txt'), "a`nb`n")
+        }
+
+        It 'lists a modified file with its added and deleted line counts' {
+            $c = Get-DpGitChanges -Root $script:wbA
+            $c.isRepo | Should -BeTrue
+            $tracked = $c.files | Where-Object { $_.rel -eq 'tracked.txt' }
+            $tracked | Should -Not -BeNullOrEmpty
+            $tracked.status | Should -Be 'modified'
+            $tracked.added | Should -Be 2
+            $tracked.deleted | Should -Be 1
+        }
+
+        It 'lists an untracked file with its line count as additions' {
+            $c = Get-DpGitChanges -Root $script:wbA
+            $new = $c.files | Where-Object { $_.rel -eq 'brand-new.txt' }
+            $new.status | Should -Be 'untracked'
+            $new.added | Should -Be 2
+            $new.deleted | Should -Be 0
+        }
+
+        It 'totals additions and deletions across the change set' {
+            $c = Get-DpGitChanges -Root $script:wbA
+            $c.fileCount | Should -Be 2
+            $c.totalAdded | Should -Be 4
+            $c.totalDeleted | Should -Be 1
+        }
+
+        It 'filters the change set to the given paths' {
+            $c = Get-DpGitChanges -Root $script:wbA -Paths @('brand-new.txt')
+            $c.fileCount | Should -Be 1
+            $c.files[0].rel | Should -Be 'brand-new.txt'
+        }
+
+        It 'ignores a path outside the project folder' {
+            $c = Get-DpGitChanges -Root $script:wbA -Paths @((Join-Path $TestDrive 'elsewhere.txt'))
+            $c.fileCount | Should -Be 0
+        }
+
+        It 'commits only the requested file' {
+            $r = Invoke-DpGitCommit -Root $script:wbA -Message 'keep the new file' -Paths @('brand-new.txt')
+            $r.committed | Should -BeTrue
+            $r.shortSha | Should -Match '^[0-9a-f]{7}$'
+            (Get-DpGitChanges -Root $script:wbA).files.rel | Should -Not -Contain 'brand-new.txt'
+        }
+
+        It 'commits the rest of the working tree' {
+            $r = Invoke-DpGitCommit -Root $script:wbA -Message 'keep the edit'
+            $r.committed | Should -BeTrue
+            (Get-DpGitChanges -Root $script:wbA).fileCount | Should -Be 0
+        }
+
+        It 'reports nothing to commit on a clean tree' {
+            $r = Invoke-DpGitCommit -Root $script:wbA -Message 'nothing here'
+            $r.committed | Should -BeFalse
+            $r.nothingToCommit | Should -BeTrue
+        }
+
+        It 'reports a deleted file in the change set' {
+            Remove-Item -LiteralPath (Join-Path $script:wbA 'brand-new.txt') -Force
+            $c = Get-DpGitChanges -Root $script:wbA
+            ($c.files | Where-Object { $_.rel -eq 'brand-new.txt' }).status | Should -Be 'deleted'
+            & git -C $script:wbA checkout -q -- . 2>$null
+        }
+    }
+
+    Context 'a Project folder inside a larger repository' {
+        BeforeAll {
+            $script:wbSub = Join-Path $TestDrive 'wbSub'
+            New-WorkbenchRepo -Path $script:wbSub
+            New-Item -ItemType Directory -Path (Join-Path $script:wbSub 'app') | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $script:wbSub 'docs') | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $script:wbSub 'app' 'inside.txt'), "one`n")
+            [System.IO.File]::WriteAllText((Join-Path $script:wbSub 'docs' 'outside.txt'), "one`n")
+            & git -C $script:wbSub add . 2>$null
+            & git -C $script:wbSub commit -q -m 'init' 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $script:wbSub 'app' 'inside.txt'), "one`ntwo`n")
+            [System.IO.File]::WriteAllText((Join-Path $script:wbSub 'docs' 'outside.txt'), "one`ntwo`n")
+        }
+
+        It 'reports paths relative to the Project, not the repository root' {
+            $c = Get-DpGitChanges -Root (Join-Path $script:wbSub 'app')
+            $c.files.rel | Should -Contain 'inside.txt'
+        }
+
+        It 'drops a change outside the Project folder' {
+            $c = Get-DpGitChanges -Root (Join-Path $script:wbSub 'app')
+            $c.fileCount | Should -Be 1
+            $c.files.rel | Should -Not -Contain 'outside.txt'
+        }
+
+        It 'lines up its paths with the diff endpoint helper' {
+            $rel = (Get-DpGitChanges -Root (Join-Path $script:wbSub 'app')).files[0].rel
+            $d = Get-DpGitDiff -Root (Join-Path $script:wbSub 'app') -Path $rel
+            $d.error | Should -BeNullOrEmpty
+            $d.diff | Should -Match 'two'
+        }
+    }
+
+    Context 'a large untracked folder' {
+        BeforeAll {
+            $script:wbBig = Join-Path $TestDrive 'wbBig'
+            New-WorkbenchRepo -Path $script:wbBig
+            [System.IO.File]::WriteAllText((Join-Path $script:wbBig 'base.txt'), "base`n")
+            & git -C $script:wbBig add . 2>$null
+            & git -C $script:wbBig commit -q -m 'init' 2>$null
+            New-Item -ItemType Directory -Path (Join-Path $script:wbBig 'vendor') | Out-Null
+            1..25 | ForEach-Object { [System.IO.File]::WriteAllText((Join-Path $script:wbBig 'vendor' "f$_.txt"), "x`n") }
+        }
+
+        It 'collapses an untracked folder to one entry for the repository-wide call' {
+            $c = Get-DpGitChanges -Root $script:wbBig
+            $c.fileCount | Should -Be 1
+            $c.files[0].rel | Should -Be 'vendor/'
+            $c.files[0].directory | Should -BeTrue
+            $c.files[0].added | Should -Be 0
+        }
+
+        It 'still matches an individual file when the caller filters by path' {
+            $c = Get-DpGitChanges -Root $script:wbBig -Paths @('vendor/f7.txt')
+            $c.fileCount | Should -Be 1
+            $c.files[0].rel | Should -Be 'vendor/f7.txt'
+            $c.files[0].added | Should -Be 1
+        }
+
+        It 'caps the reported list while keeping the file count exact' {
+            $c = Get-DpGitChanges -Root $script:wbBig -Paths @(1..25 | ForEach-Object { "vendor/f$_.txt" }) -Limit 10
+            $c.fileCount | Should -Be 25
+            $c.files.Count | Should -Be 10
+            $c.truncated | Should -BeTrue
+        }
+    }
+
+    Context 'creating, switching and deleting branches' {
+        BeforeAll {
+            $script:wbB = Join-Path $TestDrive 'wbB'
+            New-WorkbenchRepo -Path $script:wbB
+            [System.IO.File]::WriteAllText((Join-Path $script:wbB 'base.txt'), "base`n")
+            & git -C $script:wbB add . 2>$null
+            & git -C $script:wbB commit -q -m 'init' 2>$null
+        }
+
+        It 'creates a branch and switches to it' {
+            $r = New-DpGitBranch -Root $script:wbB -Name 'draft' -Checkout
+            $r.created | Should -BeTrue
+            $r.checkedOut | Should -BeTrue
+            (Get-DpGitStatus -Path $script:wbB).branch | Should -Be 'draft'
+        }
+
+        It 'refuses to create a branch that already exists' {
+            (New-DpGitBranch -Root $script:wbB -Name 'draft').error | Should -Match 'already exists'
+        }
+
+        It 'refuses an unknown starting point' {
+            (New-DpGitBranch -Root $script:wbB -Name 'other' -From 'no-such-ref').error | Should -Match 'Unknown starting point'
+        }
+
+        It 'creates a branch from an explicit starting point without switching' {
+            $r = New-DpGitBranch -Root $script:wbB -Name 'from-main' -From 'main'
+            $r.created | Should -BeTrue
+            $r.checkedOut | Should -BeFalse
+            (Get-DpGitStatus -Path $script:wbB).branch | Should -Be 'draft'
+        }
+
+        It 'refuses to delete the default branch' {
+            (Remove-DpGitBranch -Root $script:wbB -Name 'main').error | Should -Match 'default branch'
+        }
+
+        It 'deletes a merged branch and switches off it first' {
+            $r = Remove-DpGitBranch -Root $script:wbB -Name 'draft'
+            $r.deleted | Should -BeTrue
+            $r.switchedTo | Should -Be 'main'
+        }
+
+        It 'refuses to delete a branch that is not fully merged, and says so' {
+            & git -C $script:wbB checkout -q -b risky 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $script:wbB 'risky.txt'), "work`n")
+            & git -C $script:wbB add . 2>$null
+            & git -C $script:wbB commit -q -m 'risky work' 2>$null
+            & git -C $script:wbB checkout -q main 2>$null
+            $r = Remove-DpGitBranch -Root $script:wbB -Name 'risky'
+            $r.deleted | Should -BeFalse
+            $r.notMerged | Should -BeTrue
+        }
+
+        It 'deletes an unmerged branch when forced' {
+            $r = Remove-DpGitBranch -Root $script:wbB -Name 'risky' -Force
+            $r.deleted | Should -BeTrue
+        }
+
+        It 'reports a branch that does not exist' {
+            (Remove-DpGitBranch -Root $script:wbB -Name 'ghost').error | Should -Match 'no local branch'
+        }
+    }
+
+    Context 'sync status and sync against a real remote' {
+        BeforeAll {
+            $script:wbRemote = Join-Path $TestDrive 'wbRemote.git'
+            & git init -q --bare $script:wbRemote 2>$null
+            # Match the working repos' default branch, so a clone of this remote
+            # checks out 'main' rather than an unborn 'master'.
+            & git -C $script:wbRemote symbolic-ref HEAD refs/heads/main 2>$null
+            $script:wbC = Join-Path $TestDrive 'wbC'
+            New-WorkbenchRepo -Path $script:wbC
+            [System.IO.File]::WriteAllText((Join-Path $script:wbC 'base.txt'), "base`n")
+            & git -C $script:wbC add . 2>$null
+            & git -C $script:wbC commit -q -m 'init' 2>$null
+            & git -C $script:wbC remote add origin $script:wbRemote 2>$null
+        }
+
+        It 'reports a branch with no upstream as unpublished' {
+            $s = Get-DpGitSyncStatus -Path $script:wbC
+            $s.isRepo | Should -BeTrue
+            $s.hasRemote | Should -BeTrue
+            $s.hasUpstream | Should -BeFalse
+            $s.dirty | Should -BeFalse
+        }
+
+        It 'publishes the branch on the first push' {
+            $r = Invoke-DpGitSync -Root $script:wbC -Action 'push'
+            $r.status | Should -Be 'success'
+            $r.published | Should -BeTrue
+            (Get-DpGitSyncStatus -Path $script:wbC).hasUpstream | Should -BeTrue
+        }
+
+        It 'reports being ahead after a local commit' {
+            [System.IO.File]::WriteAllText((Join-Path $script:wbC 'more.txt'), "more`n")
+            & git -C $script:wbC add . 2>$null
+            & git -C $script:wbC commit -q -m 'more' 2>$null
+            (Get-DpGitSyncStatus -Path $script:wbC).ahead | Should -Be 1
+        }
+
+        It 'sends the local commit on sync' {
+            $r = Invoke-DpGitSync -Root $script:wbC -Action 'sync'
+            $r.status | Should -Be 'success'
+            $r.pushed | Should -BeTrue
+            $r.ahead | Should -Be 0
+        }
+
+        It 'gets a commit made elsewhere' {
+            $other = Join-Path $TestDrive 'wbD'
+            & git clone -q $script:wbRemote $other 2>$null
+            & git -C $other config user.email 'test@example.com' 2>$null
+            & git -C $other config user.name 'Test' 2>$null
+            & git -C $other config commit.gpgsign false 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $other 'remote-side.txt'), "remote`n")
+            & git -C $other add . 2>$null
+            & git -C $other commit -q -m 'from elsewhere' 2>$null
+            & git -C $other push -q origin HEAD 2>$null
+
+            $r = Invoke-DpGitSync -Root $script:wbC -Action 'pull'
+            $r.status | Should -Be 'success'
+            $r.pulled | Should -BeTrue
+            Test-Path -LiteralPath (Join-Path $script:wbC 'remote-side.txt') | Should -BeTrue
+        }
+
+        It 'blocks a pull with uncommitted changes and offers to set them aside' {
+            [System.IO.File]::WriteAllText((Join-Path $script:wbC 'base.txt'), "changed`n")
+            $r = Invoke-DpGitSync -Root $script:wbC -Action 'pull'
+            $r.status | Should -Be 'blocked'
+            $r.reasons | Should -Contain 'dirty'
+            $r = Invoke-DpGitSync -Root $script:wbC -Action 'pull' -Autostash
+            $r.status | Should -Be 'success'
+            (Get-Content -LiteralPath (Join-Path $script:wbC 'base.txt') -Raw) | Should -Match 'changed'
+            & git -C $script:wbC checkout -q -- . 2>$null
+        }
+
+        It 'reports a repository with no remote as nothing to sync with' {
+            $noRemote = Join-Path $TestDrive 'wbNoRemote'
+            New-WorkbenchRepo -Path $noRemote
+            [System.IO.File]::WriteAllText((Join-Path $noRemote 'x.txt'), "x`n")
+            & git -C $noRemote add . 2>$null
+            & git -C $noRemote commit -q -m 'init' 2>$null
+            $r = Invoke-DpGitSync -Root $noRemote -Action 'sync'
+            $r.status | Should -Be 'blocked'
+            $r.reasons | Should -Contain 'no-remote'
+        }
+    }
+
+    Context 'a conflicting sync' {
+        BeforeAll {
+            $script:cRemote = Join-Path $TestDrive 'cRemote.git'
+            & git init -q --bare $script:cRemote 2>$null
+            & git -C $script:cRemote symbolic-ref HEAD refs/heads/main 2>$null
+            $script:cA = Join-Path $TestDrive 'cA'
+            New-WorkbenchRepo -Path $script:cA
+            [System.IO.File]::WriteAllText((Join-Path $script:cA 'shared.txt'), "original`n")
+            & git -C $script:cA add . 2>$null
+            & git -C $script:cA commit -q -m 'init' 2>$null
+            & git -C $script:cA remote add origin $script:cRemote 2>$null
+            & git -C $script:cA push -q -u origin main 2>$null
+
+            $script:cB = Join-Path $TestDrive 'cB'
+            & git clone -q $script:cRemote $script:cB 2>$null
+            & git -C $script:cB config user.email 'test@example.com' 2>$null
+            & git -C $script:cB config user.name 'Test' 2>$null
+            & git -C $script:cB config commit.gpgsign false 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $script:cB 'shared.txt'), "their change`n")
+            & git -C $script:cB add . 2>$null
+            & git -C $script:cB commit -q -m 'their change' 2>$null
+            & git -C $script:cB push -q origin main 2>$null
+
+            [System.IO.File]::WriteAllText((Join-Path $script:cA 'shared.txt'), "my change`n")
+            & git -C $script:cA add . 2>$null
+            & git -C $script:cA commit -q -m 'my change' 2>$null
+        }
+
+        It 'reports a conflict with the files that need a decision' {
+            $r = Invoke-DpGitSync -Root $script:cA -Action 'sync'
+            $r.status | Should -Be 'conflict'
+            $r.conflictFiles | Should -Contain 'shared.txt'
+        }
+
+        It 'surfaces the same conflict in the sync status' {
+            $s = Get-DpGitSyncStatus -Path $script:cA
+            $s.inMerge | Should -BeTrue
+            $s.conflictFiles | Should -Contain 'shared.txt'
+        }
+
+        It 'reports the conflicted file in the change set' {
+            ((Get-DpGitChanges -Root $script:cA).files | Where-Object { $_.rel -eq 'shared.txt' }).status | Should -Be 'conflicted'
+        }
+
+        It 'refuses to commit while the merge is unresolved' {
+            (Invoke-DpGitCommit -Root $script:cA -Message 'no').error | Should -Match 'merge is in progress'
+        }
+
+        It 'builds a conflict prompt naming the conflicted file' {
+            $s = Get-DpGitSyncStatus -Path $script:cA
+            $p = New-DpConflictPrompt -Files $s.conflictFiles -SourceBranch 'origin/main' -TargetBranch 'main' -Root $script:cA
+            $p | Should -Match 'shared.txt'
+        }
+
+        It 'restores the pre-merge state on abort' {
+            (Invoke-DpGitMergeAbort -Root $script:cA).ok | Should -BeTrue
+            (Get-DpGitSyncStatus -Path $script:cA).inMerge | Should -BeFalse
+        }
+    }
+}

@@ -98,6 +98,15 @@ accent fills so the bright dark-mode accent stays legible.
 - **Activity** block per assistant Message: a collapsible "Used N tools" strip
   listing files read/written, commands run, pages fetched, questions asked —
   each with an icon. Collapsed by default once complete.
+- **Changes** card per assistant Message (newest Turn only, Git Projects only):
+  a header reading `N files changed  +A  −D`, then one row per file with a
+  status badge (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and
+  its own `+`/`−` counts. Clicking a row opens the **Diff viewer**. The header
+  carries two actions: **Keep** (asks for a short description, pre-filled from
+  the prompt, and commits exactly those files) and **Undo** (confirms, then
+  reverts tracked files to the last commit and deletes ones the Turn created).
+  Only the newest Turn paints a card — an older one would describe a working
+  tree that has since moved on. See [090-git-workbench](090-git-workbench.md).
 - **Tasks** block per assistant Message: a compact panel showing the agent's
   in-Turn Task List as the agent works, with a header `Tasks — {completed}/{total}`
   and one row per Task. Each row carries a status glyph (`not-started` ○,
@@ -221,7 +230,48 @@ no Project is selected; refreshes after each Turn so files the agent creates
 appear. A **Git bar** at the top of the panel shows whether the Project folder is
 a Git repository: if not, a warning with a **git init** button; if so, the
 current branch and a dropdown to switch between local branches (switching
-refreshes the file tree).
+refreshes the file tree), a merged-status legend, a **Branches…** button that
+opens the Branch Wizard, and a live **N changes** button that opens the Diff
+viewer over every uncommitted file.
+
+### 6c. Diff viewer
+
+A wide modal answering "what actually changed in this file?". A left rail lists
+the files of the current change set (hidden for a single file); the main pane
+shows a unified diff with **two gutters** — the old line number and the new one —
+a `+`/`−` sign column, and colour-coded added/removed rows. The header shows the
+file path and its `+A −B` totals; `↑`/`↓` (or `k`/`j`) step through the file
+list. The footer offers **Undo this file** and **Close**. A brand-new file is
+rendered as all-additions; a binary file says so rather than showing bytes.
+
+### 6d. Branch Wizard
+
+A modal opened from the Git bar's **Branches…** button — one place for everything
+a non-expert does with branches. It speaks plain language: *get from server*,
+*send to server*, *sync*.
+
+- **Sync panel** at the top: which branch you are on, how many saves are waiting
+  to be sent or received, whether anything is uncommitted, and the actions
+  **Sync**, **Get from server**, **Send to server**, **Review changes…**. With
+  no remote it says there is nothing to sync with instead of offering buttons.
+- **Branch list**: one row per branch with the merged badge (`✓` merged, `❗` not
+  merged, `•` unknown), tags for *current* / *main* / *server only*, and per-row
+  **Switch** and **Delete**.
+- **Footer**: **New branch…**, **Merge a branch…** (hands off to the Merge
+  Wizard), **Close**.
+- **New branch** step: a name field (validated in plain language before git sees
+  it), a *Start from* picker, and a *Switch to it right away* checkbox.
+- **Delete** step: says whether the branch is already merged ("deleting it loses
+  nothing"), is known to be unmerged ("deleting it throws that work away"), or
+  could not be determined. The safe delete is always tried first; Git's own
+  refusal of an unmerged branch is what triggers the "delete it anyway" confirm.
+  An opt-in *Also delete it on the server* carries its own confirm.
+- **Conflict** step: reached from a conflicting sync, or immediately on open if
+  the repository is already mid-conflict. It lists the files, then shows a
+  **prepared prompt** in an editable box that asks the agent to resolve the
+  conflict. The user chooses **Copy**, **Abort the merge**, or **Ask DeskPilot
+  to fix it** (which fills the composer and sends). DeskPilot never sends it by
+  itself.
 
 ### 6b. Customizations (manage AI resources)
 

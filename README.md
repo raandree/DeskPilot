@@ -43,6 +43,14 @@ work without driving the tool stack themselves.
   notes. Terminal is **off** by default.
 - **Show the work.** Each answer carries an Activity panel: what was read,
   written, run, fetched, or asked.
+- **Review every change.** When the agent edits files in a Git project, the
+  answer carries a **Changes** card — `N files changed  +A  −D`, one row per
+  file. Click a file for a real diff with line numbers; then **Keep** it (saved
+  as a commit, with a description) or **Undo** it.
+- **Git without the vocabulary.** A **Branch Wizard** covers everything a
+  non-expert needs: create, switch, delete, merge, and *get from* / *send to*
+  the server. When two people changed the same lines, DeskPilot writes the
+  prompt that asks the agent to sort it out — you read it, then send it.
 - **Honest cost.** Token usage, estimated USD cost, and Copilot credits after
   every turn.
 - **Your house rules.** Point it at folders of Skills and Instructions — the

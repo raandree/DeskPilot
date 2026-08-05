@@ -174,8 +174,15 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/git/init'; Name = 'gitInit' }
             @{ Method = 'POST'; Pattern = '/api/git/checkout'; Name = 'gitCheckout' }
             @{ Method = 'GET'; Pattern = '/api/git/diff'; Name = 'gitDiff' }
+            @{ Method = 'GET'; Pattern = '/api/git/changes'; Name = 'gitChanges' }
+            @{ Method = 'POST'; Pattern = '/api/git/commit'; Name = 'gitCommit' }
             @{ Method = 'POST'; Pattern = '/api/git/restore'; Name = 'gitRestore' }
             @{ Method = 'GET'; Pattern = '/api/git/branches'; Name = 'gitBranches' }
+            @{ Method = 'POST'; Pattern = '/api/git/branch/create'; Name = 'gitBranchCreate' }
+            @{ Method = 'POST'; Pattern = '/api/git/branch/delete'; Name = 'gitBranchDelete' }
+            @{ Method = 'GET'; Pattern = '/api/git/sync/status'; Name = 'gitSyncStatus' }
+            @{ Method = 'POST'; Pattern = '/api/git/sync'; Name = 'gitSync' }
+            @{ Method = 'GET'; Pattern = '/api/git/conflict/prompt'; Name = 'gitConflictPrompt' }
             @{ Method = 'GET'; Pattern = '/api/git/merge/preview'; Name = 'gitMergePreview' }
             @{ Method = 'POST'; Pattern = '/api/git/merge'; Name = 'gitMerge' }
             @{ Method = 'POST'; Pattern = '/api/git/merge/plan'; Name = 'gitMergePlan' }
