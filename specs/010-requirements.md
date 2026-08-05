@@ -43,7 +43,7 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-T1 | M | Expose all Engine Tool categories: Browsing, File, Terminal, Ask-User, User Tools. |
 | FR-T2 | M | Provide a visible Permission switch per Tool category that maps 1:1 to the Engine `-Disable*` switches for the next Turn. |
 | FR-T3 | M | Surface per-Turn Activity: files read/written, commands run, pages fetched, questions asked, tool calls. |
-| FR-T4 | S | Route the Engine's Ask-User Tool question to the UI and feed the user's answer back. |
+| FR-T4 | S | Route Ask-User into the UI: bundle related questions as a Questionnaire wizard with single-select, multi-select, and conditional free text; feed the submitted answers back into the same Turn. |
 | FR-T5 | C | Manage User Tools (`Register-ShpTool`/`Unregister-ShpTool`) from the UI. |
 | FR-T6 | S | When the selected Project is a Git repository, let the user undo the file changes a Turn made: revert tracked files the Turn wrote and remove files it newly created, after an explicit confirm. Confined to the Workspace Folder. |
 | FR-T7 | S | When the selected Project is a Git repository, let the user view the Git diff of a file the Turn wrote, inline from the Activity panel. |

@@ -126,6 +126,25 @@ $($AgentMemory.Trim())
 "@)
     }
 
+    if ([bool]$perm.askUser -and [bool]$perm.userTools) {
+        $systemParts.Add(@'
+When you need two or more related pieces of information, or one question with
+known answer choices, call ask_questions. Always bundle related questions that
+are currently known into ONE call. Do not call ask_user repeatedly. Use the
+built-in ask_user only for one spontaneous, free-text clarification.
+
+Put this compact JSON string in the ask_questions Questionnaire argument:
+{"title":"Optional short title","questions":[{"header":"Short topic","question":"Complete question","options":[{"label":"Choice","description":"Optional detail"}],"multiSelect":false,"allowFreeformInput":true}]}
+
+Use 1-10 questions. Use options when the answer has useful known choices. Set
+multiSelect true only when several choices may be selected. Set
+allowFreeformInput true only when a custom answer is valid; for a text-only
+question use an empty options array and true. The returned answer is either a
+plain string for a legacy one-question prompt or JSON shaped as
+{"answers":[{"header":"...","selectedOptions":["..."],"freeText":"..."}]}.
+'@)
+    }
+
     if ($Settings.workspaceFolder) {
         $projectName = $null
         if ($Settings.ContainsKey('selectedProjectId') -and $Settings.selectedProjectId -and $Settings.ContainsKey('projects')) {

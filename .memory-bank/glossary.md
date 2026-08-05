@@ -19,6 +19,7 @@ synonym.
 | Turn | One user prompt plus the assistant's full response, including any Tool use. | round, exchange |
 | Message | A single entry in a Conversation, authored by the user or the assistant. | post, line, bubble |
 | Tool | An agent capability category: Browsing, File, Terminal, Ask-User, or a User Tool. | function, plugin, skill (a Tool is not a Skill) |
+| Questionnaire | A bundled Ask-User wizard containing one or more ordered questions, optional answer choices, single- or multi-select behavior, and conditional free text. | survey, form, question card (for the bundled wizard) |
 | Activity | The record of Tool use within a Turn: files read/written, commands run, pages fetched, questions asked. | log, trace (loosely) |
 | Permission | A user-facing on/off switch governing one Tool category. | toggle, flag (in UI copy) |
 | Model | The Copilot LLM identifier used for a Turn. | engine (that is the Engine), the AI |

@@ -10,28 +10,40 @@ source: repository evidence
 
 ## Current focus
 
-**The Project chip shows the selected Workspace Folder leaf (2026-08-05; local
-branch `ai/fix-project-chip-label`, not pushed).** The chip previously rendered
-the stored Project name, so a stale value such as `d:` appeared even when the
-selected path was `D:\ling`. It now derives the visible text and hover title
-from `leafName(selected.path)`.
+**Ask-User now renders a bundled Questionnaire wizard (2026-08-05; uncommitted
+on `main`, not pushed).** ShellPilot's built-in `ask_user` describes one free-text
+clarification, so system-prompt guidance alone still produced one question per
+call. DeskPilot now registers a trusted, permission-gated `ask_questions` User
+Tool whose JSON-string contract bundles up to ten related questions.
 
-The button is explicitly content-sized. Short leaf names keep it compact; the
-label caps at 150 px and uses CSS ellipsis for longer names while retaining the
-full leaf in the tooltip.
+The Host Server bounds and normalizes untrusted Questionnaire JSON. The SPA
+renders numbered single-select choices, checkmarked multi-select choices,
+conditional or free-text-only input, previous/next navigation, progress,
+collapse, close-to-Stop, submit, and an answer summary. Plain `ask_user` remains
+a one-step free-text fallback. Structured answers resume the same Turn as one
+correlated JSON string.
 
 ## Verification
 
-- TDD red baseline reproduced `d:` instead of `ling`; focused WebAssets tests
-  then passed **9/9**.
-- Headless Chrome measured the chip growing from **76.7 px** to **208.0 px**;
-  the long label had 293 px of content in a 150 px box with computed
-  `text-overflow: ellipsis`, and the full tooltip remained available.
-- Complete `app.js` ESM parse passed; edited-file diagnostics and
-  `git diff --check` were clean.
-- Full Sampler test task passed **427/427**: 9 tasks, 0 errors, 0 warnings.
+- TDD covered normalization/fallback, protocol injection, Tool registration and
+  permission removal/restore, bridge return, Activity mapping, state and answer
+  serialization, duplicate options, keyboard navigation, and post-Stop reprompt.
+- Full Sampler build and test passed **441/441**, exit 0.
+- Original German request live test bundled **10 questions**, including three
+  multi-select steps and option/free-text combinations, then completed after a
+  correlated JSON answer.
+- Browser test verified radio, checkbox/checkmark, and free-text-only steps;
+  mobile width **342 / 390 px**; three-row answer summary; final reply `Danke!`;
+  Activity showed the Questionnaire title rather than JSON.
+- Independent agent-security review approved with no Blocker or Major finding;
+  cancellation and keyboard residuals were then hardened with regression tests.
 
 ## Next step
 
-Refresh the running DeskPilot page to use the corrected chip. Do not push the
-local branch without an explicit request.
+Try the Questionnaire on the running final server. Keep the changes uncommitted
+until explicitly requested; do not push without an explicit request.
+
+## Previous focus
+
+The Project chip derives its visible leaf from the selected Workspace Folder,
+sizes to short names, and ellipsizes longer leaves with a full-name tooltip.

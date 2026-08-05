@@ -40,10 +40,11 @@ source: repository evidence
 - Tools are **on by default**; disabled per category with `-DisableBrowsing`,
   `-DisableFileAccess`, `-DisableTerminal`, `-DisableUserPrompts`,
   `-DisableUserTools`.
-- ShellPilot 0.4.0's built-in `ask_user` emits a structured `ShpProgress`
-  `ToolCall` containing the question, then calls private `Read-ShpUserInput`,
-  which blocks on `Read-Host`. DeskPilot adapts that console contract inside the
-  Engine Runspace and resumes the same Turn through a correlated answer route.
+- ShellPilot 0.4.0's built-in `ask_user` describes one free-text question.
+  DeskPilot adapts its `Read-Host` contract and also registers `ask_questions`,
+  a trusted User Tool whose string parameter carries bounded nested JSON for a
+  bundled Questionnaire. It is removed when Ask-User Permission is off and is
+  hidden by ShellPilot when general User Tools Permission is off.
 - Streaming is **on by default**: answer tokens are echoed to the host via
   `Write-Host`; the full text is always on `.Content`. DeskPilot captures the
   host echo through the `[PowerShell]` instance's `Streams.Information` to drive

@@ -77,3 +77,19 @@ pre/post snapshots exist; otherwise use and visibly label an input-only estimate
 Never treat a missing baseline as zero, or all prior Engine Usage can be charged
 again. Skip post-Turn Model calls after Stop, and guard already-scheduled paints
 with a Turn-local stopped latch.
+
+## Tool descriptions control interaction granularity (2026-08-05)
+
+**Symptom:** The Model emitted structured JSON but still asked one question per
+Tool call, so the UI could not present one bundled wizard.
+
+**Root cause:** ShellPilot's built-in `ask_user` Tool explicitly describes a
+"single clarifying question." System-prompt guidance to bundle questions did
+not reliably override that Tool contract.
+
+**Fix + rule:** Add a dedicated Tool whose description matches the desired
+interaction. `ask_questions` accepts one JSON string because ShellPilot's
+metadata schema generator cannot express nested question objects. Normalize and
+bound that JSON at the Host Server boundary, permission-gate registration per
+Turn, and keep the built-in Tool as a plain fallback. Do not parse prose into UI
+structure or rely on stronger prompting against a contradictory Tool schema.

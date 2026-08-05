@@ -8,12 +8,6 @@ source: repository evidence
 
 # System Patterns — DeskPilot
 
-## Architecture at a glance
-
-The static browser SPA calls the loopback PowerShell Host Server over REST and
-SSE. The Host Server owns Settings and Conversations and orchestrates ShellPilot
-inside one long-lived Engine Runspace; ShellPilot alone calls GitHub Copilot.
-
 ## Core decisions
 
 1. **The Engine is sacrosanct.** DeskPilot never re-implements Copilot calls,
@@ -81,11 +75,10 @@ inside one long-lived Engine Runspace; ShellPilot alone calls GitHub Copilot.
   path with MIME type. Native Vision input resolves against this registry, not
   the currently selected Project, so a pending Attachment survives Project
   switching while an arbitrary local path never reaches `Invoke-Shp -Image`.
-- **Console-oriented Engine prompts are bridged, not reimplemented.** For
-  `ask_user`, consume the structured `ShpProgress` `ToolCall` question, adapt
-  Engine Runspace `Read-Host` through a thread-safe wait, and correlate the
-  browser answer with both Conversation id and a random question id. Keep
-  pumping requests while the Engine waits, and cancel the wait on Stop. Never
+- **Ask-User is a normalized, permission-gated Questionnaire boundary.** Keep
+  built-in `ask_user` as free-text fallback; register trusted `ask_questions`
+  per Turn for bundled JSON. Bound Model data before SSE/DOM, correlate answers
+  by Conversation/question ids, and remove the Tool when Ask-User is off. Never
   infer Tool semantics from host colors or display text.
 - **Cancellation is immediate in the UI and asynchronous at the Engine.** Freeze
   client paints on click; unwind through `BeginStop` while pumping requests;

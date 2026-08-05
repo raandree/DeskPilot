@@ -1177,7 +1177,7 @@ button.tree-row {
     font-weight: 600;
 }
 
-/* in-Turn Ask-User cards */
+/* in-Turn Questionnaire wizard */
 .user-prompts {
     display: flex;
     flex-direction: column;
@@ -1186,84 +1186,265 @@ button.tree-row {
 }
 
 .user-prompt-card {
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 70%, var(--border));
     border-radius: 8px;
     background: var(--surface);
-    padding: 12px;
+    overflow: hidden;
 }
 
 .user-prompt-card.answered {
-    border-left-color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 70%, var(--border));
 }
 
-.user-prompt-label {
+.questionnaire-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 56px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.questionnaire-title {
+    min-width: 0;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.questionnaire-head-actions,
+.questionnaire-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+}
+
+.questionnaire-icon,
+.questionnaire-nav-button {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 25px;
+    line-height: 1;
+}
+
+.questionnaire-icon:hover,
+.questionnaire-nav-button:hover:not(:disabled) {
+    color: var(--text);
+}
+
+.questionnaire-icon:focus-visible,
+.questionnaire-nav-button:focus-visible,
+.questionnaire-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.questionnaire-body {
+    padding: 24px 28px 26px;
+}
+
+.questionnaire-step-header {
     color: var(--accent);
     font-size: 12px;
-    font-weight: 650;
-    margin-bottom: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 6px;
 }
 
-.user-prompt-question {
+.questionnaire-question {
     font-family: var(--font-read);
-    font-size: 15px;
-    line-height: 1.5;
-    margin-bottom: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.45;
+    margin-bottom: 18px;
     white-space: pre-wrap;
 }
 
-.user-prompt-form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
-    gap: 8px;
+.questionnaire-options {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
 }
 
-.user-prompt-input {
+.questionnaire-option {
+    display: grid;
+    grid-template-columns: 24px 30px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
     width: 100%;
-    min-height: 58px;
-    max-height: 180px;
-    resize: vertical;
+    min-height: 48px;
+    padding: 7px 10px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+}
+
+.questionnaire-option:hover {
+    background: var(--surface-2);
+}
+
+.questionnaire-option.selected {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+}
+
+.questionnaire-option-number {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: right;
+}
+
+.questionnaire-option-check {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--muted);
+    border-radius: 5px;
+    color: var(--on-accent);
+    font-size: 18px;
+}
+
+.questionnaire-option.selected .questionnaire-option-check {
+    border-color: var(--accent);
+    background: var(--accent);
+}
+
+.questionnaire-option-copy {
+    min-width: 0;
+}
+
+.questionnaire-option-label {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.questionnaire-option-description {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+
+.questionnaire-free-text {
+    width: 100%;
+    min-height: 44px;
     border: 1px solid var(--border);
     border-radius: 7px;
     background: var(--bg);
     color: var(--text);
     font: inherit;
-    line-height: 1.4;
-    padding: 8px 10px;
+    padding: 9px 12px;
 }
 
-.user-prompt-input:focus {
+.questionnaire-free-text:focus {
     border-color: var(--accent);
     outline: 2px solid var(--accent-soft);
     outline-offset: 1px;
 }
 
-.user-prompt-submit {
-    min-height: 38px;
+.questionnaire-footer {
+    display: grid;
+    grid-template-columns: minmax(80px, 1fr) auto minmax(80px, 1fr);
+    align-items: center;
+    gap: 12px;
+    min-height: 58px;
+    padding: 10px 20px;
+    border-top: 1px solid var(--border);
 }
 
-.user-prompt-answer {
-    border-left: 2px solid var(--border);
+.questionnaire-progress {
+    color: var(--muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.questionnaire-submit {
+    justify-self: end;
+}
+
+.questionnaire-nav-button:disabled {
+    cursor: default;
+    opacity: .35;
+}
+
+.questionnaire-summary {
+    display: grid;
+    gap: 12px;
+}
+
+.questionnaire-summary-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 1fr) 2fr;
+    gap: 14px;
+}
+
+.questionnaire-summary-key {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.questionnaire-summary-value {
     color: var(--text);
-    padding-left: 10px;
-    white-space: pre-wrap;
+    font-size: 14px;
 }
 
 .user-prompt-status {
     color: var(--muted);
     font-size: 12px;
     min-height: 18px;
-    margin-top: 5px;
+    padding: 0 20px 8px;
+}
+
+.questionnaire-card.collapsed .questionnaire-body,
+.questionnaire-card.collapsed .questionnaire-footer,
+.questionnaire-card.collapsed .user-prompt-status {
+    display: none;
 }
 
 @media (max-width: 620px) {
-    .user-prompt-form {
-        grid-template-columns: 1fr;
+    .questionnaire-head {
+        padding-inline: 14px;
     }
 
-    .user-prompt-submit {
-        justify-self: start;
+    .questionnaire-body {
+        padding: 20px 14px;
+    }
+
+    .questionnaire-option {
+        grid-template-columns: 20px 28px minmax(0, 1fr);
+        padding-inline: 4px;
+    }
+
+    .questionnaire-footer {
+        grid-template-columns: 1fr auto 1fr;
+        padding-inline: 10px;
+    }
+
+    .questionnaire-submit {
+        font-size: 12px;
+        padding-inline: 10px;
+    }
+
+    .questionnaire-summary-row {
+        grid-template-columns: 1fr;
+        gap: 2px;
     }
 }
 

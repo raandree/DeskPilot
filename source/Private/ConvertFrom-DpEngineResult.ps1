@@ -44,7 +44,29 @@ function ConvertFrom-DpEngineResult {
     $filesRead = @(Get-DpPropertyValue -InputObject $Result -Name @('FilesRead') -Default @() | ForEach-Object { [string]$_ })
     $filesWritten = @(Get-DpPropertyValue -InputObject $Result -Name @('FilesWritten') -Default @() | ForEach-Object { [string]$_ })
     $commandsRun = @(Get-DpPropertyValue -InputObject $Result -Name @('CommandsRun') -Default @() | ForEach-Object { [string]$_ })
-    $questionsAsked = @(Get-DpPropertyValue -InputObject $Result -Name @('QuestionsAsked') -Default @() | ForEach-Object { [string]$_ })
+    $questionsAsked = @(
+        foreach ($rawQuestion in @(Get-DpPropertyValue -InputObject $Result -Name @('QuestionsAsked') -Default @())) {
+            $questionText = [string]$rawQuestion
+            if ([string]::IsNullOrWhiteSpace($questionText)) { continue }
+            $questionnaire = ConvertTo-DpQuestionnaire -InputObject $questionText
+            if ($questionnaire.structured) { [string]$questionnaire.title }
+            else { $questionText }
+        }
+    )
+    foreach ($toolCall in @($toolCalls | Where-Object name -eq 'ask_questions')) {
+        try {
+            $toolArguments = ([string]$toolCall.arguments) | ConvertFrom-Json -ErrorAction Stop
+            $questionnaireJson = [string](Get-DpPropertyValue -InputObject $toolArguments -Name @('Questionnaire') -Default '')
+            if ([string]::IsNullOrWhiteSpace($questionnaireJson)) { continue }
+            $questionnaire = ConvertTo-DpQuestionnaire -InputObject $questionnaireJson
+            if ($questionnaire.structured -and $questionsAsked -notcontains $questionnaire.title) {
+                $questionsAsked += [string]$questionnaire.title
+            }
+        }
+        catch {
+            $null = $_
+        }
+    }
     $pagesFetched = @(Get-DpPropertyValue -InputObject $Result -Name @('PagesFetched', 'UrlsFetched') -Default @() | ForEach-Object { [string]$_ })
     if ($pagesFetched.Count -eq 0 -and $toolCalls.Count -gt 0) {
         $pagesFetched = @($toolCalls | Where-Object { $_.name -match 'fetch|url|browse' } | ForEach-Object { $_.arguments })

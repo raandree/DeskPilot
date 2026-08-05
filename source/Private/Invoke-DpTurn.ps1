@@ -71,11 +71,14 @@ function Invoke-DpTurn {
         if (-not $userPromptBridge) { return }
         $request = $userPromptBridge.GetPendingRequest()
         if ($null -eq $request) { return }
+        $questionnaire = ConvertTo-DpQuestionnaire -InputObject $request.Question
         & $flush
         $turnState.emitted = [int]$turnState.emitted + 1
         $writer.Write((ConvertTo-DpSseFrame -EventName 'question' -Data @{
-                    id       = $request.Id
-                    question = $request.Question
+                    id         = $request.Id
+                    structured = [bool]$questionnaire.structured
+                    title      = $questionnaire.title
+                    questions  = $questionnaire.questions
                 }))
     }
 
@@ -116,6 +119,13 @@ function Invoke-DpTurn {
     }
 
     try {
+        $questionnaireEnabled = [bool]$settings.permissions.askUser
+        $questionnaireToolParams = @{
+            Runspace = $script:DeskPilot.Engine.Runspace
+            Enabled  = $questionnaireEnabled
+        }
+        $null = Set-DpQuestionnaireTool @questionnaireToolParams
+
         $userMessage = @{
             id         = New-DpId -Prefix 'm'
             role       = 'user'

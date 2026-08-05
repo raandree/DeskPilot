@@ -493,7 +493,7 @@ parameter. An unregistered, relative, missing, or non-image path returns
 | `delta` | `{ "text": "partial answer…" }` | each streamed answer chunk. |
 | `activity` | `{ "kind": "tool", "name": "read_file", "detail": "./notes.md" }` | best-effort live Tool signal (optional in v1). |
 | `tasks` | `{ "tasks": [ { "id": 1, "title": "…", "status": "in-progress" } ] }` | Task List update during the Turn; the **full** list is sent each time (idempotent replace, not a delta). At most one Task is `in-progress`. Status is one of `not-started`, `in-progress`, `completed`. |
-| `question` | `{ "id": "…", "question": "Which city?" }` | The Ask-User Tool is waiting. The client renders an answer card and submits the response through the correlated question route below. |
+| `question` | `{ "id": "…", "structured": true, "title": "Profile", "questions": [{ "header": "Location", "question": "Where?", "options": [{ "label": "Munich", "description": "Within 30 km" }], "multiSelect": false, "allowFreeformInput": true }] }` | Ask-User is waiting. The client renders a Questionnaire wizard. Plain Engine text is normalized to one free-text step with `structured: false`. |
 | `stopping` | `{ "message": "Turn stopped." }` | Stop was accepted; the client immediately freezes the live Message while the Engine pipeline unwinds. |
 | `stopped` | stopped assistant Message | Cancellation complete. Persisted with `stopped: true`, `stopReason`, and partial Usage. When the Engine has no final Usage record, `usage.estimated: true` and `estimateScope: "input-only"` mark the preflight input estimate. |
 | `done` | full assistant Message (same shape as in `GET conversation`) | Turn complete. The Message's `tasks` field is the authoritative final list (possibly empty). |
@@ -516,8 +516,11 @@ instead of displaying zero or presenting the estimate as exact.
 
 ### `POST /api/conversations/{id}/question`
 
-Supplies an answer while the Ask-User Tool is blocking the active Turn. Body:
-`{ "questionId": "…", "answer": "Berlin" }`. Returns `202` with
+Supplies an answer while Ask-User is blocking the active Turn. A plain fallback
+uses `{ "questionId": "…", "answer": "Berlin" }`. A structured Questionnaire
+serializes its answer object into the string field:
+`{ "questionId": "…", "answer": "{\"answers\":[{\"header\":\"Location\",\"selectedOptions\":[\"Munich\"],\"freeText\":\"\"}]}" }`.
+Returns `202` with
 `{ "accepted": true }`, after which the Engine resumes the same Turn and the
 original SSE response stays open. Returns `400 bad_answer` for a missing id or
 blank answer, `404` for an unknown Conversation, and `409 stale_question` when

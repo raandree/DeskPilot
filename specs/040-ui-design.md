@@ -247,11 +247,21 @@ category's file pattern; the surface can never open or write an arbitrary file.
 
 ### 7. Ask-User prompt (in-thread)
 
-When the agent calls the Ask-User Tool, an inline card appears in the thread
-with the question, a multiline answer input, and an **Answer** button. Submitting
-locks the answer into the card, sends it to the matching pending question, and
-resumes the same Turn. Repeated Ask-User calls append cards so a short profile
-interview can proceed in multiple rounds. Stop also cancels a pending question.
+When the agent needs related information, one inline **Questionnaire** wizard
+appears in the thread. Its header names the Questionnaire; the body shows one
+step at a time; the footer has previous/next controls and `current / total`.
+
+- Known answers render as numbered option rows. A single-answer step behaves as
+  a radio group. A multi-answer step uses checkmarks and permits several rows.
+  Arrow keys wrap through choices; Home/End jump to the first/last choice;
+  radio navigation selects while checkbox navigation only moves focus.
+- The free-text field appears only when `allowFreeformInput` is true. A
+  text-only step has no options and only that field.
+- Next stays disabled until the current step has an answer. The final step shows
+  **Submit answers**, enabled only when every step is complete.
+- Submitting replaces the controls with an answer summary, sends one correlated
+  JSON answer string, and resumes the same Turn. Collapse preserves state; close
+  stops the Turn. Plain `ask_user` text remains a one-step free-text fallback.
 
 ## States
 

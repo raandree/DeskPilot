@@ -124,13 +124,16 @@ namespace DeskPilot
                 {
                     throw new InvalidOperationException("The Ask-User bridge is not active.");
                 }
+                if (cancelled)
+                {
+                    throw new OperationCanceledException("The pending Ask-User request was cancelled.");
+                }
                 if (waiting)
                 {
                     throw new InvalidOperationException("A user prompt is already waiting for an answer.");
                 }
 
                 waiting = true;
-                cancelled = false;
                 emitted = false;
                 answerSubmitted = false;
                 questionId = Guid.NewGuid().ToString("N");

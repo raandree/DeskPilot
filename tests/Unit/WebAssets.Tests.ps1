@@ -14,7 +14,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'markdown.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'markdown.js', 'questionnaire.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
     }
@@ -159,7 +159,97 @@ assert.equal(button.title, 'ling');
         $app | Should -Match 'question:\s*\(d\)\s*=>'
         $app | Should -Match '/question'
         $app | Should -Match 'userPrompts'
+        $app | Should -Match 'questionnaire-options'
+        $app | Should -Match 'questionnaire-option-check'
+        $app | Should -Match 'questionnaire-progress'
+        $app | Should -Match 'questionnaire-nav'
+        $app | Should -Match 'questionnaire-close'
+        $app | Should -Match 'serializeQuestionnaireAnswer'
+        $app | Should -Match 'optionButton\.tabIndex'
+        $app | Should -Match 'optionButton\.onkeydown'
         $styles | Should -Match '\.user-prompt-card'
+        $styles | Should -Match '\.questionnaire-option\.selected'
+        $styles | Should -Match '\.questionnaire-footer'
+    }
+
+    It 'supports Questionnaire wizard selection and answer serialization' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'questionnaire.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const {
+    createQuestionnaireState,
+    setQuestionnaireStep,
+    toggleQuestionnaireOption,
+    setQuestionnaireFreeText,
+    isQuestionnaireStepComplete,
+    isQuestionnaireComplete,
+    getQuestionnaireOptionFocusIndex,
+    serializeQuestionnaireAnswer,
+} = await import(pathToFileURL(process.argv[1]).href);
+
+const wizard = createQuestionnaireState({
+    id: 'q_1',
+    structured: true,
+    title: 'Practice profile',
+    questions: [
+        {
+            header: 'Model', question: 'How should you work?', multiSelect: false,
+            allowFreeformInput: false,
+            options: [{ label: 'Independent', description: '' }, { label: 'Employed', description: '' }],
+        },
+        {
+            header: 'Learning', question: 'Who should you learn from?', multiSelect: true,
+            allowFreeformInput: true,
+            options: [{ label: 'Mentors', description: '' }, { label: 'Peers', description: '' }],
+        },
+        {
+            header: 'Location', question: 'Where?', multiSelect: false,
+            allowFreeformInput: true, options: [],
+        },
+    ],
+});
+
+assert.equal(getQuestionnaireOptionFocusIndex(0, 'ArrowDown', 3), 1);
+assert.equal(getQuestionnaireOptionFocusIndex(2, 'ArrowDown', 3), 0);
+assert.equal(getQuestionnaireOptionFocusIndex(0, 'ArrowUp', 3), 2);
+assert.equal(getQuestionnaireOptionFocusIndex(1, 'Home', 3), 0);
+assert.equal(getQuestionnaireOptionFocusIndex(1, 'End', 3), 2);
+assert.equal(getQuestionnaireOptionFocusIndex(1, 'Tab', 3), 1);
+
+toggleQuestionnaireOption(wizard, 0, 'Independent');
+toggleQuestionnaireOption(wizard, 0, 'Employed');
+assert.deepEqual(wizard.questions[0].selectedOptions, ['Employed'], 'single-select replaces the prior answer');
+
+setQuestionnaireStep(wizard, 1);
+toggleQuestionnaireOption(wizard, 1, 'Mentors');
+toggleQuestionnaireOption(wizard, 1, 'Peers');
+setQuestionnaireFreeText(wizard, 1, 'Kinesiologists with their own practice');
+assert.deepEqual(wizard.questions[1].selectedOptions, ['Mentors', 'Peers']);
+
+setQuestionnaireStep(wizard, 2);
+assert.equal(isQuestionnaireStepComplete(wizard, 2), false);
+setQuestionnaireFreeText(wizard, 2, 'Munich, within 30 km');
+assert.equal(isQuestionnaireComplete(wizard), true);
+
+const answer = JSON.parse(serializeQuestionnaireAnswer(wizard));
+assert.deepEqual(answer.answers[0].selectedOptions, ['Employed']);
+assert.deepEqual(answer.answers[1].selectedOptions, ['Mentors', 'Peers']);
+assert.equal(answer.answers[1].freeText, 'Kinesiologists with their own practice');
+assert.equal(answer.answers[2].freeText, 'Munich, within 30 km');
+
+const plain = createQuestionnaireState({
+    id: 'q_2', structured: false, question: 'Which city?', questions: [],
+});
+setQuestionnaireFreeText(plain, 0, 'Berlin');
+assert.equal(serializeQuestionnaireAnswer(plain), 'Berlin');
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
     It 'switches to an immediate stopping state and renders stopped Turn Usage' {

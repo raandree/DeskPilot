@@ -1,6 +1,16 @@
 import { getImagePaths, wireClipboardAttachments } from './attachments.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import { renderMarkdown } from './markdown.js';
+import {
+    createQuestionnaireState,
+    getQuestionnaireOptionFocusIndex,
+    isQuestionnaireComplete,
+    isQuestionnaireStepComplete,
+    serializeQuestionnaireAnswer,
+    setQuestionnaireFreeText,
+    setQuestionnaireStep,
+    toggleQuestionnaireOption,
+} from './questionnaire.js';
 
 // ===== Session token =====
 const token =
@@ -1318,38 +1328,73 @@ function renderTasks(node, tasks) {
 }
 
 function renderUserPrompt(node, request, conversationId) {
-    if (!node || !request || !request.id || !request.question) return;
+    if (!node || !request || !request.id) return;
     const requestId = String(request.id);
     if (Array.from(node.children).some((child) => child.dataset.questionId === requestId)) return;
 
-    const card = el('user-prompt-card');
+    const wizard = createQuestionnaireState(request);
+    if (wizard.questions.length === 0) return;
+
+    const card = el('user-prompt-card questionnaire-card');
     card.dataset.questionId = requestId;
-    const label = el('user-prompt-label');
-    label.textContent = 'Your input is needed';
-    const question = el('user-prompt-question');
-    question.textContent = String(request.question);
-    const form = el('user-prompt-form', 'form');
-    const input = el('user-prompt-input', 'textarea');
-    input.rows = 2;
-    input.placeholder = 'Type your answer';
-    input.setAttribute('aria-label', 'Answer');
-    const submit = el('btn btn-primary user-prompt-submit', 'button');
-    submit.type = 'submit';
-    submit.textContent = 'Answer';
+    const head = el('questionnaire-head');
+    const title = el('questionnaire-title');
+    title.textContent = wizard.title;
+    const headActions = el('questionnaire-head-actions');
+    const collapse = el('questionnaire-icon questionnaire-collapse', 'button');
+    collapse.type = 'button';
+    collapse.title = 'Collapse Questionnaire';
+    collapse.setAttribute('aria-label', 'Collapse Questionnaire');
+    collapse.textContent = '⌃';
+    const close = el('questionnaire-icon questionnaire-close', 'button');
+    close.type = 'button';
+    close.title = 'Stop this Turn';
+    close.setAttribute('aria-label', 'Stop this Turn');
+    close.textContent = '×';
+    headActions.append(collapse, close);
+    head.append(title, headActions);
+
+    const body = el('questionnaire-body');
+    const footer = el('questionnaire-footer');
     const status = el('user-prompt-status');
-    form.append(input, submit);
-    card.append(label, question, form, status);
+    card.append(head, body, footer, status);
     node.classList.remove('hidden');
     node.appendChild(card);
     scrollThread();
-    input.focus();
 
-    form.onsubmit = async (event) => {
-        event.preventDefault();
-        const answer = input.value.trim();
-        if (!answer) { input.focus(); return; }
-        input.disabled = true;
-        submit.disabled = true;
+    const renderAnswered = () => {
+        body.innerHTML = '';
+        const summary = el('questionnaire-summary');
+        for (const question of wizard.questions) {
+            const row = el('questionnaire-summary-row');
+            const key = el('questionnaire-summary-key');
+            key.textContent = question.header;
+            const value = el('questionnaire-summary-value');
+            value.textContent = [...question.selectedOptions, question.freeText.trim()]
+                .filter(Boolean)
+                .join(', ');
+            row.append(key, value);
+            summary.appendChild(row);
+        }
+        body.appendChild(summary);
+        footer.innerHTML = '';
+        collapse.remove();
+        close.remove();
+        status.textContent = 'Answered';
+        card.classList.add('answered');
+    };
+
+    const submitAnswers = async () => {
+        if (!isQuestionnaireComplete(wizard)) {
+            const missingIndex = wizard.questions.findIndex((_, index) =>
+                !isQuestionnaireStepComplete(wizard, index));
+            setQuestionnaireStep(wizard, missingIndex);
+            renderStep();
+            status.textContent = 'Answer this question to continue.';
+            return;
+        }
+        const answer = serializeQuestionnaireAnswer(wizard);
+        card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
         status.textContent = 'Sending…';
         status.classList.remove('error-text');
         try {
@@ -1357,19 +1402,166 @@ function renderUserPrompt(node, request, conversationId) {
                 questionId: requestId,
                 answer,
             });
-            const answered = el('user-prompt-answer');
-            answered.textContent = answer;
-            form.replaceWith(answered);
-            status.textContent = 'Answered';
-            card.classList.add('answered');
+            renderAnswered();
         } catch (error) {
-            input.disabled = false;
-            submit.disabled = false;
+            card.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
             status.textContent = error.message || String(error);
             status.classList.add('error-text');
-            input.focus();
         }
     };
+
+    const renderStep = () => {
+        body.innerHTML = '';
+        footer.innerHTML = '';
+        status.textContent = '';
+        status.classList.remove('error-text');
+
+        const questionIndex = wizard.currentIndex;
+        const question = wizard.questions[questionIndex];
+        const stepHeader = el('questionnaire-step-header');
+        stepHeader.textContent = question.header;
+        const questionText = el('questionnaire-question');
+        questionText.textContent = question.question;
+        body.append(stepHeader, questionText);
+
+        if (question.options.length > 0) {
+            const options = el('questionnaire-options');
+            options.setAttribute('role', question.multiSelect ? 'group' : 'radiogroup');
+            question.options.forEach((option, optionIndex) => {
+                const selected = question.selectedOptions.includes(option.label);
+                const optionButton = el('questionnaire-option' + (selected ? ' selected' : ''), 'button');
+                optionButton.type = 'button';
+                optionButton.dataset.label = option.label;
+                optionButton.dataset.optionIndex = String(optionIndex);
+                optionButton.tabIndex = optionIndex === question.optionFocusIndex ? 0 : -1;
+                optionButton.setAttribute('role', question.multiSelect ? 'checkbox' : 'radio');
+                optionButton.setAttribute('aria-checked', String(selected));
+
+                const number = el('questionnaire-option-number');
+                number.textContent = String(optionIndex + 1);
+                const check = el('questionnaire-option-check');
+                check.textContent = selected ? '✓' : '';
+                const copy = el('questionnaire-option-copy');
+                const optionLabel = el('questionnaire-option-label');
+                optionLabel.textContent = option.label;
+                copy.appendChild(optionLabel);
+                if (option.description) {
+                    const description = el('questionnaire-option-description');
+                    description.textContent = option.description;
+                    copy.appendChild(description);
+                }
+                optionButton.append(number, check, copy);
+                optionButton.onclick = () => {
+                    question.optionFocusIndex = optionIndex;
+                    toggleQuestionnaireOption(wizard, questionIndex, option.label);
+                    renderStep();
+                    const selectedOption = body.querySelector(`[data-option-index="${optionIndex}"]`);
+                    if (selectedOption) selectedOption.focus();
+                };
+                optionButton.onkeydown = (event) => {
+                    const nextIndex = getQuestionnaireOptionFocusIndex(
+                        question.optionFocusIndex,
+                        event.key,
+                        question.options.length
+                    );
+                    if (nextIndex === question.optionFocusIndex &&
+                        !['Home', 'End'].includes(event.key)) return;
+                    event.preventDefault();
+                    question.optionFocusIndex = nextIndex;
+                    if (!question.multiSelect) {
+                        toggleQuestionnaireOption(
+                            wizard,
+                            questionIndex,
+                            question.options[nextIndex].label
+                        );
+                    }
+                    renderStep();
+                    const nextOption = body.querySelector(`[data-option-index="${nextIndex}"]`);
+                    if (nextOption) nextOption.focus();
+                };
+                options.appendChild(optionButton);
+            });
+            body.appendChild(options);
+        }
+
+        let freeTextInput = null;
+        if (question.allowFreeformInput) {
+            freeTextInput = el('questionnaire-free-text', 'input');
+            freeTextInput.type = 'text';
+            freeTextInput.value = question.freeText;
+            freeTextInput.placeholder = question.options.length > 0 ? 'Custom answer' : 'Enter your answer';
+            freeTextInput.setAttribute('aria-label', `Answer for ${question.header}`);
+            body.appendChild(freeTextInput);
+        }
+
+        const nav = el('questionnaire-nav');
+        const previous = el('questionnaire-nav-button', 'button');
+        previous.type = 'button';
+        previous.textContent = '‹';
+        previous.title = 'Previous question';
+        previous.setAttribute('aria-label', 'Previous question');
+        previous.disabled = questionIndex === 0;
+        previous.onclick = () => {
+            setQuestionnaireStep(wizard, questionIndex - 1);
+            renderStep();
+        };
+        const next = el('questionnaire-nav-button', 'button');
+        next.type = 'button';
+        next.textContent = '›';
+        next.title = 'Next question';
+        next.setAttribute('aria-label', 'Next question');
+        next.hidden = questionIndex === wizard.questions.length - 1;
+        next.onclick = () => {
+            if (!isQuestionnaireStepComplete(wizard, questionIndex)) return;
+            setQuestionnaireStep(wizard, questionIndex + 1);
+            renderStep();
+        };
+        nav.append(previous, next);
+
+        const progress = el('questionnaire-progress');
+        progress.textContent = `${questionIndex + 1} / ${wizard.questions.length}`;
+        const submit = el('btn btn-primary questionnaire-submit', 'button');
+        submit.type = 'button';
+        submit.textContent = wizard.questions.length === 1 ? 'Answer' : 'Submit answers';
+        submit.hidden = questionIndex !== wizard.questions.length - 1;
+        submit.onclick = submitAnswers;
+
+        const updateControls = () => {
+            next.disabled = !isQuestionnaireStepComplete(wizard, questionIndex);
+            submit.disabled = !isQuestionnaireComplete(wizard);
+        };
+        if (freeTextInput) {
+            freeTextInput.oninput = () => {
+                setQuestionnaireFreeText(wizard, questionIndex, freeTextInput.value);
+                updateControls();
+            };
+            freeTextInput.onkeydown = (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                if (!isQuestionnaireStepComplete(wizard, questionIndex)) return;
+                if (questionIndex === wizard.questions.length - 1) submitAnswers();
+                else {
+                    setQuestionnaireStep(wizard, questionIndex + 1);
+                    renderStep();
+                }
+            };
+        }
+
+        footer.append(nav, progress, submit);
+        updateControls();
+        scrollThread();
+        const firstFocusable = body.querySelector('.questionnaire-option.selected, .questionnaire-option, .questionnaire-free-text');
+        if (firstFocusable) firstFocusable.focus();
+    };
+
+    collapse.onclick = () => {
+        const collapsed = card.classList.toggle('collapsed');
+        collapse.textContent = collapsed ? '⌄' : '⌃';
+        collapse.title = collapsed ? 'Expand Questionnaire' : 'Collapse Questionnaire';
+        collapse.setAttribute('aria-label', collapse.title);
+    };
+    close.onclick = () => stopTurn();
+    renderStep();
 }
 
 function renderUsage(node, m) {

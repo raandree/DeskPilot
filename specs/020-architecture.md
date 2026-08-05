@@ -320,23 +320,30 @@ into DeskPilot code, persistence, UI copy and docs (Ubiquitous Language).
 
 ## In-Turn Ask-User bridge
 
-ShellPilot's `ask_user` Tool is console-oriented: it emits a structured
-`ShpProgress` `ToolCall`, then calls `Read-Host` and waits for one answer.
-DeskPilot adapts that contract without changing or reimplementing the Engine:
+ShellPilot's built-in `ask_user` Tool is console-oriented and describes one
+free-text clarification. DeskPilot preserves that fallback and registers a
+trusted `ask_questions` User Tool for bundled, option-aware Questionnaires. Both
+wait on the same bridge:
 
-1. `Get-DpUserPromptText` accepts only a structured `ToolCall` whose name is
-  `ask_user`, parses its JSON arguments, and captures the `question`. Host
-  colors and display text are never parsed for semantics.
-2. The Engine Runspace has a Runspace-local `Read-Host` adapter backed by a
+1. `ask_questions` accepts one JSON-string parameter containing 1-10 related
+   questions. Its Tool description carries the nested schema ShellPilot's
+   metadata generator cannot express. The Tool is registered per Turn only when
+   Ask-User Permission is on; general User Tools Permission still controls
+   whether the Model sees registered User Tools.
+2. `Get-DpUserPromptText` accepts structured progress from `ask_user` or
+   `ask_questions` and extracts the free-text question or Questionnaire JSON.
+   `ConvertTo-DpQuestionnaire` normalizes and bounds it at the Host Server
+   boundary. Host colors and display text are never parsed for semantics.
+3. The Engine Runspace has a Runspace-local `Read-Host` adapter backed by a
   thread-safe `UserPromptBridge`. The adapter delegates to native `Read-Host`
-  outside an active Turn; during a Turn it waits on the bridge.
-3. The Turn loop pairs the captured question with the waiting `Read-Host`, emits
-  one `question` SSE event containing a random question id, and continues
+  outside an active Turn; `ask_questions` calls the same bridge directly.
+4. The Turn loop pairs the normalized payload with the wait, emits one
+  `question` SSE event containing a random question id, and continues
   pumping pending HTTP requests while the Engine pipeline is paused.
-4. `POST /api/conversations/{id}/question` accepts only the matching active
+5. `POST /api/conversations/{id}/question` accepts only the matching active
   Conversation and question id, supplies the answer, and releases the same
   Engine pipeline. Stale or cross-Conversation answers return `409`.
-5. Stopping the Turn cancels the pending bridge wait before stopping the Engine
+6. Stopping the Turn cancels the pending bridge wait before stopping the Engine
   pipeline, so Ask-User never makes Stop hang.
 
 ## Failure handling

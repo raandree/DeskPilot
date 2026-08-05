@@ -399,8 +399,30 @@ Describe 'New-DpTurnParameter' {
         $s.model = 'settings-model'
         (New-DpTurnParameter -Prompt 'hi' -Settings $s -Model 'conv-model').Model | Should -Be 'conv-model'
     }
-    It 'omits SystemPrompt when no Workspace Folder is set' {
-        (New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings)).ContainsKey('SystemPrompt') | Should -BeFalse
+    It 'injects the structured Questionnaire protocol when Ask-User is enabled' {
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings)
+        $p.ContainsKey('SystemPrompt') | Should -BeTrue
+        $p.SystemPrompt | Should -Match 'bundle related questions'
+        $p.SystemPrompt | Should -Match 'multiSelect'
+        $p.SystemPrompt | Should -Match 'allowFreeformInput'
+        $p.SystemPrompt | Should -Match 'selectedOptions'
+        $p.SystemPrompt | Should -Match 'ask_questions'
+        $p.SystemPrompt | Should -Match 'Do not call ask_user repeatedly'
+    }
+    It 'omits the Questionnaire protocol when Ask-User is disabled' {
+        $settings = Get-DpDefaultSettings
+        $settings.permissions.askUser = $false
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $settings
+        $p.ContainsKey('DisableUserPrompts') | Should -BeTrue
+        $p.ContainsKey('SystemPrompt') | Should -BeFalse
+    }
+    It 'still disables general User Tools when their Permission is off' {
+        $settings = Get-DpDefaultSettings
+        $settings.permissions.userTools = $false
+
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $settings
+        $p.DisableUserTools | Should -BeTrue
+        $p.ContainsKey('SystemPrompt') | Should -BeFalse
     }
     It 'injects a SystemPrompt naming the Workspace Folder when one is set' {
         $s = Get-DpDefaultSettings
@@ -553,6 +575,44 @@ Describe 'Initialize-DpUserPromptBridge' {
         }
     }
 
+    It 'rejects a second prompt wait after cancellation until a new Turn begins' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $bridge = $null
+        $firstShell = $null
+        $secondShell = $null
+        try {
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $bridge.BeginTurn('c_cancelled')
+            $bridge.CaptureQuestion('First question?')
+            $firstShell = [powershell]::Create()
+            $firstShell.Runspace = $runspace
+            $null = $firstShell.AddScript("Read-Host -Prompt 'Your answer'")
+            $firstAsync = $firstShell.BeginInvoke()
+            [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting }, 1000) | Should -BeTrue
+            $bridge.Cancel()
+            [System.Threading.SpinWait]::SpinUntil({ $firstAsync.IsCompleted }, 1000) | Should -BeTrue
+            $firstShell.EndInvoke($firstAsync) | Should -BeNullOrEmpty
+
+            $bridge.CaptureQuestion('Second question?')
+            $secondShell = [powershell]::Create()
+            $secondShell.Runspace = $runspace
+            $null = $secondShell.AddScript("Read-Host -Prompt 'Your answer'")
+            $secondAsync = $secondShell.BeginInvoke()
+
+            [System.Threading.SpinWait]::SpinUntil({ $secondAsync.IsCompleted }, 1000) | Should -BeTrue
+            $secondShell.EndInvoke($secondAsync) | Should -BeNullOrEmpty
+            $secondShell.HadErrors | Should -BeTrue
+            ($secondShell.Streams.Error | Select-Object -First 1).ToString() | Should -Match 'cancelled'
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel() }
+            if ($firstShell) { $firstShell.Dispose() }
+            if ($secondShell) { $secondShell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+
     It 'bridges the real ShellPilot Ask-User helper without a console' {
         $runspace = [runspacefactory]::CreateRunspace()
         $runspace.Open()
@@ -605,6 +665,92 @@ $module = Get-Module ShellPilot
         finally {
             if ($bridge) { $bridge.Cancel() }
             if ($shell) { $shell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+}
+
+Describe 'Initialize-DpQuestionnaireTool' {
+    It 'registers ask_questions and returns the bridge answer' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $bridge = $null
+        $callShell = $null
+        try {
+            $engineModule = Get-Module -ListAvailable ShellPilot |
+                Sort-Object Version -Descending |
+                Select-Object -First 1
+            $engineModule | Should -Not -BeNullOrEmpty
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $engineModule.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.HadErrors | Should -BeFalse
+            $importShell.Dispose()
+
+            Initialize-DpQuestionnaireTool -Runspace $runspace | Should -BeTrue
+
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $runspace
+            $null = $probeShell.AddCommand('Get-ShpTool').AddParameter('Name', 'ask_questions')
+            $registered = @($probeShell.Invoke())
+            $probeShell.Dispose()
+            $registered | Should -HaveCount 1
+            $registered[0].Name | Should -Be 'ask_questions'
+
+            $bridge.BeginTurn('c_wizard')
+            $questionnaireJson = '{"questions":[{"header":"Location","question":"Where?","options":[],"allowFreeformInput":true}]}'
+            $callShell = [powershell]::Create()
+            $callShell.Runspace = $runspace
+            $null = $callShell.AddCommand('Invoke-DpQuestionnaireTool').AddParameter('Questionnaire', $questionnaireJson)
+            $async = $callShell.BeginInvoke()
+
+            [System.Threading.SpinWait]::SpinUntil({ $bridge.Waiting }, 1000) | Should -BeTrue
+            $request = $bridge.GetPendingRequest()
+            $request.Question | Should -Be $questionnaireJson
+            $bridge.SubmitAnswer('c_wizard', $request.Id, '{"answers":[]}') | Should -BeTrue
+            @($callShell.EndInvoke($async))[-1].ToString() | Should -Be '{"answers":[]}'
+        }
+        finally {
+            if ($bridge) { $bridge.Cancel(); $bridge.Dispose() }
+            if ($callShell) { $callShell.Dispose() }
+            $runspace.Dispose()
+        }
+    }
+    It 'removes ask_questions when Ask-User is disabled and restores it when enabled' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $bridge = $null
+        try {
+            $engineModule = Get-Module -ListAvailable ShellPilot |
+                Sort-Object Version -Descending |
+                Select-Object -First 1
+            $bridge = Initialize-DpUserPromptBridge -Runspace $runspace
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $engineModule.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.Dispose()
+            Initialize-DpQuestionnaireTool -Runspace $runspace | Should -BeTrue
+
+            Set-DpQuestionnaireTool -Runspace $runspace -Enabled:$false | Should -BeFalse
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $runspace
+            $null = $probeShell.AddCommand('Get-ShpTool').AddParameter('Name', 'ask_questions')
+            @($probeShell.Invoke()) | Should -HaveCount 0
+            $probeShell.Dispose()
+
+            Set-DpQuestionnaireTool -Runspace $runspace -Enabled:$true | Should -BeTrue
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $runspace
+            $null = $probeShell.AddCommand('Get-ShpTool').AddParameter('Name', 'ask_questions')
+            @($probeShell.Invoke()) | Should -HaveCount 1
+            $probeShell.Dispose()
+        }
+        finally {
+            if ($bridge) { $bridge.Dispose() }
             $runspace.Dispose()
         }
     }
@@ -675,6 +821,32 @@ Describe 'ConvertFrom-DpEngineResult' {
         @($m.activity.pagesFetched).Count | Should -Be 0
         @($m.activity.commandsRun).Count | Should -Be 0
         $m.content | Should -Be 'hi'
+    }
+    It 'maps structured QuestionsAsked JSON to the Questionnaire title' {
+        $result = [pscustomobject]@{
+            Content = 'done'
+            QuestionsAsked = @(
+                '{"title":"Practice profile","questions":[{"header":"Location","question":"Where?","options":[],"allowFreeformInput":true}]}'
+                'One plain question?'
+            )
+        }
+
+        $questions = (ConvertFrom-DpEngineResult -Result $result).activity.questionsAsked
+
+        $questions | Should -Be @('Practice profile', 'One plain question?')
+    }
+    It 'maps ask_questions User Tool calls into Questions Asked Activity' {
+        $questionnaireJson = '{"title":"Practice profile","questions":[{"header":"Location","question":"Where?","options":[],"allowFreeformInput":true}]}'
+        $result = [pscustomobject]@{
+            Content = 'done'
+            ToolCalls = @([pscustomobject]@{
+                    Name = 'ask_questions'
+                    Arguments = (@{ Questionnaire = $questionnaireJson } | ConvertTo-Json -Compress)
+                })
+        }
+
+        (ConvertFrom-DpEngineResult -Result $result).activity.questionsAsked |
+            Should -Be @('Practice profile')
     }
     It 'maps result.TodoList to a normalised Task List' {
         $result = [pscustomobject]@{
@@ -883,6 +1055,96 @@ Describe 'Get-DpUserPromptText' {
         Get-DpUserPromptText -Record $hostRecord | Should -BeNullOrEmpty
         Get-DpUserPromptText -Record $progressRecord | Should -BeNullOrEmpty
     }
+    It 'extracts the Questionnaire JSON from an ask_questions Tool call' {
+        $questionnaireJson = '{"questions":[{"header":"Location","question":"Where?"}]}'
+        $record = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'ask_questions'
+                Arguments = (@{ Questionnaire = $questionnaireJson } | ConvertTo-Json -Compress)
+            }
+        }
+
+        Get-DpUserPromptText -Record $record | Should -Be $questionnaireJson
+    }
+}
+
+Describe 'ConvertTo-DpQuestionnaire' {
+        It 'normalizes structured questions, options, multi-select, and free text' {
+                $inputJson = @'
+{
+    "title": "Practice profile",
+    "questions": [
+        {
+            "header": "Location",
+            "question": "Where should the room be?",
+            "options": [
+                "Munich",
+                { "label": "Zurich", "description": "Including Zug" }
+            ],
+            "multiSelect": true,
+            "allowFreeformInput": true
+        },
+        {
+            "header": "Experience",
+            "question": "What should I know?",
+            "options": [],
+            "multiSelect": false,
+            "allowFreeformInput": true
+        }
+    ]
+}
+'@
+
+                $result = ConvertTo-DpQuestionnaire -InputObject $inputJson
+
+                $result.structured | Should -BeTrue
+                $result.title | Should -Be 'Practice profile'
+                @($result.questions).Count | Should -Be 2
+                $result.questions[0].header | Should -Be 'Location'
+                $result.questions[0].multiSelect | Should -BeTrue
+                $result.questions[0].allowFreeformInput | Should -BeTrue
+                @($result.questions[0].options).Count | Should -Be 2
+                $result.questions[0].options[0].label | Should -Be 'Munich'
+                $result.questions[0].options[1].description | Should -Be 'Including Zug'
+                @($result.questions[1].options).Count | Should -Be 0
+                $result.questions[1].allowFreeformInput | Should -BeTrue
+        }
+
+        It 'derives a wizard title from question headers when no title is supplied' {
+                $inputJson = '{"questions":[{"header":"Location","question":"Where?","options":[],"allowFreeformInput":true},{"header":"Training","question":"Which training?","options":[],"allowFreeformInput":true}]}'
+
+                (ConvertTo-DpQuestionnaire -InputObject $inputJson).title |
+                        Should -Be 'Asking 2 questions (Location, Training)'
+        }
+
+        It 'falls back to one free-text question for plain Engine text' {
+                $result = ConvertTo-DpQuestionnaire -InputObject 'Which city should I search?'
+
+                $result.structured | Should -BeFalse
+                @($result.questions).Count | Should -Be 1
+                $result.questions[0].question | Should -Be 'Which city should I search?'
+                @($result.questions[0].options).Count | Should -Be 0
+                $result.questions[0].allowFreeformInput | Should -BeTrue
+                $result.questions[0].multiSelect | Should -BeFalse
+        }
+
+        It 'forces free text on when a structured question has no selectable answers' {
+                $inputJson = '{"questions":[{"header":"Other","question":"Explain","options":[],"allowFreeformInput":false}]}'
+
+                (ConvertTo-DpQuestionnaire -InputObject $inputJson).questions[0].allowFreeformInput |
+                        Should -BeTrue
+        }
+
+                It 'drops duplicate option labels within one question' {
+                    $inputJson = '{"questions":[{"header":"Model","question":"Which?","options":["Independent","Independent","Employed"],"allowFreeformInput":false}]}'
+
+                    $options = (ConvertTo-DpQuestionnaire -InputObject $inputJson).questions[0].options
+
+                    @($options).Count | Should -Be 2
+                    @($options.label) | Should -Be @('Independent', 'Employed')
+                }
 }
 
 Describe 'Get-DpStoppedTurnUsage' {

@@ -26,7 +26,7 @@ function Get-DpUserPromptText {
     $payload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
     $kind = [string](Get-DpPropertyValue -InputObject $payload -Name @('Kind') -Default '')
     $name = [string](Get-DpPropertyValue -InputObject $payload -Name @('Name') -Default '')
-    if ($kind -ne 'ToolCall' -or $name -ne 'ask_user') { return }
+    if ($kind -ne 'ToolCall' -or $name -notin @('ask_user', 'ask_questions')) { return }
 
     $rawArguments = Get-DpPropertyValue -InputObject $payload -Name @('Arguments') -Default $null
     try {
@@ -41,11 +41,12 @@ function Get-DpUserPromptText {
         return
     }
 
+    $argumentName = if ($name -eq 'ask_questions') { 'Questionnaire' } else { 'question' }
     $question = if ($arguments -is [hashtable]) {
-        [string]$arguments['question']
+        [string]$arguments[$argumentName]
     }
     else {
-        [string](Get-DpPropertyValue -InputObject $arguments -Name @('question') -Default '')
+        [string](Get-DpPropertyValue -InputObject $arguments -Name @($argumentName) -Default '')
     }
     if (-not [string]::IsNullOrWhiteSpace($question)) { $question.Trim() }
 }

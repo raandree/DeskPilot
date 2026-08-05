@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ask you now opens a Questionnaire wizard for related questions.** The Model
+  can bundle up to ten questions into one in-thread flow with numbered choices,
+  radio-style single selection, checkmarked multi-selection, conditional custom
+  answers, previous/next navigation, progress, collapse, and close-to-Stop.
+  Text-only questions show only a free-text field; plain Engine questions remain
+  a one-step fallback. Answers return to the same Turn as one correlated JSON
+  payload, and the completed Activity shows the Questionnaire title instead of
+  protocol JSON.
+
 ### Fixed
 
 - **The Project chip now shows the selected folder's leaf name.** The chip
