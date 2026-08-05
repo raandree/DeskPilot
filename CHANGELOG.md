@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Project chip now shows the selected folder's leaf name.** The chip
+  sizes itself to shorter folder names, caps long names with an ellipsis, and
+  exposes the full leaf name on hover instead of showing a stale Project name
+  or the folder's root.
 - **Stop now reacts immediately and preserves the interrupted Turn's Usage.**
   Clicking Stop freezes further streamed text at once, disables the button as
   **Stopping…**, and cancels the Engine pipeline asynchronously so the Host

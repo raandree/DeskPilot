@@ -59,6 +59,10 @@ inside one long-lived Engine Runspace; ShellPilot alone calls GitHub Copilot.
   Project on every `Merge-DpSettings`, so Turn/Upload/explorer code reads one
   field while the registry stays the source of truth. A legacy direct
   `workspaceFolder` write is migrated into a registered Project.
+- **Project folder chrome derives from the path.** The composer Project chip
+  displays `leafName(selected.path)`, not the mutable stored Project name. Keep
+  it intrinsically sized with a capped, ellipsized label and expose the full
+  leaf through the hover title.
 - **Engine gaps filled via the system prompt.** Concepts the Engine has no native
   parameter for (Projects, Agents) are surfaced by composing `-SystemPrompt`
   rather than changing the Engine: the selected Agent's `*.agent.md` body plus a

@@ -110,6 +110,48 @@ assert.equal(progress.status, AUTH_WAITING_STATUS, 'applyAuthLine must not mutat
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
+    It 'shows the selected Project folder leaf in the Project chip' {
+        $appPath = Join-Path $script:webRoot 'assets' 'app.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('function projects()');
+const end = source.indexOf('function buildProjectMenu()', start);
+assert.notEqual(start, -1, 'Project helpers must be present');
+assert.notEqual(end, -1, 'Project menu boundary must be present');
+
+const label = {};
+const button = {};
+const context = {
+    state: {
+        settings: {
+            projects: [{ id: 'p_ling', name: 'd:', path: 'D:\\ling' }],
+            selectedProjectId: 'p_ling',
+        },
+    },
+    $: (id) => id === 'project-chip-label' ? label : id === 'btn-project' ? button : null,
+    syncExplorerAvailability: () => {},
+};
+vm.runInNewContext(source.slice(start, end) + '\nupdateProjectChip();', context);
+
+assert.equal(label.textContent, 'ling');
+assert.equal(label.title, 'ling');
+assert.equal(button.title, 'ling');
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $appPath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+
+        $styles = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+        $styles | Should -Match '(?s)#btn-project\s*\{[^}]*width:\s*fit-content'
+        $styles | Should -Match '(?s)#project-chip-label\s*\{[^}]*max-width:\s*150px[^}]*text-overflow:\s*ellipsis'
+    }
+
     It 'renders Ask-User questions and submits answers while a Turn streams' {
         $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $styles = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw

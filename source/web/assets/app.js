@@ -1897,8 +1897,11 @@ function updateProjectChip() {
     const list = projects();
     const selectedId = (state.settings && state.settings.selectedProjectId) || '';
     const selected = list.find((p) => p.id === selectedId);
-    label.textContent = selected ? selected.name : (list.length ? 'No project' : 'No project');
-    label.title = selected ? selected.path : '';
+    const displayName = selected ? leafName(selected.path) : 'No project';
+    label.textContent = displayName;
+    label.title = selected ? displayName : '';
+    const button = $('btn-project');
+    if (button) button.title = selected ? displayName : 'Project — the working folder for new prompts';
     syncExplorerAvailability();
 }
 

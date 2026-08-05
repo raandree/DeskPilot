@@ -1547,7 +1547,14 @@ button.tree-row {
     margin-left: -2px;
 }
 
+#btn-project {
+    width: fit-content;
+    min-width: 0;
+}
+
 #project-chip-label {
+    display: block;
+    min-width: 0;
     max-width: 150px;
     overflow: hidden;
     text-overflow: ellipsis;
