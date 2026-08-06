@@ -9,23 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **DeskPilot now remembers what it changed until you decide.** Before every turn
+  it records how your files looked, so the edits the agent makes stay listed as
+  *not reviewed yet* — across a reload, a restart, and switching conversations —
+  until you **Keep** them (accept, without committing) or **Undo** them. Undo puts
+  a file back the way it was *before the agent touched it*, so your own earlier
+  edits survive, and a file the agent created is removed. This is a layer above
+  Git: "what did the agent change?" and "what is uncommitted?" are different
+  questions and now have different answers.
 - **A Changes card under every new answer, with Keep and Undo.** When the agent
   edits files in a Git project, the answer now carries a
   `N files changed  +A  −D` summary and one row per file with its status and its
-  own added/deleted line counts. **Keep** saves exactly those files as a commit
-  (with a description pre-filled from your prompt) so the work cannot be lost;
-  **Undo** reverts them after a confirm.
+  own added/deleted line counts, measured against the pre-turn snapshot. The card
+  disappears once those files are reviewed.
 - **Changed files are visible in the file panel, not buried in Activity.** A
-  **Changes** list sits directly under the Git bar — `N changed files +A −B`, one
-  row per file, click to see the diff — and the file tree itself is colour-coded
-  the way an IDE explorer is: a changed file's name takes its status colour
-  (amber modified, green new, red deleted or conflicting) and carries a
-  one-letter status, and a folder containing changes is tinted and shows how many
-  changed files are inside, so a collapsed folder still declares itself.
+  **Changes** panel sits directly under the Git bar with two sections — what
+  DeskPilot changed and you have not reviewed (with **Keep all** / **Undo all**),
+  and what is merely uncommitted — and the file tree itself is colour-coded the
+  way an IDE explorer is: a changed file's name takes its status colour (amber
+  modified, green new, red deleted or conflicting) and carries a one-letter
+  status, a folder containing changes is tinted and shows how many changed files
+  are inside, and an unreviewed DeskPilot change carries an accent edge.
 - **A diff viewer.** Clicking a changed file opens a unified diff with both old
   and new line numbers, colour-coded additions and removals, and a file list to
-  step through the whole change set (`↑`/`↓`). A brand-new file is shown as all
-  additions; a binary file says so instead of showing bytes.
+  step through the whole change set (`↑`/`↓`). A pending DeskPilot change is shown
+  against the pre-turn snapshot, so you see what the agent did rather than
+  everything since your last commit. A brand-new file is shown as all additions;
+  a binary file says so instead of showing bytes.
 - **A Branch Wizard for people who do not know Git.** One place to see where you
   are, create a branch (with the name validated in plain language before Git
   sees it), switch, delete (never the default branch; unmerged work needs an

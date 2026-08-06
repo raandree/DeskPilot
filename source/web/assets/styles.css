@@ -4231,6 +4231,16 @@ button.tree-row {
     padding: 6px 0 8px;
 }
 
+.git-changes-section + .git-changes-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.git-changes-section.is-ai {
+    border-left: 3px solid var(--accent);
+}
+
 .git-changes-head {
     display: flex;
     align-items: center;
@@ -4243,10 +4253,19 @@ button.tree-row {
     font-weight: 650;
 }
 
-.git-changes-review {
+.git-changes-acts {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.git-changes-acts .btn {
     margin-top: 0;
     width: auto;
-    margin-left: auto;
+}
+
+.git-changes-hint {
+    padding: 0 14px 4px;
 }
 
 .git-changes-list {
@@ -4276,6 +4295,11 @@ button.tree-row {
 
 .git-changes-more:hover {
     color: var(--text);
+}
+
+/* A file DeskPilot changed that has not been kept or undone yet. */
+.tree-node.is-ai-change > .tree-row {
+    box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .branch-modal {

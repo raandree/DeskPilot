@@ -10,26 +10,29 @@ source: repository evidence
 
 ## Current focus
 
-**The Git Workbench shipped on `ai/git-workbench` (2026-08-05).** DeskPilot could
-already merge a Branch with AI conflict help (spec 070), but a user could not see
-*what the agent had changed*, could not read a real diff, could not keep the work,
-and had no way to create, delete, or sync a Branch. Spec 090 closes that.
+**DeskPilot now remembers what it changed, until the user decides
+(`ai/git-workbench`, 2026-08-06).** The reviewer asked for "another layer on top
+of Git that lets me keep or undo what the AI did and clearly see it". Git alone
+cannot answer that: it only knows what differs from the last commit, so an undo
+would also discard the user's own work.
 
-Three surfaces: a **Changes card** under the newest assistant Message
-(`N files changed +A −D`, one row per file, **Keep** = commit exactly those files,
-**Undo** = revert); a **Diff viewer** with old/new line-number gutters and a file
-list to step through the set; and a **Branch Wizard** covering create, switch,
-delete, merge, and sync in plain language (*get* / *send* rather than pull/push).
-On a conflict outside the Merge Wizard, DeskPilot **generates a prompt** and shows
-it for review — it is never sent automatically.
+DeskPilot now takes a **snapshot before every Turn** - an ordinary commit object
+built in a throwaway `GIT_INDEX_FILE` and parked under
+`refs/deskpilot/snapshots/` - and keeps a **pending change set** per Project in
+`changes.json`. Every file a Turn writes joins it, against that snapshot, and
+stays until the user **Keeps** it (accept, without committing) or **Undoes** it
+(`git restore --worktree --source=<snapshot>`, or delete for a file the agent
+created). A file already tracked keeps its *original* snapshot, so undo always
+means "before DeskPilot first touched it".
 
-After first use the reviewer said the Git bar's "N changes" button was easy to
-overlook and that folder records did not work, so the changed files now appear
-**directly**: a Changes list under the Git bar, and per-row colour + status in the
-file tree (a folder shows how many changed files are inside). Untracked files are
-listed individually again — a collapsed folder record is not something a diff or a
-commit can act on — with the 500-file cap applied while building and only reported
-files measured.
+It is visible in four places: the Changes card under the Message that made the
+changes, a two-section panel under the Git bar (unreviewed DeskPilot changes vs.
+merely uncommitted), the file tree (status colour, letter, folder counts, and an
+accent edge for an unreviewed change), and the diff viewer - which diffs a
+pending file against its snapshot.
+
+Before this, the Git Workbench shipped: merge/branch/sync wizards, the diff
+viewer, and the conflict prompt.
 
 Nine new Private helpers plus seven routes under `/api/git/`. `Invoke-DpGitCommand`
 was hardened: closed stdin, `GIT_TERMINAL_PROMPT=0`, `GIT_LITERAL_PATHSPECS=1`,
@@ -38,18 +41,16 @@ the accept loop is single-threaded, so a blocked git call froze the whole UI.
 
 ## Verification
 
-- Full Sampler build + Pester green; PSScriptAnalyzer 0 warnings.
-- Real-repository tests cover the change set (counts, untracked, deleted,
-  renamed, conflicted, filters, the cap), commit/nothing-to-commit, branch
-  create/switch/delete (incl. the unmerged refusal and force), sync
-  publish/ahead/pull/autostash, a genuine two-clone conflict, and a Project that
-  is a **subdirectory** of the repository.
-- `diff.js` is pure and unit-tested under Node (gutter numbering, single-line
-  hunk headers, new-file rows, path splitting, commit-message suggestion).
-- An independent agent-security review returned four Majors, all fixed:
-  an option-shaped branch name reaching `git push --delete`; unbounded untracked
-  expansion on the accept thread; an autostash unwind that reported a failed
-  `stash pop` as restored; and residual hang paths in the git runner.
+- Full Sampler build + Pester green (**532/532**, 0 warnings, exit 0).
+- Real-repository tests cover the snapshot leaving the index and working tree
+  untouched, undo restoring to the snapshot rather than HEAD (a hand edit made
+  before the Turn survives), deleting a file the agent created, undoing a subset,
+  reporting a hand-reverted file as `unchanged`, diffing against the snapshot,
+  and dropping the snapshot ref once the change is kept.
+- Plus the earlier Git Workbench coverage: change set, commit, branch
+  create/switch/delete, sync, a two-clone conflict, a subdirectory Project.
+- An independent agent-security review of the Workfbench returned four Majors,
+  all fixed.
 
 ## Next step
 

@@ -197,6 +197,15 @@ function Invoke-DpTurn {
         # keeping the working directory deterministic.
         $null = Set-DpEngineLocation -Path (Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
 
+        # Capture what the files look like BEFORE the agent runs. Without this,
+        # "undo what DeskPilot did" can only mean "revert to the last commit",
+        # which also throws away whatever the user had changed by hand.
+        $turnSnapshotSha = ''
+        if ($settings.workspaceFolder) {
+            $snapshot = New-DpChangeSnapshot -Root $settings.workspaceFolder -Id $assistantId
+            if ($snapshot.sha) { $turnSnapshotSha = $snapshot.sha }
+        }
+
         # Run the Engine call with a bounded retry for transient PRE-STREAM
         # failures. ShellPilot exchanges the GitHub token for a short-lived Copilot
         # session token at the start of every Turn, and that exchange intermittently
@@ -400,6 +409,16 @@ function Invoke-DpTurn {
         }
         $Conversation.messages.Add($assistantMessage)
         $Conversation.updatedUtc = $assistantMessage.createdUtc
+
+        # Track what the agent wrote as a pending change, so it stays reviewable
+        # after this Turn and after a reload - until the user keeps or undoes it.
+        if ($settings.workspaceFolder) {
+            $written = @(Get-DpPropertyValue -InputObject $mapped.activity -Name @('filesWritten') -Default @())
+            if ($written.Count -gt 0) {
+                $null = Add-DpChangeEntry -Store $script:DeskPilot.Changes -Root $settings.workspaceFolder -Paths ([string[]]$written) -SnapshotSha $turnSnapshotSha -ConversationId ([string]$Conversation.id)
+                if ($script:DeskPilot.DataDir) { Save-DpChangeStore -Store $script:DeskPilot.Changes -Directory $script:DeskPilot.DataDir }
+            }
+        }
 
         Update-DpUsage -Usage $mapped.usage -Model $usedModel
 

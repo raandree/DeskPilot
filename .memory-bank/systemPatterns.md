@@ -103,6 +103,15 @@ source: repository evidence
 - **State the agent changed something without being asked.** A count behind a
   button and a collapsed Activity panel both fail: the changed files are listed
   under the Git bar and coloured in the tree, so the fact arrives unprompted.
+- **"What did the agent change?" is not "what is uncommitted?".** DeskPilot keeps
+  its own pending change set above Git: every file a Turn wrote, paired with a
+  pre-Turn snapshot commit, held until the user keeps or undoes it. Undo means
+  "before DeskPilot touched it", so the user's own earlier edits survive. Keep
+  accepts without committing - conflating the two would make Keep irreversible.
+- **Snapshot without touching anything the user owns.** The pre-Turn snapshot is
+  a normal commit object written through a throwaway `GIT_INDEX_FILE` and parked
+  under `refs/deskpilot/snapshots/`. No index, worktree or branch is modified,
+  and the ref is deleted once nothing references it.
 - **Report a file, not a folder.** Git can collapse an untracked directory into
   one record; nothing downstream (diff, commit, undo) can act on it. Always list
   untracked files individually and bound the result instead.
@@ -127,3 +136,8 @@ source: repository evidence
   from a capped list silently understates the truth.
 - Running two Sampler builds at once. They both write
   `output/module/DeskPilot`; the second one dies mid-build with no useful error.
+- Returning a collection from an `if`-expression
+  (`$x = if (…) { [List[T]]::new() }`). PowerShell unrolls an empty collection to
+  nothing, so `$x` is `$null` and the next `.Add()` throws. Declare the list, then
+  fill it. The same unrolling makes a helper that returns an empty array yield
+  `$null` at the call site - wrap the call in `@(…)`.

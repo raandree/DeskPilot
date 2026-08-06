@@ -396,6 +396,68 @@ function Invoke-DpRouteHandler {
                 prompt       = $promptText
             }
         }
+        'pendingChanges' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Json @{ files = @(); fileCount = 0; totalAdded = 0; totalDeleted = 0; undoable = $false; error = $null }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+        }
+        'keepChanges' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $paths = @()
+            if ($Body -and $Body.PSObject.Properties['paths'] -and $Body.paths) { $paths = @($Body.paths | ForEach-Object { [string]$_ }) }
+            $cleared = if ($paths.Count -gt 0) {
+                Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths $paths
+            }
+            else {
+                Remove-DpChangeEntry -Store $state.Changes -Root $root
+            }
+            if ($state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
+            Write-DpResponse -Stream $Stream -Json @{
+                kept      = $cleared.cleared
+                remaining = $cleared.remaining
+                changes   = (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+            }
+        }
+        'undoChanges' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $paths = @()
+            if ($Body -and $Body.PSObject.Properties['paths'] -and $Body.paths) { $paths = @($Body.paths | ForEach-Object { [string]$_ }) }
+            $entries = @(Get-DpChangeEntry -Store $state.Changes -Root $root)
+            $undo = if ($paths.Count -gt 0) {
+                Invoke-DpChangeUndo -Root $root -Entries $entries -Paths $paths
+            }
+            else {
+                Invoke-DpChangeUndo -Root $root -Entries $entries
+            }
+            if ($undo.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'undo_failed'; message = $undo.error } }
+                return
+            }
+            # Only stop tracking what actually went back; a file that could not be
+            # restored stays in the set so the user can see it still needs a decision.
+            $done = @(@($undo.restored) + @($undo.removed))
+            if ($done.Count -gt 0) {
+                $null = Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths $done
+                if ($state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                restored = @($undo.restored)
+                removed  = @($undo.removed)
+                skipped  = @($undo.skipped)
+                changes  = (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+            }
+        }
         'gitMergePreview' {
             $root = $state.Settings.workspaceFolder
             if ([string]::IsNullOrWhiteSpace($root)) {
@@ -1292,7 +1354,19 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_path'; message = 'A file path is required.' } }
                 return
             }
-            Write-DpResponse -Stream $Stream -Json (Get-DpGitDiff -Root $root -Path $requested)
+            # An explicit base is only honoured when it is one of this Project's own
+            # snapshots, so the query cannot name an arbitrary commit to read from.
+            $base = if ($Request -and $Request.Query -and $Request.Query.ContainsKey('base')) { [string]$Request.Query['base'] } else { '' }
+            if (-not [string]::IsNullOrWhiteSpace($base)) {
+                $known = @(Get-DpChangeEntry -Store $state.Changes -Root $root | ForEach-Object { [string]$_.snapshotSha })
+                if ($known -notcontains $base) { $base = '' }
+            }
+            if ([string]::IsNullOrWhiteSpace($base)) {
+                Write-DpResponse -Stream $Stream -Json (Get-DpGitDiff -Root $root -Path $requested)
+            }
+            else {
+                Write-DpResponse -Stream $Stream -Json (Get-DpGitDiff -Root $root -Path $requested -BaseSha $base)
+            }
         }
         'gitRestore' {
             $root = $state.Settings.workspaceFolder

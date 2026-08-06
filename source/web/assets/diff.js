@@ -94,16 +94,3 @@ export function newFileRows(content) {
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
     return lines.map((text, i) => ({ type: 'add', oldNo: null, newNo: i + 1, text }));
 }
-
-// A commit message suggestion for the Changes panel's Keep action: the user's
-// own words when there are any, else a plain description of the file set.
-export function suggestCommitMessage(promptText, files) {
-    const first = String(promptText || '')
-        .split('\n')
-        .map((l) => l.trim())
-        .find((l) => l.length > 0);
-    if (first) return first.length > 72 ? first.slice(0, 69).trimEnd() + '…' : first;
-    const list = Array.isArray(files) ? files : [];
-    if (list.length === 1) return 'Update ' + splitRelPath(list[0].rel || list[0]).name;
-    return 'Update ' + list.length + ' files';
-}

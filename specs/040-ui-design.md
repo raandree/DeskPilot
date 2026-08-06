@@ -98,15 +98,15 @@ accent fills so the bright dark-mode accent stays legible.
 - **Activity** block per assistant Message: a collapsible "Used N tools" strip
   listing files read/written, commands run, pages fetched, questions asked —
   each with an icon. Collapsed by default once complete.
-- **Changes** card per assistant Message (newest Turn only, Git Projects only):
-  a header reading `N files changed  +A  −D`, then one row per file with a
-  status badge (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and
-  its own `+`/`−` counts. Clicking a row opens the **Diff viewer**. The header
-  carries two actions: **Keep** (asks for a short description, pre-filled from
-  the prompt, and commits exactly those files) and **Undo** (confirms, then
-  reverts tracked files to the last commit and deletes ones the Turn created).
-  Only the newest Turn paints a card — an older one would describe a working
-  tree that has since moved on. See [090-git-workbench](090-git-workbench.md).
+- **Changes** card per assistant Message (Git Projects only): a header reading
+  `N files changed  +A  −D`, then one row per file with a status badge
+  (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and its own `+`/`−`
+  counts — measured against the snapshot taken before that Turn. Clicking a row
+  opens the **Diff viewer**. The header carries two actions: **Keep** (accept
+  these files and stop tracking them) and **Undo** (put them back the way they
+  were before the Turn; files the agent created are deleted). The card disappears
+  once those files are reviewed. See
+  [090-git-workbench](090-git-workbench.md).
 - **Tasks** block per assistant Message: a compact panel showing the agent's
   in-Turn Task List as the agent works, with a header `Tasks — {completed}/{total}`
   and one row per Task. Each row carries a status glyph (`not-started` ○,
@@ -233,17 +233,22 @@ current branch and a dropdown to switch between local branches (switching
 refreshes the file tree), a merged-status legend, and a **Branches…** button that
 opens the Branch Wizard.
 
-Beneath the Git bar, a **Changes panel** lists the changed files directly —
-`N changed files  +A  −B`, one row per file with its status badge, name, dimmed
-folder and counts, capped at 12 with an "…and N more", plus a **Review** button.
-Clicking a row opens the Diff viewer over the whole set. It is visible without
-any interaction, because a count alone is too easy to miss.
+Beneath the Git bar, a **Changes panel** lists the changed files directly, in two
+sections. **DeskPilot changed N files** (accent-edged) is the layer above Git:
+files the agent wrote that have not been reviewed, with **Keep all** (accept and
+stop tracking — it does not commit) and **Undo all** (put every file back the way
+it was before the Turn). **N uncommitted files** is Git's own view, with
+**Review**. Each row shows a status badge, name, dimmed folder and counts, capped
+at 12 with an "…and N more"; clicking one opens the Diff viewer. The panel is
+visible without any interaction, because a count alone is too easy to miss.
 
 The **tree itself is colour-coded** the way an IDE explorer is: a changed file's
 name takes its status colour (amber modified/renamed, green added/untracked, red
 deleted — struck through — and conflicted) and carries a one-letter status; a
 folder containing changes takes the amber tint and shows how many changed files
-are inside, so a collapsed branch of the tree still declares itself.
+are inside, so a collapsed branch of the tree still declares itself. A file
+DeskPilot changed and you have not reviewed carries an accent edge, so "the agent
+did this" is distinguishable from "I did this".
 
 ### 6c. Diff viewer
 

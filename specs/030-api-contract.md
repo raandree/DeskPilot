@@ -296,6 +296,14 @@ changes would be overwritten).
 
 These power the Changes review, the Diff viewer and the Branch Wizard (spec 090).
 
+### `GET /api/git/diff?path=<file>[&base=<sha>]`
+
+Returns the working-tree diff of one file. With `base`, the diff is taken against
+that commit instead of HEAD, which is how the Changes review shows *what the
+agent did* rather than everything since the last commit. `base` is honoured only
+when it is one of this Project's own pending-change snapshots, so the query
+cannot name an arbitrary commit to read from.
+
 ### `GET /api/git/changes`
 
 Optional query `paths=<newline-separated list>` restricts the result to those
@@ -432,6 +440,62 @@ sends it automatically.
 { "inMerge": true, "files": [ "shared.txt" ], "sourceBranch": "origin/main",
   "targetBranch": "main", "prompt": "Please resolve the Git merge conflicts…" }
 ```
+
+## Pending DeskPilot changes (selected Project)
+
+The layer above Git: files DeskPilot wrote that the user has not yet kept or
+undone. Each carries the **snapshot** taken before the Turn that first changed
+it, so "undo" means "back to how it was before DeskPilot touched it" rather than
+"back to the last commit". The set is keyed by Project folder and persisted in
+`changes.json`, so it survives a reload, a restart, and switching Conversations.
+
+### `GET /api/changes`
+
+```json
+{ "files": [
+    { "rel": "src/app.js", "snapshotSha": "…", "conversationId": "c_1",
+      "firstSeenUtc": "2026-08-06T00:10:00.000Z", "status": "modified",
+      "added": 12, "deleted": 4, "binary": false, "undoable": true,
+      "existedBefore": true }
+  ],
+  "fileCount": 1, "totalAdded": 12, "totalDeleted": 4, "undoable": true,
+  "error": null }
+```
+
+`status` is `modified`, `added` (DeskPilot created it), `deleted` (it is gone) or
+`unchanged` (the user has already put it back by hand). Counts are measured
+against the snapshot, not against HEAD. `undoable` is `false` for a Project that
+is not a Git repository — the files are still listed, but there is nothing to go
+back to. No Project selected returns an empty set rather than an error.
+
+### `POST /api/changes/keep`
+
+Body `{ "paths": [ "<rel>", … ] }`, or `{}` for the whole set. Accepts the changes
+and stops tracking them; the files are left exactly as they are. It deliberately
+does **not** commit — committing is a separate decision (see `POST /api/git/commit`
+and the Branch Wizard), and conflating the two would make "keep" irreversible.
+Snapshot refs no longer referenced by a remaining entry are deleted.
+
+```json
+{ "kept": 3, "remaining": 0, "changes": { … same shape as GET … } }
+```
+
+### `POST /api/changes/undo`
+
+Body `{ "paths": [ "<rel>", … ] }`, or `{}` for the whole set. Restores each file
+from its snapshot with `git restore --worktree --source=<sha>` (the working tree
+only, so a staged change the user prepared themselves is untouched), and deletes
+a file that did not exist in the snapshot. Only files that actually went back
+stop being tracked; anything that failed stays in the set with a reason.
+
+```json
+{ "restored": [ "src/app.js" ], "removed": [ "notes.md" ],
+  "skipped": [ { "path": "locked.txt", "reason": "…" } ],
+  "changes": { … same shape as GET … } }
+```
+
+`400` when the Project is not a Git repository, because there is no snapshot to
+restore from.
 
 ## Merge Wizard (selected Project)
 

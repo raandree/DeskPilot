@@ -25,6 +25,14 @@ function Get-DpPropertyValue {
         [object]$Default = $null
     )
     if ($null -eq $InputObject) { return $Default }
+    # A record is a hashtable while it lives in memory and a PSCustomObject once it
+    # has been round-tripped through JSON; read both.
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        foreach ($candidate in $Name) {
+            if ($InputObject.Contains($candidate)) { return $InputObject[$candidate] }
+        }
+        return $Default
+    }
     foreach ($candidate in $Name) {
         $prop = $InputObject.PSObject.Properties[$candidate]
         if ($prop) { return $prop.Value }

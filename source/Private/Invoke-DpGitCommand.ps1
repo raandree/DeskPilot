@@ -36,6 +36,9 @@ function Invoke-DpGitCommand {
     .PARAMETER TimeoutSeconds
         Kill git after this many seconds. 0 waits indefinitely and should only be
         used for a command that provably cannot block.
+    .PARAMETER Environment
+        Extra environment variables for this call only (for example a throwaway
+        GIT_INDEX_FILE, so staging never touches the user's index).
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -48,7 +51,9 @@ function Invoke-DpGitCommand {
         [Parameter(Mandatory)]
         [string[]]$Arguments,
 
-        [int]$TimeoutSeconds = 120
+        [int]$TimeoutSeconds = 120,
+
+        [hashtable]$Environment
     )
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -60,6 +65,9 @@ function Invoke-DpGitCommand {
     $psi.CreateNoWindow = $true
     $psi.Environment['GIT_TERMINAL_PROMPT'] = '0'
     $psi.Environment['GIT_LITERAL_PATHSPECS'] = '1'
+    if ($Environment) {
+        foreach ($key in $Environment.Keys) { $psi.Environment[[string]$key] = [string]$Environment[$key] }
+    }
     $psi.ArgumentList.Add('-C')
     $psi.ArgumentList.Add($Path)
     foreach ($arg in $Arguments) { $psi.ArgumentList.Add([string]$arg) }

@@ -6,7 +6,6 @@ import {
     splitRelPath,
     statusGlyph,
     statusLabel,
-    suggestCommitMessage,
 } from './diff.js';
 import { renderMarkdown } from './markdown.js';
 import {
@@ -1260,60 +1259,51 @@ async function renderChanges(node, m) {
     const written = asArray(m && m.activity && m.activity.filesWritten).map(String);
     if (!written.length) return;
     if (!(state.settings && state.settings.workspaceFolder)) return;
-    if (!isNewestAssistant(m)) return;
 
-    let data;
-    try { data = await api('GET', '/api/git/changes?paths=' + encodeURIComponent(written.join('\n'))); }
-    catch { return; }
-    if (!data || data.error || !data.files || !data.files.length) return;
+    // Driven by the pending set, not by Git: the card is the review of what this
+    // Turn changed, and it disappears once the user keeps or undoes those files —
+    // exactly the files, whatever else has happened in the repository since.
+    await loadAiChanges(false);
+    const wanted = new Set(written.map((p) => turnRelPath(p)).filter(Boolean));
+    const files = aiChanges.list.filter((f) => f && f.status !== 'unchanged' && wanted.has(String(f.rel).toLowerCase()));
+    if (!files.length) return;
 
-    paintChangesCard(node, data, m);
+    paintChangesCard(node, files);
 }
 
-function isNewestAssistant(m) {
-    const messages = (state.current && state.current.messages) || [];
-    for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i] && messages[i].role !== 'user') return messages[i] === m || (!!m.id && messages[i].id === m.id);
-    }
-    return false;
+// A Turn reports absolute or Project-relative paths; the pending set is keyed by
+// lowercased Project-relative paths.
+function turnRelPath(p) {
+    const rel = projectRelPath(p);
+    if (rel != null) return rel.toLowerCase();
+    return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
 }
 
-// The prompt that produced a Turn is the best commit-message suggestion there
-// is, so look back for the user message immediately before this one.
-function precedingUserText(m) {
-    const messages = (state.current && state.current.messages) || [];
-    const idx = messages.findIndex((x) => x === m || (!!m.id && x && x.id === m.id));
-    for (let i = (idx < 0 ? messages.length : idx) - 1; i >= 0; i--) {
-        if (messages[i] && messages[i].role === 'user') return messages[i].text || '';
-    }
-    return '';
-}
-
-function paintChangesCard(node, data, m) {
-    const files = data.files || [];
-    // Trust the server's counts: the file list is capped, fileCount is not.
-    const fileCount = Number(data.fileCount || files.length);
+function paintChangesCard(node, files) {
+    const totals = files.reduce((acc, f) => ({ a: acc.a + Number(f.added || 0), d: acc.d + Number(f.deleted || 0) }), { a: 0, d: 0 });
     node.classList.remove('hidden');
     node.innerHTML = '';
 
     const head = el('changes-head');
     head.innerHTML =
-        `<span class="changes-count">${fileCount} file${fileCount === 1 ? '' : 's'} changed</span>` +
-        `<span class="changes-stat changes-add">+${escapeHtml(String(data.totalAdded || 0))}</span>` +
-        `<span class="changes-stat changes-del">\u2212${escapeHtml(String(data.totalDeleted || 0))}</span>`;
+        `<span class="changes-count">${files.length} file${files.length === 1 ? '' : 's'} changed</span>` +
+        `<span class="changes-stat changes-add">+${escapeHtml(String(totals.a))}</span>` +
+        `<span class="changes-stat changes-del">\u2212${escapeHtml(String(totals.d))}</span>`;
     const actions = el('changes-acts');
+    const paths = files.map((f) => f.rel);
     const keep = document.createElement('button');
     keep.className = 'btn btn-small btn-primary';
     keep.type = 'button';
     keep.textContent = 'Keep';
-    keep.title = 'Save these changes as a Git commit so they cannot be lost';
-    keep.onclick = (e) => { e.preventDefault(); keepChanges(node, files, m, keep); };
+    keep.title = 'Accept these changes and stop tracking them as unreviewed';
+    keep.onclick = (e) => { e.preventDefault(); keepAiChanges(paths, keep); };
     const undo = document.createElement('button');
     undo.className = 'btn btn-small';
     undo.type = 'button';
     undo.textContent = 'Undo';
-    undo.title = 'Revert these file changes using Git';
-    undo.onclick = (e) => { e.preventDefault(); undoTurnFiles(files.map((f) => f.rel), undo, node); };
+    undo.title = 'Put these files back the way they were before DeskPilot changed them';
+    undo.disabled = !aiChanges.undoable;
+    undo.onclick = (e) => { e.preventDefault(); undoAiChanges(paths, undo); };
     actions.append(keep, undo);
     head.appendChild(actions);
     node.appendChild(head);
@@ -1321,11 +1311,6 @@ function paintChangesCard(node, data, m) {
     const list = el('changes-list');
     for (const f of files) list.appendChild(buildChangeRow(f, files));
     node.appendChild(list);
-    if (data.truncated) {
-        const more = el('muted tiny changes-more');
-        more.textContent = '…and more.';
-        node.appendChild(more);
-    }
 }
 
 function buildChangeRow(f, files) {
@@ -1346,37 +1331,15 @@ function buildChangeRow(f, files) {
     return row;
 }
 
-// "Keep" = commit. Without a commit, an Undo elsewhere (or the next Turn) can
-// still take the work away, so this is the step that makes it durable.
-async function keepChanges(node, files, m, btn) {
-    const suggestion = suggestCommitMessage(precedingUserText(m), files);
-    const message = (window.prompt('Save these changes with a short description:', suggestion) || '').trim();
-    if (!message) return;
-    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-    try {
-        const r = await api('POST', '/api/git/commit', { message, paths: files.map((f) => f.rel) });
-        const skipped = (r && r.skipped && r.skipped.length) || 0;
-        if (r && r.nothingToCommit) toast('Nothing to save — those changes are already committed.');
-        else toast('Saved as ' + ((r && r.shortSha) || 'a commit') + '.' + (skipped ? ` ${skipped} file(s) skipped.` : ''));
-        await refreshChangesCard(node, m);
-        refreshExplorer();
-    } catch (e) { toast(e.message); }
-    finally { if (btn) { btn.disabled = false; btn.textContent = 'Keep'; } }
-}
-
-async function refreshChangesCard(node, m) {
-    if (!node) return;
-    await renderChanges(node, m);
-}
-
-// Undo the file changes a Turn made: revert tracked files to the last commit and
-// delete files the Turn newly created. Confirmed first because it is destructive.
+// Undo file changes through Git alone: revert tracked files to the last commit
+// and delete files that are untracked. Used by the diff viewer for a file that
+// is not (or no longer) a pending DeskPilot change.
 async function undoTurnFiles(paths, btn, node) {
     const list = asArray(paths).map(String);
     if (list.length === 0) return;
     const msg = 'Undo these file changes?\n\n' +
-        'Tracked files are reverted to the last Git commit, and files this turn created are deleted. ' +
-        'Anything you have not saved with Keep will be lost.\n\nFiles:\n' + list.map((p) => '• ' + p).join('\n');
+        'Tracked files are reverted to the last Git commit, and untracked files are deleted. ' +
+        'Anything you have not committed will be lost.\n\nFiles:\n' + list.map((p) => '• ' + p).join('\n');
     if (!window.confirm(msg)) return;
     if (btn) { btn.disabled = true; btn.textContent = 'Undoing…'; }
     try {
@@ -1458,7 +1421,12 @@ async function loadDiffFile() {
     foot.innerHTML = '';
 
     let data;
-    try { data = await api('GET', '/api/git/diff?path=' + encodeURIComponent(current.rel)); }
+    // A pending DeskPilot change is diffed against the snapshot taken before the
+    // Turn, so the viewer shows what the agent did rather than everything that
+    // differs from the last commit.
+    const base = current.snapshotSha || (aiChangeFor(current.rel) || {}).snapshotSha || '';
+    const query = '/api/git/diff?path=' + encodeURIComponent(current.rel) + (base ? '&base=' + encodeURIComponent(base) : '');
+    try { data = await api('GET', query); }
     catch (e) { body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(e.message)}</div>`; return; }
     if (data.error) { body.innerHTML = `<div class="merge-error">⚠ ${escapeHtml(data.error)}</div>`; return; }
 
@@ -1491,7 +1459,12 @@ async function loadDiffFile() {
     undoBtn.className = 'btn';
     undoBtn.type = 'button';
     undoBtn.textContent = 'Undo this file';
-    undoBtn.onclick = () => undoTurnFiles([current.rel], undoBtn);
+    // A pending DeskPilot change goes back to its pre-Turn snapshot; anything else
+    // can only go back to the last commit.
+    const pendingHere = aiChangeFor(current.rel);
+    undoBtn.onclick = () => (pendingHere && pendingHere.undoable
+        ? undoAiChanges([current.rel], undoBtn)
+        : undoTurnFiles([current.rel], undoBtn));
     const closeBtn = document.createElement('button');
     closeBtn.className = 'btn btn-primary';
     closeBtn.type = 'button';
@@ -3050,6 +3023,7 @@ async function refreshGitBar(silent) {
     if (!(state.settings && state.settings.workspaceFolder)) {
         bar.classList.add('hidden');
         resetGitChanges();
+        resetAiChanges();
         renderChangesPanel();
         return;
     }
@@ -3069,10 +3043,11 @@ async function refreshGitBar(silent) {
     }
     renderGitBar(status, branchData, silent);
     if (status && status.isRepo) {
-        await loadGitChanges(!silent);
+        await Promise.all([loadGitChanges(!silent), loadAiChanges(!silent)]);
     }
     else {
         resetGitChanges();
+        await loadAiChanges(!silent);
     }
     renderChangesPanel();
 }
@@ -3183,45 +3158,92 @@ function renderGitBar(status, branchData, silent) {
 
 // The changed files, listed directly under the Git bar. A count alone is too
 // easy to miss, and the Activity panel is collapsed by default — this is the
-// surface that says "the agent touched these files" without being asked.
+// surface that says "the agent touched these files" without being asked. Two
+// sections, because they answer different questions: what DeskPilot changed and
+// you have not reviewed yet, and what is simply uncommitted in Git.
 function renderChangesPanel() {
     const panel = $('git-changes');
     if (!panel) return;
-    const files = gitChangeList();
-    if (!gitChanges.has || !files.length) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
-
-    panel.classList.remove('hidden');
     panel.innerHTML = '';
+
+    const pending = aiChanges.list.filter((f) => f && f.rel && f.status !== 'unchanged');
+    const gitFiles = gitChangeList();
+    if (!pending.length && !(gitChanges.has && gitFiles.length)) { panel.classList.add('hidden'); return; }
+    panel.classList.remove('hidden');
+
+    if (pending.length) {
+        panel.appendChild(buildChangesSection({
+            cls: 'is-ai',
+            title: `DeskPilot changed ${aiChanges.fileCount} file${aiChanges.fileCount === 1 ? '' : 's'}`,
+            hint: 'Not reviewed yet — keep them or put them back.',
+            added: aiChanges.added,
+            deleted: aiChanges.deleted,
+            files: pending,
+            actions: [
+                { label: 'Keep all', cls: 'btn-primary', title: 'Accept these changes and stop tracking them', run: (b) => keepAiChanges(null, b) },
+                { label: 'Undo all', cls: '', title: 'Put every file back the way it was before DeskPilot changed it', run: (b) => undoAiChanges(null, b), disabled: !aiChanges.undoable },
+            ],
+        }));
+    }
+
+    if (gitChanges.has && gitFiles.length) {
+        panel.appendChild(buildChangesSection({
+            cls: 'is-git',
+            title: `${gitChanges.fileCount} uncommitted file${gitChanges.fileCount === 1 ? '' : 's'}`,
+            hint: pending.length ? 'Everything not yet saved as a commit, including the above.' : '',
+            added: gitChanges.added,
+            deleted: gitChanges.deleted,
+            files: gitFiles,
+            actions: [{ label: 'Review', cls: '', title: 'Open the diff viewer over every changed file', run: () => openRepoChanges() }],
+        }));
+    }
+}
+
+function buildChangesSection(opts) {
+    const section = el('git-changes-section ' + (opts.cls || ''));
 
     const head = el('git-changes-head');
     const title = el('git-changes-title');
-    title.textContent = `${gitChanges.fileCount} changed file${gitChanges.fileCount === 1 ? '' : 's'}`;
+    title.textContent = opts.title;
     const add = el('changes-stat changes-add', 'span');
-    add.textContent = '+' + gitChanges.added;
+    add.textContent = '+' + opts.added;
     const del = el('changes-stat changes-del', 'span');
-    del.textContent = '\u2212' + gitChanges.deleted;
-    const review = document.createElement('button');
-    review.className = 'btn btn-small git-changes-review';
-    review.type = 'button';
-    review.textContent = 'Review';
-    review.title = 'Open the diff viewer over every changed file';
-    review.onclick = () => openRepoChanges();
-    head.append(title, add, del, review);
-    panel.appendChild(head);
+    del.textContent = '\u2212' + opts.deleted;
+    head.append(title, add, del);
+    const acts = el('git-changes-acts');
+    for (const a of (opts.actions || [])) {
+        const b = document.createElement('button');
+        b.className = 'btn btn-small ' + (a.cls || '');
+        b.type = 'button';
+        b.textContent = a.label;
+        if (a.title) b.title = a.title;
+        if (a.disabled) b.disabled = true;
+        b.onclick = () => a.run(b);
+        acts.appendChild(b);
+    }
+    head.appendChild(acts);
+    section.appendChild(head);
+
+    if (opts.hint) {
+        const hint = el('git-changes-hint muted tiny');
+        hint.textContent = opts.hint;
+        section.appendChild(hint);
+    }
 
     const list = el('git-changes-list');
-    const shown = files.slice(0, CHANGES_PANEL_LIMIT);
-    for (const f of shown) list.appendChild(buildChangeRow(f, files));
-    panel.appendChild(list);
+    const shown = opts.files.slice(0, CHANGES_PANEL_LIMIT);
+    for (const f of shown) list.appendChild(buildChangeRow(f, opts.files));
+    section.appendChild(list);
 
-    if (files.length > shown.length) {
+    if (opts.files.length > shown.length) {
         const more = document.createElement('button');
         more.className = 'git-changes-more muted tiny';
         more.type = 'button';
-        more.textContent = `…and ${files.length - shown.length} more`;
-        more.onclick = () => openRepoChanges();
-        panel.appendChild(more);
+        more.textContent = `…and ${opts.files.length - shown.length} more`;
+        more.onclick = () => openDiffViewer(opts.files, opts.files[0].rel);
+        section.appendChild(more);
     }
+    return section;
 }
 
 // One shared read of "what changed" drives both the Git bar's count and the file
@@ -3335,6 +3357,97 @@ async function openRepoChanges() {
     const files = gitChangeList();
     if (!files.length) { toast('Nothing has changed since the last save.'); return; }
     openDiffViewer(files, files[0].rel);
+}
+
+// ===== Pending DeskPilot changes =====
+// The layer above Git: files the agent wrote that the user has not yet kept or
+// undone. Each carries the snapshot taken before the Turn, so "undo" means "back
+// to how it was before DeskPilot touched it" — not "back to the last commit",
+// which would also throw away the user's own work.
+const aiChanges = { has: false, fileCount: 0, added: 0, deleted: 0, undoable: false, at: 0, list: [], files: new Map() };
+let _aiChangesInflight = null;
+
+function resetAiChanges() {
+    aiChanges.has = false;
+    aiChanges.fileCount = 0;
+    aiChanges.added = 0;
+    aiChanges.deleted = 0;
+    aiChanges.undoable = false;
+    aiChanges.list = [];
+    aiChanges.files.clear();
+}
+
+async function fetchAiChanges() {
+    if (!(state.settings && state.settings.workspaceFolder)) { resetAiChanges(); return aiChanges; }
+    let data;
+    try { data = await api('GET', '/api/changes'); } catch { return aiChanges; }
+    aiChanges.at = Date.now();
+    resetAiChanges();
+    if (!data || data.error || !data.files) return aiChanges;
+    aiChanges.has = true;
+    aiChanges.undoable = !!data.undoable;
+    aiChanges.list = data.files.filter((f) => f && f.rel);
+    aiChanges.fileCount = aiChanges.list.filter((f) => f.status !== 'unchanged').length;
+    aiChanges.added = Number(data.totalAdded || 0);
+    aiChanges.deleted = Number(data.totalDeleted || 0);
+    for (const f of aiChanges.list) aiChanges.files.set(String(f.rel).replace(/\\/g, '/').toLowerCase(), f);
+    return aiChanges;
+}
+
+async function loadAiChanges(force) {
+    const fresh = aiChanges.at && (Date.now() - aiChanges.at) < GIT_CHANGE_MAX_AGE_MS;
+    if (!force && fresh) return aiChanges;
+    if (_aiChangesInflight) return _aiChangesInflight;
+    _aiChangesInflight = fetchAiChanges();
+    try { return await _aiChangesInflight; }
+    finally { _aiChangesInflight = null; }
+}
+
+function aiChangeFor(absPath) {
+    if (!aiChanges.has) return null;
+    const rel = projectRelPath(absPath);
+    if (rel == null) return null;
+    return aiChanges.files.get(rel.toLowerCase()) || null;
+}
+
+// Keep = accept and stop tracking. It deliberately does NOT commit: committing is
+// a separate decision the Branch Wizard owns, and conflating them would make
+// "keep" irreversible.
+async function keepAiChanges(paths, btn) {
+    const list = paths ? asArray(paths).map(String) : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Keeping…'; }
+    try {
+        const body = list ? { paths: list } : {};
+        const r = await api('POST', '/api/changes/keep', body);
+        toast(r.kept ? `Kept ${r.kept} file${r.kept === 1 ? '' : 's'}.` : 'Nothing to keep.');
+        await afterChangeDecision();
+    } catch (e) { toast(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Keep all'; } }
+}
+
+async function undoAiChanges(paths, btn) {
+    const list = paths ? asArray(paths).map(String) : null;
+    const what = list ? `${list.length} file${list.length === 1 ? '' : 's'}` : 'every file DeskPilot changed';
+    if (!window.confirm(`Put ${what} back the way it was before DeskPilot changed it?\n\nYour own edits from before that point are kept; files DeskPilot created are deleted.`)) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Undoing…'; }
+    try {
+        const body = list ? { paths: list } : {};
+        const r = await api('POST', '/api/changes/undo', body);
+        const bits = [];
+        if (r.restored && r.restored.length) bits.push(r.restored.length + ' put back');
+        if (r.removed && r.removed.length) bits.push(r.removed.length + ' removed');
+        if (r.skipped && r.skipped.length) bits.push(r.skipped.length + ' skipped');
+        toast(bits.length ? 'Undo: ' + bits.join(', ') + '.' : 'Nothing to undo.');
+        await afterChangeDecision();
+    } catch (e) { toast(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Undo all'; } }
+}
+
+async function afterChangeDecision() {
+    aiChanges.at = 0;
+    gitChanges.at = 0;
+    await refreshExplorer();
+    renderThread();
 }
 
 async function gitInit() {
@@ -4278,6 +4391,8 @@ function buildFileNode(ent) {
 // for a folder. Without this the only sign that the agent touched a file is the
 // Activity panel, which is collapsed by default.
 function decorateTreeRow(li, row, status, absPath) {
+    const pending = aiChangeFor(absPath);
+    if (pending && pending.status !== 'unchanged') li.classList.add('is-ai-change');
     if (!status) return;
     li.classList.add('is-changed', 'chg-' + status);
     const badge = row.querySelector('.tree-status');
@@ -4290,7 +4405,7 @@ function decorateTreeRow(li, row, status, absPath) {
     }
     else {
         badge.textContent = statusGlyph(status);
-        badge.title = statusLabel(status);
+        badge.title = pending ? statusLabel(status) + ' — changed by DeskPilot, not reviewed yet' : statusLabel(status);
     }
 }
 

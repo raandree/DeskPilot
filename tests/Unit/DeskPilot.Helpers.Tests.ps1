@@ -3628,6 +3628,183 @@ Describe 'Git workbench guards (no git required)' {
     }
 }
 
+Describe 'Pending change set (no git required)' {
+    It 'Add-DpChangeEntry records a written file against its snapshot' {
+        $store = @{}
+        $root = Join-Path $TestDrive 'cs1'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        (Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt', 'sub/b.txt') -SnapshotSha 'aaa' -ConversationId 'c1') | Should -Be 2
+        $entries = Get-DpChangeEntry -Store $store -Root $root
+        $entries.rel | Should -Contain 'a.txt'
+        $entries.rel | Should -Contain 'sub/b.txt'
+        $entries[0].snapshotSha | Should -Be 'aaa'
+        $entries[0].conversationId | Should -Be 'c1'
+    }
+    It 'keeps the ORIGINAL snapshot when a later turn edits the same file' {
+        $store = @{}
+        $root = Join-Path $TestDrive 'cs2'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $null = Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt') -SnapshotSha 'first'
+        (Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt') -SnapshotSha 'second') | Should -Be 0
+        (Get-DpChangeEntry -Store $store -Root $root)[0].snapshotSha | Should -Be 'first'
+    }
+    It 'ignores a written path outside the project folder' {
+        $store = @{}
+        $root = Join-Path $TestDrive 'cs3'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        (Add-DpChangeEntry -Store $store -Root $root -Paths @((Join-Path $TestDrive 'elsewhere.txt'))) | Should -Be 0
+        (Get-DpChangeEntry -Store $store -Root $root).Count | Should -Be 0
+    }
+    It 'Get-DpChangeEntry returns an empty set for an untracked project' {
+        (Get-DpChangeEntry -Store @{} -Root (Join-Path $TestDrive 'cs-none')).Count | Should -Be 0
+    }
+    It 'Remove-DpChangeEntry clears only the requested files' {
+        $store = @{}
+        $root = Join-Path $TestDrive 'cs4'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $null = Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt', 'b.txt')
+        $r = Remove-DpChangeEntry -Store $store -Root $root -Paths @('a.txt')
+        $r.cleared | Should -Be 1
+        $r.remaining | Should -Be 1
+        (Get-DpChangeEntry -Store $store -Root $root).rel | Should -Be 'b.txt'
+    }
+    It 'Remove-DpChangeEntry clears the whole project set when no paths are given' {
+        $store = @{}
+        $root = Join-Path $TestDrive 'cs5'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $null = Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt', 'b.txt')
+        (Remove-DpChangeEntry -Store $store -Root $root).cleared | Should -Be 2
+        (Get-DpChangeEntry -Store $store -Root $root).Count | Should -Be 0
+    }
+    It 'round-trips the change set through disk' {
+        $dir = Join-Path $TestDrive 'cs-store'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $root = Join-Path $TestDrive 'cs6'
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $root -Paths @('a.txt') -SnapshotSha 'abc123' -ConversationId 'c9'
+        Save-DpChangeStore -Store $store -Directory $dir
+        $loaded = Import-DpChangeStore -Directory $dir
+        $entries = Get-DpChangeEntry -Store $loaded -Root $root
+        $entries.Count | Should -Be 1
+        $entries[0].rel | Should -Be 'a.txt'
+        $entries[0].snapshotSha | Should -Be 'abc123'
+        $entries[0].conversationId | Should -Be 'c9'
+    }
+    It 'reports an empty store for a missing file' {
+        (Import-DpChangeStore -Directory (Join-Path $TestDrive 'cs-nothing')).Count | Should -Be 0
+    }
+    It 'New-DpChangeSnapshot reports a missing project folder' {
+        (New-DpChangeSnapshot -Root (Join-Path $TestDrive 'no-such-snap') -Id 't1').error | Should -Be 'No project folder.'
+    }
+    It 'Invoke-DpChangeUndo reports a missing project folder' {
+        (Invoke-DpChangeUndo -Root (Join-Path $TestDrive 'no-such-undo') -Entries @()).error | Should -Be 'No project folder.'
+    }
+    It 'Get-DpChangePayload reports a missing project folder' {
+        (Get-DpChangePayload -Root (Join-Path $TestDrive 'no-such-pay') -Entries @()).error | Should -Be 'No project folder.'
+    }
+}
+
+Describe 'Pending change set against a real repository' -Skip:(-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    BeforeAll {
+        $script:csRepo = Join-Path $TestDrive 'csRepo'
+        New-Item -ItemType Directory -Path $script:csRepo -Force | Out-Null
+        & git -C $script:csRepo init -q 2>$null
+        & git -C $script:csRepo symbolic-ref HEAD refs/heads/main 2>$null
+        & git -C $script:csRepo config user.email 'test@example.com' 2>$null
+        & git -C $script:csRepo config user.name 'Test' 2>$null
+        & git -C $script:csRepo config commit.gpgsign false 2>$null
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'tracked.txt'), "one`ntwo`n")
+        & git -C $script:csRepo add . 2>$null
+        & git -C $script:csRepo commit -q -m 'init' 2>$null
+    }
+
+    It 'captures a snapshot without touching the index or the working tree' {
+        # A change the user made by hand BEFORE the turn must survive an undo.
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'tracked.txt'), "one`ntwo`nmine`n")
+        $before = & git -C $script:csRepo status --porcelain 2>$null
+        $script:csSnapshot = New-DpChangeSnapshot -Root $script:csRepo -Id 't_one'
+        $script:csSnapshot.sha | Should -Match '^[0-9a-f]{40}$'
+        $script:csSnapshot.ref | Should -Be 'refs/deskpilot/snapshots/t_one'
+        (& git -C $script:csRepo status --porcelain 2>$null) | Should -Be $before
+    }
+
+    It 'undoes an edit back to the snapshot, not to the last commit' {
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'tracked.txt'), "one`ntwo`nmine`nagent`n")
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $script:csSnapshot.sha
+        $entries = Get-DpChangeEntry -Store $store -Root $script:csRepo
+
+        $payload = Get-DpChangePayload -Root $script:csRepo -Entries $entries
+        $payload.fileCount | Should -Be 1
+        $payload.files[0].added | Should -Be 1
+        $payload.files[0].undoable | Should -BeTrue
+
+        $undo = Invoke-DpChangeUndo -Root $script:csRepo -Entries $entries
+        $undo.restored | Should -Contain 'tracked.txt'
+        $text = Get-Content -LiteralPath (Join-Path $script:csRepo 'tracked.txt') -Raw
+        $text | Should -Match 'mine'
+        $text | Should -Not -Match 'agent'
+    }
+
+    It 'deletes a file the agent created, because it was not in the snapshot' {
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_two'
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'created.txt'), "new`n")
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('created.txt') -SnapshotSha $snap.sha
+        $entries = Get-DpChangeEntry -Store $store -Root $script:csRepo
+
+        (Get-DpChangePayload -Root $script:csRepo -Entries $entries).files[0].status | Should -Be 'added'
+
+        $undo = Invoke-DpChangeUndo -Root $script:csRepo -Entries $entries
+        $undo.removed | Should -Contain 'created.txt'
+        Test-Path -LiteralPath (Join-Path $script:csRepo 'created.txt') | Should -BeFalse
+    }
+
+    It 'undoes only the files it is asked to' {
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_three'
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'a.txt'), "a`n")
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'b.txt'), "b`n")
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('a.txt', 'b.txt') -SnapshotSha $snap.sha
+        $entries = Get-DpChangeEntry -Store $store -Root $script:csRepo
+
+        $undo = Invoke-DpChangeUndo -Root $script:csRepo -Entries $entries -Paths @('a.txt')
+        $undo.removed | Should -Contain 'a.txt'
+        Test-Path -LiteralPath (Join-Path $script:csRepo 'a.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:csRepo 'b.txt') | Should -BeTrue
+        @($undo.kept).rel | Should -Contain 'b.txt'
+
+        $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
+        Remove-Item -LiteralPath (Join-Path $script:csRepo 'b.txt') -Force
+    }
+
+    It 'reports a file the user has put back by hand as unchanged' {
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_four'
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $snap.sha
+        $payload = Get-DpChangePayload -Root $script:csRepo -Entries (Get-DpChangeEntry -Store $store -Root $script:csRepo)
+        $payload.files[0].status | Should -Be 'unchanged'
+    }
+
+    It 'diffs a pending file against its snapshot rather than the last commit' {
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_five'
+        [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'tracked.txt'), "one`ntwo`nmine`nfrom the agent`n")
+        $d = Get-DpGitDiff -Root $script:csRepo -Path 'tracked.txt' -BaseSha $snap.sha
+        $d.error | Should -BeNullOrEmpty
+        $d.diff | Should -Match 'from the agent'
+        $d.diff | Should -Not -Match '^\+mine'
+    }
+
+    It 'drops the snapshot ref once the change is kept' {
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_six'
+        $store = @{}
+        $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $snap.sha
+        $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
+        (& git -C $script:csRepo rev-parse --verify --quiet 'refs/deskpilot/snapshots/t_six' 2>$null) | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'ConvertTo-DpProjectRelativePath' {
     BeforeAll {
         $script:repoTop = Join-Path $TestDrive 'repo'

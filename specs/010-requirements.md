@@ -47,9 +47,11 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-T5 | C | Manage User Tools (`Register-ShpTool`/`Unregister-ShpTool`) from the UI. |
 | FR-T6 | S | When the selected Project is a Git repository, let the user undo the file changes a Turn made: revert tracked files the Turn wrote and remove files it newly created, after an explicit confirm. Confined to the Workspace Folder. |
 | FR-T7 | S | When the selected Project is a Git repository, let the user view the Git diff of a file the Turn wrote, inline from the Activity panel. |
-| FR-T8 | S | Show a **Changes** card under the newest assistant Message listing every file that Turn changed, with a per-file and total added/deleted line count and a plain-language status, and let the user **Keep** them (commit exactly those files with a short description) or **Undo** them. Confined to the Workspace Folder. |
-| FR-T9 | S | Let the user open any changed file in a **Diff viewer** showing a unified diff with both old and new line numbers, step through the whole change set, and undo a single file. A new file is shown as all additions; a binary file says so. |
-| FR-T10 | S | Show the number of uncommitted changes in the Git bar and let the user review them all, not only those from the newest Turn. |
+| FR-T8 | S | Remember every file DeskPilot changed, with a snapshot of how it looked **before** the Turn, until the user explicitly **keeps** or **undoes** it. The record survives a reload, a restart and switching Conversations, and is separate from Git's own "uncommitted" state. |
+| FR-T9 | S | Let the user undo a pending change back to that snapshot — not to the last commit — so their own earlier edits survive and files the agent created are removed. Keeping accepts the change without committing it. |
+| FR-T10 | S | Show a **Changes card** under the assistant Message listing the files that Turn changed, with per-file and total added/deleted counts, and **Keep** / **Undo** for exactly those files. The card disappears once they are reviewed. |
+| FR-T11 | S | Let the user open any changed file in a **Diff viewer** showing a unified diff with both old and new line numbers, step through the whole change set, and undo a single file. A pending DeskPilot change is diffed against its snapshot; a new file is shown as all additions; a binary file says so. |
+| FR-T12 | S | Show the changed files **directly** in the file panel — a list under the Git bar and per-row colour, status letter and folder counts in the tree — rather than only behind a count or inside the collapsed Activity panel. Distinguish files DeskPilot changed and you have not reviewed from files that are merely uncommitted. |
 
 ### Branches and the server (Git Workbench)
 

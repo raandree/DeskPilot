@@ -74,6 +74,7 @@ function Start-DeskPilot {
     $lifetimeUsage = Import-DpLifetimeUsage -Directory $dataDirFull
     $persistedSettings = Import-DpSettings -Directory $dataDirFull
     $memoryStore = Import-DpMemoryStore -Directory $dataDirFull
+    $changeStore = Import-DpChangeStore -Directory $dataDirFull
 
     # The running module's full version, including any prerelease label. Module.Version
     # is a [System.Version], which cannot hold a '-preview0004' suffix; that label lives
@@ -104,6 +105,9 @@ function Start-DeskPilot {
         # Persistent Agent Memory (durable notes about the user + environment),
         # injected into every Turn's system prompt and curated by the memory routes.
         Memory          = $memoryStore
+        # Files DeskPilot has changed but the user has not yet kept or undone,
+        # keyed by Project folder and paired with a pre-Turn snapshot commit.
+        Changes         = $changeStore
         DataDir         = $dataDirFull
         Engine          = $engine
         WebRoot         = $webRootFull
@@ -183,6 +187,9 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/git/sync/status'; Name = 'gitSyncStatus' }
             @{ Method = 'POST'; Pattern = '/api/git/sync'; Name = 'gitSync' }
             @{ Method = 'GET'; Pattern = '/api/git/conflict/prompt'; Name = 'gitConflictPrompt' }
+            @{ Method = 'GET'; Pattern = '/api/changes'; Name = 'pendingChanges' }
+            @{ Method = 'POST'; Pattern = '/api/changes/keep'; Name = 'keepChanges' }
+            @{ Method = 'POST'; Pattern = '/api/changes/undo'; Name = 'undoChanges' }
             @{ Method = 'GET'; Pattern = '/api/git/merge/preview'; Name = 'gitMergePreview' }
             @{ Method = 'POST'; Pattern = '/api/git/merge'; Name = 'gitMerge' }
             @{ Method = 'POST'; Pattern = '/api/git/merge/plan'; Name = 'gitMergePlan' }

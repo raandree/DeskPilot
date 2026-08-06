@@ -27,7 +27,6 @@ import { pathToFileURL } from 'node:url';
 
 const {
     parseUnifiedDiff, newFileRows, splitRelPath, statusGlyph, statusLabel,
-    suggestCommitMessage,
 } = await import(pathToFileURL(process.argv[1]).href);
 
 const diff = [
@@ -89,11 +88,6 @@ assert.equal(statusGlyph('conflicted'), '!');
 assert.equal(statusGlyph('modified'), 'M');
 assert.equal(statusGlyph('anything-else'), 'M');
 assert.match(statusLabel('conflicted'), /conflict/i);
-
-assert.equal(suggestCommitMessage('  \nFix the report totals\nmore text', []), 'Fix the report totals');
-assert.equal(suggestCommitMessage('', [{ rel: 'a/b.txt' }]), 'Update b.txt');
-assert.equal(suggestCommitMessage('', [{ rel: 'a.txt' }, { rel: 'b.txt' }]), 'Update 2 files');
-assert.ok(suggestCommitMessage('x'.repeat(200), []).length <= 72);
 '@
 
         $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
