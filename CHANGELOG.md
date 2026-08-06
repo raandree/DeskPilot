@@ -14,8 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `N files changed  +A  −D` summary and one row per file with its status and its
   own added/deleted line counts. **Keep** saves exactly those files as a commit
   (with a description pre-filled from your prompt) so the work cannot be lost;
-  **Undo** reverts them after a confirm. The Git bar also shows a live count of
-  uncommitted changes for work made outside the newest turn.
+  **Undo** reverts them after a confirm.
+- **Changed files are visible in the file panel, not buried in Activity.** A
+  **Changes** list sits directly under the Git bar — `N changed files +A −B`, one
+  row per file, click to see the diff — and the file tree itself is colour-coded
+  the way an IDE explorer is: a changed file's name takes its status colour
+  (amber modified, green new, red deleted or conflicting) and carries a
+  one-letter status, and a folder containing changes is tinted and shows how many
+  changed files are inside, so a collapsed folder still declares itself.
 - **A diff viewer.** Clicking a changed file opens a unified diff with both old
   and new line numbers, colour-coded additions and removals, and a file list to
   step through the whole change set (`↑`/`↓`). A brand-new file is shown as all

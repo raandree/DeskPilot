@@ -16,16 +16,16 @@ function Get-DpGitChanges {
         Project-relative one and anything outside the Project is dropped - the
         Project stays the boundary, exactly as for the other file endpoints.
 
-        The reported list is capped while it is built, not afterwards, so a Project
-        holding a large un-ignored folder cannot make this call expensive on the
-        Host Server's single accept thread. Never throws: a missing folder, missing
-        git or non-repo are reported in the result fields.
+        The reported list is capped while it is built, not afterwards, and only the
+        files that are reported are measured, so a Project holding a large
+        un-ignored folder cannot make this call expensive on the Host Server's
+        single accept thread. Never throws: a missing folder, missing git or
+        non-repo are reported in the result fields.
     .PARAMETER Root
         The Project (Workspace) folder.
     .PARAMETER Paths
         Optional filter: only report these files (relative to Root or absolute
-        paths inside Root). A path outside Root is ignored. Supplying a filter also
-        expands untracked folders file by file, so an exact match is possible.
+        paths inside Root). A path outside Root is ignored.
     .PARAMETER Limit
         The maximum number of files to return. `fileCount` stays exact; the totals
         cover the returned files and `truncated` says the list was capped.
@@ -87,11 +87,9 @@ function Get-DpGitChanges {
         }
     }
 
-    # Expanding untracked folders file by file is only worth its cost when the
-    # caller asked about specific files; the repository-wide call reports an
-    # untracked folder as a single entry instead.
-    $untrackedMode = if ($null -ne $filter) { '--untracked-files=all' } else { '--untracked-files=normal' }
-    $porcelain = Invoke-DpGitCommand -Path $rootFull -Arguments @('status', '--porcelain', '-z', $untrackedMode)
+    # -uall lists untracked files individually. The collapsed form (-unormal)
+    # reports a bare folder, which is not something a diff or a commit can act on.
+    $porcelain = Invoke-DpGitCommand -Path $rootFull -Arguments @('status', '--porcelain', '-z', '--untracked-files=all')
     if (-not $porcelain.Ok) {
         $result.error = if ($porcelain.StdErr) { $porcelain.StdErr.Trim() } else { 'Could not read the Git status.' }
         return $result

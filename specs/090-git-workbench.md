@@ -23,10 +23,10 @@ and recovers from a conflict without ever opening a terminal.
 
 | Topic | Decision |
 | --- | --- |
-| Where changes appear | A Changes card under the **newest** assistant Message, plus a repository-wide count in the Git bar. Older Turns do not paint a card: their card would describe a working tree that has since moved on, and each card costs a Git read. |
+| Where changes appear | Three places, in descending prominence: a **Changes panel** listing the changed files directly under the Git bar (always visible, no click needed), **per-row highlighting in the file tree** (colour + status letter for a file, colour + count for a folder), and a **Changes card** under the newest assistant Message. A count alone is too easy to overlook, and the Activity panel is collapsed by default. Only the newest Turn paints a card: an older one would describe a working tree that has since moved on, and each card costs a Git read. |
 | Change source of truth | `git status --porcelain -z` for *which* files changed; `git diff HEAD --numstat -z` for line counts. Untracked files have no diff against HEAD, so their count is measured from the file (NUL byte ⇒ binary, 0 lines). |
 | Path frame | Git reports repository-relative paths; every other DeskPilot file endpoint speaks **Project-relative**. `Get-DpGitChanges` rebases each path and drops anything outside the Project, so a Project that is a subdirectory of a larger repository behaves like any other. |
-| Cost control | The repository-wide call collapses an untracked **folder** into one entry; only a path-filtered call expands file by file. The 500-file cap is applied **while the list is built**, and only reported files are measured. The Host Server accepts on one thread — an un-ignored `node_modules` must not become a stall. |
+| Cost control | The 500-file cap is applied **while the list is built**, and only reported files are measured. Untracked files are always listed individually — a collapsed folder record is not something a diff or a commit can act on — and git's own ignore rules keep that walk cheap. The Host Server accepts on one thread, so the bound has to be on our work, not on git's. |
 | Totals | `fileCount` is exact; `totalAdded` / `totalDeleted` cover the reported files, with `truncated` saying the list was capped. The SPA reads all four from the server rather than recomputing them from a capped list. |
 | "Keep" semantics | A commit. Nothing else makes an agent's work durable, and nothing else can be pushed. The user supplies the message; the previous user prompt is the suggestion. |
 | "Undo" semantics | Unchanged from the existing behaviour: tracked files are restored to HEAD, files the Turn created are deleted. Confirmed first. |
@@ -118,7 +118,10 @@ behind the session token; `{ error: { code, message } }` on failure): see
 
 Frontend (`web/`): `assets/diff.js` (pure parsing/formatting helpers), a Changes
 card in every assistant Message, a Diff viewer modal with a file list, and a
-Branch Wizard modal. The Git bar gains `Branches…` and a live change count.
+Branch Wizard modal. The Git bar gains `Branches…`; below it a Changes panel
+lists the changed files directly, and the file tree colours each row by its Git
+status. One cached read of `/api/git/changes` (shared in-flight, 20 s) feeds the
+panel and the tree, so they can never disagree.
 
 ## Failure modes & edge cases
 

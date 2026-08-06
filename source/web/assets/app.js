@@ -1359,7 +1359,7 @@ async function keepChanges(node, files, m, btn) {
         if (r && r.nothingToCommit) toast('Nothing to save — those changes are already committed.');
         else toast('Saved as ' + ((r && r.shortSha) || 'a commit') + '.' + (skipped ? ` ${skipped} file(s) skipped.` : ''));
         await refreshChangesCard(node, m);
-        refreshGitBar();
+        refreshExplorer();
     } catch (e) { toast(e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Keep'; } }
 }
@@ -1386,9 +1386,8 @@ async function undoTurnFiles(paths, btn, node) {
         if (r.removed && r.removed.length) parts.push(r.removed.length + ' removed');
         if (r.skipped && r.skipped.length) parts.push(r.skipped.length + ' skipped');
         toast(parts.length ? 'Undo: ' + parts.join(', ') + '.' : 'Nothing to undo.');
-        if (state.explorerPath) refreshExplorer();
         if (node) { node.classList.add('hidden'); node.innerHTML = ''; }
-        refreshGitBar();
+        refreshExplorer();
     } catch (e) { toast(e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Undo'; } }
 }
@@ -1399,7 +1398,9 @@ async function undoTurnFiles(paths, btn, node) {
 const diffView = { files: [], index: 0 };
 
 function openDiffViewer(files, selectRel) {
-    const list = asArray(files).map((f) => (typeof f === 'string' ? { rel: f } : f)).filter((f) => f && f.rel);
+    const list = asArray(files)
+        .map((f) => (typeof f === 'string' ? { rel: f } : f))
+        .filter((f) => f && f.rel && !f.directory);
     if (!list.length) { toast('Nothing to show.'); return; }
     diffView.files = list;
     const idx = list.findIndex((f) => f.rel === selectRel);
@@ -2833,7 +2834,9 @@ async function refreshExplorer(opts) {
     if (silent && _explorerBusy) return;
     _explorerBusy = true;
     const seq = ++_explorerSeq;
-    refreshGitBar(silent);
+    // Awaited, not fired: the Git bar's refresh is what loads the change set, and
+    // the tree paints a Git status per row, so it has to be in hand first.
+    await refreshGitBar(silent);
     // A silent refresh keeps the current tree visible while it rebuilds (no flicker);
     // an explicit one shows a loading hint.
     if (!silent) tree.innerHTML = '<div class="muted tiny explorer-msg">Loading…</div>';
@@ -3044,7 +3047,12 @@ function renderUpdatePanel() {
 async function refreshGitBar(silent) {
     const bar = $('git-bar');
     if (!bar) return;
-    if (!(state.settings && state.settings.workspaceFolder)) { bar.classList.add('hidden'); return; }
+    if (!(state.settings && state.settings.workspaceFolder)) {
+        bar.classList.add('hidden');
+        resetGitChanges();
+        renderChangesPanel();
+        return;
+    }
     bar.classList.remove('hidden');
     // On a silent (auto) refresh, keep the current bar visible while we re-check
     // so it doesn't flash "Checking Git…" every few seconds.
@@ -3060,6 +3068,13 @@ async function refreshGitBar(silent) {
         try { branchData = await api('GET', '/api/git/branches'); } catch { /* fall back to status */ }
     }
     renderGitBar(status, branchData, silent);
+    if (status && status.isRepo) {
+        await loadGitChanges(!silent);
+    }
+    else {
+        resetGitChanges();
+    }
+    renderChangesPanel();
 }
 
 function gitLegendText(def) {
@@ -3164,55 +3179,162 @@ function renderGitBar(status, branchData, silent) {
     branchBtn.title = 'Create, switch, delete, merge and sync branches';
     branchBtn.onclick = () => openBranchWizard();
     bar.append(branchBtn);
-
-    // A compact, always-visible summary of uncommitted work, so changes made
-    // outside the newest Turn are still reviewable.
-    const changesBtn = document.createElement('button');
-    changesBtn.className = 'btn btn-small git-changes-btn hidden';
-    changesBtn.onclick = () => openRepoChanges();
-    bar.append(changesBtn);
-    refreshGitChangeCount(changesBtn, !silent);
 }
 
-// The explorer re-renders the Git bar every few seconds, and the Host Server
-// handles requests on one thread, so the change count is cached: it paints from
-// the last reading immediately (no flicker, no cost) and only re-reads on an
-// explicit refresh or once the reading is stale.
-const gitChanges = { has: false, fileCount: 0, added: 0, deleted: 0, at: 0 };
-const GIT_CHANGE_MAX_AGE_MS = 20000;
+// The changed files, listed directly under the Git bar. A count alone is too
+// easy to miss, and the Activity panel is collapsed by default — this is the
+// surface that says "the agent touched these files" without being asked.
+function renderChangesPanel() {
+    const panel = $('git-changes');
+    if (!panel) return;
+    const files = gitChangeList();
+    if (!gitChanges.has || !files.length) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
 
-function paintGitChangeButton(btn) {
-    if (!btn) return;
-    if (!gitChanges.has || !gitChanges.fileCount) { btn.classList.add('hidden'); return; }
-    btn.classList.remove('hidden');
-    btn.textContent = `${gitChanges.fileCount} change${gitChanges.fileCount === 1 ? '' : 's'}`;
-    btn.title = `Review ${gitChanges.fileCount} changed file(s): +${gitChanges.added} / \u2212${gitChanges.deleted}`;
-}
+    panel.classList.remove('hidden');
+    panel.innerHTML = '';
 
-async function refreshGitChangeCount(btn, force) {
-    paintGitChangeButton(btn);
-    if (!force && gitChanges.at && (Date.now() - gitChanges.at) < GIT_CHANGE_MAX_AGE_MS) return;
-    let data;
-    try { data = await api('GET', '/api/git/changes'); } catch { return; }
-    gitChanges.at = Date.now();
-    if (!data || data.error || !data.files) { gitChanges.has = false; }
-    else {
-        gitChanges.has = true;
-        gitChanges.fileCount = Number(data.fileCount || data.files.length);
-        gitChanges.added = Number(data.totalAdded || 0);
-        gitChanges.deleted = Number(data.totalDeleted || 0);
+    const head = el('git-changes-head');
+    const title = el('git-changes-title');
+    title.textContent = `${gitChanges.fileCount} changed file${gitChanges.fileCount === 1 ? '' : 's'}`;
+    const add = el('changes-stat changes-add', 'span');
+    add.textContent = '+' + gitChanges.added;
+    const del = el('changes-stat changes-del', 'span');
+    del.textContent = '\u2212' + gitChanges.deleted;
+    const review = document.createElement('button');
+    review.className = 'btn btn-small git-changes-review';
+    review.type = 'button';
+    review.textContent = 'Review';
+    review.title = 'Open the diff viewer over every changed file';
+    review.onclick = () => openRepoChanges();
+    head.append(title, add, del, review);
+    panel.appendChild(head);
+
+    const list = el('git-changes-list');
+    const shown = files.slice(0, CHANGES_PANEL_LIMIT);
+    for (const f of shown) list.appendChild(buildChangeRow(f, files));
+    panel.appendChild(list);
+
+    if (files.length > shown.length) {
+        const more = document.createElement('button');
+        more.className = 'git-changes-more muted tiny';
+        more.type = 'button';
+        more.textContent = `…and ${files.length - shown.length} more`;
+        more.onclick = () => openRepoChanges();
+        panel.appendChild(more);
     }
-    paintGitChangeButton(btn);
+}
+
+// One shared read of "what changed" drives both the Git bar's count and the file
+// explorer's highlighting, so the badge and the tree can never disagree. The
+// explorer re-renders every few seconds and the Host Server handles requests on
+// one thread, so the reading is cached and concurrent callers share one request.
+const gitChanges = {
+    has: false, fileCount: 0, added: 0, deleted: 0, at: 0,
+    list: [],           // the API's file records, in order
+    files: new Map(),   // project-relative (lowercased) -> status
+    dirs: new Map(),    // ancestor folder -> number of changed files beneath it
+    newDirs: [],        // untracked folders; everything inside inherits the status
+};
+const GIT_CHANGE_MAX_AGE_MS = 20000;
+const CHANGES_PANEL_LIMIT = 12;
+let _gitChangesInflight = null;
+
+// Only real files can be diffed; a folder record (Git reports one for an
+// untracked directory) is kept for colouring the tree but never listed as
+// something to open.
+function gitChangeList() {
+    return gitChanges.list.filter((f) => f && f.rel && !f.directory);
+}
+
+function resetGitChanges() {
+    gitChanges.has = false;
+    gitChanges.fileCount = 0;
+    gitChanges.added = 0;
+    gitChanges.deleted = 0;
+    gitChanges.list = [];
+    gitChanges.files.clear();
+    gitChanges.dirs.clear();
+    gitChanges.newDirs = [];
+}
+
+function applyGitChanges(data) {
+    resetGitChanges();
+    if (!data || data.error || !data.files) return;
+    gitChanges.has = true;
+    gitChanges.fileCount = Number(data.fileCount || data.files.length);
+    gitChanges.added = Number(data.totalAdded || 0);
+    gitChanges.deleted = Number(data.totalDeleted || 0);
+    gitChanges.list = data.files.filter((f) => f && f.rel);
+    for (const f of data.files) {
+        const rel = String((f && f.rel) || '').replace(/\\/g, '/').replace(/\/+$/, '');
+        if (!rel) continue;
+        const key = rel.toLowerCase();
+        const status = (f && f.status) || 'modified';
+        gitChanges.files.set(key, status);
+        if (f && f.directory) gitChanges.newDirs.push({ key, status });
+        // Count the change against every ancestor, so a collapsed folder still
+        // shows that something inside it changed.
+        const parts = key.split('/');
+        for (let i = 1; i < parts.length; i++) {
+            const dir = parts.slice(0, i).join('/');
+            gitChanges.dirs.set(dir, (gitChanges.dirs.get(dir) || 0) + 1);
+        }
+    }
+}
+
+async function fetchGitChanges() {
+    if (!(state.settings && state.settings.workspaceFolder)) { resetGitChanges(); return gitChanges; }
+    let data;
+    try { data = await api('GET', '/api/git/changes'); } catch { return gitChanges; }
+    gitChanges.at = Date.now();
+    applyGitChanges(data);
+    return gitChanges;
+}
+
+async function loadGitChanges(force) {
+    const fresh = gitChanges.at && (Date.now() - gitChanges.at) < GIT_CHANGE_MAX_AGE_MS;
+    if (!force && fresh) return gitChanges;
+    if (_gitChangesInflight) return _gitChangesInflight;
+    _gitChangesInflight = fetchGitChanges();
+    try { return await _gitChangesInflight; }
+    finally { _gitChangesInflight = null; }
+}
+
+// Absolute path -> path relative to the selected Project, or null when outside.
+function projectRelPath(absPath) {
+    const root = String(state.explorerPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!root) return null;
+    const p = String(absPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+    if (p.length <= root.length + 1) return null;
+    if (p.slice(0, root.length).toLowerCase() !== root.toLowerCase()) return null;
+    if (p[root.length] !== '/') return null;
+    return p.slice(root.length + 1);
+}
+
+// The Git status to paint on an explorer row: the file's own status, the status
+// it inherits from an untracked folder above it, or 'contains' for a folder with
+// changes somewhere beneath.
+function gitStatusFor(absPath, isDir) {
+    if (!gitChanges.has) return null;
+    const rel = projectRelPath(absPath);
+    if (rel == null) return null;
+    const key = rel.toLowerCase();
+    const own = gitChanges.files.get(key);
+    if (own) return own;
+    for (const d of gitChanges.newDirs) {
+        if (key.startsWith(d.key + '/')) return d.status;
+    }
+    if (isDir && gitChanges.dirs.has(key)) return 'contains';
+    return null;
 }
 
 // Opens the diff viewer over every uncommitted file in the repository.
 async function openRepoChanges() {
-    let data;
-    try { data = await api('GET', '/api/git/changes'); }
-    catch (e) { toast(e.message); return; }
-    if (!data || data.error) { toast((data && data.error) || 'Could not read the changes.'); return; }
-    if (!data.files || !data.files.length) { toast('Nothing has changed since the last save.'); return; }
-    openDiffViewer(data.files, data.files[0].rel);
+    await loadGitChanges(true);
+    renderChangesPanel();
+    const files = gitChangeList();
+    if (!files.length) { toast('Nothing has changed since the last save.'); return; }
+    openDiffViewer(files, files[0].rel);
 }
 
 async function gitInit() {
@@ -4104,9 +4226,10 @@ async function buildTreeLevel(path, depth) {
 async function buildDirNode(ent, depth) {
     const li = el('tree-node tree-dir', 'li');
     const row = el('tree-row', 'button');
-    row.innerHTML = `<span class="tree-caret">▸</span><span class="tree-ico">📁</span><span class="tree-name"></span>`;
+    row.innerHTML = `<span class="tree-caret">▸</span><span class="tree-ico">📁</span><span class="tree-name"></span><span class="tree-status"></span>`;
     row.querySelector('.tree-name').textContent = ent.name;
     row.title = ent.path;
+    decorateTreeRow(li, row, gitStatusFor(ent.path, true), ent.path);
     let loaded = false;
     const childWrap = el('tree-children hidden');
 
@@ -4141,12 +4264,34 @@ async function buildDirNode(ent, depth) {
 function buildFileNode(ent) {
     const li = el('tree-node tree-file', 'li');
     const row = el('tree-row', 'button');
-    row.innerHTML = `<span class="tree-caret"></span><span class="tree-ico">📄</span><span class="tree-name"></span><span class="tree-size muted tiny">${formatBytes(ent.bytes)}</span>`;
+    row.innerHTML = `<span class="tree-caret"></span><span class="tree-ico">📄</span><span class="tree-name"></span><span class="tree-status"></span><span class="tree-size muted tiny">${formatBytes(ent.bytes)}</span>`;
     row.querySelector('.tree-name').textContent = ent.name;
     row.title = ent.path;
+    decorateTreeRow(li, row, gitStatusFor(ent.path, false), ent.path);
     row.onclick = () => openFileViewer(ent);
     li.appendChild(row);
     return li;
+}
+
+// Marks a row with its Git status, the way an IDE explorer does: a colour on the
+// name plus a one-letter status for a file, and a count of what changed beneath
+// for a folder. Without this the only sign that the agent touched a file is the
+// Activity panel, which is collapsed by default.
+function decorateTreeRow(li, row, status, absPath) {
+    if (!status) return;
+    li.classList.add('is-changed', 'chg-' + status);
+    const badge = row.querySelector('.tree-status');
+    if (!badge) return;
+    if (status === 'contains') {
+        const rel = projectRelPath(absPath);
+        const n = rel == null ? 0 : (gitChanges.dirs.get(rel.toLowerCase()) || 0);
+        badge.textContent = n ? String(n) : '•';
+        badge.title = n === 1 ? '1 changed file inside' : `${n} changed files inside`;
+    }
+    else {
+        badge.textContent = statusGlyph(status);
+        badge.title = statusLabel(status);
+    }
 }
 
 function formatBytes(n) {

@@ -11,6 +11,7 @@
     --border: #d6e2df;
     --danger: #b42318;
     --ok: #2e7d52;
+    --changed: #a86b12;
     --radius: 14px;
     --radius-sm: 9px;
     --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 28px rgba(8, 40, 36, .07);
@@ -35,6 +36,7 @@
         --border: #21424a;
         --danger: #f97066;
         --ok: #5fd0a0;
+        --changed: #e2b341;
         --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 10px 30px rgba(0, 0, 0, .4);
         --scrollbar-track: transparent;
         --scrollbar-thumb: #2b5159;
@@ -54,6 +56,7 @@
     --border: #21424a;
     --danger: #f97066;
     --ok: #5fd0a0;
+    --changed: #e2b341;
     --shadow: 0 1px 2px rgba(0, 0, 0, .25), 0 10px 30px rgba(0, 0, 0, .4);
     --scrollbar-track: transparent;
     --scrollbar-thumb: #2b5159;
@@ -582,6 +585,50 @@ button.tree-row {
 .tree-size {
     flex-shrink: 0;
     margin-left: 6px;
+}
+
+/* Git status on an explorer row: colour the name and show a one-letter status
+   (or, on a folder, how many changed files are inside). */
+.tree-status {
+    flex-shrink: 0;
+    min-width: 14px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+}
+
+.tree-node.is-changed > .tree-row > .tree-name {
+    font-weight: 600;
+}
+
+.chg-modified > .tree-row > .tree-name,
+.chg-modified > .tree-row > .tree-status,
+.chg-renamed > .tree-row > .tree-name,
+.chg-renamed > .tree-row > .tree-status,
+.chg-contains > .tree-row > .tree-name,
+.chg-contains > .tree-row > .tree-status {
+    color: var(--changed);
+}
+
+.chg-added > .tree-row > .tree-name,
+.chg-added > .tree-row > .tree-status,
+.chg-untracked > .tree-row > .tree-name,
+.chg-untracked > .tree-row > .tree-status {
+    color: var(--ok);
+}
+
+.chg-deleted > .tree-row > .tree-name,
+.chg-deleted > .tree-row > .tree-status,
+.chg-conflicted > .tree-row > .tree-name,
+.chg-conflicted > .tree-row > .tree-status {
+    color: var(--danger);
+}
+
+.chg-deleted > .tree-row > .tree-name {
+    text-decoration: line-through;
 }
 
 .tree-msg {
@@ -4172,14 +4219,63 @@ button.tree-row {
 }
 
 /* ===== Branch Wizard ===== */
-.git-branch-btn,
-.git-changes-btn {
+.git-branch-btn {
     margin-top: 0;
     width: auto;
+    margin-left: auto;
 }
 
-.git-branch-btn {
+/* ===== Changed files, listed under the Git bar ===== */
+.git-changes {
+    border-bottom: 1px solid var(--border);
+    padding: 6px 0 8px;
+}
+
+.git-changes-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 14px 6px;
+}
+
+.git-changes-title {
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.git-changes-review {
+    margin-top: 0;
+    width: auto;
     margin-left: auto;
+}
+
+.git-changes-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 30vh;
+    overflow-y: auto;
+}
+
+.git-changes-list .changes-row {
+    padding: 3px 14px;
+    border-bottom: 0;
+    font-size: 12px;
+}
+
+.git-changes-more {
+    display: block;
+    width: 100%;
+    padding: 4px 14px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.git-changes-more:hover {
+    color: var(--text);
 }
 
 .branch-modal {

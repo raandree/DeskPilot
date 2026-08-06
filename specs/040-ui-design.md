@@ -230,9 +230,20 @@ no Project is selected; refreshes after each Turn so files the agent creates
 appear. A **Git bar** at the top of the panel shows whether the Project folder is
 a Git repository: if not, a warning with a **git init** button; if so, the
 current branch and a dropdown to switch between local branches (switching
-refreshes the file tree), a merged-status legend, a **Branches…** button that
-opens the Branch Wizard, and a live **N changes** button that opens the Diff
-viewer over every uncommitted file.
+refreshes the file tree), a merged-status legend, and a **Branches…** button that
+opens the Branch Wizard.
+
+Beneath the Git bar, a **Changes panel** lists the changed files directly —
+`N changed files  +A  −B`, one row per file with its status badge, name, dimmed
+folder and counts, capped at 12 with an "…and N more", plus a **Review** button.
+Clicking a row opens the Diff viewer over the whole set. It is visible without
+any interaction, because a count alone is too easy to miss.
+
+The **tree itself is colour-coded** the way an IDE explorer is: a changed file's
+name takes its status colour (amber modified/renamed, green added/untracked, red
+deleted — struck through — and conflicted) and carries a one-letter status; a
+folder containing changes takes the amber tint and shows how many changed files
+are inside, so a collapsed branch of the tree still declares itself.
 
 ### 6c. Diff viewer
 

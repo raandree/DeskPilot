@@ -325,14 +325,13 @@ paths relative to the repository root, so when the Project is a subdirectory of 
 larger repository the paths are rebased and anything outside the Project is
 dropped.
 
-Without a `paths` filter, an untracked **folder** is reported as a single entry
-(`rel` ends with `/`, `directory: true`, no line count) rather than expanded file
-by file — expanding an un-ignored `node_modules` on the Host Server's single
-accept thread is exactly the cost this endpoint must not pay. Supplying `paths`
-switches to per-file expansion so an exact match is possible.
+Untracked files are listed **individually** (`--untracked-files=all`): the
+collapsed form reports a bare folder, which is not something a diff or a commit
+can act on. Git's own ignore rules keep that walk cheap.
 
-The list is capped at 500 files **while it is built** (`truncated: true`).
-`fileCount` is exact; `totalAdded` and `totalDeleted` cover the returned files.
+The list is capped at 500 files **while it is built** (`truncated: true`) and only
+reported files are measured. `fileCount` is exact; `totalAdded` and
+`totalDeleted` cover the returned files.
 
 ### `POST /api/git/commit`
 

@@ -23,6 +23,14 @@ delete, merge, and sync in plain language (*get* / *send* rather than pull/push)
 On a conflict outside the Merge Wizard, DeskPilot **generates a prompt** and shows
 it for review — it is never sent automatically.
 
+After first use the reviewer said the Git bar's "N changes" button was easy to
+overlook and that folder records did not work, so the changed files now appear
+**directly**: a Changes list under the Git bar, and per-row colour + status in the
+file tree (a folder shows how many changed files are inside). Untracked files are
+listed individually again — a collapsed folder record is not something a diff or a
+commit can act on — with the 500-file cap applied while building and only reported
+files measured.
+
 Nine new Private helpers plus seven routes under `/api/git/`. `Invoke-DpGitCommand`
 was hardened: closed stdin, `GIT_TERMINAL_PROMPT=0`, `GIT_LITERAL_PATHSPECS=1`,
 deadline-bounded async reads, process disposal, and a timeout on **every** call —

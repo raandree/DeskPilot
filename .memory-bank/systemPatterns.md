@@ -98,9 +98,14 @@ source: repository evidence
   them onto the Project and drops anything outside it. Every file endpoint then
   shares one path frame, and a Project inside a bigger repository is ordinary.
 - **Bound the work while building it, not after.** The change list caps as it is
-  assembled and only measures what it reports; the repository-wide read collapses
-  an untracked folder into one entry. A cap applied after the loop is a cap that
-  already paid for the work.
+  assembled and only measures what it reports. A cap applied after the loop is a
+  cap that already paid for the work.
+- **State the agent changed something without being asked.** A count behind a
+  button and a collapsed Activity panel both fail: the changed files are listed
+  under the Git bar and coloured in the tree, so the fact arrives unprompted.
+- **Report a file, not a folder.** Git can collapse an untracked directory into
+  one record; nothing downstream (diff, commit, undo) can act on it. Always list
+  untracked files individually and bound the result instead.
 - **A failed recovery is reported as failed.** An autostash restore lives in one
   place (`Restore-DpSyncStash`); when the pop fails it keeps `stashed` true, sets
   `stashPopConflict`, and names the stash. Telling a non-expert their work was

@@ -3816,12 +3816,17 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
             1..25 | ForEach-Object { [System.IO.File]::WriteAllText((Join-Path $script:wbBig 'vendor' "f$_.txt"), "x`n") }
         }
 
-        It 'collapses an untracked folder to one entry for the repository-wide call' {
+        It 'lists every file inside an untracked folder, not the folder itself' {
             $c = Get-DpGitChanges -Root $script:wbBig
-            $c.fileCount | Should -Be 1
-            $c.files[0].rel | Should -Be 'vendor/'
-            $c.files[0].directory | Should -BeTrue
-            $c.files[0].added | Should -Be 0
+            $c.fileCount | Should -Be 25
+            $c.files.rel | Should -Contain 'vendor/f7.txt'
+            $c.files.rel | Should -Not -Contain 'vendor/'
+            ($c.files | Where-Object { $_.directory }) | Should -BeNullOrEmpty
+        }
+
+        It 'counts the lines of each untracked file' {
+            $c = Get-DpGitChanges -Root $script:wbBig
+            ($c.files | Where-Object { $_.rel -eq 'vendor/f7.txt' }).added | Should -Be 1
         }
 
         It 'still matches an individual file when the caller filters by path' {
@@ -3832,7 +3837,7 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
         }
 
         It 'caps the reported list while keeping the file count exact' {
-            $c = Get-DpGitChanges -Root $script:wbBig -Paths @(1..25 | ForEach-Object { "vendor/f$_.txt" }) -Limit 10
+            $c = Get-DpGitChanges -Root $script:wbBig -Limit 10
             $c.fileCount | Should -Be 25
             $c.files.Count | Should -Be 10
             $c.truncated | Should -BeTrue
