@@ -62,13 +62,13 @@ function Get-DpBranchList {
 
     $remoteNames = @()
     if ($result.hasRemote) {
-        $remoteList = Invoke-DpGitCommand -Path $Path -Arguments @('for-each-ref', '--format=%(refname:short)', 'refs/remotes')
+        # Ask for the FULL ref name: %(refname:short) abbreviates
+        # refs/remotes/origin/HEAD to plain 'origin', which then looks like a
+        # branch called after the remote itself. Filter on the full name, then
+        # shorten it here.
+        $remoteList = Invoke-DpGitCommand -Path $Path -Arguments @('for-each-ref', '--format=%(refname)', 'refs/remotes')
         if ($remoteList.Ok) {
-            $remoteNames = @(
-                $remoteList.StdOut -split '\r?\n' |
-                    ForEach-Object { $_.Trim() } |
-                    Where-Object { $_ -and $_ -notlike '*/HEAD' }
-            )
+            $remoteNames = @(ConvertFrom-DpRemoteRefName -Line ($remoteList.StdOut -split '\r?\n'))
         }
     }
 
@@ -92,8 +92,8 @@ function Get-DpBranchList {
     if ($compareRef) {
         $ml = Invoke-DpGitCommand -Path $Path -Arguments @('branch', '--merged', $compareRef, '--format=%(refname:short)')
         if ($ml.Ok) { $mergedLocal = @($ml.StdOut -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
-        $mr = Invoke-DpGitCommand -Path $Path -Arguments @('branch', '-r', '--merged', $compareRef, '--format=%(refname:short)')
-        if ($mr.Ok) { $mergedRemote = @($mr.StdOut -split '\r?\n' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notlike '*/HEAD' }) }
+        $mr = Invoke-DpGitCommand -Path $Path -Arguments @('branch', '-r', '--merged', $compareRef, '--format=%(refname)')
+        if ($mr.Ok) { $mergedRemote = @(ConvertFrom-DpRemoteRefName -Line ($mr.StdOut -split '\r?\n')) }
     }
 
     $entries = [System.Collections.Generic.List[hashtable]]::new()

@@ -63,6 +63,14 @@ the ✨ suggestion against a real change set, and a Project inside a bigger
 repository). Spec 100 records the competitive gap analysis — the recommended next
 pieces are per-call Tool approval, an installer, and scheduled tasks.
 
+## Recent fix
+
+The Branch Wizard listed `origin` — the *remote* — as a Branch. Git abbreviates
+`refs/remotes/origin/HEAD` to plain `origin`, so the old `*/HEAD` filter on the
+short name never matched. Both remote reads now ask for `%(refname)` and go
+through `ConvertFrom-DpRemoteRefName`. The unit tests had mocked a string git
+never emits, so a real-clone test now backs them up.
+
 ## Previous focus
 
 DeskPilot remembering what it changed until the user decides: a pre-Turn

@@ -151,6 +151,16 @@ source: repository evidence
   editable box. An injected diff can then produce a misleading sentence and
   nothing else.
 
+- **Read git's full ref name, filter on that, shorten afterwards.**
+  `%(refname:short)` abbreviates `refs/remotes/origin/HEAD` to plain `origin`, so
+  a `*/HEAD` filter on the short name silently passes it through and the *remote*
+  appears in the Branch list. Ask for `%(refname)`, filter, then shorten. Git's
+  display forms are for humans; parse the canonical one.
+- **A mock can only be as right as your belief about the tool.** The branch-list
+  tests fed `origin/HEAD` into the mock — a string git never actually emits for
+  that ref — so they passed while the real output was wrong. Where a helper
+  parses another program's output, one test must run the real program.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

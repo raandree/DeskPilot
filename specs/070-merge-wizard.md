@@ -77,6 +77,11 @@ Backend helpers (each via `Invoke-DpGitCommand`, confined to
 - `Get-DpDefaultBranch` — resolve the Default Branch.
 - `Get-DpBranchList` — local + remote-only Branches with a `merged` flag (after an
   optional fetch), the current Branch, and the Default Branch.
+- `ConvertFrom-DpRemoteRefName` — shorten full remote refs to `<remote>/<branch>`
+  and drop every remote HEAD. Git's `%(refname:short)` abbreviates
+  `refs/remotes/origin/HEAD` to plain `origin`, so filtering on the short name
+  lists the *remote itself* as a Branch; the list is read with `%(refname)` and
+  filtered on the full name instead.
 - `Invoke-DpGitFetch` — best-effort fetch for badge accuracy.
 - `Get-DpMergePreview` — incoming commits + precondition flags (dirty, behind).
 - `Invoke-DpGitMerge` — capture the pre-merge sha; optional autofix; merge;

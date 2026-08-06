@@ -2796,8 +2796,9 @@ Describe 'Get-DpBranchList' {
             if ($j -eq 'remote') { return Ok "origin`n" }
             if ($j -match 'symbolic-ref') { return Ok "origin/main`n" }
             if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`nfeature`n" }
-            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/remotes') { return Ok "origin/main`norigin/feature`norigin/release`norigin/HEAD`n" }
-            if ($j -match 'branch -r --merged') { return Ok "origin/main`norigin/release`n" }
+            # Full ref names, exactly as git emits them for %(refname).
+            if ($j -match 'for-each-ref --format=%\(refname\) refs/remotes') { return Ok "refs/remotes/origin/HEAD`nrefs/remotes/origin/main`nrefs/remotes/origin/feature`nrefs/remotes/origin/release`n" }
+            if ($j -match 'branch -r --merged') { return Ok "refs/remotes/origin/HEAD`nrefs/remotes/origin/main`nrefs/remotes/origin/release`n" }
             if ($j -match 'branch --merged') { return Ok "main`n" }
             @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
         }
@@ -2812,6 +2813,24 @@ Describe 'Get-DpBranchList' {
         @($r.branches | Where-Object { $_.name -like '*HEAD*' }).Count | Should -Be 0
     }
 
+    It 'never lists the remote itself as a branch' {
+        # git abbreviates refs/remotes/origin/HEAD to plain 'origin', so a filter on
+        # the short name lets the remote through as a branch called 'origin'.
+        Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $true; branch = 'main'; detached = $false; branches = @('main'); root = 'C:\r'; error = $null } }
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`n" }
+            if ($j -match 'symbolic-ref') { return Ok "origin/main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname\) refs/remotes') { return Ok "refs/remotes/origin/HEAD`nrefs/remotes/origin/main`n" }
+            if ($j -match 'branch -r --merged') { return Ok "refs/remotes/origin/HEAD`nrefs/remotes/origin/main`n" }
+            if ($j -match 'branch --merged') { return Ok "main`n" }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Get-DpBranchList -Path $script:blDir
+        $r.branches.name | Should -Not -Contain 'origin'
+    }
+
     It 'fetches first when -Fetch is set and a remote exists' {
         Mock -CommandName Get-DpGitStatus -MockWith { @{ gitAvailable = $true; isRepo = $true; branch = 'main'; detached = $false; branches = @('main'); root = 'C:\r'; error = $null } }
         Mock -CommandName Invoke-DpGitFetch -MockWith { @{ ok = $true; hasRemote = $true; error = $null } }
@@ -2820,14 +2839,39 @@ Describe 'Get-DpBranchList' {
             if ($j -eq 'remote') { return Ok "origin`n" }
             if ($j -match 'symbolic-ref') { return Ok "origin/main`n" }
             if ($j -match 'for-each-ref --format=%\(refname:short\) refs/heads') { return Ok "main`n" }
-            if ($j -match 'for-each-ref --format=%\(refname:short\) refs/remotes') { return Ok "origin/main`n" }
-            if ($j -match 'branch -r --merged') { return Ok "origin/main`n" }
+            if ($j -match 'for-each-ref --format=%\(refname\) refs/remotes') { return Ok "refs/remotes/origin/main`n" }
+            if ($j -match 'branch -r --merged') { return Ok "refs/remotes/origin/main`n" }
             if ($j -match 'branch --merged') { return Ok "main`n" }
             @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
         }
         $r = Get-DpBranchList -Path $script:blDir -Fetch
         $r.fetched | Should -BeTrue
         Should -Invoke Invoke-DpGitFetch -Times 1
+    }
+}
+
+Describe 'ConvertFrom-DpRemoteRefName' {
+    It 'shortens a full remote ref to remote/branch' {
+        ConvertFrom-DpRemoteRefName -Line @('refs/remotes/origin/main') | Should -Be @('origin/main')
+    }
+    It 'keeps a branch name containing slashes intact' {
+        ConvertFrom-DpRemoteRefName -Line @('refs/remotes/origin/feature/build-scripts') | Should -Be @('origin/feature/build-scripts')
+    }
+    It 'drops the remote HEAD, which git would otherwise abbreviate to the remote name' {
+        ConvertFrom-DpRemoteRefName -Line @('refs/remotes/origin/HEAD', 'refs/remotes/origin/main') | Should -Be @('origin/main')
+    }
+    It 'drops the HEAD of every remote' {
+        $r = ConvertFrom-DpRemoteRefName -Line @('refs/remotes/origin/HEAD', 'refs/remotes/upstream/HEAD', 'refs/remotes/upstream/main')
+        $r | Should -Be @('upstream/main')
+    }
+    It 'keeps a branch whose name merely ends in HEAD' {
+        ConvertFrom-DpRemoteRefName -Line @('refs/remotes/origin/spearHEAD') | Should -Be @('origin/spearHEAD')
+    }
+    It 'ignores anything that is not a remote ref' {
+        ConvertFrom-DpRemoteRefName -Line @('refs/heads/main', '', '  ', 'origin/main') | Should -BeNullOrEmpty
+    }
+    It 'returns nothing for an empty listing' {
+        ConvertFrom-DpRemoteRefName -Line @() | Should -BeNullOrEmpty
     }
 }
 
@@ -4036,6 +4080,36 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
             $r.files | Should -Be @('inside.txt')
             (Get-DpGitChanges -Root $project).fileCount | Should -Be 0
             (Get-DpGitChanges -Root $script:wbSub).files.rel | Should -Contain 'docs/outside.txt'
+        }
+    }
+
+    Context 'a clone whose remote has a HEAD' {
+        BeforeAll {
+            $script:blRemote = Join-Path $TestDrive 'blRemote.git'
+            & git init -q --bare $script:blRemote 2>$null
+            & git -C $script:blRemote symbolic-ref HEAD refs/heads/main 2>$null
+            $script:blSeed = Join-Path $TestDrive 'blSeed'
+            New-WorkbenchRepo -Path $script:blSeed
+            [System.IO.File]::WriteAllText((Join-Path $script:blSeed 'a.txt'), "a`n")
+            & git -C $script:blSeed add . 2>$null
+            & git -C $script:blSeed commit -q -m 'init' 2>$null
+            & git -C $script:blSeed branch 'feature/build-scripts' 2>$null
+            & git -C $script:blSeed remote add origin $script:blRemote 2>$null
+            & git -C $script:blSeed push -q origin --all 2>$null
+            $script:blClone = Join-Path $TestDrive 'blClone'
+            & git clone -q $script:blRemote $script:blClone 2>$null
+        }
+
+        It 'does not list the remote itself as a branch' {
+            $r = Get-DpBranchList -Path $script:blClone
+            $r.isRepo | Should -BeTrue
+            $r.hasRemote | Should -BeTrue
+            $r.branches.name | Should -Not -Contain 'origin'
+        }
+
+        It 'lists a remote-only branch under its full remote/branch name' {
+            $r = Get-DpBranchList -Path $script:blClone
+            $r.branches.name | Should -Contain 'origin/feature/build-scripts'
         }
     }
 
