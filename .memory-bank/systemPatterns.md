@@ -160,6 +160,13 @@ source: repository evidence
   tests fed `origin/HEAD` into the mock — a string git never actually emits for
   that ref — so they passed while the real output was wrong. Where a helper
   parses another program's output, one test must run the real program.
+- **A display preference belongs on the machine, not in Settings.** The explorer
+  width joins the theme in `localStorage`: the Host Server gains nothing from
+  knowing it, and a per-machine value is the right scope for something that
+  depends on the monitor. Settings stays the one object that shapes a Turn.
+- **Clamp for display, remember what was asked for.** The explorer keeps the
+  requested width separately from the viewport-clamped one, so shrinking the
+  window and widening it again restores the user's choice instead of the clamp.
 
 ## Anti-patterns to avoid
 

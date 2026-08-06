@@ -2791,6 +2791,93 @@ function toggleExplorer() {
     else expandExplorer();
 }
 
+// ===== Explorer width =====
+// The explorer is a grid column, so resizing it is one custom property. The
+// chosen width lives in localStorage beside the theme: it is a per-machine
+// display preference the Host Server has no reason to know about.
+const EXPLORER_WIDTH_KEY = 'ad_explorer_w';
+const EXPLORER_WIDTH_DEFAULT = 320;
+const EXPLORER_WIDTH_MIN = 200;
+// What the user last asked for, before clamping. Kept separate so shrinking the
+// window and widening it again restores their width instead of the clamp.
+let explorerWidthWanted = EXPLORER_WIDTH_DEFAULT;
+
+function explorerWidthMax() {
+    return Math.max(EXPLORER_WIDTH_MIN, Math.round(window.innerWidth * 0.6));
+}
+
+function clampExplorerWidth(px) {
+    const n = Number(px);
+    if (!Number.isFinite(n)) return EXPLORER_WIDTH_DEFAULT;
+    return Math.min(explorerWidthMax(), Math.max(EXPLORER_WIDTH_MIN, Math.round(n)));
+}
+
+function applyExplorerWidth(px, opts) {
+    const remember = !(opts && opts.transient);
+    if (remember) {
+        const asked = Number(px);
+        // Never below the minimum, but deliberately not capped to the viewport:
+        // that cap is a display clamp, not what the user asked for.
+        if (Number.isFinite(asked)) explorerWidthWanted = Math.max(EXPLORER_WIDTH_MIN, Math.round(asked));
+    }
+    const width = clampExplorerWidth(px);
+    document.documentElement.style.setProperty('--explorer-w', width + 'px');
+    const handle = $('explorer-resize');
+    if (handle) {
+        handle.setAttribute('aria-valuenow', String(width));
+        handle.setAttribute('aria-valuemin', String(EXPLORER_WIDTH_MIN));
+        handle.setAttribute('aria-valuemax', String(explorerWidthMax()));
+    }
+    if (opts && opts.persist) localStorage.setItem(EXPLORER_WIDTH_KEY, String(width));
+    return width;
+}
+
+function wireExplorerResize() {
+    applyExplorerWidth(localStorage.getItem(EXPLORER_WIDTH_KEY) || EXPLORER_WIDTH_DEFAULT);
+    const handle = $('explorer-resize');
+    if (!handle) return;
+    let startX = 0;
+    let startWidth = EXPLORER_WIDTH_DEFAULT;
+
+    handle.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        startX = e.clientX;
+        startWidth = $('explorer').getBoundingClientRect().width;
+        handle.classList.add('is-dragging');
+        handle.setPointerCapture(e.pointerId);
+        document.body.classList.add('is-resizing');
+    });
+
+    handle.addEventListener('pointermove', (e) => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        // The panel is on the right edge, so dragging left widens it.
+        applyExplorerWidth(startWidth + (startX - e.clientX));
+    });
+
+    const endDrag = (e) => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        handle.releasePointerCapture(e.pointerId);
+        handle.classList.remove('is-dragging');
+        document.body.classList.remove('is-resizing');
+        applyExplorerWidth(explorerWidthWanted, { persist: true });
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+    handle.addEventListener('dblclick', () => applyExplorerWidth(EXPLORER_WIDTH_DEFAULT, { persist: true }));
+
+    handle.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 40 : 10;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); applyExplorerWidth(explorerWidthWanted + step, { persist: true }); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); applyExplorerWidth(explorerWidthWanted - step, { persist: true }); }
+        else if (e.key === 'Home') { e.preventDefault(); applyExplorerWidth(EXPLORER_WIDTH_DEFAULT, { persist: true }); }
+    });
+
+    // A narrower window can leave the chosen width past the new maximum; re-clamp
+    // for display without forgetting what the user asked for.
+    window.addEventListener('resize', () => applyExplorerWidth(explorerWidthWanted, { transient: true }));
+}
+
 // Sequence + busy guards so overlapping refreshes (a poll, a focus event, a
 // post-Turn refresh) never swap a stale tree into the DOM or stack background work.
 let _explorerSeq = 0;
@@ -6270,6 +6357,7 @@ function wireGlobal() {
     $('btn-files').onclick = () => toggleExplorer();
     $('explorer-refresh').onclick = () => refreshExplorer();
     wireExplorerAutoRefresh();
+    wireExplorerResize();
     $('btn-attach').onclick = () => $('file-input').click();
     $('file-input').addEventListener('change', (e) => {
         const files = Array.from(e.target.files || []);

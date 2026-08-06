@@ -114,11 +114,19 @@ body {
 }
 
 .app.with-explorer {
-    grid-template-columns: 280px 1fr 320px;
+    grid-template-columns: 280px 1fr var(--explorer-w, 320px);
+}
+
+/* While dragging the explorer's edge, keep the resize cursor everywhere and stop
+   the pointer selecting text it passes over. */
+body.is-resizing {
+    cursor: col-resize;
+    user-select: none;
 }
 
 /* ===== Project files explorer ===== */
 .explorer {
+    position: relative;
     background: var(--surface-2);
     border-left: 1px solid var(--border);
     display: flex;
@@ -129,6 +137,27 @@ body {
 
 .explorer.collapsed {
     display: none;
+}
+
+/* A grab strip straddling the panel's left border; the border stays the visible
+   line until the handle is hovered, focused or dragged. */
+.explorer-resize {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 7px;
+    height: 100%;
+    z-index: 5;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 120ms ease;
+}
+
+.explorer-resize:hover,
+.explorer-resize:focus-visible,
+.explorer-resize.is-dragging {
+    background: color-mix(in srgb, var(--accent) 55%, transparent);
+    outline: none;
 }
 
 .explorer-head {

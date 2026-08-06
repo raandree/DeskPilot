@@ -250,6 +250,14 @@ are inside, so a collapsed branch of the tree still declares itself. A file
 DeskPilot changed and you have not reviewed carries an accent edge, so "the agent
 did this" is distinguishable from "I did this".
 
+The panel is **resizable**: a grab strip on its left border drags it between 200
+px and 60 % of the window, double-click resets it to 320 px, and it is a focusable
+`separator` so `←`/`→` (with `Shift` for a bigger step) and `Home` work without a
+mouse. The width is one CSS custom property on the three-column grid, and it is
+remembered per machine in `localStorage` beside the theme — it is a display
+preference, not something the Host Server needs to know. Shrinking the window
+clamps the panel for display without forgetting the width that was asked for.
+
 ### 6c. Diff viewer
 
 A wide modal answering "what actually changed in this file?". A left rail lists

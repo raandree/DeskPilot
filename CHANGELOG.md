@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The files panel is resizable.** Drag its left edge to make it as wide as you
+  need (up to 60 % of the window), double-click the edge to snap back to the
+  default, or focus it and use `←`/`→` — `Shift` for bigger steps, `Home` to
+  reset. The width is remembered on this machine.
 - **Save all your changes at once, without knowing Git.** The Changes panel gains
   a **Save all…** button (also in the Branch Wizard when you have unsaved work,
   and in the command palette) that opens one dialog: it lists every uncommitted

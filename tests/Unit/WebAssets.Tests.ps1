@@ -19,6 +19,20 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         }
     }
 
+    It 'sizes the files panel from a custom property so it can be dragged' {
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $html | Should -Match 'id="explorer-resize"'
+        $html | Should -Match 'role="separator"'
+        # A hard-coded third column would make the drag handle do nothing.
+        $css | Should -Match ([regex]::Escape('grid-template-columns: 280px 1fr var(--explorer-w'))
+        $css | Should -Match ([regex]::Escape('.explorer-resize'))
+        $js | Should -Match ([regex]::Escape("setProperty('--explorer-w'"))
+        $js | Should -Match 'wireExplorerResize\(\)'
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'
