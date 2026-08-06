@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A model with no published rate no longer reads as free.** The engine prices a
+  turn from a table keyed by exact model id; a model newer than that table (for
+  example `claude-opus-5`) comes back with *no* price, and DeskPilot was showing
+  that as a confident `$0.0000 · 0 credits` — over a million tokens could look
+  free. Such a turn now says **cost unknown — no published rate for this model**,
+  session and all-time totals show a `≥` prefix and count how many turns could
+  not be priced, and the per-model list says **no rate** instead of `0 cr`. The
+  fix for the *number* is a rate for the model in the engine's price table; this
+  fix is DeskPilot no longer misreporting its absence.
+
 ### Added
 
 - **The files panel is resizable.** Drag its left edge to make it as wide as you

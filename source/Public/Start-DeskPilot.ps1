@@ -100,7 +100,7 @@ function Start-DeskPilot {
         Version         = $runningVersion
         Settings        = $persistedSettings
         Conversations   = $conversations
-        Usage           = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; byModel = @{} }
+        Usage           = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; unpricedTurns = 0; byModel = @{} }
         LifetimeUsage   = $lifetimeUsage
         # Persistent Agent Memory (durable notes about the user + environment),
         # injected into every Turn's system prompt and curated by the memory routes.

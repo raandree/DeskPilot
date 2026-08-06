@@ -674,11 +674,16 @@ Conversation summary.
         { "id": 2, "title": "Summarise key risks", "status": "in-progress" }
       ],
       "usage": { "promptTokens": 0, "completionTokens": 0, "totalTokens": 0,
-                 "costUSD": 0.0, "credits": 0.0 },
+                 "costUSD": 0.0, "credits": 0.0, "priced": true },
       "model": "claude-opus-4.8", "durationMs": 0, "createdUtc": "…" }
   ]
 }
 ```
+
+`priced` is `false` when the Engine has no published rate for the Model — its
+price table is keyed by exact Model id, so a Model newer than the table yields
+`null` cost and credits. DeskPilot stores those as `0.0` but keeps the flag, so
+the UI can say "cost unknown" instead of a confident `$0.0000`.
 
 ### `DELETE /api/conversations/{id}`
 
@@ -850,16 +855,21 @@ are rounded to 4 decimals and cost to 6 to avoid floating-point drift.
 ```json
 {
   "session":  { "promptTokens": 0, "completionTokens": 0, "totalTokens": 0,
-                "costUSD": 0.0, "credits": 0.0, "turns": 0 },
+                "costUSD": 0.0, "credits": 0.0, "turns": 0, "unpricedTurns": 0 },
   "lifetime": { "promptTokens": 0, "completionTokens": 0, "totalTokens": 0,
-                "costUSD": 0.0, "credits": 0.0, "turns": 0,
+                "costUSD": 0.0, "credits": 0.0, "turns": 0, "unpricedTurns": 0,
                 "sinceUtc": "2026-06-01T00:00:00Z" },
   "byModel": [ { "model": "claude-opus-4.8", "totalTokens": 0,
-                 "costUSD": 0.0, "credits": 0.0, "turns": 0 } ],
+                 "costUSD": 0.0, "credits": 0.0, "turns": 0, "unpricedTurns": 0 } ],
   "daily":   [ { "date": "2026-06-09", "credits": 0.31, "costUSD": 0.0031,
                  "totalTokens": 1200, "turns": 2 } ]
 }
 ```
+
+`unpricedTurns` counts the Turns whose Model the Engine had no rate for. Those
+Turns add nothing to `costUSD` and `credits`, so a non-zero count means the money
+figures are a **lower bound**, not the total. A counter written before this field
+existed reads back as `0`.
 
 ### `POST /api/usage/reset`
 

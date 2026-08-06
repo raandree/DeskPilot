@@ -74,6 +74,7 @@ function Get-DpStoppedTurnUsage {
                 4
             )
             iterations       = $calls
+            priced           = $null -ne (& $getValue $After 'CostUSD' $null)
             estimated        = $false
             estimateScope    = $null
             partial          = $true
@@ -94,6 +95,7 @@ function Get-DpStoppedTurnUsage {
             4
         )
         iterations       = 1
+        priced           = $null -ne (& $getValue $Estimate 'EstimatedInputCostUSD' $null)
         estimated        = $true
         estimateScope    = 'input-only'
         partial          = $true

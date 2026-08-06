@@ -27,7 +27,7 @@ function Import-DpLifetimeUsage {
         $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($raw)) { return $usage }
         $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
-        foreach ($key in @('promptTokens', 'completionTokens', 'totalTokens', 'turns')) {
+        foreach ($key in @('promptTokens', 'completionTokens', 'totalTokens', 'turns', 'unpricedTurns')) {
             if ($parsed.PSObject.Properties[$key]) { $usage[$key] = [int]$parsed.$key }
         }
         foreach ($key in @('costUSD', 'credits')) {

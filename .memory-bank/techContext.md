@@ -35,8 +35,17 @@ source: repository evidence
 ## Key integration facts (Engine API)
 
 - `Invoke-Shp -Prompt <text>` returns an object with `.Content`, `.Usage`,
-  `.CostUSD`, `.Credits`, `.ToolCalls`, `.FilesRead`, `.FilesWritten`,
-  `.CommandsRun`, `.QuestionsAsked`, `.History`, `.Reasoning`, `.ContentObject`.
+  `.CostUSD`, `.Credits`, `.Reasoning`, `.ToolCalls`, `.FilesRead`,
+  `.FilesWritten`, `.CommandsRun`, `.QuestionsAsked`, `.History`,
+  `.ContentObject`.
+- **Cost comes only from the Engine, and can be absent.** ShellPilot prices a
+  Turn from `data/PriceTable.psd1`, keyed by the **exact lowercased Model id**
+  with no family fallback (`$priceKey` tries the response's `ModelName` then the
+  requested `-Model`). A Model missing from that table yields `.CostUSD` and
+  `.Credits` of **`$null`** - measured live for `claude-opus-5`, which the 0.3.1
+  table does not list. Credits are derived (`costUSD / 0.01`), not reported by
+  the provider; no billing multiplier is exposed anywhere in the Engine. Fix a
+  missing rate upstream in ShellPilot, never by pricing in DeskPilot.
 - Tools are **on by default**; disabled per category with `-DisableBrowsing`,
   `-DisableFileAccess`, `-DisableTerminal`, `-DisableUserPrompts`,
   `-DisableUserTools`.

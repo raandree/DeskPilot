@@ -805,6 +805,23 @@ Describe 'ConvertFrom-DpEngineResult' {
         $result = [pscustomobject]@{ Content = 'x'; Iterations = 0; Usage = [pscustomobject]@{ PromptTokens = 50 } }
         (ConvertFrom-DpEngineResult -Result $result).usage.iterations | Should -Be 1
     }
+    It 'marks a Turn as priced when the Engine returned a cost' {
+        $result = [pscustomobject]@{ Content = 'x'; CostUSD = 0.0123; Credits = 1.23; Usage = [pscustomobject]@{ PromptTokens = 10 } }
+        (ConvertFrom-DpEngineResult -Result $result).usage.priced | Should -BeTrue
+    }
+    It 'marks a Turn as not priced when the Engine has no rate for the model' {
+        # ShellPilot returns $null - not 0 - when its price table has no entry for
+        # the model. Reporting that as $0.0000 would be a confident wrong number.
+        $result = [pscustomobject]@{ Content = 'x'; CostUSD = $null; Credits = $null; Usage = [pscustomobject]@{ PromptTokens = 656298; CompletionTokens = 10364 } }
+        $m = ConvertFrom-DpEngineResult -Result $result
+        $m.usage.priced | Should -BeFalse
+        $m.usage.costUSD | Should -Be 0.0
+        $m.usage.totalTokens | Should -Be 666662
+    }
+    It 'treats a genuine zero cost as priced' {
+        $result = [pscustomobject]@{ Content = 'x'; CostUSD = 0.0; Credits = 0.0; Usage = [pscustomobject]@{ PromptTokens = 1 } }
+        (ConvertFrom-DpEngineResult -Result $result).usage.priced | Should -BeTrue
+    }
     It 'returns an empty shape for a null result' {
         $m = ConvertFrom-DpEngineResult -Result $null
         $m.content | Should -Be ''
@@ -1397,6 +1414,52 @@ Describe 'Get-DpUsagePayload' {
         $p = Get-DpUsagePayload
         @($p.byModel).Count | Should -Be 1
         $p.byModel[0].model | Should -Be 'm1'
+    }
+    It 'reports no unpriced Turns for a counter that predates the field' {
+        $p = Get-DpUsagePayload
+        $p.session.unpricedTurns | Should -Be 0
+        $p.lifetime.unpricedTurns | Should -Be 0
+        $p.byModel[0].unpricedTurns | Should -Be 0
+    }
+}
+
+Describe 'Update-DpUsage' {
+    BeforeEach {
+        $script:DeskPilot = @{
+            Usage         = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; unpricedTurns = 0; byModel = @{} }
+            LifetimeUsage = New-DpLifetimeUsage
+            DataDir       = $null
+        }
+    }
+
+    It 'accrues a priced Turn without counting it as unpriced' {
+        Update-DpUsage -Usage @{ promptTokens = 10; completionTokens = 5; totalTokens = 15; costUSD = 0.01; credits = 1.0; priced = $true } -Model 'claude-opus-4.6'
+        $script:DeskPilot.Usage.costUSD | Should -Be 0.01
+        $script:DeskPilot.Usage.unpricedTurns | Should -Be 0
+        $script:DeskPilot.LifetimeUsage.unpricedTurns | Should -Be 0
+    }
+
+    It 'counts a Turn the Engine could not price, session-wide and per Model' {
+        Update-DpUsage -Usage @{ promptTokens = 656298; completionTokens = 10364; totalTokens = 666662; costUSD = 0.0; credits = 0.0; priced = $false } -Model 'claude-opus-5'
+        $script:DeskPilot.Usage.turns | Should -Be 1
+        $script:DeskPilot.Usage.unpricedTurns | Should -Be 1
+        $script:DeskPilot.Usage.byModel['claude-opus-5'].unpricedTurns | Should -Be 1
+        $script:DeskPilot.LifetimeUsage.unpricedTurns | Should -Be 1
+        # The tokens are still real and still counted; only the money is unknown.
+        $script:DeskPilot.Usage.totalTokens | Should -Be 666662
+    }
+
+    It 'treats a Turn with no priced flag as priced, so old callers are unchanged' {
+        Update-DpUsage -Usage @{ promptTokens = 1; completionTokens = 1; totalTokens = 2; costUSD = 0.5; credits = 50 } -Model 'm1'
+        $script:DeskPilot.Usage.unpricedTurns | Should -Be 0
+    }
+
+    It 'surfaces the unpriced count through the usage payload' {
+        Update-DpUsage -Usage @{ promptTokens = 1; completionTokens = 0; totalTokens = 1; costUSD = 0.0; credits = 0.0; priced = $false } -Model 'claude-opus-5'
+        $p = Get-DpUsagePayload
+        $p.session.unpricedTurns | Should -Be 1
+        $p.lifetime.unpricedTurns | Should -Be 1
+        ($p.byModel | Where-Object { $_.model -eq 'claude-opus-5' }).unpricedTurns | Should -Be 1
     }
 }
 

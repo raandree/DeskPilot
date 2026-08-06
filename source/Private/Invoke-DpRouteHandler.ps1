@@ -744,7 +744,7 @@ function Invoke-DpRouteHandler {
                     if ($state.DataDir) { Save-DpLifetimeUsage -Usage $state.LifetimeUsage -Directory $state.DataDir }
                 }
                 'session' {
-                    $state.Usage = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; byModel = @{} }
+                    $state.Usage = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; turns = 0; unpricedTurns = 0; byModel = @{} }
                 }
                 default {
                     Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_scope'; message = "Unknown reset scope '$scope'. Use 'lifetime' or 'session'." } }

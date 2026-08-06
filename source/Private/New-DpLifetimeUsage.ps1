@@ -20,6 +20,7 @@ function New-DpLifetimeUsage {
         costUSD          = 0.0
         credits          = 0.0
         turns            = 0
+        unpricedTurns    = 0
         sinceUtc         = [DateTime]::UtcNow.ToString('o')
         daily            = @()
     }

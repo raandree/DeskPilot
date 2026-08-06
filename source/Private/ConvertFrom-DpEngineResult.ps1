@@ -24,7 +24,7 @@ function ConvertFrom-DpEngineResult {
             content   = ''
             reasoning = $null
             activity  = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
-            usage     = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; iterations = 0 }
+            usage     = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; priced = $true; iterations = 0 }
             tasks     = @()
         }
     }
@@ -86,8 +86,15 @@ function ConvertFrom-DpEngineResult {
     $iterations = [int](Get-DpPropertyValue -InputObject $Result -Name @('Iterations', 'iterations', 'IterationCount') -Default 1)
     if ($iterations -lt 1) { $iterations = 1 }
 
-    $cost = [double](Get-DpPropertyValue -InputObject $Result -Name @('CostUSD', 'Cost') -Default 0.0)
-    $credits = [double](Get-DpPropertyValue -InputObject $Result -Name @('Credits', 'Credit') -Default 0.0)
+    # The Engine returns $null - not 0 - for cost and credits when its price table
+    # has no rate for the Model (a model newer than the table). Zero and "unpriced"
+    # are different facts, and collapsing them prints a confident $0.0000 next to a
+    # Turn that really cost money, so the distinction is carried to the UI.
+    $rawCost = Get-DpPropertyValue -InputObject $Result -Name @('CostUSD', 'Cost') -Default $null
+    $rawCredits = Get-DpPropertyValue -InputObject $Result -Name @('Credits', 'Credit') -Default $null
+    $priced = ($null -ne $rawCost) -or ($null -ne $rawCredits)
+    $cost = if ($null -ne $rawCost) { [double]$rawCost } else { 0.0 }
+    $credits = if ($null -ne $rawCredits) { [double]$rawCredits } else { 0.0 }
 
     # The in-Turn Task List. The Engine returns its authoritative final, normalised
     # list on result.TodoList (a third-party boundary name); re-normalise it through
@@ -111,6 +118,7 @@ function ConvertFrom-DpEngineResult {
             totalTokens      = $totalTokens
             costUSD          = $cost
             credits          = $credits
+            priced           = $priced
             iterations       = $iterations
         }
         tasks     = $tasks

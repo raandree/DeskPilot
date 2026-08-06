@@ -295,7 +295,7 @@ function maybeWarnBudget() {
 }
 
 function usageRows(block) {
-    return [
+    const rows = [
         ['Credits', formatCredits(block.credits), true],
         ['Cost', '$' + (block.costUSD || 0).toFixed(4), false],
         ['Tokens', (block.totalTokens || 0).toLocaleString(), false],
@@ -303,6 +303,12 @@ function usageRows(block) {
         ['Tokens out', (block.completionTokens || 0).toLocaleString(), false],
         ['Turns', (block.turns || 0).toLocaleString(), false],
     ];
+    // Turns whose model has no published rate contribute nothing to the money
+    // figures, so those figures are a floor, not the answer. Say so rather than
+    // letting a confident number under-report what was spent.
+    const unpriced = Number(block.unpricedTurns) || 0;
+    if (unpriced > 0) rows.push(['Not priced', unpriced.toLocaleString() + ' turn' + (unpriced === 1 ? '' : 's'), false]);
+    return rows;
 }
 
 // Render the top Models of this session (by tokens) into the usage popover. The
@@ -322,7 +328,10 @@ function renderTopModels(u) {
         const row = el('usage-model-row');
         const name = el('usage-model-name', 'span'); name.textContent = m.model;
         const meta = el('usage-model-meta muted tiny', 'span');
-        meta.textContent = (Number(m.totalTokens) || 0).toLocaleString() + ' tok · ' + formatCredits(m.credits) + ' cr';
+        const unpriced = Number(m.unpricedTurns) || 0;
+        meta.textContent = (Number(m.totalTokens) || 0).toLocaleString() + ' tok · ' +
+            (unpriced > 0 && !Number(m.credits) ? 'no rate' : formatCredits(m.credits) + ' cr');
+        if (unpriced > 0) meta.title = unpriced + ' turn(s) on this model have no published rate, so their cost is not counted.';
         row.append(name, meta);
         host.appendChild(row);
     }
@@ -704,16 +713,24 @@ function fmtConvDate(iso) {
     return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
 }
 
-// Sum the per-Message Usage (cost, credits, tokens) across a Conversation.
+// Sum the per-Message Usage (cost, credits, tokens) across a Conversation, and
+// count the Turns the Engine had no rate for - those add nothing to the money,
+// so the sums are a floor whenever unpriced is non-zero.
 function sumConversationUsage(messages) {
-    let costUSD = 0, credits = 0, totalTokens = 0;
+    let costUSD = 0, credits = 0, totalTokens = 0, unpriced = 0;
     for (const m of asArray(messages)) {
         const u = m.usage || {};
         costUSD += Number(u.costUSD) || 0;
         credits += Number(u.credits) || 0;
         totalTokens += Number(u.totalTokens) || 0;
+        if (u.priced === false) unpriced += 1;
     }
-    return { costUSD, credits, totalTokens };
+    return { costUSD, credits, totalTokens, unpriced };
+}
+
+// "$0.0000" is a lie when the model had no rate; "at least $x" is not.
+function formatCostFloor(costUSD, unpriced) {
+    return (unpriced > 0 ? '\u2265 $' : '$') + (Number(costUSD) || 0).toFixed(4);
 }
 
 // A small read-only popover with a Conversation's metadata, including the
@@ -750,8 +767,8 @@ async function showConversationDetails(summary, anchor) {
     try {
         const conv = await api('GET', '/api/conversations/' + summary.id);
         const u = sumConversationUsage(conv.messages);
-        setVal('Cost', '$' + u.costUSD.toFixed(4));
-        setVal('Credits', formatCredits(u.credits));
+        setVal('Cost', formatCostFloor(u.costUSD, u.unpriced));
+        setVal('Credits', formatCredits(u.credits) + (u.unpriced ? '+' : ''));
         setVal('Tokens', u.totalTokens.toLocaleString());
     } catch {
         setVal('Cost', '—'); setVal('Credits', '—'); setVal('Tokens', '—');
@@ -823,7 +840,7 @@ function computeSessionInfo(conv) {
     return {
         id: conv && conv.id,
         modelId: (model && model.id) || (conv && conv.model) || (state.settings && state.settings.model) || state.defaultModel || 'Default',
-        credits: usage.credits, cost: usage.costUSD, turns: assistants.length,
+        credits: usage.credits, cost: usage.costUSD, unpriced: usage.unpriced, turns: assistants.length,
         measured, maxTokens, maxOutput, pct, messagesEst, overheadEst,
         compactedUtc: conv && conv.compactedUtc,
     };
@@ -881,13 +898,20 @@ function fillSessionPopover(conv) {
 
     const costRow = el('session-row session-cost');
     const ck = el('session-k', 'span'); ck.textContent = 'Session cost';
-    const cv = el('session-v', 'span'); cv.textContent = '⚡ ' + formatCredits(info.credits) + ' credits';
+    const cv = el('session-v', 'span'); cv.textContent = '⚡ ' + formatCredits(info.credits) + (info.unpriced ? '+' : '') + ' credits';
     costRow.append(ck, cv);
     pop.appendChild(costRow);
 
     const costSub = el('session-sub muted tiny');
-    costSub.textContent = '$' + info.cost.toFixed(4) + ' · ' + info.turns + ' turn' + (info.turns === 1 ? '' : 's');
+    costSub.textContent = formatCostFloor(info.cost, info.unpriced) + ' · ' + info.turns + ' turn' + (info.turns === 1 ? '' : 's');
     pop.appendChild(costSub);
+
+    if (info.unpriced) {
+        const warn = el('session-sub muted tiny');
+        warn.textContent = info.unpriced + ' turn' + (info.unpriced === 1 ? '' : 's') +
+            ' could not be priced — there is no published rate for that model, so its cost is missing from the total.';
+        pop.appendChild(warn);
+    }
 
     const block = el('session-block');
     const bh = el('session-block-head'); bh.textContent = 'Context window';
@@ -1753,9 +1777,16 @@ function renderUsage(node, m) {
     const u = m.usage || {};
     const bits = [];
     if (u.totalTokens) bits.push(`${u.estimated ? '~' : ''}${u.totalTokens.toLocaleString()} ${u.estimated ? 'input ' : ''}tokens`);
-    if (u.costUSD) bits.push(`${u.estimated ? '~' : ''}$${u.costUSD.toFixed(4)}`);
-    if (u.credits) bits.push(`${u.estimated ? '~' : ''}${u.credits} credits${u.estimateScope === 'input-only' ? ' (input estimate)' : ''}`);
-    if (u.estimated && !u.totalTokens && !u.costUSD && !u.credits) bits.push('Usage estimate unavailable');
+    // priced === false means the Engine has no rate for this model, not that the
+    // Turn was free. Printing $0.0000 there would be a confident wrong number.
+    if (u.priced === false) {
+        bits.push('cost unknown \u2014 no published rate for this model');
+    }
+    else {
+        if (u.costUSD) bits.push(`${u.estimated ? '~' : ''}$${u.costUSD.toFixed(4)}`);
+        if (u.credits) bits.push(`${u.estimated ? '~' : ''}${u.credits} credits${u.estimateScope === 'input-only' ? ' (input estimate)' : ''}`);
+        if (u.estimated && !u.totalTokens && !u.costUSD && !u.credits) bits.push('Usage estimate unavailable');
+    }
     if (m.model) bits.push(escapeHtml(m.model));
     if (m.durationMs) bits.push(`${(m.durationMs / 1000).toFixed(1)}s`);
     if (!bits.length) { node.classList.add('hidden'); return; }

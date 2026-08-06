@@ -167,6 +167,14 @@ source: repository evidence
 - **Clamp for display, remember what was asked for.** The explorer keeps the
   requested width separately from the viewport-clamped one, so shrinking the
   window and widening it again restores the user's choice instead of the clamp.
+- **Unknown is not zero.** The Engine returns `$null` cost when its price table
+  has no rate for the Model; DeskPilot used to coerce that to `0.0` and print
+  `$0.0000`, so a million-token Turn read as free. The boundary now carries a
+  `priced` flag and the counters carry `unpricedTurns`, so a money figure that is
+  a floor says so. A confident wrong number is worse than an admitted gap.
+- **Pricing belongs to the Engine.** DeskPilot never hard-codes a rate; a missing
+  price is fixed upstream in ShellPilot's `data/PriceTable.psd1`. Mirroring the
+  table here would fork the number that matters most and guarantee drift.
 
 ## Anti-patterns to avoid
 

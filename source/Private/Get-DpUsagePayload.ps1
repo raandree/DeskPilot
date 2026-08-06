@@ -19,11 +19,12 @@ function Get-DpUsagePayload {
     $byModel = @($session.byModel.Keys | ForEach-Object {
             $entry = $session.byModel[$_]
             @{
-                model       = $_
-                totalTokens = $entry.totalTokens
-                costUSD     = $entry.costUSD
-                credits     = if ($entry.ContainsKey('credits')) { $entry.credits } else { 0.0 }
-                turns       = if ($entry.ContainsKey('turns')) { $entry.turns } else { 0 }
+                model         = $_
+                totalTokens   = $entry.totalTokens
+                costUSD       = $entry.costUSD
+                credits       = if ($entry.ContainsKey('credits')) { $entry.credits } else { 0.0 }
+                turns         = if ($entry.ContainsKey('turns')) { $entry.turns } else { 0 }
+                unpricedTurns = if ($entry.ContainsKey('unpricedTurns')) { $entry.unpricedTurns } else { 0 }
             }
         })
 
@@ -50,6 +51,7 @@ function Get-DpUsagePayload {
             costUSD          = $session.costUSD
             credits          = $session.credits
             turns            = $session.turns
+            unpricedTurns    = if ($session.ContainsKey('unpricedTurns')) { $session.unpricedTurns } else { 0 }
         }
         lifetime = @{
             promptTokens     = $life.promptTokens
@@ -58,6 +60,7 @@ function Get-DpUsagePayload {
             costUSD          = $life.costUSD
             credits          = $life.credits
             turns            = $life.turns
+            unpricedTurns    = if ($life.ContainsKey('unpricedTurns')) { $life.unpricedTurns } else { 0 }
             sinceUtc         = $life.sinceUtc
         }
         byModel  = $byModel
