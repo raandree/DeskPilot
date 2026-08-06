@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Undoing a file now clears it from the review list.** The diff viewer kept the
+  file list it opened with, so after you confirmed an undo the file was still
+  listed, still showed its old diff, and still offered a second **Undo this
+  file** for a change that was already gone. The viewer now re-reads the change
+  set after every Keep or Undo: a file that no longer differs drops out, the
+  selection moves to the next file, and the viewer closes when nothing is left
+  to review. A file put back through Git also stops being reported as an
+  unreviewed DeskPilot change.
 - **A model with no published rate no longer reads as free.** The engine prices a
   turn from a table keyed by exact model id; a model newer than that table (for
   example `claude-opus-5`) comes back with *no* price, and DeskPilot was showing

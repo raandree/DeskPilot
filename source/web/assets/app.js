@@ -3,6 +3,7 @@ import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.j
 import {
     newFileRows,
     parseUnifiedDiff,
+    reconcileDiffFiles,
     splitRelPath,
     statusGlyph,
     statusLabel,
@@ -1374,7 +1375,10 @@ async function undoTurnFiles(paths, btn, node) {
         if (r.skipped && r.skipped.length) parts.push(r.skipped.length + ' skipped');
         toast(parts.length ? 'Undo: ' + parts.join(', ') + '.' : 'Nothing to undo.');
         if (node) { node.classList.add('hidden'); node.innerHTML = ''; }
-        refreshExplorer();
+        gitChanges.at = 0;
+        aiChanges.at = 0;
+        await refreshExplorer();
+        await refreshDiffViewer();
     } catch (e) { toast(e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Undo'; } }
 }
@@ -1401,6 +1405,35 @@ function openDiffViewer(files, selectRel) {
 function closeDiffViewer() {
     $('diff-backdrop').classList.add('hidden');
     $('diff-modal').classList.add('hidden');
+}
+
+function diffViewerIsOpen() {
+    return !$('diff-modal').classList.contains('hidden');
+}
+
+// What the change sets currently hold for a path, or null when nothing differs
+// any more. The pending set wins: its record carries the pre-Turn snapshot the
+// viewer diffs against.
+function changeRecordFor(rel) {
+    const key = String(rel || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    if (!key) return null;
+    const pending = aiChanges.files.get(key);
+    if (pending && pending.status !== 'unchanged') return pending;
+    return gitChangeList().find((f) => String(f.rel).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === key) || null;
+}
+
+// Keep and Undo change the working tree under an open viewer. Re-derive its list
+// from the refreshed change sets so an undone file stops being listed (and stops
+// offering a second undo), and close the viewer when nothing is left to review.
+// Callers must refresh the change sets first.
+async function refreshDiffViewer() {
+    if (!diffViewerIsOpen()) return;
+    const next = reconcileDiffFiles(diffView.files, diffView.index, changeRecordFor);
+    if (!next.files.length) { closeDiffViewer(); return; }
+    diffView.files = next.files;
+    diffView.index = next.index;
+    renderDiffFileList();
+    await loadDiffFile();
 }
 
 function renderDiffFileList() {
@@ -3570,6 +3603,7 @@ async function afterChangeDecision() {
     gitChanges.at = 0;
     await refreshExplorer();
     renderThread();
+    await refreshDiffViewer();
 }
 
 // ===== Save (one commit over every uncommitted file) =====

@@ -175,6 +175,16 @@ source: repository evidence
 - **Pricing belongs to the Engine.** DeskPilot never hard-codes a rate; a missing
   price is fixed upstream in ShellPilot's `data/PriceTable.psd1`. Mirroring the
   table here would fork the number that matters most and guarantee drift.
+- **An open modal is a stale snapshot until it re-reads.** The diff viewer opens
+  with the change set it was handed; Keep, Undo and Save all move the working
+  tree underneath it. Every action that mutates the tree now re-derives the
+  viewer from the refreshed change sets (`reconcileDiffFiles`) instead of
+  trusting the list it opened with. The sidebar refreshed and the modal did not,
+  so the same file was simultaneously gone and still listed.
+- **An undo has to clear every list that claims the file changed.** Reverting a
+  file through `/api/git/restore` now also drops it from the pending change set,
+  the way the commit route does. Restoring the bytes but leaving the record
+  behind keeps offering an undo for work that no longer exists.
 
 ## Anti-patterns to avoid
 

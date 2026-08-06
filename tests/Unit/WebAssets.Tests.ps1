@@ -110,6 +110,61 @@ assert.match(statusLabel('conflicted'), /conflict/i);
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
+    It 'drops a file from the diff viewer once it no longer differs' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { reconcileDiffFiles } = await import(pathToFileURL(process.argv[1]).href);
+
+// The viewer opens with a snapshot of the change set; Keep, Undo and Save all
+// move the working tree underneath it.
+const a = { rel: 'a.txt', status: 'modified' };
+const c = { rel: 'c.txt', status: 'added' };
+const current = new Map([['a.txt', a], ['c.txt', c]]);
+const lookup = (rel) => current.get(rel) || null;
+const files = [{ rel: 'a.txt' }, { rel: 'b.txt' }, { rel: 'c.txt' }];
+
+// The fresh record replaces the stale one: it carries the snapshot the diff is
+// taken against, so keeping the old object would show the wrong comparison.
+assert.deepEqual(
+    reconcileDiffFiles([{ rel: 'a.txt', status: 'untracked', snapshotSha: 'old' }], 0, lookup),
+    { files: [a], index: 0 });
+
+// The selected file was undone -> land on the next survivor, not back at the top.
+assert.deepEqual(reconcileDiffFiles(files, 1, lookup), { files: [a, c], index: 1 });
+
+// The selection survives -> stay on it.
+assert.deepEqual(reconcileDiffFiles(files, 2, lookup), { files: [a, c], index: 1 });
+
+// Nothing left after the undone selection -> clamp to the last survivor.
+assert.deepEqual(reconcileDiffFiles([{ rel: 'a.txt' }, { rel: 'b.txt' }], 1, lookup), { files: [a], index: 0 });
+
+// Nothing survives -> an empty list, so the caller knows to close the viewer.
+assert.deepEqual(reconcileDiffFiles([{ rel: 'b.txt' }], 0, lookup), { files: [], index: 0 });
+
+// Junk in, no throw out.
+assert.deepEqual(reconcileDiffFiles(null, 0, lookup), { files: [], index: 0 });
+assert.deepEqual(reconcileDiffFiles([{ rel: '' }, null], 0, lookup), { files: [], index: 0 });
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+    }
+
+    It 'refreshes the open diff viewer after a keep or undo' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # Without this the viewer keeps listing a file that has already been put
+        # back, and offers a second undo for a change that no longer exists.
+        $js | Should -Match 'reconcileDiffFiles'
+        $js | Should -Match 'async function refreshDiffViewer\(\)'
+        $js | Should -Match 'await refreshDiffViewer\(\)'
+    }
+
     It 'extracts clipboard files without intercepting text-only paste data' {
         $modulePath = Join-Path $script:webRoot 'assets' 'attachments.js'
         $nodeScript = @'

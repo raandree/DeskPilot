@@ -10,66 +10,56 @@ source: repository evidence
 
 ## Current focus
 
-**A non-expert can now save their work (`ai/git-workbench`, 2026-08-06).** The
-Git Workbench shipped Keep and Undo but no way to *commit*: `POST /api/git/commit`
-existed and no line of the SPA called it. So the target user could review the
-agent's edits and put them back, but nothing they kept ever became durable, and
-Sync and Merge stayed permanently blocked on a dirty working tree.
+**An open modal has to re-read the change set (`ai/git-workbench`, 2026-08-06).**
+The user reported that undoing a file "sometimes doesn't work": they confirmed the
+undo and the file was still listed, still showed its old diff, and still offered
+another **Undo this file**. Nothing was wrong with the working tree — the sidebar
+had already updated. `diffView.files` was a snapshot taken when the viewer opened
+and nothing re-derived it.
 
-DeskPilot now has a **Save** action — its user-facing word for a commit. One
-modal over the whole Project: every uncommitted file with its `+`/`−` counts, an
-editable one-line description prefilled from the change set, and one button that
-commits the lot. Reachable from the Changes panel (**Save all…**), the Branch
-Wizard when the tree is dirty, and the command palette. Per-file and per-hunk
-staging stay out — that is precisely the vocabulary this surface removes.
+New pure helper `reconcileDiffFiles` in `web/assets/diff.js` rebuilds the viewer's
+list from the current change sets: files that no longer differ drop out, survivors
+are replaced by their **fresh** record (the stale one carries the wrong
+`snapshotSha`, so the diff would be taken against the wrong base), the selection
+follows its file or moves to the next survivor, and an empty result tells the
+caller to close the viewer. `refreshDiffViewer()` now runs after every Keep and
+Undo.
 
-A ✨ button beside the description asks the Model to write it, the way GitHub
-Copilot's commit box does (`POST /api/git/commit/message`): a pure-reasoning Turn
-with every Tool disabled, prompted with the change set plus a bounded diff
-excerpt fenced as data rather than instructions, cleaned to one line by the same
-cleaner the auto-title uses. On an explicit click only, and it fills the box
-rather than saving — the user still approves the words.
+The same defect had a backend half: `POST /api/git/restore` put the bytes back but
+left the file in the pending change set, so a Git-path undo kept it listed as an
+unreviewed DeskPilot change. It now clears exactly what went back, the way the
+commit route already did.
 
-Two backend corrections came with it. `git add -A` without a pathspec stages the
-**whole repository**, so a Project inside a larger repository was pulling the
-rest of it into the commit; it is now `git add -A -- .`. And the route clears
-exactly the files it committed from the pending change set, because a committed
-file is a reviewed file — otherwise DeskPilot kept calling a saved file
-unreviewed and offered an undo that now contradicts history.
-
-Before this: the pre-Turn snapshot and pending change set, and before that the
-Git Workbench itself (merge/branch/sync wizards, diff viewer, conflict prompt).
+Before this: an unpriced Model reading as `$0.0000`, and before that the **Save**
+action — DeskPilot's user-facing word for a commit.
 
 ## Verification
 
-- `tests/Unit/GitCommitRoute.Tests.ps1` green (10/10): a bulk save commits
-  everything and reports it Project-relative; a committed file leaves the pending
-  set and the store is persisted; a partial commit leaves the other file pending;
-  an empty message is refused without touching the pending set; the suggestion
-  route returns one clean line, frees the Runspace, reports an Engine failure and
-  an unusable answer as 502s, and spends no Turn on a clean tree or while another
-  Turn is running.
-- `New-DpCommitMessagePrompt` covered for the file list, the caps on both axes,
-  binary files, the data-not-instructions fencing, and an empty change set.
-- Helper coverage extended: `Invoke-DpGitCommit` reports the committed files, and
-  a Project that is a subdirectory saves only its own file while the sibling
-  folder's change survives.
-- Full Sampler build + Pester green.
+- `reconcileDiffFiles` covered under Node: the fresh record replaces the stale
+  one, an undone selection lands on the next survivor, a surviving selection
+  stays put, a trailing undone selection clamps to the last survivor, an empty
+  result signals "close the viewer", and junk input does not throw.
+- A structural guard asserts the wiring exists in `app.js` — the pure helper
+  passing on its own would not prove the viewer ever calls it.
+- New `tests/Unit/GitRestoreRoute.Tests.ps1` (3/3): the route reverts a tracked
+  file, drops it from the pending set and persists the store, and leaves a file
+  pending when the restore skipped it.
+- Full unit suite **565/565**, exit 0.
 
 ## Next step
 
-Live-smoke the Save modal in the browser (Changes panel, Branch Wizard, palette,
-the ✨ suggestion against a real change set, and a Project inside a bigger
-repository). Spec 100 records the competitive gap analysis — the recommended next
-pieces are per-call Tool approval, an installer, and scheduled tasks.
+Live-smoke the fix in the browser: open the diff viewer over several changed
+files, undo one from the footer, and confirm it leaves the rail while the
+selection moves on — then undo the last one and confirm the viewer closes.
+Spec 100 records the competitive gap analysis; the recommended next pieces are
+per-call Tool approval, an installer, and scheduled tasks.
 
 ## Recent fix
 
-The Branch Wizard listed `origin` — the *remote* — as a Branch. Git abbreviates
-`refs/remotes/origin/HEAD` to plain `origin`, so the old `*/HEAD` filter on the
-short name never matched. Both remote reads now ask for `%(refname)` and go
-through `ConvertFrom-DpRemoteRefName`. The unit tests had mocked a string git
-never emits, so a real-clone test now backs them up.
+An unpriced Model read as a confident `$0.0000 · 0 credits`. The Engine returns
+`$null` when its price table has no rate for the Model id; DeskPilot coerced that
+to zero. The boundary now carries a `priced` flag and the counters carry
+`unpricedTurns`, so a floor says so.
 
 ## Previous focus
 
