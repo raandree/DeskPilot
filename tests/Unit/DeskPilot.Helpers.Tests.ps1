@@ -3926,12 +3926,14 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
             $r = Invoke-DpGitCommit -Root $script:wbA -Message 'keep the new file' -Paths @('brand-new.txt')
             $r.committed | Should -BeTrue
             $r.shortSha | Should -Match '^[0-9a-f]{7}$'
+            $r.files | Should -Be @('brand-new.txt')
             (Get-DpGitChanges -Root $script:wbA).files.rel | Should -Not -Contain 'brand-new.txt'
         }
 
         It 'commits the rest of the working tree' {
             $r = Invoke-DpGitCommit -Root $script:wbA -Message 'keep the edit'
             $r.committed | Should -BeTrue
+            $r.files | Should -Be @('tracked.txt')
             (Get-DpGitChanges -Root $script:wbA).fileCount | Should -Be 0
         }
 
@@ -3979,6 +3981,15 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
             $d = Get-DpGitDiff -Root (Join-Path $script:wbSub 'app') -Path $rel
             $d.error | Should -BeNullOrEmpty
             $d.diff | Should -Match 'two'
+        }
+
+        It 'saves everything inside the Project and nothing outside it' {
+            $project = Join-Path $script:wbSub 'app'
+            $r = Invoke-DpGitCommit -Root $project -Message 'save the project'
+            $r.committed | Should -BeTrue
+            $r.files | Should -Be @('inside.txt')
+            (Get-DpGitChanges -Root $project).fileCount | Should -Be 0
+            (Get-DpGitChanges -Root $script:wbSub).files.rel | Should -Contain 'docs/outside.txt'
         }
     }
 

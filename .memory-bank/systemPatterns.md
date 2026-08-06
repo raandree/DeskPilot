@@ -124,6 +124,24 @@ source: repository evidence
   Its wording ("do not run git") is a guardrail, not a control - the real
   injection surface is the file content the agent then reads.
 
+- **A backend route nobody calls is not a feature.** `POST /api/git/commit`
+  shipped with the Git Workbench, was documented, and was tested — and no line of
+  the SPA ever called it, so the target user had Keep and Undo but no way to make
+  anything durable. Trace every user-facing promise to the click that reaches it.
+- **`git add -A` has no boundary; the Project does.** Without a pathspec, `add -A`
+  stages the whole repository, so a Project inside a larger repository silently
+  commits its siblings. Every bulk git write carries `-- .` or an explicit path
+  list, the same way every read rebases onto the Project.
+- **A committed file is a reviewed file.** Committing clears exactly the files it
+  wrote from the pending change set. Leaving them would keep calling a saved file
+  unreviewed and offer an undo that now contradicts history — two panels
+  disagreeing about the same file is worse than either panel being empty.
+- **Prefill the field that stops the user.** A commit message is mandatory and is
+  the exact step a non-expert stalls on, so the box opens with an honest,
+  editable suggestion derived from the change set. A required field with no
+  default is a wall, not a prompt — and a Model call for one sentence is a cost
+  and a latency the user did not ask for.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

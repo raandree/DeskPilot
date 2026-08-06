@@ -344,14 +344,23 @@ reported files are measured. `fileCount` is exact; `totalAdded` and
 ### `POST /api/git/commit`
 
 Body `{ "message": "<text>", "paths": [ "<rel>", … ] }`. Stages the given files
-(or the whole working tree when `paths` is omitted) and commits. This is the
-"Keep" action: it is what makes an agent's edits durable and pushable.
+(or everything inside the Project when `paths` is omitted) and commits. This is
+the **Save** action: it is what makes an agent's edits durable and pushable.
 
 ```json
 { "committed": true, "sha": "…", "shortSha": "a1b2c3d",
   "summary": "[main a1b2c3d] keep the edit", "nothingToCommit": false,
-  "skipped": [], "error": null }
+  "skipped": [], "files": [ "src/app.js" ], "kept": 1, "error": null }
 ```
+
+`files` lists what the commit contained, Project-relative like every other file
+endpoint. A bulk save stages `git add -A -- .` rather than the whole repository,
+so a Project that is a subdirectory of a larger repository never drags the rest
+of it into the commit.
+
+`kept` is how many of those files left the pending change set: a committed file
+is a reviewed file, so it stops being reported as an unreviewed DeskPilot change
+(see `POST /api/changes/keep`).
 
 `nothingToCommit` is `true` (with `committed: false` and no error) when there was
 nothing staged. `400` for an empty message, a merge in progress, or when no given
@@ -472,8 +481,8 @@ back to. No Project selected returns an empty set rather than an error.
 
 Body `{ "paths": [ "<rel>", … ] }`, or `{}` for the whole set. Accepts the changes
 and stops tracking them; the files are left exactly as they are. It deliberately
-does **not** commit — committing is a separate decision (see `POST /api/git/commit`
-and the Branch Wizard), and conflating the two would make "keep" irreversible.
+does **not** commit — committing is a separate decision (**Save**, see
+`POST /api/git/commit`), and conflating the two would make "keep" irreversible.
 Snapshot refs no longer referenced by a remaining entry are deleted.
 
 ```json

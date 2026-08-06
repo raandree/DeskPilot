@@ -3194,7 +3194,10 @@ function renderChangesPanel() {
             added: gitChanges.added,
             deleted: gitChanges.deleted,
             files: gitFiles,
-            actions: [{ label: 'Review', cls: '', title: 'Open the diff viewer over every changed file', run: () => openRepoChanges() }],
+            actions: [
+                { label: 'Review', cls: '', title: 'Open the diff viewer over every changed file', run: () => openRepoChanges() },
+                { label: 'Save all\u2026', cls: 'btn-primary', title: 'Record every changed file in this project\u2019s history, in one save', run: () => openSaveWizard() },
+            ],
         }));
     }
 }
@@ -3259,6 +3262,7 @@ const gitChanges = {
 };
 const GIT_CHANGE_MAX_AGE_MS = 20000;
 const CHANGES_PANEL_LIMIT = 12;
+const SAVE_LIST_LIMIT = 40;
 let _gitChangesInflight = null;
 
 // Only real files can be diffed; a folder record (Git reports one for an
@@ -3411,7 +3415,7 @@ function aiChangeFor(absPath) {
 }
 
 // Keep = accept and stop tracking. It deliberately does NOT commit: committing is
-// a separate decision the Branch Wizard owns, and conflating them would make
+// a separate decision the Save action owns, and conflating them would make
 // "keep" irreversible.
 async function keepAiChanges(paths, btn) {
     const list = paths ? asArray(paths).map(String) : null;
@@ -3448,6 +3452,196 @@ async function afterChangeDecision() {
     gitChanges.at = 0;
     await refreshExplorer();
     renderThread();
+}
+
+// ===== Save (one commit over every uncommitted file) =====
+// "Save" is what DeskPilot calls a commit. Keeping and undoing operate on the
+// pending set; nothing else made an agent's work durable, and `git add` +
+// `git commit` is exactly the step a non-expert cannot reach. So this is one
+// action over the whole Project: see what will be saved, describe it in a
+// sentence, save it all at once.
+const saveWiz = { busy: false, error: '', loaded: false, message: '', files: [], fileCount: 0, added: 0, deleted: 0 };
+
+async function openSaveWizard() {
+    if (!(state.settings && state.settings.workspaceFolder)) { toast('Select a project first.'); return; }
+    saveWiz.busy = false;
+    saveWiz.error = '';
+    saveWiz.loaded = false;
+    saveWiz.message = '';
+    saveWiz.files = [];
+    saveWiz.fileCount = 0;
+    saveWiz.added = 0;
+    saveWiz.deleted = 0;
+    $('save-backdrop').classList.remove('hidden');
+    $('save-modal').classList.remove('hidden');
+    renderSaveWizard();
+    await loadSaveWizard();
+}
+
+function closeSaveWizard() {
+    // Never lose a half-typed message to a stray click while the commit runs.
+    if (saveWiz.busy) return;
+    $('save-backdrop').classList.add('hidden');
+    $('save-modal').classList.add('hidden');
+}
+
+function saveWizIsOpen() {
+    return !$('save-modal').classList.contains('hidden');
+}
+
+async function loadSaveWizard() {
+    await loadGitChanges(true);
+    saveWiz.loaded = true;
+    saveWiz.files = gitChangeList();
+    saveWiz.fileCount = gitChanges.fileCount;
+    saveWiz.added = gitChanges.added;
+    saveWiz.deleted = gitChanges.deleted;
+    saveWiz.message = suggestSaveMessage(saveWiz.files, saveWiz.fileCount);
+    renderChangesPanel();
+    if (saveWizIsOpen()) renderSaveWizard();
+}
+
+// A message is required, and "what do I write here?" is the step that stops the
+// target user. Prefill something honest and editable rather than an empty box.
+function suggestSaveMessage(files, count) {
+    const n = Number(count || files.length || 0);
+    if (n === 0) return '';
+    if (n === 1 && files.length) {
+        const f = files[0];
+        const name = splitRelPath(f.rel).name;
+        if (f.status === 'untracked' || f.status === 'added') return 'Add ' + name;
+        if (f.status === 'deleted') return 'Delete ' + name;
+        if (f.status === 'renamed') return 'Rename ' + name;
+        return 'Update ' + name;
+    }
+    return 'Update ' + n + ' files';
+}
+
+function renderSaveWizard() {
+    const body = $('save-body');
+    const foot = $('save-foot');
+    if (!body || !foot) return;
+    body.innerHTML = '';
+    foot.innerHTML = '';
+
+    if (saveWiz.busy) {
+        body.innerHTML = '<div class="merge-busy"><span class="merge-spinner"></span> Saving…</div>';
+        return;
+    }
+
+    if (saveWiz.error) {
+        const err = el('merge-error');
+        err.textContent = '⚠ ' + saveWiz.error;
+        body.appendChild(err);
+    }
+
+    if (!saveWiz.loaded) {
+        const loading = el('muted tiny merge-msg');
+        loading.textContent = 'Looking at what changed…';
+        body.appendChild(loading);
+        foot.appendChild(branchWizBtn('Close', '', closeSaveWizard));
+        return;
+    }
+
+    const intro = el('merge-msg');
+    intro.textContent = 'Saving records every changed file in this project\u2019s history, all in one entry. ' +
+        'Nothing is sent anywhere \u2014 use Branches \u2192 Send to server for that.';
+    body.appendChild(intro);
+
+    if (!gitChanges.has) {
+        const none = el('muted tiny merge-msg');
+        none.textContent = 'Nothing can be saved here \u2014 this project is not a Git repository, or Git is not available.';
+        body.appendChild(none);
+        foot.appendChild(branchWizBtn('Close', '', closeSaveWizard));
+        return;
+    }
+
+    if (!saveWiz.fileCount) {
+        const none = el('muted tiny merge-msg');
+        none.textContent = 'Nothing has changed since the last save.';
+        body.appendChild(none);
+        foot.appendChild(branchWizBtn('Close', '', closeSaveWizard));
+        return;
+    }
+
+    const head = el('save-summary');
+    head.innerHTML =
+        `<span class="save-count">${saveWiz.fileCount} file${saveWiz.fileCount === 1 ? '' : 's'} will be saved</span>` +
+        `<span class="changes-stat changes-add">+${escapeHtml(String(saveWiz.added))}</span>` +
+        `<span class="changes-stat changes-del">\u2212${escapeHtml(String(saveWiz.deleted))}</span>`;
+    body.appendChild(head);
+
+    const list = el('save-list');
+    const shown = saveWiz.files.slice(0, SAVE_LIST_LIMIT);
+    for (const f of shown) list.appendChild(buildSaveRow(f));
+    body.appendChild(list);
+    if (saveWiz.fileCount > shown.length) {
+        const more = el('muted tiny');
+        more.textContent = `\u2026and ${saveWiz.fileCount - shown.length} more.`;
+        body.appendChild(more);
+    }
+
+    const field = el('branch-field');
+    const label = document.createElement('label');
+    label.setAttribute('for', 'save-message');
+    label.textContent = 'Describe what you changed';
+    const input = document.createElement('input');
+    input.id = 'save-message';
+    input.className = 'branch-input';
+    input.type = 'text';
+    input.autocomplete = 'off';
+    input.value = saveWiz.message;
+    input.placeholder = 'e.g. Update the quarterly report';
+    input.oninput = () => { saveWiz.message = input.value; };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); runSave(); } };
+    const hint = el('muted tiny', 'p');
+    hint.textContent = 'A short sentence so you can recognise this save later.';
+    field.append(label, input, hint);
+    body.appendChild(field);
+
+    foot.appendChild(branchWizBtn('Cancel', '', closeSaveWizard));
+    foot.appendChild(branchWizBtn('Review changes\u2026', '', () => { closeSaveWizard(); openRepoChanges(); }));
+    foot.appendChild(branchWizBtn('Save all changes', 'btn-primary', () => runSave()));
+    setTimeout(() => { const box = $('save-message'); if (box) { box.focus(); box.select(); } }, 0);
+}
+
+function buildSaveRow(f) {
+    const parts = splitRelPath(f.rel);
+    const row = el('save-row');
+    row.title = statusLabel(f.status) + ' \u2014 ' + f.rel;
+    row.innerHTML =
+        `<span class="changes-badge st-${escapeHtml(f.status || 'modified')}">${escapeHtml(statusGlyph(f.status))}</span>` +
+        `<span class="changes-name">${escapeHtml(parts.name)}</span>` +
+        `<span class="changes-dir muted tiny">${escapeHtml(parts.dir)}</span>` +
+        (f.binary
+            ? '<span class="changes-stat muted tiny">binary</span>'
+            : `<span class="changes-stat changes-add">${f.added ? '+' + escapeHtml(String(f.added)) : ''}</span>` +
+              `<span class="changes-stat changes-del">${f.deleted ? '\u2212' + escapeHtml(String(f.deleted)) : ''}</span>`);
+    return row;
+}
+
+async function runSave() {
+    const message = String(saveWiz.message || '').trim();
+    if (!message) { saveWiz.error = 'Write a short description first.'; renderSaveWizard(); return; }
+    saveWiz.busy = true;
+    saveWiz.error = '';
+    renderSaveWizard();
+    let result = null;
+    try { result = await api('POST', '/api/git/commit', { message }); }
+    catch (e) { saveWiz.error = e.message; }
+    saveWiz.busy = false;
+    if (saveWiz.error) { renderSaveWizard(); return; }
+
+    if (result && result.nothingToCommit) {
+        saveWiz.error = 'Nothing had changed, so nothing was saved.';
+        await loadSaveWizard();
+        return;
+    }
+    const n = (result && result.files && result.files.length) || 0;
+    const where = result && result.shortSha ? ' as ' + result.shortSha : '';
+    toast(`Saved ${n} file${n === 1 ? '' : 's'}${where}.`);
+    closeSaveWizard();
+    await afterChangeDecision();
 }
 
 async function gitInit() {
@@ -3614,7 +3808,7 @@ function buildSyncPanel() {
 
     if (s.dirty) {
         const dirty = el('branch-sync-dirty muted tiny');
-        dirty.textContent = `${s.changeCount} unsaved change${s.changeCount === 1 ? '' : 's'} in your files. Use Review changes to keep or undo them.`;
+        dirty.textContent = `${s.changeCount} unsaved change${s.changeCount === 1 ? '' : 's'} in your files. Save them to put them in this branch\u2019s history, or review them first.`;
         panel.appendChild(dirty);
     }
 
@@ -3624,7 +3818,10 @@ function buildSyncPanel() {
         acts.appendChild(branchWizBtn('Get from server', 'btn-small', () => branchWizSync('pull'), !!s.detached));
         acts.appendChild(branchWizBtn('Send to server', 'btn-small', () => branchWizSync('push'), !!s.detached));
     }
-    if (s.dirty) acts.appendChild(branchWizBtn('Review changes…', 'btn-small', () => { closeBranchWizard(); openRepoChanges(); }));
+    if (s.dirty) {
+        acts.appendChild(branchWizBtn('Save all changes…', 'btn-small', () => { closeBranchWizard(); openSaveWizard(); }));
+        acts.appendChild(branchWizBtn('Review changes…', 'btn-small', () => { closeBranchWizard(); openRepoChanges(); }));
+    }
     if (acts.children.length) panel.appendChild(acts);
     return panel;
 }
@@ -5924,6 +6121,9 @@ function paletteCommands() {
         { label: 'Toggle light / dark theme', run: () => toggleTheme() },
         { label: 'Focus the message box', run: () => $('prompt').focus() },
     ];
+    if (state.settings && state.settings.workspaceFolder) {
+        cmds.push({ label: 'Save all changes', hint: 'commit', run: () => openSaveWizard() });
+    }
     if (state.current) {
         cmds.push({ label: 'Regenerate last response', run: () => regenerateTurn() });
         cmds.push({ label: 'Export current conversation', run: () => exportConversation(state.current.id) });
@@ -6145,6 +6345,13 @@ function wireGlobal() {
     $('branch-backdrop').onclick = () => closeBranchWizard();
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !$('branch-modal').classList.contains('hidden')) closeBranchWizard();
+    });
+
+    // Save (bulk commit)
+    $('save-close').onclick = () => closeSaveWizard();
+    $('save-backdrop').onclick = () => closeSaveWizard();
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && saveWizIsOpen()) closeSaveWizard();
     });
 
     // Diff viewer

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Save all your changes at once, without knowing Git.** The Changes panel gains
+  a **Save all…** button (also in the Branch Wizard when you have unsaved work,
+  and in the command palette) that opens one dialog: it lists every uncommitted
+  file with its added and removed line counts, prefills an editable one-line
+  description, and records the lot as a single entry in the project's history.
+  No staging, no `git add`, no terminal — and nothing is sent anywhere until you
+  choose **Send to server**. Saving a file also stops DeskPilot reporting it as
+  an unreviewed change, because a file you saved is a file you reviewed.
 - **DeskPilot now remembers what it changed until you decide.** Before every turn
   it records how your files looked, so the edits the agent makes stay listed as
   *not reviewed yet* — across a reload, a restart, and switching conversations —

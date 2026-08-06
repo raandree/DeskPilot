@@ -1,23 +1,23 @@
 function Invoke-DpGitCommit {
     <#
     .SYNOPSIS
-        Stages and commits changes so a Turn's work can be kept and pushed.
+        Stages and commits changes so a Turn's work can be saved and pushed.
     .DESCRIPTION
-        The "Keep" half of the Changes review: stages either the whole working tree
-        or only the given files (each confined to Root) and creates a commit. A
-        commit is what makes a change durable and pushable, so the Branch Wizard's
-        Sync action depends on it. Refuses to run mid-merge, refuses an empty
-        message, and reports "nothing to commit" as a distinct, non-error outcome.
-        Never throws.
+        The Save action: stages either the whole Project folder or only the given
+        files (each confined to Root) and creates a commit. A commit is what makes
+        a change durable and pushable, so the Branch Wizard's Sync action depends
+        on it. Refuses to run mid-merge, refuses an empty message, and reports
+        "nothing to commit" as a distinct, non-error outcome. Never throws.
     .PARAMETER Root
         The Project (Workspace) folder every path is confined to.
     .PARAMETER Message
         The commit message.
     .PARAMETER Paths
-        Optional: only stage and commit these files. Omit to commit everything.
+        Optional: only stage and commit these files. Omit to commit everything
+        inside the Project.
     .OUTPUTS
         System.Collections.Hashtable with committed, sha, shortSha, summary,
-        nothingToCommit and error.
+        nothingToCommit, files (Project-relative) and error.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -31,7 +31,7 @@ function Invoke-DpGitCommit {
         [string[]]$Paths
     )
 
-    $result = @{ committed = $false; sha = $null; shortSha = $null; summary = $null; nothingToCommit = $false; skipped = @(); error = $null }
+    $result = @{ committed = $false; sha = $null; shortSha = $null; summary = $null; nothingToCommit = $false; skipped = @(); files = @(); error = $null }
 
     if ([string]::IsNullOrWhiteSpace($Root) -or -not (Test-Path -LiteralPath $Root -PathType Container)) { $result.error = 'No project folder.'; return $result }
     try { $rootFull = [System.IO.Path]::GetFullPath($Root) } catch { $result.error = 'Invalid project folder.'; return $result }
@@ -70,14 +70,28 @@ function Invoke-DpGitCommit {
         if (-not $add.Ok) { $result.error = "Could not stage the files: $($add.StdErr.Trim())"; return $result }
     }
     else {
-        $add = Invoke-DpGitCommand -Path $rootFull -Arguments @('add', '-A')
+        # `git add -A` with no pathspec stages the whole repository; the Project is
+        # the boundary everywhere else, so a Project inside a larger repository must
+        # not drag the rest of it into the commit.
+        $add = Invoke-DpGitCommand -Path $rootFull -Arguments @('add', '-A', '--', '.')
         if (-not $add.Ok) { $result.error = "Could not stage the files: $($add.StdErr.Trim())"; return $result }
     }
 
-    $staged = Invoke-DpGitCommand -Path $rootFull -Arguments @('diff', '--cached', '--name-only')
+    $staged = Invoke-DpGitCommand -Path $rootFull -Arguments @('diff', '--cached', '--name-only', '-z')
     if ($staged.Ok -and [string]::IsNullOrWhiteSpace($staged.StdOut)) {
         $result.nothingToCommit = $true
         return $result
+    }
+
+    # What the commit will contain, in the Project-relative frame the rest of
+    # DeskPilot speaks, so the caller can pair it with the pending change set.
+    $repoRoot = if ($status.root) { $status.root } else { $rootFull }
+    try { $repoRoot = [System.IO.Path]::GetFullPath($repoRoot) } catch { $repoRoot = $rootFull }
+    $committed = [System.Collections.Generic.List[string]]::new()
+    foreach ($token in ($staged.StdOut -split "`0")) {
+        if ([string]::IsNullOrWhiteSpace($token)) { continue }
+        $rel = ConvertTo-DpProjectRelativePath -RepositoryRoot $repoRoot -ProjectRoot $rootTrim -Path $token
+        if ($rel) { $committed.Add($rel) }
     }
 
     $commit = Invoke-DpGitCommand -Path $rootFull -Arguments @('commit', '-m', $text)
@@ -89,6 +103,7 @@ function Invoke-DpGitCommit {
     }
 
     $result.committed = $true
+    $result.files = @($committed)
     $head = Invoke-DpGitCommand -Path $rootFull -Arguments @('rev-parse', 'HEAD')
     if ($head.Ok) {
         $result.sha = $head.StdOut.Trim()

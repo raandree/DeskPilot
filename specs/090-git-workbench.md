@@ -26,7 +26,7 @@ and recovers from a conflict without ever opening a terminal.
 | A layer above Git | Git answers "what differs from the last commit?". The user needs "what did the **agent** change, and do I want it?". Those are different questions, so DeskPilot keeps its own **pending change set**: every file a Turn wrote, paired with a snapshot of how it looked before that Turn, held until the user keeps or undoes it. Persisted per Project in `changes.json`, so it survives a reload, a restart and switching Conversations. |
 | Snapshot mechanism | An ordinary Git commit object built in a **throwaway index** (`GIT_INDEX_FILE`): read HEAD, stage everything, write-tree, commit-tree, park it under `refs/deskpilot/snapshots/<id>`. The user's index, working tree and branches are never touched, an unborn HEAD is handled, and Git's own ignore rules apply. Taken once per Turn, before the Engine runs. |
 | Repeat edits | A file already tracked keeps its **original** snapshot. After three Turns edit the same file, undo has to mean "before DeskPilot first touched it", not "one Turn ago". |
-| Keep semantics | Accept and stop tracking. It does **not** commit: committing is a separate decision the Branch Wizard owns, and conflating them would make Keep irreversible. |
+| Keep semantics | Accept and stop tracking. It does **not** commit: committing is a separate decision the **Save** action owns, and conflating them would make Keep irreversible. |
 | Undo semantics | `git restore --worktree --source=<snapshot>` for a file that existed, delete for one the agent created. Working tree only, so a staged change the user prepared themselves survives — and so does any edit they made by hand before the Turn. |
 | Where changes appear | Four places, in descending prominence: a **Changes panel** under the Git bar with two sections (what DeskPilot changed and you have not reviewed; what is merely uncommitted), **per-row highlighting in the file tree** (colour + status letter for a file, colour + count for a folder, an accent edge for an unreviewed DeskPilot change), a **Changes card** under the assistant Message that made them, and the Diff viewer. A count alone is too easy to overlook, and the Activity panel is collapsed by default. |
 | Diff base | A pending change is diffed against its snapshot, so the viewer shows what the agent did. Everything else is diffed against HEAD. |
@@ -35,7 +35,11 @@ and recovers from a conflict without ever opening a terminal.
 | Path frame | Git reports repository-relative paths; every other DeskPilot file endpoint speaks **Project-relative**. `Get-DpGitChanges` rebases each path and drops anything outside the Project, so a Project that is a subdirectory of a larger repository behaves like any other. |
 | Cost control | The 500-file cap is applied **while the list is built**, and only reported files are measured. Untracked files are always listed individually — a collapsed folder record is not something a diff or a commit can act on — and git's own ignore rules keep that walk cheap. The Host Server accepts on one thread, so the bound has to be on our work, not on git's. |
 | Totals | `fileCount` is exact; `totalAdded` / `totalDeleted` cover the reported files, with `truncated` saying the list was capped. The SPA reads all four from the server rather than recomputing them from a capped list. |
-| "Keep" semantics (Git layer) | A commit, offered by the Branch Wizard and `POST /api/git/commit`. Nothing else makes an agent's work durable, and nothing else can be pushed. |
+| "Keep" semantics (Git layer) | A commit, offered by the **Save** modal and `POST /api/git/commit`. Nothing else makes an agent's work durable, and nothing else can be pushed. |
+| Save (bulk commit) | A non-expert cannot reach `git add` + `git commit`, so DeskPilot offers **one** action over the whole Project: a modal that lists every uncommitted file with its `+`/`−` counts, prefills an editable one-line description, and commits the lot. Per-file and per-hunk staging stay out — the vocabulary they need is exactly what this spec removes. Reachable from the Changes panel, the Branch Wizard when the tree is dirty, and the command palette. |
+| Save scope | A bulk save stages `git add -A -- .`, not the whole repository: the Project is the boundary everywhere else, so a Project inside a larger repository must not drag the rest of it into the commit. |
+| Save clears the pending set | A committed file is a reviewed file. `POST /api/git/commit` removes exactly the files it committed from the pending change set, so DeskPilot cannot keep calling a saved file unreviewed, or offer an undo that now contradicts history. |
+| Save message | Required by git and the step that actually stops the target user, so the box is prefilled with an honest, editable suggestion derived from the change set (`Update 12 files`, `Add notes.md`) rather than left empty. No Model call. |
 | "Undo" semantics (Git layer) | Used only for a file that is not a pending DeskPilot change: tracked files are restored to HEAD, untracked ones deleted. Confirmed first. |
 | Diff rendering | A modal with a file list beside a unified diff carrying **both** old and new line numbers. Parsing is a pure function (`diff.js`) so it is unit-testable without a browser. |
 | Branch vocabulary | The UI says "get from server" / "send to server" / "sync"; the API and the implementation stay ordinary `pull` / `push`. |
@@ -69,7 +73,20 @@ without the user's approval.
    through with ↑/↓.
 5. **Keep** accepts and stops tracking. **Undo** restores from the snapshot, or
    deletes a file the agent created. Both work on the whole set or on one file.
-6. Committing is a separate step, in the Branch Wizard.
+6. Committing is a separate step: **Save all…** in the Changes panel.
+
+### Save (bulk commit)
+
+1. **Save all…** in the Changes panel (or **Save all changes…** in the Branch
+   Wizard, or the command palette) opens the Save modal.
+2. It re-reads `GET /api/git/changes` and lists what will be saved: file count,
+   `+`/`−` totals, and a capped read-only file list.
+3. The description box is prefilled and editable; Enter or **Save all changes**
+   commits, **Review changes…** hands off to the Diff viewer first.
+4. `POST /api/git/commit` stages everything inside the Project and commits it,
+   then drops those files from the pending change set.
+5. Nothing is sent anywhere — publishing stays the Branch Wizard's **Send to
+   server**.
 
 ### Branch Wizard
 
@@ -112,7 +129,8 @@ Backend helpers (each via `Invoke-DpGitCommand`, confined to
   the Project, dropping anything outside it.
 - `Measure-DpFileLine` — bounded line count / binary detection for untracked
   files.
-- `Invoke-DpGitCommit` — stage (all, or given paths) and commit; reports
+- `Invoke-DpGitCommit` — stage (everything inside the Project, or given paths)
+  and commit; reports the committed files Project-relative, and reports
   `nothingToCommit` distinctly from an error.
 - `Test-DpGitBranchName` — git's ref rules in plain language.
 - `New-DpGitBranch` — create (handling an unborn HEAD) and optionally switch.
@@ -135,11 +153,12 @@ behind the session token; `{ error: { code, message } }` on failure): see
 `GET /api/git/conflict/prompt`.
 
 Frontend (`web/`): `assets/diff.js` (pure parsing/formatting helpers), a Changes
-card in every assistant Message, a Diff viewer modal with a file list, and a
-Branch Wizard modal. The Git bar gains `Branches…`; below it a Changes panel
-lists the changed files directly, and the file tree colours each row by its Git
-status. One cached read of `/api/git/changes` (shared in-flight, 20 s) feeds the
-panel and the tree, so they can never disagree.
+card in every assistant Message, a Diff viewer modal with a file list, a Save
+modal, and a Branch Wizard modal. The Git bar gains `Branches…`; below it a
+Changes panel lists the changed files directly and offers `Save all…`, and the
+file tree colours each row by its Git status. One cached read of
+`/api/git/changes` (shared in-flight, 20 s) feeds the panel and the tree, so they
+can never disagree.
 
 ## Failure modes & edge cases
 

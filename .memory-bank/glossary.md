@@ -38,6 +38,7 @@ synonym.
 | Attachment | A file added to one Turn through the Attach button, drag-and-drop, or clipboard paste. DeskPilot uploads it before sending the prompt; image Attachments are also passed to the Engine's native Vision input. | Reference File, Artifact, embedded file |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
+| Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint, backup, snapshot (that is the pre-Turn snapshot), stage |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
 | Default Branch | The repository's primary integration branch and the only Merge target: `origin/HEAD` if set, else a local `main`, else `master`. | trunk, mainline, master (when you mean the concept rather than the literal branch name) |
 | Merge | Combining a source Branch into the Default Branch — fast-forward when possible, else a merge commit. | integrate, combine, sync |
@@ -84,6 +85,15 @@ synonym.
   (the `-DisableTodoList` switch, the `ShpProgress` records, `result.TodoList`).
   Everywhere else — code identifiers, SSE event, UI copy, docs — use **Task** /
   **Task List** (`task`, `tasks`, `taskList`, `taskTracking`).
+- **Save vs. the `commit` field.** UI copy, docs, and prose use **Save**; the
+  route, the helper, and the wire fields stay `commit` — `POST /api/git/commit`,
+  `Invoke-DpGitCommit`, `committed`, `nothingToCommit` — because that is git's own
+  vocabulary at the boundary. This mirrors the Colour / `color` note.
+- **Save vs. Keep vs. Undo.** **Keep** accepts a pending DeskPilot change and
+  stops tracking it; it writes nothing to Git. **Save** writes a commit, which is
+  what makes the work durable and sendable. **Undo** puts a file back the way it
+  was before DeskPilot touched it. Saving a file also ends its pending state, but
+  Keeping one never commits it; never use the two words interchangeably.
 - **Default Branch vs. the literal name.** **Default Branch** is the *concept*
   (the only Merge target); the actual branch is named `main` or `master`. Use
   **Default Branch** in code, UI copy, and docs; only write `main`/`master` when

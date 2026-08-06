@@ -299,6 +299,15 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'commit_failed'; message = $commit.error }; result = $commit }
                 return
             }
+            # A committed file is a reviewed file: leaving it in the pending set
+            # would keep telling the user it still needs a decision after they
+            # saved it, and would offer an undo that now contradicts history.
+            $commit.kept = 0
+            if ($commit.committed -and @($commit.files).Count -gt 0) {
+                $cleared = Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths @($commit.files)
+                $commit.kept = $cleared.cleared
+                if ($cleared.cleared -gt 0 -and $state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
+            }
             Write-DpResponse -Stream $Stream -Json $commit
         }
         'gitBranchCreate' {

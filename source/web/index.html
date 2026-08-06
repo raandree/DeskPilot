@@ -398,6 +398,17 @@
         <div id="branch-foot" class="modal-foot"></div>
     </div>
 
+    <!-- Save changes (every uncommitted file in one commit, for non-experts) -->
+    <div id="save-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="save-modal" class="modal save-modal hidden" role="dialog" aria-modal="true" aria-label="Save your changes">
+        <div class="modal-head">
+            <h2 id="save-title">Save your changes</h2>
+            <button id="save-close" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div id="save-body" class="save-body"></div>
+        <div id="save-foot" class="modal-foot"></div>
+    </div>
+
     <!-- Diff viewer (what changed in one file, with a file list) -->
     <div id="diff-backdrop" class="backdrop folder-backdrop hidden"></div>
     <div id="diff-modal" class="modal diff-modal hidden" role="dialog" aria-modal="true" aria-label="File changes">

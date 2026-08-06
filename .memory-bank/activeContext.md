@@ -10,56 +10,50 @@ source: repository evidence
 
 ## Current focus
 
-**DeskPilot now remembers what it changed, until the user decides
-(`ai/git-workbench`, 2026-08-06).** The reviewer asked for "another layer on top
-of Git that lets me keep or undo what the AI did and clearly see it". Git alone
-cannot answer that: it only knows what differs from the last commit, so an undo
-would also discard the user's own work.
+**A non-expert can now save their work (`ai/git-workbench`, 2026-08-06).** The
+Git Workbench shipped Keep and Undo but no way to *commit*: `POST /api/git/commit`
+existed and no line of the SPA called it. So the target user could review the
+agent's edits and put them back, but nothing they kept ever became durable, and
+Sync and Merge stayed permanently blocked on a dirty working tree.
 
-DeskPilot now takes a **snapshot before every Turn** - an ordinary commit object
-built in a throwaway `GIT_INDEX_FILE` and parked under
-`refs/deskpilot/snapshots/` - and keeps a **pending change set** per Project in
-`changes.json`. Every file a Turn writes joins it, against that snapshot, and
-stays until the user **Keeps** it (accept, without committing) or **Undoes** it
-(`git restore --worktree --source=<snapshot>`, or delete for a file the agent
-created). A file already tracked keeps its *original* snapshot, so undo always
-means "before DeskPilot first touched it".
+DeskPilot now has a **Save** action — its user-facing word for a commit. One
+modal over the whole Project: every uncommitted file with its `+`/`−` counts, an
+editable one-line description prefilled from the change set, and one button that
+commits the lot. Reachable from the Changes panel (**Save all…**), the Branch
+Wizard when the tree is dirty, and the command palette. Per-file and per-hunk
+staging stay out — that is precisely the vocabulary this surface removes.
 
-It is visible in four places: the Changes card under the Message that made the
-changes, a two-section panel under the Git bar (unreviewed DeskPilot changes vs.
-merely uncommitted), the file tree (status colour, letter, folder counts, and an
-accent edge for an unreviewed change), and the diff viewer - which diffs a
-pending file against its snapshot.
+Two backend corrections came with it. `git add -A` without a pathspec stages the
+**whole repository**, so a Project inside a larger repository was pulling the
+rest of it into the commit; it is now `git add -A -- .`. And the route clears
+exactly the files it committed from the pending change set, because a committed
+file is a reviewed file — otherwise DeskPilot kept calling a saved file
+unreviewed and offered an undo that now contradicts history.
 
-Before this, the Git Workbench shipped: merge/branch/sync wizards, the diff
-viewer, and the conflict prompt.
-
-Nine new Private helpers plus seven routes under `/api/git/`. `Invoke-DpGitCommand`
-was hardened: closed stdin, `GIT_TERMINAL_PROMPT=0`, `GIT_LITERAL_PATHSPECS=1`,
-deadline-bounded async reads, process disposal, and a timeout on **every** call —
-the accept loop is single-threaded, so a blocked git call froze the whole UI.
+Before this: the pre-Turn snapshot and pending change set, and before that the
+Git Workbench itself (merge/branch/sync wizards, diff viewer, conflict prompt).
 
 ## Verification
 
-- Full Sampler build + Pester green (**532/532**, 0 warnings, exit 0).
-- Real-repository tests cover the snapshot leaving the index and working tree
-  untouched, undo restoring to the snapshot rather than HEAD (a hand edit made
-  before the Turn survives), deleting a file the agent created, undoing a subset,
-  reporting a hand-reverted file as `unchanged`, diffing against the snapshot,
-  and dropping the snapshot ref once the change is kept.
-- Plus the earlier Git Workbench coverage: change set, commit, branch
-  create/switch/delete, sync, a two-clone conflict, a subdirectory Project.
-- An independent agent-security review of the Workfbench returned four Majors,
-  all fixed.
+- New `tests/Unit/GitCommitRoute.Tests.ps1` green (4/4): a bulk save commits
+  everything and reports it Project-relative; a committed file leaves the pending
+  set and the store is persisted; a partial commit leaves the other file pending;
+  an empty message is refused without touching the pending set.
+- Helper coverage extended: `Invoke-DpGitCommit` reports the committed files, and
+  a Project that is a subdirectory saves only its own file while the sibling
+  folder's change survives.
+- Full Sampler build + Pester green.
 
 ## Next step
 
-Live-smoke the new routes in the browser (Changes card, diff viewer, Branch
-Wizard, a real sync). Spec 100 records the competitive gap analysis — the
-recommended next pieces are per-call Tool approval, an installer, and scheduled
-tasks.
+Live-smoke the Save modal in the browser (Changes panel, Branch Wizard, palette,
+and a Project inside a bigger repository). Spec 100 records the competitive gap
+analysis — the recommended next pieces are per-call Tool approval, an installer,
+and scheduled tasks.
 
 ## Previous focus
 
-Ask-User rendered a bundled Questionnaire wizard; the Project chip derives its
-visible leaf from the selected Workspace Folder.
+DeskPilot remembering what it changed until the user decides: a pre-Turn
+snapshot commit under `refs/deskpilot/snapshots/` plus a per-Project pending
+change set in `changes.json`, surfaced in the Message card, the Changes panel,
+the file tree, and the diff viewer.
