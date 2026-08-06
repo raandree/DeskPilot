@@ -366,6 +366,24 @@ is a reviewed file, so it stops being reported as an unreviewed DeskPilot change
 nothing staged. `400` for an empty message, a merge in progress, or when no given
 path is inside the Project.
 
+### `POST /api/git/commit/message`
+
+Asks the Model for the one line the Save dialog requires. Body is empty; the
+change set is read server-side.
+
+```json
+{ "message": "Update the quarterly report", "fileCount": 8 }
+```
+
+A pure-reasoning Turn with every Tool disabled (like the Merge Plan), prompted
+with the file list and a bounded excerpt of `git diff HEAD -- .`. The result is
+cleaned to a single short line. It runs only on an explicit click — it costs a
+Turn — and only ever fills an editable box.
+
+`400 nothing_to_save` on a clean tree (no Turn is spent), `409 turn_running`
+while another Turn holds the Engine Runspace, `502 engine_error` when the Engine
+fails, and `502 no_suggestion` when the answer cleans to nothing.
+
 ### `POST /api/git/branch/create`
 
 Body `{ "name": "<name>", "from": "<ref>", "checkout": true }`. The name is

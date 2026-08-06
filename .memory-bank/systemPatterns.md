@@ -138,9 +138,18 @@ source: repository evidence
   disagreeing about the same file is worse than either panel being empty.
 - **Prefill the field that stops the user.** A commit message is mandatory and is
   the exact step a non-expert stalls on, so the box opens with an honest,
-  editable suggestion derived from the change set. A required field with no
-  default is a wall, not a prompt — and a Model call for one sentence is a cost
-  and a latency the user did not ask for.
+  editable suggestion derived from the change set, and a ✨ button can have the
+  Model write it properly. A required field with no default is a wall, not a
+  prompt.
+- **A Model call the user did not ask for is a bill they did not agree to.** The
+  suggested Save Message runs on an explicit click, refuses while another Turn
+  holds the Engine Runspace, and spends nothing on a clean tree. The free local
+  suggestion is the default; the Turn is the opt-in.
+- **Untrusted content reaches the Model with nothing to act with.** The
+  suggested-Save-Message Turn disables every Tool, fences the file list and diff
+  as data rather than instructions, bounds both, and writes the answer into an
+  editable box. An injected diff can then produce a misleading sentence and
+  nothing else.
 
 ## Anti-patterns to avoid
 

@@ -310,6 +310,64 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json $commit
         }
+        'gitCommitMessage' {
+            # Suggest the one line the Save dialog asks for. A required free-text
+            # field is exactly where the target user stalls, so the Model reads the
+            # change set and writes it - on an explicit click, never automatically,
+            # because it costs a Turn.
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            # This Turn shares the single Engine Runspace.
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'turn_running'; message = 'Another task is running; wait for it to finish.' } }
+                return
+            }
+            $changes = Get-DpGitChanges -Root $root
+            if ($changes.error) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'changes_failed'; message = $changes.error } }
+                return
+            }
+            if ($changes.fileCount -eq 0) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'nothing_to_save'; message = 'Nothing has changed since the last save.' } }
+                return
+            }
+            # Untracked files have no diff against HEAD, and an unborn HEAD has no
+            # diff at all; the file list alone still describes those well enough.
+            $diffResult = Invoke-DpGitCommand -Path $root -Arguments @('diff', 'HEAD', '--', '.')
+            $diffText = if ($diffResult.Ok) { [string]$diffResult.StdOut } else { '' }
+            $engineParams = @{
+                Prompt             = New-DpCommitMessagePrompt -Files @($changes.files) -Diff $diffText
+                DisableBrowsing    = $true
+                DisableFileAccess  = $true
+                DisableTerminal    = $true
+                DisableUserPrompts = $true
+                DisableUserTools   = $true
+                DisableTodoList    = $true
+            }
+            if ($state.Settings.model) { $engineParams.Model = $state.Settings.model }
+            $state.TurnRunning = $true
+            try {
+                $engineResult = Invoke-DpEngineCommand -Command 'Invoke-Shp' -Parameter $engineParams | Select-Object -Last 1
+            }
+            catch {
+                $state.TurnRunning = $false
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'engine_error'; message = "The model could not suggest a description: $($_.Exception.Message)" } }
+                return
+            }
+            $state.TurnRunning = $false
+            $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
+            # A commit subject is the same shape as a Conversation title - one clean
+            # line, capped - so it goes through the same cleaner.
+            $suggestion = ConvertFrom-DpTitleResult -Text $content -MaxWords 12 -MaxLength 72
+            if ([string]::IsNullOrWhiteSpace($suggestion)) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'no_suggestion'; message = 'The model did not return a usable description.' } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{ message = $suggestion; fileCount = $changes.fileCount }
+        }
         'gitBranchCreate' {
             $root = $state.Settings.workspaceFolder
             if ([string]::IsNullOrWhiteSpace($root)) {

@@ -50,8 +50,9 @@ work without driving the tool stack themselves.
   it).
 - **Save everything in one step.** **Save all…** records every changed file in
   the project's history as one entry, with a description DeskPilot suggests and
-  you can edit. No staging, no `git add`, no terminal — and nothing leaves your
-  computer until you send it.
+  you can edit — or press ✨ and let the model read your changes and write it.
+  No staging, no `git add`, no terminal — and nothing leaves your computer until
+  you send it.
 - **Git without the vocabulary.** A **Branch Wizard** covers everything a
   non-expert needs: create, switch, delete, merge, and *get from* / *send to*
   the server. When two people changed the same lines, DeskPilot writes the

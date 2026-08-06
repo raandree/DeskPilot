@@ -4469,6 +4469,28 @@ button.tree-row {
     border-bottom: 0;
 }
 
+.save-message-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.save-message-row .branch-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.save-suggest {
+    flex: none;
+    font-size: 15px;
+    line-height: 1;
+}
+
+.save-suggest:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 /* ===== Atelier health panel ===== */
 .atelier-health {
     display: flex;

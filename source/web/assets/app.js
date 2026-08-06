@@ -3585,6 +3585,7 @@ function renderSaveWizard() {
     const label = document.createElement('label');
     label.setAttribute('for', 'save-message');
     label.textContent = 'Describe what you changed';
+    const row = el('save-message-row');
     const input = document.createElement('input');
     input.id = 'save-message';
     input.className = 'branch-input';
@@ -3594,15 +3595,50 @@ function renderSaveWizard() {
     input.placeholder = 'e.g. Update the quarterly report';
     input.oninput = () => { saveWiz.message = input.value; };
     input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); runSave(); } };
+    const suggest = document.createElement('button');
+    suggest.id = 'save-suggest';
+    suggest.className = 'icon-btn save-suggest';
+    suggest.type = 'button';
+    suggest.textContent = '\u2728';
+    suggest.title = 'Let DeskPilot read the changes and describe them for you';
+    suggest.setAttribute('aria-label', 'Suggest a description');
+    suggest.onclick = () => suggestSaveMessageFromModel();
+    row.append(input, suggest);
     const hint = el('muted tiny', 'p');
-    hint.textContent = 'A short sentence so you can recognise this save later.';
-    field.append(label, input, hint);
+    hint.textContent = 'A short sentence so you can recognise this save later \u2014 or use \u2728 to have DeskPilot write it.';
+    field.append(label, row, hint);
     body.appendChild(field);
 
     foot.appendChild(branchWizBtn('Cancel', '', closeSaveWizard));
     foot.appendChild(branchWizBtn('Review changes\u2026', '', () => { closeSaveWizard(); openRepoChanges(); }));
     foot.appendChild(branchWizBtn('Save all changes', 'btn-primary', () => runSave()));
     setTimeout(() => { const box = $('save-message'); if (box) { box.focus(); box.select(); } }, 0);
+}
+
+// The description is where the target user stalls, so the sparkle asks the Model
+// to read the change set and write it. Explicit click only: it costs a Turn.
+async function suggestSaveMessageFromModel() {
+    const btn = $('save-suggest');
+    const box = $('save-message');
+    if (!btn || !box) return;
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '\u22ef';
+    btn.title = 'Reading your changes…';
+    try {
+        const r = await api('POST', '/api/git/commit/message', {});
+        if (r && r.message) {
+            saveWiz.message = r.message;
+            box.value = r.message;
+            box.focus();
+            box.select();
+        }
+    } catch (e) { toast(e.message); }
+    finally {
+        btn.disabled = false;
+        btn.textContent = label;
+        btn.title = 'Let DeskPilot read the changes and describe them for you';
+    }
 }
 
 function buildSaveRow(f) {

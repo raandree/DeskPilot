@@ -39,7 +39,8 @@ and recovers from a conflict without ever opening a terminal.
 | Save (bulk commit) | A non-expert cannot reach `git add` + `git commit`, so DeskPilot offers **one** action over the whole Project: a modal that lists every uncommitted file with its `+`/`−` counts, prefills an editable one-line description, and commits the lot. Per-file and per-hunk staging stay out — the vocabulary they need is exactly what this spec removes. Reachable from the Changes panel, the Branch Wizard when the tree is dirty, and the command palette. |
 | Save scope | A bulk save stages `git add -A -- .`, not the whole repository: the Project is the boundary everywhere else, so a Project inside a larger repository must not drag the rest of it into the commit. |
 | Save clears the pending set | A committed file is a reviewed file. `POST /api/git/commit` removes exactly the files it committed from the pending change set, so DeskPilot cannot keep calling a saved file unreviewed, or offer an undo that now contradicts history. |
-| Save message | Required by git and the step that actually stops the target user, so the box is prefilled with an honest, editable suggestion derived from the change set (`Update 12 files`, `Add notes.md`) rather than left empty. No Model call. |
+| Save message | Required by git and the step that actually stops the target user, so the box is prefilled with an honest, editable suggestion derived from the change set (`Update 12 files`, `Add notes.md`) — free, instant, and never wrong about the file count. |
+| Suggested Save message | A ✨ button next to the box asks the Model to read the change set and write the line, the way GitHub Copilot's commit box does. A pure-reasoning Turn (every Tool disabled) prompted with the file list plus a bounded diff excerpt, cleaned to one short line by the same cleaner the auto-title uses. On an explicit click only — it costs a Turn — and it fills the box rather than saving, so the user still reads and approves the words. |
 | "Undo" semantics (Git layer) | Used only for a file that is not a pending DeskPilot change: tracked files are restored to HEAD, untracked ones deleted. Confirmed first. |
 | Diff rendering | A modal with a file list beside a unified diff carrying **both** old and new line numbers. Parsing is a pure function (`diff.js`) so it is unit-testable without a browser. |
 | Branch vocabulary | The UI says "get from server" / "send to server" / "sync"; the API and the implementation stay ordinary `pull` / `push`. |
@@ -81,8 +82,9 @@ without the user's approval.
    Wizard, or the command palette) opens the Save modal.
 2. It re-reads `GET /api/git/changes` and lists what will be saved: file count,
    `+`/`−` totals, and a capped read-only file list.
-3. The description box is prefilled and editable; Enter or **Save all changes**
-   commits, **Review changes…** hands off to the Diff viewer first.
+3. The description box is prefilled and editable; ✨ replaces it with the Model's
+   suggestion, Enter or **Save all changes** commits, **Review changes…** hands
+   off to the Diff viewer first.
 4. `POST /api/git/commit` stages everything inside the Project and commits it,
    then drops those files from the pending change set.
 5. Nothing is sent anywhere — publishing stays the Branch Wizard's **Send to
@@ -139,6 +141,8 @@ Backend helpers (each via `Invoke-DpGitCommand`, confined to
 - `Invoke-DpGitSync` — pull / push / sync with autostash and conflict reporting.
 - `Restore-DpSyncStash` — the one place an autostash is put back, and the one
   place that can admit it failed.
+- `New-DpCommitMessagePrompt` — the suggested-Save-message prompt: the change set
+  plus a bounded diff excerpt, both named as data rather than instructions.
 - `New-DpConflictPrompt` — the suggested conflict-resolution prompt.
 
 `Invoke-DpGitCommand` gained `-TimeoutSeconds` (defaulting to a ceiling rather

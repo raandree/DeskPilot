@@ -39,6 +39,7 @@ synonym.
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
 | Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint, backup, snapshot (that is the pre-Turn snapshot), stage |
+| Save Message | The one-line description recorded with a Save. Prefilled from the change set, optionally written by the Model on request, and always editable before the Save happens. | commit message (in UI copy), comment, note, caption |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
 | Default Branch | The repository's primary integration branch and the only Merge target: `origin/HEAD` if set, else a local `main`, else `master`. | trunk, mainline, master (when you mean the concept rather than the literal branch name) |
 | Merge | Combining a source Branch into the Default Branch — fast-forward when possible, else a merge commit. | integrate, combine, sync |

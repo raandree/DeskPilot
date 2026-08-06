@@ -23,6 +23,13 @@ commits the lot. Reachable from the Changes panel (**Save all…**), the Branch
 Wizard when the tree is dirty, and the command palette. Per-file and per-hunk
 staging stay out — that is precisely the vocabulary this surface removes.
 
+A ✨ button beside the description asks the Model to write it, the way GitHub
+Copilot's commit box does (`POST /api/git/commit/message`): a pure-reasoning Turn
+with every Tool disabled, prompted with the change set plus a bounded diff
+excerpt fenced as data rather than instructions, cleaned to one line by the same
+cleaner the auto-title uses. On an explicit click only, and it fills the box
+rather than saving — the user still approves the words.
+
 Two backend corrections came with it. `git add -A` without a pathspec stages the
 **whole repository**, so a Project inside a larger repository was pulling the
 rest of it into the commit; it is now `git add -A -- .`. And the route clears
@@ -35,10 +42,15 @@ Git Workbench itself (merge/branch/sync wizards, diff viewer, conflict prompt).
 
 ## Verification
 
-- New `tests/Unit/GitCommitRoute.Tests.ps1` green (4/4): a bulk save commits
+- `tests/Unit/GitCommitRoute.Tests.ps1` green (10/10): a bulk save commits
   everything and reports it Project-relative; a committed file leaves the pending
   set and the store is persisted; a partial commit leaves the other file pending;
-  an empty message is refused without touching the pending set.
+  an empty message is refused without touching the pending set; the suggestion
+  route returns one clean line, frees the Runspace, reports an Engine failure and
+  an unusable answer as 502s, and spends no Turn on a clean tree or while another
+  Turn is running.
+- `New-DpCommitMessagePrompt` covered for the file list, the caps on both axes,
+  binary files, the data-not-instructions fencing, and an empty change set.
 - Helper coverage extended: `Invoke-DpGitCommit` reports the committed files, and
   a Project that is a subdirectory saves only its own file while the sibling
   folder's change survives.
@@ -47,9 +59,9 @@ Git Workbench itself (merge/branch/sync wizards, diff viewer, conflict prompt).
 ## Next step
 
 Live-smoke the Save modal in the browser (Changes panel, Branch Wizard, palette,
-and a Project inside a bigger repository). Spec 100 records the competitive gap
-analysis — the recommended next pieces are per-call Tool approval, an installer,
-and scheduled tasks.
+the ✨ suggestion against a real change set, and a Project inside a bigger
+repository). Spec 100 records the competitive gap analysis — the recommended next
+pieces are per-call Tool approval, an installer, and scheduled tasks.
 
 ## Previous focus
 

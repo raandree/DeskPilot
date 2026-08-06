@@ -180,6 +180,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/git/diff'; Name = 'gitDiff' }
             @{ Method = 'GET'; Pattern = '/api/git/changes'; Name = 'gitChanges' }
             @{ Method = 'POST'; Pattern = '/api/git/commit'; Name = 'gitCommit' }
+            @{ Method = 'POST'; Pattern = '/api/git/commit/message'; Name = 'gitCommitMessage' }
             @{ Method = 'POST'; Pattern = '/api/git/restore'; Name = 'gitRestore' }
             @{ Method = 'GET'; Pattern = '/api/git/branches'; Name = 'gitBranches' }
             @{ Method = 'POST'; Pattern = '/api/git/branch/create'; Name = 'gitBranchCreate' }

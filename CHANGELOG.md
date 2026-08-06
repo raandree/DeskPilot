@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No staging, no `git add`, no terminal — and nothing is sent anywhere until you
   choose **Send to server**. Saving a file also stops DeskPilot reporting it as
   an unreviewed change, because a file you saved is a file you reviewed.
+- **Let DeskPilot write the description.** A ✨ button beside the box reads your
+  changes and suggests a one-line description, the way GitHub Copilot's commit
+  box does. It only ever fills the box — you read the words and decide — and it
+  runs on your click, never on its own.
 - **DeskPilot now remembers what it changed until you decide.** Before every turn
   it records how your files looked, so the edits the agent makes stay listed as
   *not reviewed yet* — across a reload, a restart, and switching conversations —
