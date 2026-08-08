@@ -56,6 +56,9 @@ synonym.
 | Agent Memory | Durable, declarative notes the **agent** curates about the user and their environment across Conversations (conventions, tools, observed preferences, lessons), bounded and injected into every Turn. Learned automatically (throttled) or edited by hand. | memory (bare), agent notes, the memory bank |
 | CopilotAtelier | The sibling repository (`raandree/CopilotAtelier`) of curated Customizations (agents, skills, instructions, prompt files) that DeskPilot can download and register into `~/.copilot` via an opt-in, consent-gated **CopilotAtelier setup** in the Agent menu. | plugin pack, marketplace, extension store, the atelier (bare) |
 | Update | Replacing the installed DeskPilot — and, in lock-step, the Engine (ShellPilot) — with a newer PowerShell Gallery release. DeskPilot checks for one periodically and on demand, but only ever installs on explicit user consent, and the new version takes effect on the next launch. | upgrade, patch, self-update (in UI copy) |
+| Intercom | DeskPilot's two-way link to the operator's phone: it pushes a blocked question, a finished or failed job, and a stall warning to one allow-listed Telegram chat, and accepts answers, instructions and commands back. Off by default, and inert for any Project that has not opted in. | beacon, relay, remote control, bot, notifier, companion |
+| Channel | The transport an Intercom speaks over — Telegram in v1. An Intercom speaks over a Channel; the two are not interchangeable. | transport (in UI copy), provider, connector |
+| Check-in | One refresh of the live status message, which always states the time of the **next** check-in. A check-in time that has passed is how the operator detects that DeskPilot has stopped. | heartbeat (in UI copy), ping, keepalive |
 | Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
 
 ## Notes
@@ -175,3 +178,11 @@ synonym.
   ShellPilot **modules** from the PowerShell Gallery (`Install-Module`), while the
   **CopilotAtelier setup** provisions the `~/.copilot` Customization **roots** from
   a repository zip. Keep them distinct in code and copy.
+- **Intercom is bidirectional.** The word normally suggests one-way signalling;
+  here it is deliberately two-way — DeskPilot pushes *and* accepts instructions.
+  Never describe it as a beacon, a notifier, or an alerting feature: those names
+  hide the half that carries authority. **Beacon** was rejected precisely because
+  it is both one-way and, in security tooling, the word for malware calling home.
+- **Intercom vs. Channel vs. Check-in.** The **Intercom** is the feature. The
+  **Channel** is what it speaks over (Telegram). A **Check-in** is one refresh of
+  the live status message. Three distinct concepts; do not collapse them.

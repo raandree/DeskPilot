@@ -1452,13 +1452,6 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'restore_failed'; message = $result.error } }
                 return
             }
-            # A file that actually went back is no longer an unreviewed change;
-            # leaving it pending would keep offering an undo for work already gone.
-            $done = @(@($result.restored) + @($result.removed))
-            if ($done.Count -gt 0) {
-                $null = Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths $done
-                if ($state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
-            }
             Write-DpResponse -Stream $Stream -Json $result
         }
         'atelierHealth' {
@@ -1485,6 +1478,106 @@ function Invoke-DpRouteHandler {
                 sourcePath = $r.SourcePath
                 scriptPath = $r.ScriptPath
                 message    = $r.Message
+            }
+        }
+        'getIntercom' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
+        }
+        'putIntercom' {
+            if ($null -eq $Body) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'An Intercom settings body is required.' } }
+                return
+            }
+
+            # botToken is write-only and never a Setting: it is split off here so it
+            # cannot reach settings.json, a Settings export, or any response.
+            $patch = @{}
+            $tokenSupplied = $false
+            $token = ''
+            foreach ($property in $Body.PSObject.Properties) {
+                if ($property.Name -eq 'botToken') {
+                    $tokenSupplied = $true
+                    $token = [string]$property.Value
+                    continue
+                }
+                $patch[$property.Name] = $property.Value
+            }
+
+            if ($tokenSupplied) {
+                $trimmed = $token.Trim()
+                if ($trimmed -and $trimmed -notmatch '^\d{6,}:[A-Za-z0-9_-]{30,}$') {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_token'; message = 'That does not look like a Telegram bot token. BotFather gives you one shaped like 123456789:AA…' } }
+                    return
+                }
+                try {
+                    $configured = Save-DpIntercomSecret -Token $trimmed -Directory $state.DataDir -Confirm:$false
+                }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'token_store_failed'; message = (Hide-DpIntercomSecret -Text "$_") } }
+                    return
+                }
+                $state.Intercom.Token = $trimmed
+                $state.Intercom.TokenConfigured = $configured
+                # A new credential invalidates everything the old one established.
+                $state.Intercom.Running = $false
+                $state.Intercom.PollTask = $null
+                $state.Intercom.StatusMessageId = 0
+                $state.Intercom.PendingQuestion = $null
+                Add-DpIntercomLog -Direction 'system' -Kind 'token' -Detail $(if ($configured) { 'A bot token was stored.' } else { 'The bot token was removed.' })
+            }
+
+            if ($patch.Count -gt 0) {
+                try {
+                    $merged = Merge-DpSettings -Current $state.Settings -Patch @{ intercom = $patch }
+                    $state.Settings = $merged
+                    if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }
+                }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_settings'; message = "$_" } }
+                    return
+                }
+            }
+
+            # Apply the change now rather than on the next idle tick, so the panel
+            # reports the real state instead of the state it is about to be in.
+            try { Update-DpIntercomState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
+        }
+        'testIntercom' {
+            $intercom = $state.Intercom
+            if (-not $intercom.TokenConfigured -or -not $intercom.Client) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_token'; message = 'Store a bot token first.' } }
+                return
+            }
+            $chatId = [string]$state.Settings.intercom.chatId
+            if ([string]::IsNullOrWhiteSpace($chatId)) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_chat'; message = 'Enter the chat id that is allowed to control DeskPilot.' } }
+                return
+            }
+
+            # The one place Intercom waits on the network: the user pressed a
+            # button and is watching, and it is bounded by the client timeout.
+            $identity = Receive-DpTelegramResponse -Task (Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe')
+            if (-not $identity.ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'telegram_error'; message = "Telegram did not accept the token: $($identity.error)" } }
+                return
+            }
+
+            $testPayload = @{
+                chat_id                  = $chatId
+                text                     = "DeskPilot Intercom test from $([Environment]::MachineName). If you can read this, you are connected."
+                disable_web_page_preview = $true
+            }
+            $sent = Receive-DpTelegramResponse -Task (Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'sendMessage' -Payload $testPayload)
+            if (-not $sent.ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'telegram_error'; message = "The test message was not delivered: $($sent.error)" } }
+                return
+            }
+
+            Add-DpIntercomLog -Direction 'out' -Kind 'test' -Detail 'Sent a test message.'
+            Write-DpResponse -Stream $Stream -Json @{
+                ok      = $true
+                botName = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
             }
         }
         default {

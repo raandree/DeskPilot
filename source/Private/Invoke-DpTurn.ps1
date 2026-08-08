@@ -36,6 +36,10 @@ function Invoke-DpTurn {
     $writer = New-DpSseWriter -Stream $Stream
     $script:DeskPilot.TurnRunning = $true
     $script:DeskPilot.CancelRequested = $false
+    if ($script:DeskPilot.Intercom) {
+        $script:DeskPilot.Intercom.LastActivityUtc = [DateTime]::UtcNow
+        $script:DeskPilot.Intercom.StallNotified = $false
+    }
     $startTime = [DateTime]::UtcNow
     $assistantId = New-DpId -Prefix 'm'
     $settings = $script:DeskPilot.Settings
@@ -80,6 +84,20 @@ function Invoke-DpTurn {
                     title      = $questionnaire.title
                     questions  = $questionnaire.questions
                 }))
+        # The phone learns about the question in the same breath as the window, so
+        # an operator who is away is never the last to know (spec 110).
+        try {
+            $questionParams = @{
+                RequestId      = [string]$request.Id
+                ConversationId = [string]$request.ConversationId
+                Questionnaire  = $questionnaire
+            }
+            Send-DpIntercomQuestion @questionParams
+        }
+        catch {
+            $intercomError = $_
+            Write-Verbose "Could not forward the question to Intercom: $intercomError"
+        }
     }
 
     # Translate each Engine Information record into at most one SSE frame:
@@ -95,6 +113,9 @@ function Invoke-DpTurn {
     # preserved exactly.
     $emit = {
         param($Record)
+        # Intercom's stall watchdog measures silence, so every record the Engine
+        # produces is proof of life - stamped before any of it is interpreted.
+        if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.LastActivityUtc = [DateTime]::UtcNow }
         if ($userPromptBridge) {
             $questionText = Get-DpUserPromptText -Record $Record
             if ($questionText) { $userPromptBridge.CaptureQuestion($questionText) }

@@ -175,16 +175,48 @@ source: repository evidence
 - **Pricing belongs to the Engine.** DeskPilot never hard-codes a rate; a missing
   price is fixed upstream in ShellPilot's `data/PriceTable.psd1`. Mirroring the
   table here would fork the number that matters most and guarantee drift.
-- **An open modal is a stale snapshot until it re-reads.** The diff viewer opens
-  with the change set it was handed; Keep, Undo and Save all move the working
-  tree underneath it. Every action that mutates the tree now re-derives the
-  viewer from the refreshed change sets (`reconcileDiffFiles`) instead of
-  trusting the list it opened with. The sidebar refreshed and the modal did not,
-  so the same file was simultaneously gone and still listed.
-- **An undo has to clear every list that claims the file changed.** Reverting a
-  file through `/api/git/restore` now also drops it from the pending change set,
-  the way the commit route does. Restoring the bytes but leaving the record
-  behind keeps offering an undo for work that no longer exists.
+
+- **A network call on the accept thread is a frozen UI.** Intercom's Telegram
+  long-poll would park the single accept thread for 25 seconds, which is the same
+  sentence as "the whole window stops responding" - the failure
+  `Invoke-DpGitCommand` exists to prevent. Every Telegram call is an `HttpClient`
+  `Task` started on one pump tick and reaped on a later one. The pump reaps what
+  finished, starts what is due, and returns.
+- **A feature that only works between Turns is useless during one.** The moment
+  Intercom matters most is mid-Turn: the agent is blocked on a question and the
+  operator is away. So the pump runs from `Invoke-DpPendingRequest` as well as the
+  idle tick - and only the idle-tick caller passes `-AllowTurn`, so a command
+  arriving mid-Turn is queued instead of re-entering `Invoke-DpTurn`. Starting a
+  Turn is deliberately the pump's *last* step.
+- **Silence is the one state a remote channel cannot explain.** A dead machine
+  cannot report that it is dead, and DeskPilot has no relay. So Intercom keeps one
+  status message and *edits* it on a timer, always stating the time of the next
+  check-in. Telegram does not notify on an edit, so this costs nothing and never
+  floods - and when the machine dies the message freezes with a deadline in the
+  past. Absence becomes a self-dating fact instead of an ambiguous silence.
+- **Discard the backlog on startup.** The first `getUpdates` only learns the
+  newest update id and throws the rest away. Executing an instruction the operator
+  sent an hour ago, the moment DeskPilot launches, is a dangerous surprise, not a
+  helpful catch-up.
+- **Authority is a Project flag, not a second Permission set.** A remote message
+  may only act on a Project that opted in; inside such a Project it has exactly the
+  Permissions a local Turn has. One boundary the user can see and reason about
+  beats a parallel permission model they have to keep in sync.
+- **Never answer a caller you just rejected.** Replying to a non-allow-listed chat
+  confirms the bot exists and turns it into a free oracle for anyone probing it.
+  The rejection is counted and logged loudly instead - a rejection is a possible
+  attack, and the panel shows it in red.
+- **A credential in the request URL is a credential in every error string.** The
+  Telegram bot token travels in the path, so an unredacted transport error would
+  print it into the audit log, a route response, or the console. Every Intercom
+  error goes through `Hide-DpIntercomSecret` first, and the token is stored outside
+  `settings.json` so a Settings backup can never carry it.
+- **An outbound channel is an exfiltration channel.** Intercom composes messages
+  from structured fields DeskPilot owns; the agent's own question text is the one
+  forwarded verbatim, which a poisoned repository file can exploit through a
+  perfectly well-behaved agent. This is *accepted*, not mitigated (spec 110, A1),
+  and bounded by the same Project flag - a Project that never opts in can never
+  exfiltrate this way.
 
 ## Anti-patterns to avoid
 

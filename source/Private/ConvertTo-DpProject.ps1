@@ -41,5 +41,9 @@ function ConvertTo-DpProject {
     $name = ([string](& $read $InputObject 'name')).Trim()
     if (-not $name) { $name = Split-Path -Leaf $path }
 
-    @{ id = $id; name = $name; path = $path }
+    # Whether this Project may be controlled from a phone (spec 110). Off unless
+    # explicitly set: remote control is opted into per Project, never inherited.
+    $intercom = [bool](& $read $InputObject 'intercom')
+
+    @{ id = $id; name = $name; path = $path; intercom = $intercom }
 }

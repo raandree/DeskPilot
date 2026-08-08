@@ -63,5 +63,19 @@ function Get-DpDefaultSettings {
         # takes effect on the next launch (see Invoke-DpSelfUpdate).
         updateCheckIntervalMinutes = 5
         updateIncludePrereleases   = $false
+        # Intercom: remote control from a phone over a Telegram bot (spec 110).
+        # Off by default, and inert until a bot token is stored (separately, in
+        # intercom.secret - never here) and one chat id is allow-listed. A remote
+        # message can only act on a Project whose own intercom flag is on.
+        intercom                   = @{
+            enabled                = $false
+            chatId                 = $null
+            heartbeatMinutes       = 5
+            stallMinutes           = 5
+            questionTimeoutMinutes = 60
+            maxMessagesPerHour     = 60
+            notifyOnDone           = $true
+            sendFinalAnswer        = $true
+        }
     }
 }

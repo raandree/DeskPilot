@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-08-05
+last-verified: 2026-08-08
 source: repository evidence
 ---
 
@@ -10,60 +10,66 @@ source: repository evidence
 
 ## Current focus
 
-**An open modal has to re-read the change set (`ai/git-workbench`, 2026-08-06).**
-The user reported that undoing a file "sometimes doesn't work": they confirmed the
-undo and the file was still listed, still showed its old diff, and still offered
-another **Undo this file**. Nothing was wrong with the working tree — the sidebar
-had already updated. `diffView.files` was a snapshot taken when the viewer opened
-and nothing re-derived it.
+**Intercom — remote control from a phone (`ai/intercom`, 2026-08-08).** Spec 110,
+signed off after a `grill-me` interview. The operator runs long jobs and cannot
+reach the machine over RDP while travelling; a job blocked on a question used to
+idle until they got back.
 
-New pure helper `reconcileDiffFiles` in `web/assets/diff.js` rebuilds the viewer's
-list from the current change sets: files that no longer differ drop out, survivors
-are replaced by their **fresh** record (the stale one carries the wrong
-`snapshotSha`, so the diff would be taken against the wrong base), the selection
-follows its file or moves to the next survivor, and an empty result tells the
-caller to close the viewer. `refreshDiffViewer()` now runs after every Keep and
-Undo.
+It lives in **DeskPilot**, not ShellPilot and not a Skill: every concept it gates
+on — Project, Permission, Conversation, Settings — is a DeskPilot concept, and
+the Engine needs no change. The Atelier's share is check-in *discipline* as an
+extension to the `long-running-job-monitor` Skill, which is behaviour, not
+transport, and is not built here.
 
-The same defect had a backend half: `POST /api/git/restore` put the bytes back but
-left the file in the pending change set, so a Git-path undo kept it listed as an
-unreviewed DeskPilot change. It now clears exactly what went back, the way the
-commit route already did.
+The two decisions that shaped the code:
 
-Before this: an unpriced Model reading as `$0.0000`, and before that the **Save**
-action — DeskPilot's user-facing word for a commit.
+- **Nothing waits on the accept thread.** `Update-DpIntercomState` starts an
+  `HttpClient` `Task` on one tick and reaps it on a later one. It runs from the
+  idle tick *and* from `Invoke-DpPendingRequest`, because the moment Intercom
+  matters most is mid-Turn — and only the idle-tick caller passes `-AllowTurn`,
+  so a command that arrives mid-Turn is queued rather than re-entering
+  `Invoke-DpTurn`.
+- **Silence had to be made legible.** With no relay, a dead machine cannot report
+  itself. One status message is *edited* on a timer (Telegram does not notify on
+  an edit, so it costs nothing) and always states its next check-in deadline. When
+  the machine dies the message freezes with a time in the past.
 
 ## Verification
 
-- `reconcileDiffFiles` covered under Node: the fresh record replaces the stale
-  one, an undone selection lands on the next survivor, a surviving selection
-  stays put, a trailing undone selection clamps to the last survivor, an empty
-  result signals "close the viewer", and junk input does not throw.
-- A structural guard asserts the wiring exists in `app.js` — the pure helper
-  passing on its own would not prove the viewer ever calls it.
-- New `tests/Unit/GitRestoreRoute.Tests.ps1` (3/3): the route reverts a tracked
-  file, drops it from the pending set and persists the store, and leaves a file
-  pending when the restore skipped it.
-- Full unit suite **565/565**, exit 0.
+- `tests/Unit/Intercom.Tests.ps1` — **50/50**: the allow-list runs before any text
+  is parsed, a reply to the question message is the only accepted answer, the
+  command grammar, message splitting and bounds, the per-Project gate, Settings
+  validation, token redaction, the rate cap (and the status message's exemption
+  from it), the secret store, and a guard that the pump never starts a Turn
+  without `-AllowTurn`.
+- Full suite **613/615**. The two failures are a **pre-existing revert in the
+  working tree**, not Intercom — see *Known worktree state* below.
+- PSScriptAnalyzer clean on every new file.
+- Live smoke against a running Host Server: `/api/intercom` is 401 without a
+  session token, a malformed bot token is 400, an out-of-range setting is 400, and
+  the stored token appears in no response, not in `settings.json`, and not in
+  clear text in `intercom.secret`.
+
+## Known worktree state — not mine
+
+`.memory-bank/progress.md`, `.memory-bank/systemPatterns.md`, `CHANGELOG.md` and
+the `gitRestore` case in `Invoke-DpRouteHandler.ps1` carried **uncommitted
+deletions before this session started**: a wholesale revert of the 2026-08-06
+"undo doesn't work" fix. `refreshDiffViewer` is gone from `app.js` and the
+`Remove-DpChangeEntry` block is gone from the `gitRestore` route, so those two
+tests fail. HEAD contains the fix and passes; the working tree does not. This was
+left untouched on purpose — it is unrelated in-progress work. Decide whether to
+restore it or discard it before the next release.
 
 ## Next step
 
-Live-smoke the fix in the browser: open the diff viewer over several changed
-files, undo one from the footer, and confirm it leaves the rail while the
-selection moves on — then undo the last one and confirm the viewer closes.
-Spec 100 records the competitive gap analysis; the recommended next pieces are
-per-call Tool approval, an installer, and scheduled tasks.
-
-## Recent fix
-
-An unpriced Model read as a confident `$0.0000 · 0 credits`. The Engine returns
-`$null` when its price table has no rate for the Model id; DeskPilot coerced that
-to zero. The boundary now carries a `priced` flag and the counters carry
-`unpricedTurns`, so a floor says so.
+Live-smoke Intercom against a real bot end to end: create a bot in BotFather,
+follow `docs/intercom-getting-started.md`, and confirm the four flows — a
+forwarded question answered by reply, a cold-start prompt, `/stop` mid-Turn, and
+the status message's check-in time advancing. Then resolve the worktree revert
+above.
 
 ## Previous focus
 
-DeskPilot remembering what it changed until the user decides: a pre-Turn
-snapshot commit under `refs/deskpilot/snapshots/` plus a per-Project pending
-change set in `changes.json`, surfaced in the Message card, the Changes panel,
-the file tree, and the diff viewer.
+An open modal re-reading the change set (the diff viewer keeping a stale file
+list after Keep/Undo), and before that an unpriced Model reading as `$0.0000`.

@@ -9,14 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Undoing a file now clears it from the review list.** The diff viewer kept the
-  file list it opened with, so after you confirmed an undo the file was still
-  listed, still showed its old diff, and still offered a second **Undo this
-  file** for a change that was already gone. The viewer now re-reads the change
-  set after every Keep or Undo: a file that no longer differs drops out, the
-  selection moves to the next file, and the viewer closes when nothing is left
-  to review. A file put back through Git also stops being reported as an
-  unreviewed DeskPilot change.
 - **A model with no published rate no longer reads as free.** The engine prices a
   turn from a table keyed by exact model id; a model newer than that table (for
   example `claude-opus-5`) comes back with *no* price, and DeskPilot was showing
@@ -29,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reach DeskPilot from your phone (Intercom).** When the agent needs an
+  answer, finishes, fails, or goes quiet, DeskPilot messages you on Telegram —
+  and you can reply to answer it, send a new instruction, `/stop` the job,
+  `/steer` it somewhere else, or `/new` a fresh conversation, without a remote
+  desktop session. It is **off by default** and stays off for every project until
+  you tick **allow phone control** on that project, so nothing can be driven
+  remotely by accident. Exactly one Telegram chat is allowed; anything else is
+  counted and thrown away without being read as an instruction. The bot token is
+  encrypted for your Windows account in its own file, so a settings backup can
+  never carry it. DeskPilot also keeps one silently-updating status message on
+  your phone that always states the time of its next check-in — if that time has
+  passed, DeskPilot has stopped. Set it up under **Settings → Intercom**; the
+  [getting-started guide](docs/intercom-getting-started.md) walks through it.
 - **The files panel is resizable.** Drag its left edge to make it as wide as you
   need (up to 60 % of the window), double-click the edge to snap back to the
   default, or focus it and use `←`/`→` — `Shift` for bigger steps, `Home` to

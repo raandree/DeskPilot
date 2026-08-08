@@ -2322,6 +2322,119 @@ button.tree-row {
     flex: 0 0 auto;
 }
 
+/* ===== Intercom (remote control from a phone) ===== */
+
+/* Topbar chip. Hidden entirely while Intercom is off, so a feature nobody uses
+   adds no chrome; once on, its colour is the whole health report. */
+.intercom-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.intercom-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.intercom-chip.ok {
+    border-color: var(--ok, #2e7d5b);
+    color: var(--ok, #2e7d5b);
+}
+
+.intercom-chip.warn {
+    border-color: var(--warn, #b8860b);
+    color: var(--warn, #b8860b);
+}
+
+.intercom-chip.bad {
+    border-color: var(--danger, #b3261e);
+    color: var(--danger, #b3261e);
+}
+
+.intercom-panel {
+    font-size: 13px;
+    color: var(--text);
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.intercom-state {
+    font-weight: 600;
+}
+
+.intercom-state.ok {
+    color: var(--ok, #2e7d5b);
+}
+
+.intercom-state.warn {
+    color: var(--warn, #b8860b);
+}
+
+.intercom-state.bad {
+    color: var(--danger, #b3261e);
+}
+
+.intercom-err {
+    margin-top: 4px;
+    color: var(--danger, #b3261e);
+}
+
+.intercom-counts {
+    margin-top: 6px;
+    color: var(--muted);
+}
+
+.intercom-log {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+}
+
+.intercom-log-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    padding: 2px 0;
+}
+
+/* A rejected message is a possible attack, so it is the one row that shouts. */
+.intercom-log-row.rejected .intercom-kind {
+    color: var(--danger, #b3261e);
+    font-weight: 600;
+}
+
+.intercom-arrow {
+    color: var(--muted);
+}
+
+.intercom-kind {
+    color: var(--muted);
+    min-width: 74px;
+}
+
+.project-remote {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
 /* ===== Popover ===== */
 .popover {
     position: fixed;
