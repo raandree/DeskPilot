@@ -295,6 +295,19 @@ source: repository evidence
   text. Where a protocol has a "changed" event, decide explicitly whether to run,
   refuse, or explain - silence is none of those.
 
+- **An empty collection is falsy, so `-not $list` is a bug waiting to happen.**
+  `Add-DpIntercomLog` guarded with `-not $intercom.Log` and therefore refused
+  every entry while the ring was empty - which it always was, because nothing
+  could ever be added. The audit trail the spec presents as a security control had
+  never recorded anything. Test for `$null` explicitly when the thing may legally
+  be empty. This is the same PowerShell unrolling trap already recorded for
+  collection-returning `if` expressions.
+- **Advance a cursor per item, after attempting it.** The Telegram poll advanced
+  its offset for the whole batch up front, so one throwing handler jumped to the
+  outer catch and every remaining message was lost for good with nothing logged.
+  Per-item isolation plus a per-item cursor loses nothing and cannot spin on a
+  poison item either.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
@@ -312,3 +325,6 @@ source: repository evidence
   nothing, so `$x` is `$null` and the next `.Add()` throws. Declare the list, then
   fill it. The same unrolling makes a helper that returns an empty array yield
   `$null` at the call site - wrap the call in `@(…)`.
+- Guarding on a collection's truthiness (`if (-not $list)`) when empty is a legal
+  state. An empty collection is falsy, so the guard fires exactly when the list is
+  waiting to be filled.
