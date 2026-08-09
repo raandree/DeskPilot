@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the moment just before you hit send: the message and everything after it leave
   the conversation, your prompt goes back into the box so you can reword it, and
   any file DeskPilot changed since is put back the way it was. Files you edited
-  yourself are left alone, and DeskPilot asks before it discards anything.
+  yourself are left alone, and DeskPilot asks before it discards anything. The
+  marker appears as soon as the turn finishes — you do not have to reopen the
+  conversation to see it.
 
 ### Fixed
 

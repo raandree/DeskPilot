@@ -6511,7 +6511,22 @@ async function _streamRerun({ endpoint, body }) {
 async function refreshCurrentConversation() {
     if (!state.current) return;
     try { state.current = await api('GET', '/api/conversations/' + state.current.id); } catch { /* keep optimistic */ }
+    syncCheckpointDividers();
     renderContextMeter();
+}
+
+// The bubble for a live turn is built optimistically, before the server has
+// taken the snapshot, so its checkpoint only exists once the conversation is
+// refreshed. Fill the dividers in then rather than re-rendering the thread.
+function syncCheckpointDividers() {
+    const thread = $('thread');
+    if (!thread || !state.current || !state.current.messages) return;
+    for (const m of state.current.messages) {
+        if (m.role !== 'user' || !m.checkpoint || !m.checkpoint.sha || !m.id) continue;
+        const el = thread.querySelector(`.msg-user[data-id="${CSS.escape(m.id)}"]`);
+        if (!el || (el.previousElementSibling && el.previousElementSibling.classList.contains('checkpoint'))) continue;
+        thread.insertBefore(buildCheckpointEl(m), el);
+    }
 }
 
 // ===== Voice: dictation (speech-to-text) =====

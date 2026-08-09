@@ -101,6 +101,11 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match ([regex]::Escape("m.role === 'user' && m.checkpoint && m.checkpoint.sha"))
         $js | Should -Match 'function buildCheckpointEl'
         $js | Should -Match ([regex]::Escape('Restore Checkpoint'))
+        # The live bubble is built before the server has taken the snapshot, so
+        # rendering only on thread rebuild leaves the turn you just ran without a
+        # divider until you switch conversations and back.
+        $js | Should -Match 'function syncCheckpointDividers'
+        $js | Should -Match '(?s)async function refreshCurrentConversation.{0,400}syncCheckpointDividers\(\)'
         # Restoring throws away messages and rewrites files; it must never be one click.
         $js | Should -Match '(?s)async function restoreCheckpoint\(m\).{0,900}window\.confirm'
         # The discarded prompt goes back in the composer, or the user loses what they typed.

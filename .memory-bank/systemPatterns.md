@@ -376,6 +376,14 @@ source: repository evidence
   string. Reusing the wrong helper (a git-relative converter) failed loudly;
   reusing none would have failed silently.
 
+- **An optimistic bubble cannot carry a server-assigned field.** The live user
+  Message is drawn from the typed text before the request is even sent, so a
+  value the server computes mid-Turn (the Checkpoint sha, taken after the `start`
+  frame) is structurally absent from it. Rendering only on thread rebuild meant
+  the divider appeared for every past Turn but never the one just run - which
+  reads as "the feature is broken", not "the feature is late". Anything the
+  server assigns has to be filled in from the post-Turn refresh.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

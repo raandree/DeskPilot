@@ -825,6 +825,11 @@ Message taken while a Project was selected carries
 `checkpoint: { "sha": "…", "root": "…", "createdUtc": "…" }`, which the SPA
 renders as a **Restore Checkpoint** divider above the Message.
 
+The sha is only known once the snapshot has been taken, which is after the
+`start` frame, so a live Turn's optimistic bubble cannot carry it. The SPA fills
+the divider in from the post-Turn `refreshCurrentConversation`, not from the
+stream.
+
 Restoring does two things:
 
 1. **Truncates the Conversation** at that Message — it and every later Message
