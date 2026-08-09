@@ -257,6 +257,20 @@ source: repository evidence
   cost three round-trips of debugging a bug that was already fixed. A surface
   that cannot reach its server says so.
 
+- **Navigating is not acting.** `/chats`, `/chat <n>` and a bare `/new` only move
+  where Intercom points; they run nothing, so they are not gated on the Project
+  flag. Gating them would make `/chats` unusable in exactly the situation that
+  needs it - no Project open, or the wrong one. The gate belongs on running work,
+  not on looking around.
+- **A number the user was shown must keep meaning what they saw.** The `/chats`
+  list is ordered by last activity, so a Turn reorders it. The ids behind the
+  numbering are snapshotted in `Intercom.ChatIndex` and `/chat 3` resolves against
+  that, not against a freshly computed order.
+- **If the agent has no tool for it, the agent is the wrong place to ask.** The
+  user asked the agent to switch conversations and got a polite, accurate refusal:
+  Conversation selection is Host Server state. A capability the product owns needs
+  a product command, not a better prompt.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

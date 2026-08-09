@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Switch conversations from your phone.** Intercom gains `/chats` to list your
+  conversations (newest first, marking the one you are in), `/chat 2` to switch
+  to one, and `/new` to start a fresh one. Asking the *agent* to switch chats
+  never worked and never could — which conversation is open is DeskPilot's state,
+  not something the agent can see or change. Listing and switching run nothing,
+  so they work even when no project is open; `/new <text>` still needs a project
+  with **allow phone control** ticked, because that runs work.
 - **Reach DeskPilot from your phone (Intercom).** When the agent needs an
   answer, finishes, fails, or goes quiet, DeskPilot messages you on Telegram —
   and you can reply to answer it, send a new instruction, `/stop` the job,
