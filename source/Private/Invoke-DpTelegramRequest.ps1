@@ -51,7 +51,7 @@ function Invoke-DpTelegramRequest {
         return $Client.GetAsync($url)
     }
 
-    $json = $Payload | ConvertTo-Json -Depth 6 -Compress
+    $json = $Payload | ConvertTo-Json -Depth 10 -Compress
     $content = [System.Net.Http.StringContent]::new($json, [System.Text.Encoding]::UTF8, 'application/json')
     $Client.PostAsync($url, $content)
 }

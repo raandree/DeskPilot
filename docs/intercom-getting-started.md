@@ -119,6 +119,7 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | What you send | What happens |
 | --- | --- |
 | **Reply** to a question message | Answers that question; the agent carries on |
+| **Tap a button** under a message | Picks that answer, or switches conversation from `/chats` |
 | Any other message | The agent treats it as a new instruction |
 | A file, with or without a caption | DeskPilot saves it into your project folder and the agent works on it; your caption is the instruction |
 | `/status` | What is happening right now |
@@ -140,6 +141,15 @@ Three things worth knowing:
 - **Answer by replying.** Use Telegram's reply function on the question message
   itself — swipe it, or hold it and tap Reply. That is how DeskPilot knows which
   question you are answering, so there is no code to type.
+- **When the agent offers a list of choices, you get buttons.** Tap one and that
+  is your answer — no typing, no numbers. You can still reply with your own words
+  instead if none of them fit. Some questions let you pick several answers at
+  once; those have no buttons, because one tap cannot say "these two". Reply to
+  those in writing. `/chats` gives you a button per conversation too.
+- **Buttons from an old question stop working, on purpose.** Telegram leaves them
+  on screen forever. If you scroll back and tap one, DeskPilot tells you that
+  question has moved on rather than putting the answer somewhere it does not
+  belong.
 - **A message sent while a job is running is queued**, not jammed in. It runs as
   soon as the current job finishes. Use `/steer` if you want to interrupt.
 - **`/undo` is the escape hatch when the agent went the wrong way.** Send it and

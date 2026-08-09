@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tap to answer, instead of typing.** When the agent asks a question with a
+  list of choices, Telegram now shows a button for each one — tap it and that is
+  your answer. `/chats` gives you a button per conversation too, so switching no
+  longer means reading a list and typing a number. You can still reply in writing
+  whenever you prefer, and questions that let you pick several answers at once
+  still ask for a written reply, because one tap cannot say "these two".
 - **Rewind a conversation to before a prompt.** Every message you send now
   carries a **Restore Checkpoint** marker above it. Clicking it takes you back to
   the moment just before you hit send: the message and everything after it leave

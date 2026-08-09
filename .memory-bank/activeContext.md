@@ -10,40 +10,47 @@ source: repository evidence
 
 ## Current focus
 
-**Checkpoints — rewind a Conversation to before a prompt (`ai/intercom`,
-2026-08-09).** Parity with GitHub Copilot's "Restore Checkpoint" divider.
+**Intercom inline keyboards — tap instead of type (`ai/intercom`, 2026-08-09).**
+Parity with BotFather: a closed choice should be a button, not a number to read
+and retype at a bus stop. Buttons ride under an Ask-User question and the
+`/chats` listing; the written form always still works, so nothing depends on them
+rendering.
 
-The feature needed **no new capture**: DeskPilot has committed a pre-Turn
-snapshot to `refs/deskpilot/snapshots/<assistantMessageId>` since the change set
-shipped, so a single file could be undone. The sha simply was not reachable from
-the transcript. `Invoke-DpTurn` now stamps `checkpoint = @{ sha; root;
-createdUtc }` on the **user** Message and the SPA renders a divider above it.
+The three constraints that shaped the code:
 
-The two decisions that shaped the code:
+- **`callback_data` is capped at 64 bytes**, so it carries a prefix, a nonce and
+  an index rather than the label. `Get-DpIntercomKeyboard` drops the *whole*
+  keyboard when a button would exceed it — a button that fails silently when
+  tapped is worse than no button.
+- **Old buttons never disappear.** Telegram leaves them on screen indefinitely, so
+  an option tap carries `PendingQuestion.token` and is refused when it does not
+  match. Without that, a tap on a question answered hours ago would answer
+  whatever is waiting now.
+- **A tap must be acknowledged**, or Telegram shows the button spinning forever.
+  `answerCallbackQuery` is queued ahead of the reply and bypasses the hourly cap;
+  the pump gained a general `operation`/`payload` record so a bare Bot API call
+  rides the same single-send queue and nothing waits on the accept thread.
 
-- **Restore what the agent wrote, not where you are.** Only the paths from each
-  discarded Message's `activity.filesWritten` are put back, through the existing
-  per-file `Invoke-DpChangeUndo` against that sha. A folder-wide checkout or a
-  `git reset` would destroy the hand edits made in between — the exact boundary
-  the pending change set draws between "undo what the AI did" and "revert to the
-  last commit" (spec 090).
-- **The snapshot now has two owners.** `Remove-DpChangeEntry` deleted the ref as
-  soon as its pending entries cleared, so Keeping a change would have destroyed
-  the commit its own Checkpoint restores from. `Get-DpCheckpointSha` reads the
-  **live** Conversation store rather than taking a parameter, so a future call
-  site cannot forget to ask before deleting.
+Buttons are offered **only** for a single-question, single-select Ask-User. A
+multi-select keeps the written-reply flow: one tap cannot say "these two", and a
+keyboard that silently drops the second choice is worse than none.
 
-Truncation reuses `Reset-DpConversationForRerun` — the same machinery as
-Regenerate and Edit — so the discarded prompt comes back in the composer.
-
-It is reachable from both surfaces. Intercom's `/undo`
-(`Restore-DpIntercomCheckpoint`) restores the bound Conversation's most recent
-Checkpoint, takes two messages like `/delete` because it is the only Intercom
-command that rewrites files on disk, and quotes real numbers from
-`Restore-DpCheckpoint -Preview` rather than a second approximate count.
+Before this, **Checkpoints**: the pre-Turn snapshot DeskPilot already took, made
+addressable from the transcript as a **Restore Checkpoint** divider, restorable
+from the window and from Intercom's `/undo`. The restore is bounded to the paths
+in `activity.filesWritten` rather than a folder-wide checkout, so hand edits made
+in between survive — the boundary the pending change set exists to draw (spec
+090). `Get-DpCheckpointSha` stops `Remove-DpChangeEntry` garbage-collecting a
+snapshot a Message still references.
 
 ## Verification
 
+- `tests/Unit/IntercomKeyboard.Tests.ps1` — **19/19**: layout and per-row packing,
+  the 64-byte drop, label truncation, a tap parsed as its own kind, a tap from a
+  chat that is not allow-listed rejected before its data is read, the
+  `answerCallbackQuery` queued first, the *label* submitted rather than the index,
+  a stale nonce and an out-of-range index both refused, chat switching, and the
+  keyboard offered only for a single-select single question.
 - `tests/Unit/Checkpoint.Tests.ps1` — **21/21** under `Set-StrictMode -Version
   Latest`: sha collection and per-Project filtering, truncation and the returned
   prompt, the bounded file set handed to the undo, pending-change clearing,
@@ -58,11 +65,13 @@ command that rewrites files on disk, and quotes real numbers from
 - SPA structural guards in `tests/Unit/WebAssets.Tests.ps1`: the divider is gated
   on `m.checkpoint.sha`, restoring always confirms, the prompt is put back in the
   composer, and `refreshCurrentConversation` calls `syncCheckpointDividers`.
-- Full suite **716/718**. The two failures are the **pre-existing revert** — see
+- Full suite **735/737**. The two failures are the **pre-existing revert** — see
   *Known repository state* below.
-- PSScriptAnalyzer clean on the new files; `./build.ps1 -Tasks build` EXIT 0.
-- **Not yet live-smoked.** Restoring rewrites files on disk; exercise it against a
-  real Project — from the window and from `/undo` — before trusting it.
+- PSScriptAnalyzer clean on every new source file; `./build.ps1 -Tasks build`
+  EXIT 0.
+- **Not yet live-smoked.** Restoring rewrites files on disk, and the keyboard path
+  has never touched a real Bot API; exercise both against a real Project and a
+  real bot before trusting them.
 
 ## Known repository state — not mine
 
@@ -81,13 +90,15 @@ the fix or keep the revert before the next release.
 
 Restart DeskPilot — the whole process, not just the browser tab: the SPA
 hot-reloads from `source/web` but the module functions are already in memory,
-which is why the first Checkpoint attempt showed no divider. Then live-smoke a
-restore against a real Project from both surfaces: confirm the divider appears on
-the turn just run, that the prompt returns to the composer, that a file the agent
-wrote is put back and one it created is deleted, that a hand edit to an untouched
-file survives, and that `/undo` previews accurate numbers before `/undo confirm`
-acts. Then live-smoke Intercom end to end per
-`docs/intercom-getting-started.md`. Then resolve the repository revert above.
+which is why the first Checkpoint attempt showed no divider. Then live-smoke
+against a real bot: an Ask-User question with options should arrive with tappable
+buttons that answer it in one tap, `/chats` should switch on a tap, and a tap on
+an older question's buttons should be refused rather than misrouted. Then a
+Checkpoint restore from both surfaces — confirm the divider appears on the turn
+just run, the prompt returns to the composer, a file the agent wrote is put back
+and one it created is deleted, a hand edit to an untouched file survives, and
+`/undo` previews accurate numbers before `/undo confirm` acts. Then resolve the
+repository revert above.
 
 ## Previous focus
 

@@ -68,6 +68,9 @@ function ConvertFrom-DpIntercomUpdate {
         preview          = ''
         # A file the operator sent, to be downloaded before the prompt runs.
         attachment       = $null
+        # The tap on an inline-keyboard button that produced this, answered so
+        # Telegram stops showing the button as loading.
+        callbackId       = ''
     }
 
     if ($null -eq $Update) {
@@ -76,6 +79,40 @@ function ConvertFrom-DpIntercomUpdate {
     }
 
     $result.updateId = [long](Get-DpPropertyValue -InputObject $Update -Name @('update_id') -Default 0)
+
+    # A tapped button is not a message: it carries its own id, which must be
+    # answered or Telegram leaves the button spinning, and its data is a token this
+    # bot minted rather than anything the operator typed.
+    $callback = Get-DpPropertyValue -InputObject $Update -Name @('callback_query') -Default $null
+    if ($callback) {
+        $result.callbackId = [string](Get-DpPropertyValue -InputObject $callback -Name @('id') -Default '')
+        $callbackMessage = Get-DpPropertyValue -InputObject $callback -Name @('message') -Default $null
+        $callbackChat = Get-DpPropertyValue -InputObject $callbackMessage -Name @('chat') -Default $null
+        $result.chatId = [string](Get-DpPropertyValue -InputObject $callbackChat -Name @('id') -Default '')
+        $result.messageId = [long](Get-DpPropertyValue -InputObject $callbackMessage -Name @('message_id') -Default 0)
+
+        $callbackFrom = Get-DpPropertyValue -InputObject $callback -Name @('from') -Default $null
+        $callbackFirst = [string](Get-DpPropertyValue -InputObject $callbackFrom -Name @('first_name') -Default '')
+        $callbackUser = [string](Get-DpPropertyValue -InputObject $callbackFrom -Name @('username') -Default '')
+        $callbackName = (@($callbackFirst, $(if ($callbackUser) { "@$callbackUser" })) | Where-Object { $_ }) -join ' '
+        if ($callbackName.Length -gt 60) { $callbackName = $callbackName.Substring(0, 60) }
+        $result.fromName = $callbackName
+
+        # The allow-list runs before the data is read, exactly as it does for a
+        # message: a tap from any other chat is recorded and dropped.
+        if ([string]::IsNullOrWhiteSpace($AllowedChatId) -or $result.chatId -ne $AllowedChatId.Trim()) {
+            $result.kind = 'rejected'
+            $result.reason = "Button tap from chat '$($result.chatId)' is not allow-listed."
+            return $result
+        }
+
+        $data = [string](Get-DpPropertyValue -InputObject $callback -Name @('data') -Default '')
+        if ($data.Length -gt 64) { $data = $data.Substring(0, 64) }
+        $result.kind = 'callback'
+        $result.text = $data
+        $result.preview = $data
+        return $result
+    }
 
     $message = Get-DpPropertyValue -InputObject $Update -Name @('message') -Default $null
     $isEdit = $false

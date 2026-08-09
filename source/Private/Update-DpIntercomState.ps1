@@ -126,21 +126,32 @@ function Update-DpIntercomState {
         if (-not $intercom.SendTask -and ($intercom.Retry -or $intercom.Outbound.Count -gt 0)) {
             $record = if ($intercom.Retry) { $intercom.Retry } else { $intercom.Outbound.Dequeue() }
             $intercom.Retry = $null
-            $useEdit = $record.edit -and $intercom.StatusMessageId -gt 0
-            $operation = if ($useEdit) { 'editMessageText' } else { 'sendMessage' }
-            $payload = @{
-                chat_id                  = $chatId
-                text                     = [string]$record.text
-                disable_web_page_preview = $true
+            $rawOperation = [string](Get-DpPropertyValue -InputObject $record -Name @('operation') -Default '')
+            if ($rawOperation) {
+                # A bare Bot API call queued behind the messages so ordering holds -
+                # answerCallbackQuery, which has no text and must not be reformatted.
+                $operation = $rawOperation
+                $payload = [hashtable](Get-DpPropertyValue -InputObject $record -Name @('payload') -Default @{})
             }
-            # The agent writes Markdown; Telegram renders none of it. Escape-first
-            # HTML is the safe way to make an answer readable on a phone.
-            if (-not $record.plainOnly) {
-                $payload.text = ConvertTo-DpTelegramHtml -Text ([string]$record.text)
-                $payload.parse_mode = 'HTML'
+            else {
+                $useEdit = $record.edit -and $intercom.StatusMessageId -gt 0
+                $operation = if ($useEdit) { 'editMessageText' } else { 'sendMessage' }
+                $payload = @{
+                    chat_id                  = $chatId
+                    text                     = [string]$record.text
+                    disable_web_page_preview = $true
+                }
+                # The agent writes Markdown; Telegram renders none of it. Escape-first
+                # HTML is the safe way to make an answer readable on a phone.
+                if (-not $record.plainOnly) {
+                    $payload.text = ConvertTo-DpTelegramHtml -Text ([string]$record.text)
+                    $payload.parse_mode = 'HTML'
+                }
+                $keyboard = Get-DpPropertyValue -InputObject $record -Name @('keyboard') -Default $null
+                if ($keyboard) { $payload.reply_markup = $keyboard }
+                if ($useEdit) { $payload.message_id = $intercom.StatusMessageId }
+                if ($record.edit -and -not $useEdit) { $record.capture = 'status' }
             }
-            if ($useEdit) { $payload.message_id = $intercom.StatusMessageId }
-            if ($record.edit -and -not $useEdit) { $record.capture = 'status' }
             try {
                 $intercom.SendTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation $operation -Payload $payload
                 $intercom.SendRecord = $record
@@ -220,7 +231,7 @@ function Update-DpIntercomState {
             else {
                 # Edits are fetched so they can be answered, never so they can be
                 # run - see ConvertFrom-DpIntercomUpdate.
-                @{ offset = $intercom.Offset; timeout = 20; limit = 10; allowed_updates = @('message', 'edited_message') }
+                @{ offset = $intercom.Offset; timeout = 20; limit = 10; allowed_updates = @('message', 'edited_message', 'callback_query') }
             }
             try {
                 $intercom.PollTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getUpdates' -Payload $pollPayload

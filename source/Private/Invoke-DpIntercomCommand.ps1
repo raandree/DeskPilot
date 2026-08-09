@@ -70,20 +70,11 @@ function Invoke-DpIntercomCommand {
 
     switch ($Command.kind) {
         'answer' {
-            $pending = $intercom.PendingQuestion
-            $bridge = $state.Engine.UserPromptBridge
-            $accepted = $false
-            if ($pending -and $bridge -and $state.TurnRunning) {
-                $accepted = $bridge.SubmitAnswer([string]$pending.conversationId, [string]$pending.id, [string]$Command.text)
-            }
-            if ($accepted) {
-                $intercom.PendingQuestion = $null
-                $null = Send-DpIntercomMessage -Title 'Got it - the agent is continuing.' -Kind 'ack'
-            }
-            else {
-                $intercom.PendingQuestion = $null
-                $null = Send-DpIntercomMessage -Title 'That question is no longer waiting for an answer.' -Line @('Send a new instruction instead, or /status to see what is happening.') -Kind 'notice'
-            }
+            $null = Submit-DpIntercomAnswer -Answer ([string]$Command.text)
+        }
+
+        'callback' {
+            Invoke-DpIntercomCallback -Command $Command
         }
 
         'stop' {
@@ -141,12 +132,24 @@ function Invoke-DpIntercomCommand {
                     $(if ($_.current) { '  <- current' } else { '' })
                 })
             $footer = if ($includeArchived) {
-                @('', 'Send /chat 2 to switch, /unarchive 2 to bring one back, or /new to start one.')
+                @('', 'Tap one to switch, or send /unarchive 2 to bring one back and /new to start one.')
             }
             else {
-                @('', 'Send /chat 2 to switch, /chats all to include archived, or /new to start one.')
+                @('', 'Tap one to switch, or send /chats all to include archived and /new to start one.')
             }
-            $null = Send-DpIntercomMessage -Title $(if ($includeArchived) { 'Your conversations (including archived)' } else { 'Your conversations' }) -Line ($lines + $footer) -Kind 'chats'
+            # Buttons make the number redundant for the common case, but it stays in
+            # the text: /archive, /unarchive and /delete still take one.
+            $choices = @($chats | ForEach-Object {
+                    @{ label = '{0}. {1}{2}' -f $_.number, $_.title, $(if ($_.current) { ' <- current' } else { '' }); data = "k|$($_.id)" }
+                })
+            $listParams = @{
+                Title = $(if ($includeArchived) { 'Your conversations (including archived)' } else { 'Your conversations' })
+                Line  = ($lines + $footer)
+                Kind  = 'chats'
+            }
+            $keyboard = Get-DpIntercomKeyboard -Choice $choices
+            if ($keyboard) { $listParams.Keyboard = $keyboard }
+            $null = Send-DpIntercomMessage @listParams
         }
 
         'chat' {

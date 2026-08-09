@@ -44,7 +44,10 @@ function Send-DpIntercomMessage {
         [string]$Kind,
 
         [ValidateSet('', 'question', 'status')]
-        [string]$Capture = ''
+        [string]$Capture = '',
+
+        [AllowNull()]
+        [hashtable]$Keyboard
     )
 
     $intercom = $script:DeskPilot.Intercom
@@ -79,6 +82,8 @@ function Send-DpIntercomMessage {
     $parts = @(Format-DpIntercomMessage @formatParams)
 
     # Only the first part can carry the nonce, and a status message is never split.
+    # The keyboard rides with it for the same reason: buttons belong to one message,
+    # and the first is the one the nonce identifies.
     $partIndex = 0
     foreach ($part in $parts) {
         $intercom.Outbound.Enqueue(@{
@@ -87,6 +92,7 @@ function Send-DpIntercomMessage {
                 capture   = $(if ($partIndex -eq 0) { $Capture } else { '' })
                 edit      = $isStatus
                 plainOnly = $false
+                keyboard  = $(if ($partIndex -eq 0) { $Keyboard } else { $null })
             })
         $partIndex++
     }

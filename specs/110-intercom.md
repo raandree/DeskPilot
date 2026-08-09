@@ -112,6 +112,7 @@ no Project open, or the wrong one.
 | Message | Effect | Needs an opted-in Project |
 | --- | --- | --- |
 | A reply to a question message | Answers that question and releases the waiting Engine pipeline | Implicitly - the question only reaches the phone from an opted-in Project |
+| A tap on an inline-keyboard button | Answers a question, or switches Conversation from the `/chats` list | As above |
 | Any other plain text | Runs it as a prompt on the bound Conversation - or queues it when a Turn is running | Yes |
 | `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending | No |
 | `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one. `/chats all` includes archived ones, marked - they are the ones already finished with, so they stay out of the way until their numbers are needed | No |
@@ -131,6 +132,46 @@ where a mistyped command is most likely, so it takes two messages - the same
 two-step shape as `/delete`. The confirmation states the exact number of Messages
 and files at stake, taken from a real `Restore-DpCheckpoint -Preview` rather than
 an estimate, so the operator is never asked to confirm a guess.
+
+## Inline keyboards
+
+Reading a numbered list and typing a number is the wrong interaction at a bus
+stop. Where a choice is closed, Intercom attaches Telegram's **inline keyboard**
+so the operator taps instead - the affordance BotFather uses.
+
+Buttons are offered for an Ask-User question **only when it is a single question
+with options and is not multi-select**. A multi-select or multi-question
+Questionnaire cannot be expressed by one tap, so it keeps the written-reply flow
+and the message says so; a keyboard that could not express the answer would be a
+trap rather than a shortcut. The `/chats` listing also carries one button per
+Conversation. In every case the text form still works, so nothing depends on the
+buttons rendering.
+
+Three constraints shape the design:
+
+- **`callback_data` is capped at 64 bytes**, so it carries a prefix, a nonce and
+  an index - never the label. A choice whose data would exceed the cap costs the
+  whole keyboard (`Get-DpIntercomKeyboard` returns `$null`) rather than shipping a
+  button that fails silently when tapped.
+- **Old buttons never disappear.** Telegram leaves them on screen indefinitely, so
+  an option tap must carry the nonce of the question *currently* waiting
+  (`PendingQuestion.token`). Without it, a tap on a question answered hours ago
+  would answer whatever is waiting now. The nonce is minted with the keyboard and
+  cleared if the keyboard did not ship.
+- **A tap must be acknowledged.** Telegram shows the button as loading until
+  `answerCallbackQuery` lands, so it is queued ahead of the reply and bypasses the
+  hourly cap - it is a protocol obligation, not a notification. Bare Bot API calls
+  ride the same single-send queue as messages, so ordering still holds and nothing
+  waits on the accept thread.
+
+`callback_query` is added to `allowed_updates`. A tap is allow-list checked on
+`callback_query.message.chat.id` **before its data is read**, exactly as a message
+is, and the data is treated as untrusted on arrival even though this bot minted
+it: the nonce and the index are both validated before anything happens.
+
+Both answer routes - a written reply and a tap - go through
+`Submit-DpIntercomAnswer`, so the acknowledgement, the "that question has gone"
+wording and the clearing of the pending question cannot drift apart.
 
 The numbering `/chats` produces is a **snapshot**, not a Conversation property:
 the list is ordered by last activity, so running a Turn reorders it. The ids are
