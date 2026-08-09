@@ -28,6 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tidy up conversations from your phone.** `/archive 2` hides one from the
+  list; `/delete 2` removes it for good and asks you to confirm first, offering
+  `/archive` as the reversible alternative.
+- **Watch a phone-driven job from the machine.** While a job you sent from
+  Telegram is running, the DeskPilot window marks that conversation and shows the
+  answer being written — including the model's thinking when that is switched on.
+  No page refresh.
+- **Telegram messages are formatted properly.** The agent writes Markdown and
+  Telegram renders none of it, so answers used to arrive as a wall of `##`, `**`
+  and pipe-delimited tables. Headings, bold, bullets, links, code and tables now
+  come through readable, and a message Telegram cannot render is resent as plain
+  text rather than lost.
 - **Switch conversations from your phone.** Intercom gains `/chats` to list your
   conversations (newest first, marking the one you are in), `/chat 2` to switch
   to one, and `/new` to start a fresh one. Asking the *agent* to switch chats

@@ -271,6 +271,22 @@ source: repository evidence
   Conversation selection is Host Server state. A capability the product owns needs
   a product command, not a better prompt.
 
+- **Escape first, then format.** Telegram messages are HTML: the text is escaped
+  and only then are known constructs turned into tags, so nothing the agent - or a
+  file it read - wrote can inject markup. MarkdownV2 was rejected because one
+  missed escape makes Telegram reject the *whole* message, losing a finished
+  result rather than formatting it badly. A rejected message is still retried once
+  as plain text.
+- **Polling is the right answer when you own one thread.** The window follows a
+  phone-started Turn by polling `GET /api/intercom/turn`, not by an SSE channel: a
+  long-lived event stream would hold the Host Server's single accept thread, and a
+  remote Turn has no browser request to stream over in the first place. The live
+  buffer is an approximation, discarded the moment the recorded Message - which
+  carries Activity, Usage and the Task List - is available.
+- **Make the irreversible thing take two messages.** `/delete <n>` warns and only
+  `/delete <n> confirm` acts, with `/archive` offered in the same breath. A phone
+  is where a mistyped number is most likely and an undo is least available.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
