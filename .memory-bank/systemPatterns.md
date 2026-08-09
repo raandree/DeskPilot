@@ -228,6 +228,13 @@ source: repository evidence
 - **Never adopt the first caller.** The obvious shortcut - take the chat id of
   whoever messages the bot first - hands control of the machine to anyone who
   guessed the bot's username. The candidate is shown; the click happens locally.
+- **A handler bound to an id nothing renders fails silently.** `$('missing-id')`
+  returns null, the render function returns early, and the control is simply
+  absent - no error, no log. The "Link my phone" button shipped that way because
+  the template edit failed while the handler edit succeeded, and every API test
+  still passed: they exercise routes, not the DOM. A WebAssets guard now asserts
+  that every id the SPA binds is rendered somewhere. When an edit tool reports a
+  failed replacement, verify *that* replacement - not a neighbouring one.
 
 ## Anti-patterns to avoid
 
