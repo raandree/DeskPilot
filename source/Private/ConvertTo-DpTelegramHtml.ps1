@@ -17,9 +17,10 @@ function ConvertTo-DpTelegramHtml {
         surface, and the caller still falls back to plain text on a parse error.
 
         Handled: fenced and inline code, headings, bold, links, bullets, and
-        tables (wrapped in <pre>, which is the only way columns line up on a
-        phone). Italics are deliberately not handled: underscores are far more
-        common in paths and identifiers than as emphasis.
+        tables. A table is delegated to Format-DpIntercomTable, because Telegram
+        has no table support and the only useful rendering depends on how wide it
+        is. Italics are deliberately not handled: underscores are far more common
+        in paths and identifiers than as emphasis.
     .PARAMETER Text
         The plain text to render.
     .OUTPUTS
@@ -48,7 +49,7 @@ function ConvertTo-DpTelegramHtml {
 
     $flushTable = {
         if ($table.Count -eq 0) { return }
-        $output.Add('<pre>' + (($table -join "`n")) + '</pre>')
+        $output.Add((Format-DpIntercomTable -Line @($table.ToArray())))
         $table.Clear()
     }
 

@@ -308,6 +308,13 @@ source: repository evidence
   Per-item isolation plus a per-item cursor loses nothing and cannot spin on a
   poison item either.
 
+- **When the target cannot represent the shape, change the shape.** Telegram has
+  no tables. Wrapping one in `<pre>` only works while the lines are short enough
+  not to wrap - past that, the alignment the block existed for is destroyed and it
+  reads worse than plain text. A wide table becomes one labelled record per row
+  instead, and long ones are capped with a count. Faithfulness to the source
+  format is not the goal; being readable on the device is.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

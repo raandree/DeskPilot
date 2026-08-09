@@ -39,7 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Telegram renders none of it, so answers used to arrive as a wall of `##`, `**`
   and pipe-delimited tables. Headings, bold, bullets, links, code and tables now
   come through readable, and a message Telegram cannot render is resent as plain
-  text rather than lost.
+  text rather than lost. Telegram has no tables at all, so a narrow one is shown
+  as an aligned block and a wide one as one labelled record per row — long tables
+  are trimmed with a note pointing you back to DeskPilot for the rest.
 - **Switch conversations from your phone.** Intercom gains `/chats` to list your
   conversations (newest first, marking the one you are in), `/chat 2` to switch
   to one, and `/new` to start a fresh one. Asking the *agent* to switch chats

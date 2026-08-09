@@ -549,6 +549,7 @@ Describe 'ConvertTo-DpTelegramHtml' -Tag 'Unit' {
         $html | Should -Not -Match '\|---\|'
     }
 
+
     It 'renders fenced and inline code' {
         $text = @'
 Run `git status` first.
@@ -577,6 +578,66 @@ pwsh -File x.ps1
 
     It 'returns an empty string for no input' {
         ConvertTo-DpTelegramHtml -Text $null | Should -Be ''
+    }
+}
+
+Describe 'Format-DpIntercomTable' -Tag 'Unit' {
+    It 'pads a narrow table so its columns line up' {
+        $lines = @('| Status | Points |', '| Senator | 2,000 |', '| HON | 6,000 |')
+
+        $html = Format-DpIntercomTable -Line $lines
+
+        $html | Should -Match '^<pre>'
+        # Padding is the whole point of the monospaced block.
+        $html | Should -Match 'Status {2,}Points'
+        $html | Should -Match 'Senator {2,}2,000'
+    }
+
+    It 'turns a wide table into one labelled record per row' {
+        # Wrapped monospace is worse than no table: the alignment it exists for is
+        # exactly what the wrapping destroys.
+        $lines = @(
+            '| Offset | Id | Display |',
+            '| -12:00 | Dateline Standard Time | International Date Line West |',
+            '| -11:00 | UTC-11 | Coordinated Universal Time-11 |'
+        )
+
+        $html = Format-DpIntercomTable -Line $lines
+
+        $html | Should -Not -Match '<pre>'
+        $html | Should -Match '<b>Offset</b>: -12:00'
+        $html | Should -Match '<b>Id</b>: Dateline Standard Time'
+        $html | Should -Match '<b>Display</b>: International Date Line West'
+    }
+
+    It 'caps the rows and says how many it left out' {
+        $lines = @('| N | Value |') + (1..40 | ForEach-Object { "| $_ | value $_ |" })
+
+        $html = Format-DpIntercomTable -Line $lines -MaxRows 15
+
+        $html | Should -Match '\.\.\. and 25 more rows'
+        $html | Should -Match 'Open DeskPilot'
+        $html | Should -Not -Match 'value 16'
+    }
+
+    It 'uses the singular when exactly one row is left out' {
+        $lines = @('| N |') + (1..3 | ForEach-Object { "| $_ |" })
+
+        (Format-DpIntercomTable -Line $lines -MaxRows 2) | Should -Match '\.\.\. and 1 more row\.'
+    }
+
+    It 'labels a column whose header is blank' {
+        $html = Format-DpIntercomTable -Line @('| Offset | |', '| -12:00 | a very long value that pushes this table past the width budget |')
+
+        $html | Should -Match '<b>Column 2</b>'
+    }
+
+    It 'survives a table with only a header' {
+        { Format-DpIntercomTable -Line @('| Status | Points |') } | Should -Not -Throw
+    }
+
+    It 'returns an empty string for no rows' {
+        Format-DpIntercomTable -Line @() | Should -Be ''
     }
 }
 
