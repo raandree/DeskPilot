@@ -415,6 +415,122 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
         $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
         $text | Should -Match '/chats'
         $text | Should -Match '/chat 3'
+        $text | Should -Match '/archive'
+        $text | Should -Match '/delete'
+    }
+
+    It 'archives a conversation and stops listing it' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $script:DeskPilot.Intercom.Outbound.Clear()
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'archive'; text = '1'; reason = '' }
+
+        $script:DeskPilot.Conversations['c2'].archived | Should -BeTrue
+        @(Get-DpIntercomChatList).id | Should -Not -Contain 'c2'
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'archive'
+    }
+
+    It 'rebinds when the conversation it was pointing at is archived' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+
+        # c3 is the bound one and number 2 in the listing.
+        Invoke-DpIntercomCommand -Command @{ kind = 'archive'; text = '2'; reason = '' }
+
+        $script:DeskPilot.Intercom.ConversationId | Should -Not -Be 'c3'
+        $script:DeskPilot.Intercom.ConversationId | Should -Be 'c2'
+    }
+
+    It 'asks before deleting, and deletes nothing on the first message' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $script:DeskPilot.Intercom.Outbound.Clear()
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'delete'; text = '1'; reason = '' }
+
+        $script:DeskPilot.Conversations.ContainsKey('c2') | Should -BeTrue
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match 'cannot be undone'
+        $text | Should -Match '/delete 1 confirm'
+    }
+
+    It 'deletes only when the message says confirm' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $script:DeskPilot.Intercom.Outbound.Clear()
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'delete'; text = '1 confirm'; reason = '' }
+
+        $script:DeskPilot.Conversations.ContainsKey('c2') | Should -BeFalse
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'delete'
+    }
+
+    It 'refuses to archive a number that is not on the list' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'archive'; text = '99'; reason = '' }
+
+        @($script:DeskPilot.Conversations.Values | Where-Object { $_.archived }).Count | Should -Be 1
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'no conversation 99'
+    }
+}
+
+Describe 'ConvertTo-DpTelegramHtml' -Tag 'Unit' {
+    It 'escapes markup before it renders anything' {
+        $html = ConvertTo-DpTelegramHtml -Text 'a <script>alert(1)</script> & b'
+
+        $html | Should -Not -Match '<script>'
+        $html | Should -Match '&lt;script&gt;'
+        $html | Should -Match '&amp;'
+    }
+
+    It 'renders headings and bold as Telegram tags' {
+        $html = ConvertTo-DpTelegramHtml -Text "## What I checked`n**my earlier answers do not hold up.**"
+
+        $html | Should -Match '<b>What I checked</b>'
+        $html | Should -Match '<b>my earlier answers do not hold up\.</b>'
+        $html | Should -Not -Match '\*\*'
+    }
+
+    It 'turns bullets into a readable character' {
+        $bullet = [char]0x2022
+        (ConvertTo-DpTelegramHtml -Text '- turkishairlines.com: timed out.') | Should -Match "^$bullet turkishairlines"
+    }
+
+    It 'wraps a table in a monospaced block so the columns line up' {
+        $table = "| Status | Points |`n|---|---|`n| Senator | 2,000 |"
+
+        $html = ConvertTo-DpTelegramHtml -Text $table
+
+        $html | Should -Match '^<pre>'
+        $html | Should -Match 'Senator'
+        # The separator row is markdown scaffolding, not information.
+        $html | Should -Not -Match '\|---\|'
+    }
+
+    It 'renders fenced and inline code' {
+        $text = @'
+Run `git status` first.
+```
+pwsh -File x.ps1
+```
+'@
+
+        $html = ConvertTo-DpTelegramHtml -Text $text
+
+        $html | Should -Match '<code>git status</code>'
+        $html | Should -Match '<pre><code>'
+        $html | Should -Match 'pwsh -File x\.ps1'
+    }
+
+    It 'links only http and https' {
+        $html = ConvertTo-DpTelegramHtml -Text '[Wikipedia](https://en.wikipedia.org/wiki/Miles) and [bad](javascript:alert(1))'
+
+        $html | Should -Match '<a href="https://en.wikipedia.org/wiki/Miles">Wikipedia</a>'
+        $html | Should -Not -Match 'href="javascript'
+    }
+
+    It 'leaves ordinary prose alone' {
+        (ConvertTo-DpTelegramHtml -Text 'Just a sentence.') | Should -Be 'Just a sentence.'
+    }
+
+    It 'returns an empty string for no input' {
+        ConvertTo-DpTelegramHtml -Text $null | Should -Be ''
     }
 }
 
@@ -638,6 +754,7 @@ Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
                 Counters        = @{ received = 4; accepted = 3; rejected = 1; sent = 9; dropped = 0; errors = 0 }
                 Log             = [System.Collections.Generic.List[object]]::new()
                 Pairing         = @{ active = $false; startedUtc = $null; candidates = [System.Collections.Generic.List[object]]::new() }
+                RemoteTurn      = @{ active = $false; conversationId = $null; prompt = ''; startedUtc = $null; text = ''; reasoning = '' }
             }
         }
     }

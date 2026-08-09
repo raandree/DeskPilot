@@ -2443,6 +2443,29 @@ button.tree-row {
     border-top: 1px solid var(--border);
 }
 
+/* A conversation the phone is currently driving. */
+.conv-working {
+    flex: 0 0 auto;
+    font-size: 12px;
+    animation: conv-working-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes conv-working-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .conv-working { animation: none; }
+}
+
+/* The live view of a Turn started from the phone, replaced by the recorded
+   message once it finishes. */
+.remote-live .msg-assistant.is-remote {
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
+}
+
 /* ===== Popover ===== */
 .popover {
     position: fixed;

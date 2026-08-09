@@ -206,6 +206,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
             @{ Method = 'POST'; Pattern = '/api/atelier/setup'; Name = 'atelierSetup' }
             @{ Method = 'GET'; Pattern = '/api/intercom'; Name = 'getIntercom' }
+            @{ Method = 'GET'; Pattern = '/api/intercom/turn'; Name = 'getIntercomTurn' }
             @{ Method = 'PUT'; Pattern = '/api/intercom'; Name = 'putIntercom' }
             @{ Method = 'POST'; Pattern = '/api/intercom/test'; Name = 'testIntercom' }
             @{ Method = 'POST'; Pattern = '/api/intercom/pair'; Name = 'pairIntercom' }

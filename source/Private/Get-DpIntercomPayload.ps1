@@ -50,6 +50,11 @@ function Get-DpIntercomPayload {
         lastPollUtc            = $(if ($intercom.LastPollUtc) { ([DateTime]$intercom.LastPollUtc).ToString('o') } else { $null })
         nextCheckInUtc         = $(if ($intercom.NextCheckInUtc) { ([DateTime]$intercom.NextCheckInUtc).ToString('o') } else { $null })
         lastError              = [string]$intercom.LastError
+        remoteTurn             = @{
+            active         = [bool]$intercom.RemoteTurn.active
+            conversationId = [string]$intercom.RemoteTurn.conversationId
+            startedUtc     = $(if ($intercom.RemoteTurn.startedUtc) { ([DateTime]$intercom.RemoteTurn.startedUtc).ToString('o') } else { $null })
+        }
         pairing                = @{
             active     = $pairingActive
             expiresUtc = $(if ($pairingActive -and $pairing.startedUtc) { ([DateTime]$pairing.startedUtc).AddMinutes(5).ToString('o') } else { $null })

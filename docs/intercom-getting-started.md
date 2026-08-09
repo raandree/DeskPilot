@@ -123,6 +123,8 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | `/status` | What is happening right now |
 | `/chats` | Lists your conversations, newest first, and marks the one you are in |
 | `/chat 2` | Switches to conversation 2 from that list |
+| `/archive 2` | Hides it from the list (it stays in DeskPilot under **Show archived**) |
+| `/delete 2` | Removes it for good — asks you to confirm first |
 | `/new` | Starts a fresh conversation and switches to it |
 | `/new summarise yesterday's notes` | Starts a fresh conversation and does that |
 | `/stop` | Stops the running job |
@@ -139,6 +141,10 @@ Three things worth knowing:
 - **The agent cannot switch conversations itself.** If you ask it to, it will say
   so — it has no way to see or change which conversation it is in. Use `/chats`
   and `/chat 2`, which are handled by DeskPilot rather than the agent.
+- **Watch it from the machine too.** While a job you started from your phone is
+  running, the DeskPilot window marks that conversation with 📻 and shows the
+  answer being written — including the model's thinking when that is switched on.
+  No page refresh needed.
 
 ## The status message, and what silence means
 

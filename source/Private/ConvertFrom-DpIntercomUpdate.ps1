@@ -17,6 +17,8 @@ function ConvertFrom-DpIntercomUpdate {
           status   - /status
           chats    - /chats: list the conversations that can be switched to
           chat     - /chat <n>: switch to one of them
+          archive  - /archive <n>: hide one from the list
+          delete   - /delete <n> [confirm]: remove one for good
           new      - /new [text]: start a fresh conversation, optionally with work
           help     - /help
           rejected - the chat is not allow-listed
@@ -140,6 +142,14 @@ function ConvertFrom-DpIntercomUpdate {
         'chats' { $result.kind = 'chats' }
         'chat' {
             $result.kind = 'chat'
+            $result.text = $argument
+        }
+        'archive' {
+            $result.kind = 'archive'
+            $result.text = $argument
+        }
+        'delete' {
+            $result.kind = 'delete'
             $result.text = $argument
         }
         'new' {

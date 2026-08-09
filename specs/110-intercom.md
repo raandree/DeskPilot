@@ -42,6 +42,9 @@ is a Skill.**
 | Interrupt semantics | A message that arrives **while a Turn is running** is *queued* and delivered as the next prompt when the Turn ends. `/steer <text>` is the explicit interrupt: stop the Turn, then run `<text>`. Two honest primitives beat one ambiguous one. |
 | Outbound composition | DeskPilot composes every message from **structured fields**. The one exception is the agent's question, forwarded verbatim — see *Accepted risks*. |
 | Message size | Telegram caps a message at 4096 characters. `Format-DpIntercomMessage` splits on paragraph, then line, then hard boundaries, and marks each part `(n/m)`. |
+| Message formatting | The agent writes Markdown and Telegram renders none of it, so a good answer arrives as a wall of `##`, `**` and pipe tables. Messages are sent as **HTML**, produced by escaping the text first and only then converting known constructs - so nothing the agent, or a file it read, wrote can inject markup. MarkdownV2 was rejected: it needs a large escape set and one miss makes Telegram reject the *whole* message, losing a result rather than formatting it badly. HTML has a tiny escape surface, and a rejected message is still retried once as plain text. Tables go into `<pre>`, the only way columns line up on a phone; italics are deliberately not converted, because underscores appear far more often in paths than as emphasis. |
+| Watching a remote Turn from the window | A Turn started from the phone has no browser request to stream over, and the single-threaded accept loop rules out a long-lived SSE channel - it would hold the only thread the Host Server has. The running answer and reasoning are buffered on `Intercom.RemoteTurn` and the SPA polls `GET /api/intercom/turn`, marking the Conversation with a working badge and rendering the answer as it is written. When the Turn ends the buffer is discarded and the recorded Message replaces it, because only the Message carries the Activity, Usage and Task List. |
+| Deleting a Conversation | The one irreversible thing Intercom can do, from the device where a mistyped number is most likely, so `/delete <n>` warns and only `/delete <n> confirm` acts. `/archive <n>` is offered in the same breath as the reversible alternative. |
 | Rate limiting | A rolling one-hour window caps outbound messages (`maxMessagesPerHour`, default 60). Over the cap, messages are dropped and counted, not queued forever. |
 | Audit | Every accepted message, every rejected message, and every outbound message is recorded in a bounded in-memory log with a UTC timestamp, exposed by `GET /api/intercom`. A rejection is a possible attack and is recorded as loudly as an acceptance. |
 | Disable | One Settings toggle. Turning it off drops the in-flight poll, clears the pending question, and sends a final "Intercom off" message. |
@@ -109,6 +112,8 @@ no Project open, or the wrong one.
 | `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending | No |
 | `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one | No |
 | `/chat <n>` | Binds Intercom to that Conversation | No |
+| `/archive <n>` | Archives it, rebinding if it was the bound one | No |
+| `/delete <n>` | Warns; `/delete <n> confirm` removes it | No |
 | `/new` | Creates a Conversation and binds Intercom to it | No |
 | `/new <text>` | The same, then runs `<text>` | Yes |
 | `/stop` | Cancels the running Turn | No |

@@ -82,10 +82,11 @@ function Send-DpIntercomMessage {
     $partIndex = 0
     foreach ($part in $parts) {
         $intercom.Outbound.Enqueue(@{
-                kind    = $Kind
-                text    = $part
-                capture = $(if ($partIndex -eq 0) { $Capture } else { '' })
-                edit    = $isStatus
+                kind      = $Kind
+                text      = $part
+                capture   = $(if ($partIndex -eq 0) { $Capture } else { '' })
+                edit      = $isStatus
+                plainOnly = $false
             })
         $partIndex++
     }

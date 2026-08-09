@@ -1483,6 +1483,29 @@ function Invoke-DpRouteHandler {
         'getIntercom' {
             Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
         }
+        'getIntercomTurn' {
+            # A Turn started from the phone streams over no browser request, and a
+            # long-lived SSE channel is impossible on a single-threaded accept
+            # loop - it would hold the only thread. The SPA polls this instead
+            # while a remote Turn is running, so the window shows the same answer
+            # taking shape rather than needing a reload afterwards.
+            $remote = $state.Intercom.RemoteTurn
+            $text = [string]$remote.text
+            $reasoning = [string]$remote.reasoning
+            $maxChars = 40000
+            $truncated = $text.Length -gt $maxChars
+            if ($truncated) { $text = $text.Substring($text.Length - $maxChars) }
+            if ($reasoning.Length -gt $maxChars) { $reasoning = $reasoning.Substring($reasoning.Length - $maxChars) }
+            Write-DpResponse -Stream $Stream -Json @{
+                active         = [bool]$remote.active
+                conversationId = [string]$remote.conversationId
+                prompt         = [string]$remote.prompt
+                startedUtc     = $(if ($remote.startedUtc) { ([DateTime]$remote.startedUtc).ToString('o') } else { $null })
+                text           = $text
+                reasoning      = $reasoning
+                truncated      = $truncated
+            }
+        }
         'putIntercom' {
             if ($null -eq $Body) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'An Intercom settings body is required.' } }

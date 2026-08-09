@@ -109,19 +109,35 @@ function Update-DpIntercomState {
                 # An edit fails when the status message was deleted or is too old.
                 # Drop the id so the next heartbeat posts a fresh one.
                 if ($record.edit) { $intercom.StatusMessageId = 0 }
+                # Telegram rejects a whole message when its HTML will not parse.
+                # Losing a finished job's result to a formatting fault would be
+                # absurd, so retry it once as plain text.
+                elseif (-not $record.plainOnly) {
+                    $record.plainOnly = $true
+                    $intercom.Retry = $record
+                    Add-DpIntercomLog -Direction 'out' -Kind 'formatting-fallback' -Detail "Telegram rejected the formatted message; resending it as plain text. $($response.error)" -Accepted $false
+                }
                 Add-DpIntercomLog -Direction 'out' -Kind 'error' -Detail $response.error -Accepted $false
             }
         }
 
-        # 3. Start the next queued send. One at a time, so ordering is preserved.
-        if (-not $intercom.SendTask -and $intercom.Outbound.Count -gt 0) {
-            $record = $intercom.Outbound.Dequeue()
+        # 3. Start the next send. One at a time, so ordering is preserved, and a
+        #    plain-text retry goes before anything still queued behind it.
+        if (-not $intercom.SendTask -and ($intercom.Retry -or $intercom.Outbound.Count -gt 0)) {
+            $record = if ($intercom.Retry) { $intercom.Retry } else { $intercom.Outbound.Dequeue() }
+            $intercom.Retry = $null
             $useEdit = $record.edit -and $intercom.StatusMessageId -gt 0
             $operation = if ($useEdit) { 'editMessageText' } else { 'sendMessage' }
             $payload = @{
                 chat_id                  = $chatId
                 text                     = [string]$record.text
                 disable_web_page_preview = $true
+            }
+            # The agent writes Markdown; Telegram renders none of it. Escape-first
+            # HTML is the safe way to make an answer readable on a phone.
+            if (-not $record.plainOnly) {
+                $payload.text = ConvertTo-DpTelegramHtml -Text ([string]$record.text)
+                $payload.parse_mode = 'HTML'
             }
             if ($useEdit) { $payload.message_id = $intercom.StatusMessageId }
             if ($record.edit -and -not $useEdit) { $record.capture = 'status' }

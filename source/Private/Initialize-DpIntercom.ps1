@@ -57,6 +57,9 @@ function Initialize-DpIntercom {
         SendTask         = $null
         SendRecord       = $null
         Outbound         = [System.Collections.Generic.Queue[hashtable]]::new()
+        # A message Telegram rejected once, held for a plain-text retry ahead of
+        # anything still queued behind it.
+        Retry            = $null
         StatusMessageId  = 0
         # The forwarded Ask-User question awaiting a reply: its Telegram message id
         # is the nonce, so only a reply to that exact message is accepted.
@@ -65,6 +68,18 @@ function Initialize-DpIntercom {
         # Engine Runspace is free. This is also how /steer resumes after its stop.
         QueuedPrompt     = $null
         LastActivityUtc  = [DateTime]::UtcNow
+        # What a Turn started from the phone is producing right now. The browser
+        # has no request to stream over for a remote Turn, and the single-threaded
+        # accept loop rules out a long-lived SSE channel, so the Host Server keeps
+        # the running answer here and the SPA polls it.
+        RemoteTurn       = @{
+            active         = $false
+            conversationId = $null
+            prompt         = ''
+            startedUtc     = $null
+            text           = ''
+            reasoning      = ''
+        }
         StallNotified    = $false
         LastHeartbeatUtc = $null
         NextCheckInUtc   = $null

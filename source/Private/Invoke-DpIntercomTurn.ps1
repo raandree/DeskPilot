@@ -50,6 +50,15 @@ function Invoke-DpIntercomTurn {
     $intercom.LastActivityUtc = [DateTime]::UtcNow
     $intercom.StallNotified = $false
 
+    # Publish what is running so the window can show it live: the SPA has no SSE
+    # stream for a Turn it did not start.
+    $intercom.RemoteTurn.active = $true
+    $intercom.RemoteTurn.conversationId = [string]$conversation.id
+    $intercom.RemoteTurn.prompt = $Prompt
+    $intercom.RemoteTurn.startedUtc = [DateTime]::UtcNow
+    $intercom.RemoteTurn.text = ''
+    $intercom.RemoteTurn.reasoning = ''
+
     Add-DpIntercomLog -Direction 'system' -Kind 'turn-start' -Detail $Prompt
 
     try {
@@ -63,6 +72,7 @@ function Invoke-DpIntercomTurn {
     }
     finally {
         $intercom.StallNotified = $false
+        $intercom.RemoteTurn.active = $false
     }
 
     if (-not [bool]$state.Settings.intercom.notifyOnDone) { return }

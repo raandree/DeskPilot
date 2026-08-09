@@ -93,6 +93,8 @@ function Invoke-DpIntercomCommand {
                 '/chat 3 - switch to conversation 3',
                 '/new - start a fresh conversation',
                 '/new <text> - start a fresh conversation and do this',
+                '/archive 3 - hide conversation 3 from the list',
+                '/delete 3 - remove it for good (asks first)',
                 '/stop - stop the running job',
                 '/steer <text> - stop the job, then do this instead',
                 '/help - this list'
@@ -120,29 +122,66 @@ function Invoke-DpIntercomCommand {
                 return
             }
             $choice = 0
-            if (-not [int]::TryParse($Command.text.Trim(), [ref]$choice) -or $choice -lt 1) {
+            if (-not [int]::TryParse($Command.text.Trim(), [ref]$choice)) {
                 $null = Send-DpIntercomMessage -Title 'That is not a number from the list.' -Line @('Send /chats to see it again.') -Kind 'notice'
                 return
             }
-            # Resolve against the numbering the operator was actually shown, and
-            # fall back to the current order when they never asked for a list.
-            $index = @($intercom.ChatIndex)
-            $conversationId = if ($choice -le $index.Count) {
-                [string]$index[$choice - 1]
-            }
-            else {
-                [string](@(Get-DpIntercomChatList) | Where-Object { $_.number -eq $choice } | Select-Object -First 1 -ExpandProperty id)
-            }
-            $conversation = if ($conversationId) { $state.Conversations[$conversationId] } else { $null }
-            if (-not $conversation) {
-                $null = Send-DpIntercomMessage -Title "There is no conversation $choice." -Line @('Send /chats to see the list.') -Kind 'notice'
+            $resolved = Resolve-DpIntercomChat -Number $choice
+            if (-not $resolved.ok) {
+                $null = Send-DpIntercomMessage -Title 'I could not find that one.' -Line @($resolved.message) -Kind 'notice'
                 return
             }
-            $intercom.ConversationId = [string]$conversation.id
+            $intercom.ConversationId = [string]$resolved.conversation.id
             $null = Send-DpIntercomMessage -Title 'Switched.' -Line @(
-                "Now working in: $([string]$conversation.title)",
+                "Now working in: $([string]$resolved.conversation.title)",
                 'Send an instruction, or /chats to switch again.'
             ) -Kind 'chat'
+        }
+
+        'archive' {
+            $choice = 0
+            if (-not [int]::TryParse(([string]$Command.text).Trim(), [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /chats to see the list, then /archive 2.') -Kind 'notice'
+                return
+            }
+            $resolved = Resolve-DpIntercomChat -Number $choice
+            if (-not $resolved.ok) {
+                $null = Send-DpIntercomMessage -Title 'I could not find that one.' -Line @($resolved.message) -Kind 'notice'
+                return
+            }
+            $resolved.conversation.archived = $true
+            Set-DpIntercomChatRemoved -ConversationId ([string]$resolved.conversation.id)
+            $null = Send-DpIntercomMessage -Title 'Archived.' -Line @(
+                "Hidden from the list: $([string]$resolved.conversation.title)",
+                'It is still in DeskPilot under "Show archived".'
+            ) -Kind 'archive'
+        }
+
+        'delete' {
+            $parts = ([string]$Command.text).Trim() -split '\s+', 2
+            $choice = 0
+            if (-not [int]::TryParse($parts[0], [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /chats to see the list, then /delete 2.') -Kind 'notice'
+                return
+            }
+            $resolved = Resolve-DpIntercomChat -Number $choice
+            if (-not $resolved.ok) {
+                $null = Send-DpIntercomMessage -Title 'I could not find that one.' -Line @($resolved.message) -Kind 'notice'
+                return
+            }
+            $title = [string]$resolved.conversation.title
+            # Deleting is the one irreversible thing Intercom can do, and a phone
+            # is where a mistyped number is most likely, so it takes two messages.
+            if ($parts.Count -lt 2 -or $parts[1].Trim().ToLowerInvariant() -ne 'confirm') {
+                $null = Send-DpIntercomMessage -Title 'This cannot be undone.' -Line @(
+                    "About to delete: $title",
+                    "Send /delete $choice confirm to go ahead, or /archive $choice to just hide it."
+                ) -Kind 'notice'
+                return
+            }
+            $null = $state.Conversations.Remove([string]$resolved.conversation.id)
+            Set-DpIntercomChatRemoved -ConversationId ([string]$resolved.conversation.id)
+            $null = Send-DpIntercomMessage -Title 'Deleted.' -Line @($title) -Kind 'delete'
         }
 
         'steer' {

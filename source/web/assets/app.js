@@ -124,6 +124,12 @@ const state = {
     // last good response as if it were live.
     intercom: null,
     intercomStale: false,
+    // Latest /api/intercom/turn payload: what a Turn started from the phone is
+    // producing right now. Polled rather than streamed - a remote Turn has no
+    // browser request to stream over, and a long-lived SSE channel would hold
+    // the Host Server's single accept thread.
+    remoteTurn: null,
+    remoteTurnWasActive: false,
     updateDismissed: false,
     restartDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
@@ -432,6 +438,11 @@ async function resetLifetime() {
 }
 
 // ===== Conversations =====
+function remoteWorkingOn() {
+    const r = state.remoteTurn;
+    return r && r.active ? r.conversationId : null;
+}
+
 function renderConversationList() {
     if (state.searchResults) { renderSearchResults(); return; }
     const list = $('conversation-list');
@@ -453,6 +464,12 @@ function renderConversationList() {
         const name = el('conv-name');
         name.textContent = (c.pinned ? '📌 ' : '') + (c.title || 'New conversation');
         item.appendChild(name);
+        if (remoteWorkingOn() === c.id) {
+            const working = el('conv-working');
+            working.textContent = '📻';
+            working.title = 'Working on a request from your phone';
+            item.appendChild(working);
+        }
         if (c.unread) {
             const unreadDot = el('conv-unread-dot');
             unreadDot.title = 'Unread';
@@ -3082,6 +3099,79 @@ function wireIntercomAutoRefresh() {
         if (!state.intercom || !state.intercom.pairing || !state.intercom.pairing.active) return;
         refreshIntercom();
     }, 2000);
+    setInterval(pollRemoteTurn, 3000);
+}
+
+// Follow a Turn the phone started. There is no SSE stream for it - the Host
+// Server accepts on one thread, so a persistent event channel would hold the
+// only thread it has - and the request that drives a normal Turn does not exist
+// here. Polling a cheap local route is what fits the architecture.
+async function pollRemoteTurn() {
+    if (document.visibilityState !== 'visible') return;
+    // Our own Turn owns the thread while it streams; never paint over it.
+    if (state.streaming) return;
+    let data;
+    try { data = await api('GET', '/api/intercom/turn'); }
+    catch { return; }
+
+    const wasActive = state.remoteTurnWasActive;
+    state.remoteTurn = data;
+    state.remoteTurnWasActive = !!data.active;
+
+    if (data.active || wasActive) renderConversationList();
+    renderRemoteLive();
+
+    if (wasActive && !data.active) {
+        // The live view was an approximation; the recorded Message is the truth,
+        // and it carries the activity, usage and task list the buffer never had.
+        try {
+            await loadConversations();
+            if (state.current && data.conversationId && state.current.id === data.conversationId) {
+                await selectConversation(data.conversationId);
+            }
+        } catch { /* a transient failure just leaves the list as it was */ }
+    }
+}
+
+// The live bubble: the prompt that arrived from the phone, plus the answer as it
+// is written. Replaced by the real Message once the Turn ends.
+function renderRemoteLive() {
+    const thread = $('thread');
+    if (!thread) return;
+    const data = state.remoteTurn;
+    const show = data && data.active && !state.streaming &&
+        state.current && data.conversationId && state.current.id === data.conversationId;
+
+    let node = document.getElementById('remote-live');
+    if (!show) { if (node) node.remove(); return; }
+
+    if (!node) {
+        node = el('remote-live');
+        node.id = 'remote-live';
+        const promptWrap = el('msg msg-user');
+        const bubble = el('bubble');
+        bubble.textContent = data.prompt || '';
+        const badge = el('steered-badge');
+        badge.textContent = '📻 From your phone';
+        promptWrap.append(bubble, badge);
+        const answer = buildAssistantEl({ id: 'remote-live-msg' });
+        answer.classList.add('is-remote');
+        node.append(promptWrap, answer);
+        node._refs = answer._refs;
+        thread.appendChild(node);
+        const emptyState = thread.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+    }
+
+    const refs = node._refs;
+    refs.content.innerHTML = renderMarkdown(data.text || '') ||
+        '<span class="muted tiny">Working…</span>';
+    if (data.reasoning) {
+        const thinking = node.querySelector('.thinking');
+        thinking.classList.remove('hidden');
+        node.querySelector('.thinking .disclosure-body').textContent = data.reasoning;
+    }
+    scrollThread();
 }
 
 // Start or stop the pairing window. Without this the setup is impossible to

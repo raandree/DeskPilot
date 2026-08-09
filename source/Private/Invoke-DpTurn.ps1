@@ -62,6 +62,13 @@ function Invoke-DpTurn {
     $flush = {
         if ($turnState.pendingEvent -and $turnState.pendingText.Length -gt 0) {
             $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $turnState.pendingText.ToString() }))
+            # A Turn started from the phone has no browser request to stream over,
+            # so the same text is also buffered for the SPA to poll (spec 110).
+            $remote = if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.RemoteTurn } else { $null }
+            if ($remote -and $remote.active) {
+                if ($turnState.pendingEvent -eq 'reasoning') { $remote.reasoning += $turnState.pendingText.ToString() }
+                else { $remote.text += $turnState.pendingText.ToString() }
+            }
         }
         $turnState.pendingEvent = $null
         [void]$turnState.pendingText.Clear()
