@@ -235,6 +235,21 @@ source: repository evidence
   still passed: they exercise routes, not the DOM. A WebAssets guard now asserts
   that every id the SPA binds is rendered somewhere. When an edit tool reports a
   failed replacement, verify *that* replacement - not a neighbouring one.
+- **Under strict mode an optional field is not `$null`, it is an exception.**
+  `Prefix.ps1` sets `Set-StrictMode -Version Latest`, so `$message.stopped` on a
+  Message that never set the key *throws*. Read anything optional through
+  `Get-DpPropertyValue`; direct member access is only for fields the producer
+  always writes. This shipped: a remote Turn ran, answered, and then reported
+  nothing, because the outcome push threw after the work was done.
+- **Tests that skip strict mode validate different code than production.** The
+  unit tests dot-source `source/Private` without `Prefix.ps1`, so a missing key
+  quietly returned `$null` in the suite and threw for the user.
+  `Intercom.Tests.ps1` sets strict mode itself; the rest of the suite still does
+  not, which is a standing gap.
+- **Reporting must never be able to lose finished work.** The outcome push is
+  wrapped, and a failure there degrades to a minimal "the job finished, open
+  DeskPilot" notice. A bug in the last step of a Turn should cost detail, not the
+  entire result.
 
 ## Anti-patterns to avoid
 
