@@ -27,12 +27,15 @@ function Restore-DpCheckpoint {
         The Project folder, or empty when none is selected.
     .PARAMETER SkipFiles
         Truncate the Conversation only, leaving the files as they are.
+    .PARAMETER Preview
+        Report what would be discarded and changed without touching anything, so a
+        confirmation prompt can state exact numbers rather than a guess.
     .OUTPUTS
         System.Collections.Hashtable
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
-    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'The SPA confirms with the user before calling; a second prompt on the Host Server thread would hang it.')]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'The caller confirms with the user before calling; a second prompt on the Host Server thread would hang it.')]
     param(
         [Parameter(Mandatory)]
         [hashtable]$Conversation,
@@ -45,17 +48,21 @@ function Restore-DpCheckpoint {
         [AllowEmptyString()]
         [string]$Root,
 
-        [switch]$SkipFiles
+        [switch]$SkipFiles,
+
+        [switch]$Preview
     )
 
     $result = @{
-        ok         = $false
-        error      = $null
-        prompt     = ''
-        restored   = @()
-        removed    = @()
-        skipped    = @()
-        filesTried = $false
+        ok              = $false
+        error           = $null
+        prompt          = ''
+        restored        = @()
+        removed         = @()
+        skipped         = @()
+        files           = @()
+        messagesDropped = 0
+        filesTried      = $false
     }
 
     $messages = @($Conversation.messages)
@@ -93,6 +100,16 @@ function Restore-DpCheckpoint {
                 if ($seen.Add($relative)) { $written.Add($relative) }
             }
         }
+    }
+
+    $result.files = @($written)
+    $result.messagesDropped = $messages.Count - $index
+
+    if ($Preview) {
+        $result.ok = $true
+        $result.prompt = [string]$messages[$index].text
+        $result.filesTried = (-not $SkipFiles -and $sha -and $rootTrim -and $written.Count -gt 0)
+        return $result
     }
 
     if (-not $SkipFiles -and $sha -and $rootTrim -and $written.Count -gt 0) {

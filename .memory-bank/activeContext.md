@@ -36,22 +36,33 @@ The two decisions that shaped the code:
 Truncation reuses `Reset-DpConversationForRerun` — the same machinery as
 Regenerate and Edit — so the discarded prompt comes back in the composer.
 
+It is reachable from both surfaces. Intercom's `/undo`
+(`Restore-DpIntercomCheckpoint`) restores the bound Conversation's most recent
+Checkpoint, takes two messages like `/delete` because it is the only Intercom
+command that rewrites files on disk, and quotes real numbers from
+`Restore-DpCheckpoint -Preview` rather than a second approximate count.
+
 ## Verification
 
-- `tests/Unit/Checkpoint.Tests.ps1` — **13/13** under `Set-StrictMode -Version
+- `tests/Unit/Checkpoint.Tests.ps1` — **21/21** under `Set-StrictMode -Version
   Latest`: sha collection and per-Project filtering, truncation and the returned
   prompt, the bounded file set handed to the undo, pending-change clearing,
   refusal of a vanished or assistant Message, the no-snapshot and no-Project
-  paths, `-SkipFiles`, and an intact Conversation when the git restore fails.
-- One SPA structural guard in `tests/Unit/WebAssets.Tests.ps1`: the divider is
-  gated on `m.checkpoint.sha`, restoring always confirms, and the prompt is put
-  back in the composer.
-- Full suite **706/708**. The two failures are the **pre-existing revert** — see
+  paths, `-SkipFiles`, `-Preview` changing nothing, an intact Conversation when
+  the git restore fails, and `/undo`'s preview-then-confirm, its refusals (Turn
+  running, bound Conversation gone, archived, no Checkpoint) and that it takes
+  the **most recent** Checkpoint.
+- A ref-protection guard in `tests/Unit/DeskPilot.Helpers.Tests.ps1`: Keeping a
+  change does not delete a snapshot a Checkpoint still restores from (the sibling
+  test proves the same inputs *do* delete it without one).
+- SPA structural guards in `tests/Unit/WebAssets.Tests.ps1`: the divider is gated
+  on `m.checkpoint.sha`, restoring always confirms, the prompt is put back in the
+  composer, and `refreshCurrentConversation` calls `syncCheckpointDividers`.
+- Full suite **716/718**. The two failures are the **pre-existing revert** — see
   *Known repository state* below.
-- PSScriptAnalyzer clean on the new files; `./build.ps1 -Tasks build` EXIT 0 with
-  both functions and the route present in the built module.
+- PSScriptAnalyzer clean on the new files; `./build.ps1 -Tasks build` EXIT 0.
 - **Not yet live-smoked.** Restoring rewrites files on disk; exercise it against a
-  real Project before trusting it.
+  real Project — from the window and from `/undo` — before trusting it.
 
 ## Known repository state — not mine
 
@@ -68,12 +79,15 @@ the fix or keep the revert before the next release.
 
 ## Next step
 
-Restart DeskPilot (the module is rebuilt) and reload the tab, then live-smoke a
-Checkpoint restore against a real Project: confirm the divider appears, that the
-prompt returns to the composer, that a file the agent wrote is put back and one
-it created is deleted, and that a hand edit to an untouched file survives. Then
-live-smoke Intercom end to end against a real bot per
-`docs/intercom-getting-started.md`. Then resolve the worktree revert above.
+Restart DeskPilot — the whole process, not just the browser tab: the SPA
+hot-reloads from `source/web` but the module functions are already in memory,
+which is why the first Checkpoint attempt showed no divider. Then live-smoke a
+restore against a real Project from both surfaces: confirm the divider appears on
+the turn just run, that the prompt returns to the composer, that a file the agent
+wrote is put back and one it created is deleted, that a hand edit to an untouched
+file survives, and that `/undo` previews accurate numbers before `/undo confirm`
+acts. Then live-smoke Intercom end to end per
+`docs/intercom-getting-started.md`. Then resolve the repository revert above.
 
 ## Previous focus
 

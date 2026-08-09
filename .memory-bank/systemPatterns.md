@@ -384,6 +384,13 @@ source: repository evidence
   reads as "the feature is broken", not "the feature is late". Anything the
   server assigns has to be filled in from the post-Turn refresh.
 
+- **A confirmation must state facts, not estimates.** Intercom's `/undo` asks
+  before it acts, and the numbers it quotes come from a real
+  `Restore-DpCheckpoint -Preview` over the same code path the confirmed call
+  takes - not from a second, approximate count written for the message. A
+  confirmation the operator cannot trust is worse than none, because it teaches
+  them to skim it.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

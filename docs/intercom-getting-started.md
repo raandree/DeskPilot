@@ -132,6 +132,7 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | `/new summarise yesterday's notes` | Starts a fresh conversation and does that |
 | `/stop` | Stops the running job |
 | `/steer clean up the tests instead` | Stops the job, then does that instead |
+| `/undo` | Goes back to just before your last instruction — asks you to confirm first |
 | `/help` | The list above |
 
 Three things worth knowing:
@@ -141,6 +142,12 @@ Three things worth knowing:
   question you are answering, so there is no code to type.
 - **A message sent while a job is running is queued**, not jammed in. It runs as
   soon as the current job finishes. Use `/steer` if you want to interrupt.
+- **`/undo` is the escape hatch when the agent went the wrong way.** Send it and
+  DeskPilot tells you exactly what it would throw away — how many messages, how
+  many files — and waits. Send `/undo confirm` and it takes you back to just
+  before that instruction, puts back the files it changed, and sends your prompt
+  back so you can reword it and try again. Anything **you** edited yourself is
+  left alone. It will not run while a job is going; send `/stop` first.
 - **The agent cannot switch conversations itself.** If you ask it to, it will say
   so — it has no way to see or change which conversation it is in. Use `/chats`
   and `/chat 2`, which are handled by DeskPilot rather than the agent.

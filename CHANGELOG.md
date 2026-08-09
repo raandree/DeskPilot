@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yourself are left alone, and DeskPilot asks before it discards anything. The
   marker appears as soon as the turn finishes — you do not have to reopen the
   conversation to see it.
+- **Undo from your phone.** Send `/undo` to Intercom and DeskPilot tells you
+  exactly what it would throw away — how many messages, how many files — then
+  waits. `/undo confirm` takes you back to just before your last instruction,
+  puts back the files it changed, and sends your prompt back so you can reword it
+  and try again. It refuses while a job is running, so send `/stop` first.
 
 ### Fixed
 

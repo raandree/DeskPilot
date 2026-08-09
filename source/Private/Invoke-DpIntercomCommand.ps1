@@ -117,6 +117,7 @@ function Invoke-DpIntercomCommand {
                 '/delete 3 - remove it for good (asks first)',
                 '/stop - stop the running job',
                 '/steer <text> - stop the job, then do this instead',
+                '/undo - go back to before the last instruction (asks first)',
                 '/help - this list'
             ) -Kind 'help'
         }
@@ -239,6 +240,11 @@ function Invoke-DpIntercomCommand {
             $null = $state.Conversations.Remove([string]$resolved.conversation.id)
             Update-DpIntercomChatBinding -ConversationId ([string]$resolved.conversation.id)
             $null = Send-DpIntercomMessage -Title 'Deleted.' -Line @($title) -Kind 'delete'
+        }
+
+        'undo' {
+            $confirmed = ([string]$Command.text).Trim().ToLowerInvariant() -eq 'confirm'
+            Restore-DpIntercomCheckpoint -Confirmed:$confirmed
         }
 
         'steer' {

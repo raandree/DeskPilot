@@ -206,6 +206,10 @@ function ConvertFrom-DpIntercomUpdate {
             $result.kind = 'steer'
             $result.text = $argument
         }
+        'undo' {
+            $result.kind = 'undo'
+            $result.text = $argument
+        }
         default {
             $result.kind = 'ignore'
             $result.reason = "Unknown command '/$verb'. Send /help for the list."

@@ -166,4 +166,108 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         $result.ok | Should -BeTrue
         $result.prompt | Should -Be 'second prompt'
     }
+
+    It 'reports what a restore would discard without touching anything' {
+        $conversation = New-TestCheckpointConversation
+        Mock Invoke-DpChangeUndo { throw 'must not be called' }
+        Mock Remove-DpChangeEntry { throw 'must not be called' }
+
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj' -Preview
+
+        $result.ok | Should -BeTrue
+        $result.prompt | Should -Be 'second prompt'
+        $result.messagesDropped | Should -Be 2
+        @($result.files).Count | Should -Be 2
+        $result.filesTried | Should -BeTrue
+        # The whole point of a preview is that it changes nothing.
+        @($conversation.messages).Count | Should -Be 4
+    }
+}
+
+Describe 'Restore-DpIntercomCheckpoint' -Tag 'Unit' {
+    BeforeEach {
+        $script:sent = [System.Collections.Generic.List[object]]::new()
+        Mock Send-DpIntercomMessage { $script:sent.Add(@{ Title = $Title; Line = @($Line); Kind = $Kind }) }
+        Mock Save-DpConversationStore { }
+        Mock Save-DpChangeStore { }
+        Mock Invoke-DpChangeUndo { @{ restored = @('src/one.ps1'); removed = @(); skipped = @(); kept = @(); error = $null } }
+        Mock Remove-DpChangeEntry { }
+
+        $script:conv = New-TestCheckpointConversation
+        $script:conv.id = 'c1'
+        $script:DeskPilot = @{
+            Settings              = @{ workspaceFolder = 'C:\proj' }
+            Conversations         = @{ c1 = $script:conv }
+            Changes               = @{}
+            DataDir               = 'C:\data'
+            TurnRunning           = $false
+            ConversationsRevision = 0
+            Intercom              = @{ ConversationId = 'c1'; Log = [System.Collections.Generic.List[object]]::new() }
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'only describes the restore on a bare /undo' {
+        Restore-DpIntercomCheckpoint
+
+        @($script:conv.messages).Count | Should -Be 4
+        Should -Invoke Invoke-DpChangeUndo -Times 0 -Exactly
+        $script:sent[0].Title | Should -Be 'This cannot be undone.'
+        ($script:sent[0].Line -join ' ') | Should -Match 'second prompt'
+        ($script:sent[0].Line -join ' ') | Should -Match '/undo confirm'
+    }
+
+    It 'restores once confirmed and hands the prompt back' {
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        @($script:conv.messages).Count | Should -Be 2
+        $script:sent[0].Title | Should -Be 'Undone.'
+        ($script:sent[0].Line -join ' ') | Should -Match 'second prompt'
+        $script:DeskPilot.ConversationsRevision | Should -Be 1
+    }
+
+    It 'refuses while a job is running' {
+        $script:DeskPilot.TurnRunning = $true
+
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        @($script:conv.messages).Count | Should -Be 4
+        $script:sent[0].Title | Should -Be 'A job is running.'
+    }
+
+    It 'refuses when the bound conversation has gone rather than undoing another' {
+        $script:DeskPilot.Conversations = @{}
+
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        $script:sent[0].Title | Should -Be 'I did not undo anything.'
+        $script:DeskPilot.Intercom.ConversationId | Should -BeNullOrEmpty
+    }
+
+    It 'says so when nothing in the conversation has a checkpoint' {
+        $script:conv.messages[2].Remove('checkpoint')
+
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        @($script:conv.messages).Count | Should -Be 4
+        $script:sent[0].Title | Should -Be 'There is nothing to undo here.'
+    }
+
+    It 'refuses to rewrite an archived conversation' {
+        $script:conv.archived = $true
+
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        @($script:conv.messages).Count | Should -Be 4
+        $script:sent[0].Title | Should -Be 'I did not undo anything.'
+    }
+
+    It 'goes back to the most recent checkpoint, not the first' {
+        $script:conv.messages[0].checkpoint = @{ sha = 'older'; root = 'C:\proj'; createdUtc = '2025-01-01T00:00:00.0000000Z' }
+
+        Restore-DpIntercomCheckpoint -Confirmed
+
+        @($script:conv.messages).Count | Should -Be 2
+    }
 }

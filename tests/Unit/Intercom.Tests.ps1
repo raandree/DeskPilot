@@ -92,6 +92,8 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             '/new'             = 'new'
             '/new do a thing'  = 'new'
             '/steer do it now' = 'steer'
+            '/undo'            = 'undo'
+            '/undo confirm'    = 'undo'
         }
         foreach ($text in $cases.Keys) {
             $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text $text) -AllowedChatId '111'
@@ -115,6 +117,11 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
 
         $result.kind | Should -Be 'steer'
         $result.text | Should -Be 'fix the build'
+    }
+
+    It 'separates a bare /undo from a confirmed one' {
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '/undo') -AllowedChatId '111').text | Should -BeNullOrEmpty
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '/undo confirm') -AllowedChatId '111').text | Should -Be 'confirm'
     }
 
     It 'strips the bot mention Telegram appends in groups' {

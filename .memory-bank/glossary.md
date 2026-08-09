@@ -61,7 +61,7 @@ synonym.
 | Check-in | One refresh of the live status message, which always states the time of the **next** check-in. A check-in time that has passed is how the operator detects that DeskPilot has stopped. | heartbeat (in UI copy), ping, keepalive |
 | Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
 | Checkpoint | The pre-Turn snapshot made addressable from the transcript: a marker above a user Message offering to go back to the moment just before it was sent. Restoring one discards that Message and every later one, and puts back the files the discarded Turns wrote. | restore point, revert point, save point, rollback, snapshot (that is the underlying commit), Save (that is a Git commit) |
-| Restore (a Checkpoint) | Going back to a Checkpoint: the Conversation is truncated, the discarded prompt returns to the composer, and the files those Turns wrote are put back. The user's own edits to other files are untouched. | roll back, rewind, revert (that is a Git revert), reset, undo (that is a single-file Undo) |
+| Restore (a Checkpoint) | Going back to a Checkpoint: the Conversation is truncated, the discarded prompt returns to the composer, and the files those Turns wrote are put back. The user's own edits to other files are untouched. Reachable from the window and from Intercom's `/undo`. | roll back, rewind, revert (that is a Git revert), reset, undo (that is a single-file Undo) |
 
 ## Notes
 

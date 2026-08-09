@@ -123,7 +123,14 @@ no Project open, or the wrong one.
 | `/new <text>` | The same, then runs `<text>` | Yes |
 | `/stop` | Cancels the running Turn | No |
 | `/steer <text>` | Cancels the running Turn, then runs `<text>` | Yes |
+| `/undo` | Warns; `/undo confirm` restores the bound Conversation's most recent **Checkpoint** (see [030-api-contract.md](030-api-contract.md)) - dropping that prompt and everything after it, and putting back the files those Turns wrote. Refused while a Turn is running or on an archived Conversation. The discarded prompt is sent back so it can be reworded and resent | No |
 | `/help` | The command list | No |
+
+`/undo` is the only Intercom command that rewrites files on disk, and a phone is
+where a mistyped command is most likely, so it takes two messages - the same
+two-step shape as `/delete`. The confirmation states the exact number of Messages
+and files at stake, taken from a real `Restore-DpCheckpoint -Preview` rather than
+an estimate, so the operator is never asked to confirm a guess.
 
 The numbering `/chats` produces is a **snapshot**, not a Conversation property:
 the list is ordered by last activity, so running a Turn reorders it. The ids are
