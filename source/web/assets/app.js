@@ -3035,6 +3035,11 @@ function wireUpdateAutoRefresh() {
 // ===== Intercom =====
 let _intercomAutoWired = false;
 
+// The setup guide. Intercom is the one feature where reading first genuinely
+// matters - a message from a phone can drive the agent - so the Settings panel
+// links straight to it rather than just telling the user it exists.
+const INTERCOM_GUIDE_URL = 'https://github.com/raandree/DeskPilot/blob/main/docs/intercom-getting-started.md';
+
 // Reflect the Host Server's Intercom state. The server owns the poll loop and
 // the transport; the SPA only reports what it finds, so this stays a cheap
 // local request.
@@ -5520,7 +5525,7 @@ function openSettings() {
     <section class="settings-tab" id="spane-intercom" data-tab="intercom" role="tabpanel" aria-labelledby="stab-intercom" hidden>
       <div class="field">
         <label><input type="checkbox" id="set-ic-enabled" ${ic.enabled ? 'checked' : ''} /> Let me reach DeskPilot from my phone</label>
-        <p class="hint">DeskPilot messages you on Telegram when the agent needs an answer, finishes, fails, or goes quiet — and you can reply to answer it or give it a new instruction. Off by default. <strong>Follow the getting-started guide</strong> before switching this on.</p>
+        <p class="hint">DeskPilot messages you on Telegram when the agent needs an answer, finishes, fails, or goes quiet — and you can reply to answer it or give it a new instruction. Off by default. <a href="${INTERCOM_GUIDE_URL}" target="_blank" rel="noopener noreferrer"><strong>Follow the getting-started guide</strong></a> before switching this on.</p>
       </div>
       <div class="field">
         <label>Status</label>

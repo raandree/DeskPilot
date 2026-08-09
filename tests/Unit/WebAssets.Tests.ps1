@@ -33,6 +33,19 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match 'wireExplorerResize\(\)'
     }
 
+    It 'links the Intercom setup guide, and opens every external link safely' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $js | Should -Match ([regex]::Escape('const INTERCOM_GUIDE_URL'))
+        $js | Should -Match ([regex]::Escape('docs/intercom-getting-started.md'))
+        $js | Should -Match ([regex]::Escape('href="${INTERCOM_GUIDE_URL}"'))
+        # target="_blank" without rel="noopener noreferrer" hands the opened page a
+        # window.opener it can navigate away (reverse tabnabbing).
+        foreach ($match in [regex]::Matches($js, '<a\s[^>]*target="_blank"[^>]*>')) {
+            $match.Value | Should -Match 'rel="noopener noreferrer"'
+        }
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'
