@@ -408,6 +408,13 @@ Describe 'New-DpTurnParameter' {
         $p.SystemPrompt | Should -Match 'selectedOptions'
         $p.SystemPrompt | Should -Match 'ask_questions'
         $p.SystemPrompt | Should -Match 'Do not call ask_user repeatedly'
+        # "Give me a list to choose from" used to be answered with prose, because the
+        # only stated trigger was the agent needing information - not the user
+        # asking to be offered a choice.
+        $p.SystemPrompt | Should -Match 'asks to be offered a choice'
+        $p.SystemPrompt | Should -Match 'what are my options'
+        # And a guard the other way, so it does not turn every request into a wizard.
+        $p.SystemPrompt | Should -Match 'reasonably infer'
     }
     It 'omits the Questionnaire protocol when Ask-User is disabled' {
         $settings = Get-DpDefaultSettings

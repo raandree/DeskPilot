@@ -406,6 +406,20 @@ source: repository evidence
   index are both validated before anything happens. Provenance at send time is not
   provenance at receive time.
 
+- **A rule about a core Tool belongs to whoever owns the Tool.** "Give me a list
+  to choose from" was answered with prose because the only stated trigger for
+  `ask_questions` was *the agent needing information*, never *the user asking to
+  be offered a choice*. The fix went in DeskPilot's own askUser system-prompt
+  block, not the selected Agent (which would fix one persona and leave every other
+  one broken, in a file DeskPilot does not own) and not a Skill (progressive
+  disclosure means it is absent on the turns that need it). Always-on behaviour
+  about a built-in capability cannot live in an on-demand or per-persona file.
+- **A "when to use" rule needs its opposite in the same breath.** Telling the
+  model to offer a Questionnaire whenever a choice is implied invites a wizard in
+  place of an answer, so the same paragraph forbids using it to confirm something
+  it can simply do or to ask what it can infer. A trigger without a brake trades
+  one bad behaviour for another.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

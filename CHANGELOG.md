@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Asking for choices now gets you choices.** "Give me a list to choose from"
+  or "what are my options" used to be answered with a written list you could only
+  read. The agent now offers those as a real question you can answer — a
+  questionnaire in the window, tappable buttons on your phone — so picking one
+  actually carries on the conversation. It still will not turn a simple request
+  into a wizard: it never asks to confirm something it can just do.
 - **Tap to answer, instead of typing.** When the agent asks a question with a
   list of choices, Telegram now shows a button for each one — tap it and that is
   your answer. `/chats` gives you a button per conversation too, so switching no
