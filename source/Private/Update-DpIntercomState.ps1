@@ -210,10 +210,12 @@ function Update-DpIntercomState {
         #    message arrives, so this is both instant and nearly free when idle.
         if (-not $intercom.PollTask) {
             $pollPayload = if ($intercom.Priming) {
-                @{ offset = -1; timeout = 0; limit = 1; allowed_updates = @('message') }
+                @{ offset = -1; timeout = 0; limit = 1; allowed_updates = @('message', 'edited_message') }
             }
             else {
-                @{ offset = $intercom.Offset; timeout = 20; limit = 10; allowed_updates = @('message') }
+                # Edits are fetched so they can be answered, never so they can be
+                # run - see ConvertFrom-DpIntercomUpdate.
+                @{ offset = $intercom.Offset; timeout = 20; limit = 10; allowed_updates = @('message', 'edited_message') }
             }
             try {
                 $intercom.PollTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getUpdates' -Payload $pollPayload

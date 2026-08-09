@@ -21,8 +21,9 @@ function ConvertFrom-DpIntercomUpdate {
           delete   - /delete <n> [confirm]: remove one for good
           new      - /new [text]: start a fresh conversation, optionally with work
           help     - /help
+          edited   - the operator edited an earlier message; acknowledged, never run
           rejected - the chat is not allow-listed
-          ignore   - nothing actionable (an edit, a photo, an empty message)
+          ignore   - nothing actionable (a photo, a channel post, an empty message)
     .PARAMETER Update
         One element of the Telegram getUpdates result array.
     .PARAMETER AllowedChatId
@@ -74,8 +75,13 @@ function ConvertFrom-DpIntercomUpdate {
     $result.updateId = [long](Get-DpPropertyValue -InputObject $Update -Name @('update_id') -Default 0)
 
     $message = Get-DpPropertyValue -InputObject $Update -Name @('message') -Default $null
+    $isEdit = $false
     if ($null -eq $message) {
-        $result.reason = 'No message (edits, channel posts and callbacks are ignored).'
+        $message = Get-DpPropertyValue -InputObject $Update -Name @('edited_message') -Default $null
+        $isEdit = $null -ne $message
+    }
+    if ($null -eq $message) {
+        $result.reason = 'No message (channel posts and callbacks are ignored).'
         return $result
     }
 
@@ -105,6 +111,18 @@ function ConvertFrom-DpIntercomUpdate {
     $rawText = [string](Get-DpPropertyValue -InputObject $message -Name @('text') -Default '')
     if ([string]::IsNullOrWhiteSpace($rawText)) {
         $result.reason = 'Message carried no text.'
+        return $result
+    }
+
+    # Editing a message is a natural way to fix a typed command on a phone, but it
+    # is never executed: Telegram delivers an edit as a fresh update, so acting on
+    # one would silently re-run a command that already ran - with different text,
+    # and potentially hours later. It is acknowledged instead, so the operator
+    # learns their correction did not land rather than waiting for a reply that
+    # never comes.
+    if ($isEdit) {
+        $result.kind = 'edited'
+        $result.reason = 'An edited message is not run.'
         return $result
     }
 

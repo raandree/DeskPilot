@@ -136,6 +136,38 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         $result.updateId | Should -Be 3
     }
 
+    It 'acknowledges an edited message without running it' {
+        # Editing a typed command is natural on a phone, and used to vanish
+        # silently: the poller did not even subscribe to edits.
+        $update = [pscustomobject]@{
+            update_id      = 9
+            edited_message = [pscustomobject]@{
+                message_id = 5
+                chat       = [pscustomobject]@{ id = '111' }
+                text       = '/chat 2'
+            }
+        }
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.kind | Should -Be 'edited'
+        # The command must not be interpreted, or an edit would re-run something.
+        $result.text | Should -BeNullOrEmpty
+    }
+
+    It 'still rejects an edited message from a chat that is not allow-listed' {
+        $update = [pscustomobject]@{
+            update_id      = 9
+            edited_message = [pscustomobject]@{
+                message_id = 5
+                chat       = [pscustomobject]@{ id = '999' }
+                text       = '/stop'
+            }
+        }
+
+        (ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111').kind | Should -Be 'rejected'
+    }
+
     It 'ignores a null update without throwing' {
         { ConvertFrom-DpIntercomUpdate -Update $null -AllowedChatId '111' } | Should -Not -Throw
     }
@@ -467,6 +499,14 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
 
         @($script:DeskPilot.Conversations.Values | Where-Object { $_.archived }).Count | Should -Be 1
         @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'no conversation 99'
+    }
+
+    It 'tells the operator an edited message did nothing, and changes no state' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'edited'; text = ''; reason = 'An edited message is not run.' }
+
+        $script:DeskPilot.Intercom.ConversationId | Should -Be 'c3'
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'Send it again as a new message'
     }
 }
 

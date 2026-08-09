@@ -47,6 +47,15 @@ function Invoke-DpIntercomCommand {
         return
     }
 
+    if ($Command.kind -eq 'edited') {
+        Add-DpIntercomLog -Direction 'in' -Kind 'edited' -Detail 'An edited message was acknowledged, not run.' -Accepted $false
+        $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
+            'Editing a message you already sent does not reach me as a new instruction.',
+            'Send it again as a new message.'
+        ) -Kind 'notice'
+        return
+    }
+
     $intercom.Counters.accepted++
     Add-DpIntercomLog -Direction 'in' -Kind $Command.kind -Detail $Command.text
 
