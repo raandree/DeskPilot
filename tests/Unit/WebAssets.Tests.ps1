@@ -113,6 +113,22 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match ([regex]::Escape('.checkpoint-label'))
     }
 
+    It 'shows the model''s thinking expanded, and keeps it in view while it streams' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # "Show the model's thinking" that lands collapsed shows nothing.
+        $js | Should -Match ([regex]::Escape('thinking.open = !!(state.settings && state.settings.showThinking)'))
+        # The box only appears after the turn-start scroll, so it has to scroll for
+        # itself or it unfolds below the fold and the turn reads as stalled.
+        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,300}?scrollThread\(\);\s*\}'
+        # Every live reasoning frame goes through that helper; an inline update
+        # would silently lose the scroll again.
+        $reasoning = [regex]::Matches($js, 'reasoning: \(d\) =>')
+        $reasoning.Count | Should -BeGreaterThan 0
+        [regex]::Matches($js, 'renderThinking\(wrap, think\)').Count | Should -Be $reasoning.Count
+        $js | Should -Not -Match ([regex]::Escape(".thinking .disclosure-body').textContent = think"))
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

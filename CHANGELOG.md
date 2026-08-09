@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The model's thinking is now actually shown.** With **Show the model's
+  thinking** turned on, the Thinking box arrived collapsed, so you still had to
+  find and click it on every answer — and because it only appeared after the view
+  had already scrolled, it unfolded below the bottom of the window, which made a
+  long think look like a stalled turn. The box now opens by itself when the
+  setting is on, and the view follows it as it is written.
 - **A Windows-written Markdown file no longer freezes the window.** Opening a
   `.md` file saved with Windows line endings — which is most files DeskPilot did
   not write itself — left the preview stuck on "Loading…" and locked up the whole

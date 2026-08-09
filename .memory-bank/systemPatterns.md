@@ -439,6 +439,15 @@ source: repository evidence
   the branch that claims them. The moment the two disagreed the loop stopped
   advancing and the browser tab froze. A dispatch loop's last branch must always
   move the cursor, whatever it decides to do with the line.
+- **A setting that says "show me X" has to show X.** `showThinking` only unhid a
+  collapsed `<details>`, so the user still had to click it on every answer. A
+  Setting phrased as a request for visibility sets the disclosure's `open`, not
+  just its `hidden`.
+- **Content that appears after the scroll has to scroll for itself.** A Turn
+  scrolls once when its bubble is appended, while it is still empty. Anything the
+  stream adds later — the Thinking box, tasks, a question — grows below the fold
+  unless its own handler scrolls, and a turn you cannot see reads as a stalled
+  one. Route those updates through one helper that renders and scrolls together.
 
 ## Anti-patterns to avoid
 

@@ -1359,6 +1359,8 @@ function buildAssistantEl(m) {
     role.appendChild(actions);
     const thinking = el('disclosure thinking hidden', 'details');
     thinking.innerHTML = '<summary>Thinking</summary><div class="disclosure-body"></div>';
+    // Asking to see the model's thinking means seeing it, not finding a box to open.
+    thinking.open = !!(state.settings && state.settings.showThinking);
     const content = el('content');
     const tasks = el('tasks-panel hidden');
     const userPrompts = el('user-prompts hidden');
@@ -2001,6 +2003,16 @@ function scrollThread() {
     t.scrollTop = t.scrollHeight;
 }
 
+// Put a reasoning delta in a message's Thinking box and follow it down. The box
+// only appears after the turn-start scroll, so without this it unfolds below the
+// fold and a long think looks like a stalled turn.
+function renderThinking(wrap, text) {
+    const box = wrap.querySelector('.thinking');
+    box.classList.remove('hidden');
+    box.querySelector('.disclosure-body').textContent = text;
+    scrollThread();
+}
+
 // ===== Sending a Turn =====
 async function send() {
     if (voice.listening) stopDictation();
@@ -2099,8 +2111,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
             reasoning: (d) => {
                 if (state.stopRequested) return;
                 think += (d && d.text) || '';
-                wrap.querySelector('.thinking').classList.remove('hidden');
-                wrap.querySelector('.thinking .disclosure-body').textContent = think;
+                renderThinking(wrap, think);
             },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
@@ -3354,11 +3365,7 @@ function renderRemoteLive() {
     const refs = node._refs;
     refs.content.innerHTML = renderMarkdown(data.text || '') ||
         '<span class="muted tiny">Working…</span>';
-    if (data.reasoning) {
-        const thinking = node.querySelector('.thinking');
-        thinking.classList.remove('hidden');
-        node.querySelector('.thinking .disclosure-body').textContent = data.reasoning;
-    }
+    if (data.reasoning) renderThinking(node, data.reasoning);
     scrollThread();
 }
 
@@ -6515,7 +6522,7 @@ async function _streamRerun({ endpoint, body }) {
         await streamPost('/api/conversations/' + conversationId + endpoint, body, {
             start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; },
             delta: (d) => { if (!state.stopRequested) { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
-            reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; wrap.querySelector('.thinking').classList.remove('hidden'); wrap.querySelector('.thinking .disclosure-body').textContent = think; } },
+            reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; renderThinking(wrap, think); } },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },

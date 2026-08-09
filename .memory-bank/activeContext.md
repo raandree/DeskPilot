@@ -10,8 +10,32 @@ source: repository evidence
 
 ## Current focus
 
-**The file viewer froze the window on a CRLF Markdown file (`main`, 2026-08-09,
-uncommitted).** Reported against `C:\Git\Kinesiologie\vorlagen\kontakt-email-vorlage.md`;
+**The Thinking box arrived collapsed and below the fold (`main`, 2026-08-09,
+uncommitted).** Two defects in one report. (1) `buildAssistantEl` created the
+`<details>` without `open`, so "Show the model's thinking" only unhid a box the
+user still had to click on every answer — the Setting is a request for
+visibility, so it now sets `thinking.open` from `state.settings.showThinking` at
+build time (the node is built after the Setting is read, so nothing has to
+re-render when it is toggled). (2) `_runTurn` scrolls once, right after appending
+the still-empty assistant bubble; the `reasoning` handler then unhid and grew the
+box without scrolling, so a long think unfolded below the fold and read as a
+stalled turn. The answer stream never showed this because `renderLive` already
+scrolls on every delta.
+
+Both live reasoning handlers (`_runTurn`, `_streamRerun`) and the Intercom live
+bubble now go through one `renderThinking(wrap, text)` helper that unhides,
+writes and scrolls together, so a future call site cannot lose the scroll again.
+`finalizeAssistant` deliberately stays inline: it runs once per message during a
+full `renderThread`, which scrolls once at the end.
+
+Structural guard in `WebAssets.Tests.ps1` asserts the `open` assignment, that the
+helper scrolls, and that the number of `renderThinking(wrap, think)` calls equals
+the number of live `reasoning:` handlers — the last one is what fails if someone
+adds a third streaming path and inlines the DOM write.
+
+## Previous focus — the file viewer froze the window on a CRLF Markdown file
+
+Reported against `C:\Git\Kinesiologie\vorlagen\kontakt-email-vorlage.md`;
 other files opened fine. Not the Host Server — `Get-DpFileContent` and
 `Write-DpResponse` are correct. `renderMarkdown` in `web/assets/markdown.js` never
 normalised line endings, and its heading branch is `/^(#{1,3})\s+(.*)$/`: without
