@@ -353,6 +353,29 @@ source: repository evidence
   `getFile` hands back is validated before it is fetched. Content can be
   untrusted and merely risky; a name can be untrusted and *directly* dangerous.
 
+- **The data for a feature is often already being written.** Checkpoints needed
+  no new capture at all: DeskPilot had committed a pre-Turn snapshot per Turn
+  since the change set shipped. The feature was one field on the user Message
+  (`checkpoint.sha`) plus a way to reach it. Before building a capture pipeline,
+  check whether the value is already on disk and merely unaddressed.
+- **A shared resource needs an owner set, not one owner.** The snapshot commit
+  was garbage-collected by `Remove-DpChangeEntry` the moment its pending entries
+  cleared, because pending changes were assumed to be its only consumer. A second
+  consumer means the cleanup must ask everyone (`Get-DpCheckpointSha`) before it
+  deletes. Reading the live store rather than taking a parameter means a new call
+  site cannot forget to ask.
+- **Restore what you changed, not where you are.** A Checkpoint puts back only
+  the paths from `activity.filesWritten`, never the whole folder. A wholesale
+  checkout would silently destroy the hand edits the user made in between - the
+  exact distinction the pending change set exists to draw. "Undo the agent" and
+  "revert the working tree" are different operations and must stay so.
+- **Normalise at the point the identity is decided.** `filesWritten` holds
+  whatever the Engine reported; the pending change set keys on Project-relative
+  forward-slash paths. Restoring had to produce that same form or the git
+  pathspec, the entry lookup, and the later removal would each match a different
+  string. Reusing the wrong helper (a git-relative converter) failed loudly;
+  reusing none would have failed silently.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

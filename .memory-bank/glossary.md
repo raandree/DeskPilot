@@ -38,7 +38,7 @@ synonym.
 | Attachment | A file added to one Turn through the Attach button, drag-and-drop, or clipboard paste. DeskPilot uploads it before sending the prompt; image Attachments are also passed to the Engine's native Vision input. | Reference File, Artifact, embedded file |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
-| Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint, backup, snapshot (that is the pre-Turn snapshot), stage |
+| Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint (that is the pre-Turn restore point), backup, snapshot (that is the pre-Turn snapshot), stage |
 | Save Message | The one-line description recorded with a Save. Prefilled from the change set, optionally written by the Model on request, and always editable before the Save happens. | commit message (in UI copy), comment, note, caption |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
 | Default Branch | The repository's primary integration branch and the only Merge target: `origin/HEAD` if set, else a local `main`, else `master`. | trunk, mainline, master (when you mean the concept rather than the literal branch name) |
@@ -60,6 +60,8 @@ synonym.
 | Channel | The transport an Intercom speaks over — Telegram in v1. An Intercom speaks over a Channel; the two are not interchangeable. | transport (in UI copy), provider, connector |
 | Check-in | One refresh of the live status message, which always states the time of the **next** check-in. A check-in time that has passed is how the operator detects that DeskPilot has stopped. | heartbeat (in UI copy), ping, keepalive |
 | Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
+| Checkpoint | The pre-Turn snapshot made addressable from the transcript: a marker above a user Message offering to go back to the moment just before it was sent. Restoring one discards that Message and every later one, and puts back the files the discarded Turns wrote. | restore point, revert point, save point, rollback, snapshot (that is the underlying commit), Save (that is a Git commit) |
+| Restore (a Checkpoint) | Going back to a Checkpoint: the Conversation is truncated, the discarded prompt returns to the composer, and the files those Turns wrote are put back. The user's own edits to other files are untouched. | roll back, rewind, revert (that is a Git revert), reset, undo (that is a single-file Undo) |
 
 ## Notes
 
@@ -98,6 +100,14 @@ synonym.
   what makes the work durable and sendable. **Undo** puts a file back the way it
   was before DeskPilot touched it. Saving a file also ends its pending state, but
   Keeping one never commits it; never use the two words interchangeably.
+- **Checkpoint vs. Undo vs. Save.** All three put files back, at different
+  scopes. **Undo** reverts one pending file. A **Checkpoint** reverts everything
+  a run of Turns wrote *and* rewinds the Conversation to before the prompt that
+  started them — it is the only one of the three that touches the transcript.
+  **Save** does the opposite: it makes the current state permanent. A Checkpoint
+  restores only what DeskPilot wrote, never the whole folder, so hand edits the
+  user made in the meantime survive; that is the same boundary the pending change
+  set draws, and why a Checkpoint is not a `git reset`.
 - **Default Branch vs. the literal name.** **Default Branch** is the *concept*
   (the only Merge target); the actual branch is named `main` or `master`. Use
   **Default Branch** in code, UI copy, and docs; only write `main`/`master` when

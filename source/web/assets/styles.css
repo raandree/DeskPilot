@@ -4789,6 +4789,53 @@ button.tree-row {
     font-family: var(--mono);
 }
 
+/* ===== Checkpoint divider ===== */
+/* A rule across the thread with the action sitting in the gap, so it reads as a
+   point in time you can return to rather than as another message. */
+.checkpoint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 18px 0 6px;
+    opacity: 0.55;
+    transition: opacity 0.12s ease;
+}
+
+.checkpoint::before,
+.checkpoint::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.checkpoint:hover,
+.checkpoint:focus-within {
+    opacity: 1;
+}
+
+.checkpoint-label {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 10px;
+    padding: 2px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.checkpoint-label:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
 /* ===== Message edit & action buttons (regenerate, edit) ===== */
 .user-actions {
     display: flex;

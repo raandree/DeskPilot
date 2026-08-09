@@ -3956,6 +3956,29 @@ Describe 'Pending change set against a real repository' -Skip:(-not (Get-Command
         $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
         (& git -C $script:csRepo rev-parse --verify --quiet 'refs/deskpilot/snapshots/t_six' 2>$null) | Should -BeNullOrEmpty
     }
+
+    It 'keeps a snapshot ref a checkpoint still restores from' {
+        # Keeping a change clears its pending entry, which used to delete the
+        # snapshot commit outright - including the one the message's Checkpoint
+        # restores from, leaving a button that could not restore.
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_seven'
+        $script:DeskPilot = @{
+            Conversations = @{
+                c1 = @{
+                    messages = @(
+                        @{ id = 'u1'; role = 'user'; text = 'go'; checkpoint = @{ sha = $snap.sha; root = $script:csRepo; createdUtc = '2026-01-01T00:00:00.0000000Z' } }
+                    )
+                }
+            }
+        }
+        try {
+            $store = @{}
+            $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $snap.sha
+            $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
+            (& git -C $script:csRepo rev-parse --verify --quiet 'refs/deskpilot/snapshots/t_seven' 2>$null) | Should -Not -BeNullOrEmpty
+        }
+        finally { $script:DeskPilot = $null }
+    }
 }
 
 Describe 'ConvertTo-DpProjectRelativePath' {

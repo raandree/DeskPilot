@@ -1136,6 +1136,49 @@ function Invoke-DpRouteHandler {
             }
             Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
         }
+        'restoreCheckpoint' {
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is running. Wait for it to finish.' } }
+                return
+            }
+            $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name @('messageId') -Default '')
+            if ([string]::IsNullOrWhiteSpace($messageId)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_request'; message = 'A messageId is required.' } }
+                return
+            }
+            $skipFiles = [bool](Get-DpPropertyValue -InputObject $Body -Name @('skipFiles') -Default $false)
+            $restoreParams = @{
+                Conversation = $conversation
+                MessageId    = $messageId
+                Root         = [string]$state.Settings.workspaceFolder
+                SkipFiles    = $skipFiles
+            }
+            $restore = Restore-DpCheckpoint @restoreParams
+            if (-not $restore.ok) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'checkpoint_failed'; message = $restore.error } }
+                return
+            }
+            if ($state.DataDir) {
+                Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+                Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir
+            }
+            # The thread just lost messages, so a phone sitting on it is looking at
+            # something that no longer exists.
+            $state.ConversationsRevision = [int]$state.ConversationsRevision + 1
+            Write-DpResponse -Stream $Stream -Json @{
+                ok       = $true
+                prompt   = $restore.prompt
+                restored = @($restore.restored)
+                removed  = @($restore.removed)
+                skipped  = @($restore.skipped)
+                files    = [bool]$restore.filesTried
+            }
+        }
         'submitUserPrompt' {
             $conversation = $state.Conversations[$RouteParams.id]
             if (-not $conversation) {

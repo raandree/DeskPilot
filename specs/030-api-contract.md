@@ -664,7 +664,8 @@ Conversation summary.
   "title": "Summarise the Q2 notes",
   "model": "claude-opus-4.8",
   "messages": [
-    { "id": "m_1", "role": "user", "text": "…", "createdUtc": "…" },
+    { "id": "m_1", "role": "user", "text": "…", "createdUtc": "…",
+      "checkpoint": { "sha": "…", "root": "…", "createdUtc": "…" } },
     { "id": "m_2", "role": "assistant", "text": "…",
       "reasoning": "… or null",
       "activity": { "filesRead": [], "filesWritten": [], "commandsRun": [],
@@ -811,6 +812,52 @@ only what is replayed to the Engine shrinks. Body: `{}`.
 
 The new nullable `compactedUtc` Conversation field is carried on the `list` and
 `GET conversation` summaries and persisted through the store.
+
+### `POST /api/conversations/{id}/checkpoint`
+
+Restores a **Checkpoint**: takes the Conversation back to the moment just before
+a prompt was sent. Body: `{ "messageId": "m_3", "skipFiles"?: false }`.
+
+DeskPilot already commits a pre-Turn snapshot of the Project to
+`refs/deskpilot/snapshots/<assistantMessageId>` so a single file can be undone.
+A Checkpoint makes that same commit reachable from the transcript: every user
+Message taken while a Project was selected carries
+`checkpoint: { "sha": "…", "root": "…", "createdUtc": "…" }`, which the SPA
+renders as a **Restore Checkpoint** divider above the Message.
+
+Restoring does two things:
+
+1. **Truncates the Conversation** at that Message — it and every later Message
+   are dropped and the replayed `history` is rebuilt
+   (`Reset-DpConversationForRerun`, the same machinery as Regenerate and Edit).
+   The removed prompt comes back in `prompt` so the SPA can refill the composer.
+2. **Puts back the files those Turns wrote** — collected from each discarded
+   assistant Message's `activity.filesWritten`, restored from the snapshot
+   commit via the per-file undo path. A file the agent created is deleted,
+   because it was not in the snapshot.
+
+The file restore is deliberately **bounded to what the agent wrote**. It is not a
+`git reset` or a folder-wide checkout, so edits the user made by hand in the
+meantime survive — the same boundary the pending change set draws between "undo
+what the AI did" and "revert to the last commit" (see
+[090-git-workbench.md](090-git-workbench.md)). Paths outside the Project are
+never touched. Once restored, those files are no longer pending changes.
+
+Because a Checkpoint outlives the pending entries that created its snapshot,
+`Remove-DpChangeEntry` skips any snapshot ref still referenced by a Message
+(`Get-DpCheckpointSha`); otherwise Keeping a change would delete the commit its
+own Checkpoint restores from.
+
+- `404` if the Conversation is missing; `409` if a Turn is running.
+- `400 bad_request` for a missing `messageId`; `400 checkpoint_failed` when the
+  Message is gone, is not a user Message, or the git restore failed — in which
+  case the Conversation is left untouched.
+- `skipFiles: true` truncates the Conversation only.
+- On success returns
+  `{ "ok": true, "prompt": "…", "restored": [], "removed": [], "skipped": [], "files": bool }`,
+  persists both stores, and bumps `ConversationsRevision` so the sidebar refreshes.
+- A Conversation with no Project, or a Project that is not a Git repository, has
+  no snapshot; it is still truncated and `files` is `false`.
 
 ### Mid-Turn dispatch (client-only UX)
 

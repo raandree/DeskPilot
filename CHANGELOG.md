@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Rewind a conversation to before a prompt.** Every message you send now
+  carries a **Restore Checkpoint** marker above it. Clicking it takes you back to
+  the moment just before you hit send: the message and everything after it leave
+  the conversation, your prompt goes back into the box so you can reword it, and
+  any file DeskPilot changed since is put back the way it was. Files you edited
+  yourself are left alone, and DeskPilot asks before it discards anything.
+
 ### Fixed
 
 - **The window keeps up with your phone.** Archiving, unarchiving, deleting or

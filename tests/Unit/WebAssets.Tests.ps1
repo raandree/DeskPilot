@@ -92,6 +92,22 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match '(?s)async function deleteConversation\(id\).{0,600}window\.confirm'
     }
 
+    It 'offers a checkpoint on a prompt, and confirms before discarding anything' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # The divider is only meaningful where a snapshot was actually taken, so
+        # it has to be gated on the message carrying one.
+        $js | Should -Match ([regex]::Escape("m.role === 'user' && m.checkpoint && m.checkpoint.sha"))
+        $js | Should -Match 'function buildCheckpointEl'
+        $js | Should -Match ([regex]::Escape('Restore Checkpoint'))
+        # Restoring throws away messages and rewrites files; it must never be one click.
+        $js | Should -Match '(?s)async function restoreCheckpoint\(m\).{0,900}window\.confirm'
+        # The discarded prompt goes back in the composer, or the user loses what they typed.
+        $js | Should -Match '(?s)async function restoreCheckpoint\(m\).{0,2000}promptEl\.value = r\.prompt'
+        $css | Should -Match ([regex]::Escape('.checkpoint-label'))
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

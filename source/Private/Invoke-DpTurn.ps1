@@ -234,6 +234,16 @@ function Invoke-DpTurn {
             if ($snapshot.sha) { $turnSnapshotSha = $snapshot.sha }
         }
 
+        # The same snapshot, made addressable from the transcript: the user Message
+        # carries the Checkpoint the thread offers to go back to.
+        if ($turnSnapshotSha) {
+            $userMessage.checkpoint = @{
+                sha        = $turnSnapshotSha
+                root       = [string]$settings.workspaceFolder
+                createdUtc = [DateTime]::UtcNow.ToString('o')
+            }
+        }
+
         # Run the Engine call with a bounded retry for transient PRE-STREAM
         # failures. ShellPilot exchanges the GitHub token for a short-lived Copilot
         # session token at the start of every Turn, and that exchange intermittently

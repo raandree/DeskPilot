@@ -1240,6 +1240,7 @@ function renderThread() {
         return;
     }
     for (const m of state.current.messages) {
+        if (m.role === 'user' && m.checkpoint && m.checkpoint.sha) thread.appendChild(buildCheckpointEl(m));
         thread.appendChild(m.role === 'user' ? buildUserEl(m) : finalizeAssistant(buildAssistantEl(m), m));
     }
     markLastAssistant();
@@ -1262,6 +1263,53 @@ function buildEmptyState() {
     <div class="examples" id="examples"></div>`;
     setTimeout(renderExamples, 0);
     return wrap;
+}
+
+// The marker above a prompt: everything from here on can be undone in one go.
+// DeskPilot already snapshots the project before every turn, so a checkpoint is
+// that snapshot made reachable from the transcript.
+function buildCheckpointEl(m) {
+    const wrap = el('checkpoint');
+    const label = el('checkpoint-label', 'button');
+    label.type = 'button';
+    label.title = 'Go back to how things were just before this message';
+    // Inline SVG rather than a glyph: the branch characters in Unicode have
+    // patchy font coverage and fall back to a tofu box on some Windows installs.
+    label.innerHTML = '<svg class="checkpoint-ico" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">' +
+        '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" ' +
+        'd="M4.5 4.2v7.6M4.5 7.4h4a3 3 0 0 0 3-3v-.6"/>' +
+        '<circle cx="4.5" cy="2.8" r="1.4" fill="currentColor"/>' +
+        '<circle cx="4.5" cy="13.2" r="1.4" fill="currentColor"/>' +
+        '<circle cx="11.5" cy="2.8" r="1.4" fill="currentColor"/>' +
+        '</svg> Restore Checkpoint';
+    label.onclick = () => restoreCheckpoint(m);
+    wrap.appendChild(label);
+    return wrap;
+}
+
+async function restoreCheckpoint(m) {
+    if (state.streaming) { toast('Finish the current turn first.'); return; }
+    if (!state.current) return;
+    const when = m.checkpoint && m.checkpoint.createdUtc ? new Date(m.checkpoint.createdUtc).toLocaleTimeString() : '';
+    const confirmed = window.confirm(
+        `Go back to before this message${when ? ' (' + when + ')' : ''}?\n\n` +
+        'This removes it and everything after it from the conversation, and puts back any files DeskPilot changed since. ' +
+        'Your own edits to other files are left alone. This cannot be undone.');
+    if (!confirmed) return;
+    try {
+        const r = await api('POST', '/api/conversations/' + state.current.id + '/checkpoint', { messageId: m.id });
+        await selectConversation(state.current.id);
+        const promptEl = $('prompt');
+        if (promptEl && r.prompt) {
+            promptEl.value = r.prompt;
+            autoGrow(promptEl);
+            setSendEnabled(true);
+            promptEl.focus();
+        }
+        await refreshExplorer({ silent: true }).catch(() => {});
+        const touched = (r.restored || []).length + (r.removed || []).length;
+        toast(touched ? `Restored checkpoint — ${touched} file${touched === 1 ? '' : 's'} put back.` : 'Restored checkpoint.');
+    } catch (e) { toast((e && e.message) || 'Could not restore that checkpoint.'); }
 }
 
 function buildUserEl(m) {
