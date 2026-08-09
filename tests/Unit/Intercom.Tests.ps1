@@ -84,7 +84,11 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             '/status'          = 'status'
             '/help'            = 'help'
             '/chats'           = 'chats'
+            '/chats all'       = 'chats'
             '/chat 3'          = 'chat'
+            '/archive 3'       = 'archive'
+            '/unarchive 3'     = 'unarchive'
+            '/delete 3'        = 'delete'
             '/new'             = 'new'
             '/new do a thing'  = 'new'
             '/steer do it now' = 'steer'
@@ -93,6 +97,10 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text $text) -AllowedChatId '111'
             $result.kind | Should -Be $cases[$text]
         }
+    }
+
+    It 'carries the argument given to /chats' {
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '/chats all') -AllowedChatId '111').text | Should -Be 'all'
     }
 
     It 'carries the number given to /chat' {
@@ -537,7 +545,56 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
         $text | Should -Match '/chats'
         $text | Should -Match '/chat 3'
         $text | Should -Match '/archive'
+        $text | Should -Match '/unarchive'
         $text | Should -Match '/delete'
+    }
+
+    It 'leaves archived conversations out of the default listing' {
+        $script:DeskPilot.Conversations['c1'].archived = $true
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Not -Match 'Oldest topic'
+        $text | Should -Match '/chats all'
+    }
+
+    It 'includes archived conversations, marked, on /chats all' {
+        $script:DeskPilot.Conversations['c1'].archived = $true
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = 'all'; reason = '' }
+
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match 'Oldest topic {2}\(archived\)'
+        $text | Should -Match '/unarchive'
+        $script:DeskPilot.Intercom.ChatIndex | Should -Contain 'c1'
+    }
+
+    It 'brings an archived conversation back' {
+        $script:DeskPilot.Conversations['c1'].archived = $true
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = 'all'; reason = '' }
+        $script:DeskPilot.Intercom.Outbound.Clear()
+        $number = @(Get-DpIntercomChatList -IncludeArchived | Where-Object { $_.id -eq 'c1' }).number
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'unarchive'; text = "$number"; reason = '' }
+
+        $script:DeskPilot.Conversations['c1'].archived | Should -BeFalse
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'unarchive'
+    }
+
+    It 'says so when the chosen conversation was not archived' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $script:DeskPilot.Intercom.Outbound.Clear()
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'unarchive'; text = '1'; reason = '' }
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'not archived'
+    }
+
+    It 'asks which one when /unarchive has no number' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'unarchive'; text = ''; reason = '' }
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match '/chats all'
     }
 
     It 'archives a conversation and stops listing it' {

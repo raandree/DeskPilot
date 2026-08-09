@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stray Enter mid-thought cannot fire a half-written instruction at an agent that
   can change files and run commands.
 - **Tidy up conversations from your phone.** `/archive 2` hides one from the
-  list; `/delete 2` removes it for good and asks you to confirm first, offering
-  `/archive` as the reversible alternative.
+  list, `/unarchive 2` brings it back, and `/chats all` lists the archived ones
+  so you can see their numbers; `/delete 2` removes one for good and asks you to
+  confirm first, offering `/archive` as the reversible alternative.
 - **Watch a phone-driven job from the machine.** While a job you sent from
   Telegram is running, the DeskPilot window marks that conversation and shows the
   answer being written — including the model's thinking when that is switched on.

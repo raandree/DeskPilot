@@ -113,9 +113,10 @@ no Project open, or the wrong one.
 | A reply to a question message | Answers that question and releases the waiting Engine pipeline | Implicitly - the question only reaches the phone from an opted-in Project |
 | Any other plain text | Runs it as a prompt on the bound Conversation - or queues it when a Turn is running | Yes |
 | `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending | No |
-| `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one | No |
+| `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one. `/chats all` includes archived ones, marked - they are the ones already finished with, so they stay out of the way until their numbers are needed | No |
 | `/chat <n>` | Binds Intercom to that Conversation | No |
 | `/archive <n>` | Archives it, rebinding if it was the bound one | No |
+| `/unarchive <n>` | Brings an archived one back | No |
 | `/delete <n>` | Warns; `/delete <n> confirm` removes it | No |
 | `/new` | Creates a Conversation and binds Intercom to it | No |
 | `/new <text>` | The same, then runs `<text>` | Yes |

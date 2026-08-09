@@ -122,8 +122,10 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | Any other message | The agent treats it as a new instruction |
 | `/status` | What is happening right now |
 | `/chats` | Lists your conversations, newest first, and marks the one you are in |
+| `/chats all` | The same, including the archived ones (marked) |
 | `/chat 2` | Switches to conversation 2 from that list |
 | `/archive 2` | Hides it from the list (it stays in DeskPilot under **Show archived**) |
+| `/unarchive 2` | Brings an archived one back — use `/chats all` first to see its number |
 | `/delete 2` | Removes it for good — asks you to confirm first |
 | `/new` | Starts a fresh conversation and switches to it |
 | `/new summarise yesterday's notes` | Starts a fresh conversation and does that |

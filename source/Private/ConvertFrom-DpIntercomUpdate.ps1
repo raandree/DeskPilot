@@ -15,9 +15,10 @@ function ConvertFrom-DpIntercomUpdate {
           stop     - /stop
           steer    - /steer <text>: cancel the running Turn, then run <text>
           status   - /status
-          chats    - /chats: list the conversations that can be switched to
+          chats    - /chats [all]: list the conversations that can be switched to
           chat     - /chat <n>: switch to one of them
           archive  - /archive <n>: hide one from the list
+          unarchive - /unarchive <n>: bring an archived one back
           delete   - /delete <n> [confirm]: remove one for good
           new      - /new [text]: start a fresh conversation, optionally with work
           help     - /help
@@ -157,13 +158,20 @@ function ConvertFrom-DpIntercomUpdate {
         'status' { $result.kind = 'status' }
         'help' { $result.kind = 'help' }
         'start' { $result.kind = 'help' }
-        'chats' { $result.kind = 'chats' }
+        'chats' {
+            $result.kind = 'chats'
+            $result.text = $argument
+        }
         'chat' {
             $result.kind = 'chat'
             $result.text = $argument
         }
         'archive' {
             $result.kind = 'archive'
+            $result.text = $argument
+        }
+        'unarchive' {
+            $result.kind = 'unarchive'
             $result.text = $argument
         }
         'delete' {

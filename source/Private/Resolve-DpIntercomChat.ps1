@@ -13,6 +13,9 @@ function Resolve-DpIntercomChat {
         would be unrecoverable.
     .PARAMETER Number
         The 1-based number from the listing.
+    .PARAMETER IncludeArchived
+        Consider archived Conversations when falling back to the current order,
+        so /unarchive works even if the operator never listed them.
     .OUTPUTS
         System.Collections.Hashtable with ok, conversation and message.
     #>
@@ -20,7 +23,9 @@ function Resolve-DpIntercomChat {
     [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)]
-        [int]$Number
+        [int]$Number,
+
+        [switch]$IncludeArchived
     )
 
     $state = $script:DeskPilot
@@ -33,7 +38,7 @@ function Resolve-DpIntercomChat {
         [string]$index[$Number - 1]
     }
     else {
-        [string](@(Get-DpIntercomChatList) | Where-Object { $_.number -eq $Number } | Select-Object -First 1 -ExpandProperty id)
+        [string](@(Get-DpIntercomChatList -IncludeArchived:$IncludeArchived) | Where-Object { $_.number -eq $Number } | Select-Object -First 1 -ExpandProperty id)
     }
 
     $conversation = if ($conversationId) { $state.Conversations[$conversationId] } else { $null }

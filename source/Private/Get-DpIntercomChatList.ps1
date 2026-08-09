@@ -14,6 +14,10 @@ function Get-DpIntercomChatList {
     .PARAMETER MaxItems
         How many Conversations to offer. A phone list nobody scrolls is worse than
         a short one.
+    .PARAMETER IncludeArchived
+        Also list archived Conversations, marked as such. Off by default: the
+        archived ones are the ones the operator has already finished with, and
+        they are only wanted when something needs bringing back.
     .OUTPUTS
         System.Collections.Hashtable[]
     #>
@@ -21,14 +25,16 @@ function Get-DpIntercomChatList {
     [OutputType([hashtable[]])]
     param(
         [ValidateRange(1, 50)]
-        [int]$MaxItems = 10
+        [int]$MaxItems = 10,
+
+        [switch]$IncludeArchived
     )
 
     $state = $script:DeskPilot
     $boundId = [string]$state.Intercom.ConversationId
 
     $ordered = @($state.Conversations.Values) |
-        Where-Object { -not [bool](Get-DpPropertyValue -InputObject $_ -Name @('archived') -Default $false) } |
+        Where-Object { $IncludeArchived -or -not [bool](Get-DpPropertyValue -InputObject $_ -Name @('archived') -Default $false) } |
         Sort-Object -Property @{ Expression = { [string](Get-DpPropertyValue -InputObject $_ -Name @('updatedUtc') -Default '') } } -Descending |
         Select-Object -First $MaxItems
 
@@ -38,11 +44,12 @@ function Get-DpIntercomChatList {
         $title = [string](Get-DpPropertyValue -InputObject $conversation -Name @('title') -Default 'Untitled')
         if ($title.Length -gt 60) { $title = $title.Substring(0, 60) + '...' }
         @{
-            number  = $number
-            id      = [string]$conversation.id
-            title   = $title
-            current = ([string]$conversation.id -eq $boundId)
-            updated = [string](Get-DpPropertyValue -InputObject $conversation -Name @('updatedUtc') -Default '')
+            number   = $number
+            id       = [string]$conversation.id
+            title    = $title
+            current  = ([string]$conversation.id -eq $boundId)
+            archived = [bool](Get-DpPropertyValue -InputObject $conversation -Name @('archived') -Default $false)
+            updated  = [string](Get-DpPropertyValue -InputObject $conversation -Name @('updatedUtc') -Default '')
         }
     }
 }

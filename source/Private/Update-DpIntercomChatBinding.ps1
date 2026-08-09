@@ -1,16 +1,16 @@
-function Set-DpIntercomChatRemoved {
+function Update-DpIntercomChatBinding {
     <#
     .SYNOPSIS
-        Settles Intercom's state after a Conversation is archived or deleted.
+        Settles Intercom's state after the conversation list changes.
     .DESCRIPTION
         Persists the store, drops the stale listing numbers, and - when the
-        Conversation that just went away was the one Intercom was pointing at -
-        rebinds to the most recent survivor.
+        Conversation Intercom was pointing at is no longer usable - rebinds to the
+        most recent survivor.
 
         Without the rebind the next instruction from the phone would land in a
-        Conversation the operator just removed, or create a new one silently.
+        Conversation the operator just archived or deleted.
     .PARAMETER ConversationId
-        The Conversation that was archived or deleted.
+        The Conversation that was archived, unarchived or deleted.
     .OUTPUTS
         None.
     #>
@@ -30,7 +30,10 @@ function Set-DpIntercomChatRemoved {
     $intercom.ChatIndex = @()
 
     if ([string]$intercom.ConversationId -eq $ConversationId) {
-        $intercom.ConversationId = [string](@(Get-DpIntercomChatList -MaxItems 1) | Select-Object -First 1 -ExpandProperty id)
+        $bound = $state.Conversations[$ConversationId]
+        if (-not (Test-DpConversationWritable -Conversation $bound).ok) {
+            $intercom.ConversationId = [string](@(Get-DpIntercomChatList -MaxItems 1) | Select-Object -First 1 -ExpandProperty id)
+        }
     }
 
     if ($state.DataDir) { Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir }

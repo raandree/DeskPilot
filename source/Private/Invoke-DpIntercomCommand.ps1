@@ -108,10 +108,12 @@ function Invoke-DpIntercomCommand {
                 'Send any other text to give the agent a new instruction.',
                 '/status - what is happening right now',
                 '/chats - list your conversations',
+                '/chats all - include the archived ones',
                 '/chat 3 - switch to conversation 3',
                 '/new - start a fresh conversation',
                 '/new <text> - start a fresh conversation and do this',
                 '/archive 3 - hide conversation 3 from the list',
+                '/unarchive 3 - bring an archived one back',
                 '/delete 3 - remove it for good (asks first)',
                 '/stop - stop the running job',
                 '/steer <text> - stop the job, then do this instead',
@@ -120,7 +122,11 @@ function Invoke-DpIntercomCommand {
         }
 
         'chats' {
-            $chats = @(Get-DpIntercomChatList)
+            # Archived conversations are the ones already finished with, so they
+            # are out of the way until asked for - which is the only time their
+            # numbers are needed, to bring one back.
+            $includeArchived = ([string]$Command.text).Trim().ToLowerInvariant() -in @('all', 'archived')
+            $chats = @(Get-DpIntercomChatList -IncludeArchived:$includeArchived)
             if ($chats.Count -eq 0) {
                 $null = Send-DpIntercomMessage -Title 'There are no conversations yet.' -Line @('Send /new to start one.') -Kind 'chats'
                 return
@@ -129,9 +135,17 @@ function Invoke-DpIntercomCommand {
             # activity, so running a Turn reorders it under the operator's feet.
             $intercom.ChatIndex = @($chats | ForEach-Object { $_.id })
             $lines = @($chats | ForEach-Object {
-                    '{0}. {1}{2}' -f $_.number, $_.title, $(if ($_.current) { '  <- current' } else { '' })
+                    '{0}. {1}{2}{3}' -f $_.number, $_.title,
+                    $(if ($_.archived) { '  (archived)' } else { '' }),
+                    $(if ($_.current) { '  <- current' } else { '' })
                 })
-            $null = Send-DpIntercomMessage -Title 'Your conversations' -Line ($lines + @('', 'Send /chat 2 to switch, or /new to start one.')) -Kind 'chats'
+            $footer = if ($includeArchived) {
+                @('', 'Send /chat 2 to switch, /unarchive 2 to bring one back, or /new to start one.')
+            }
+            else {
+                @('', 'Send /chat 2 to switch, /chats all to include archived, or /new to start one.')
+            }
+            $null = Send-DpIntercomMessage -Title $(if ($includeArchived) { 'Your conversations (including archived)' } else { 'Your conversations' }) -Line ($lines + $footer) -Kind 'chats'
         }
 
         'chat' {
@@ -168,11 +182,36 @@ function Invoke-DpIntercomCommand {
                 return
             }
             $resolved.conversation.archived = $true
-            Set-DpIntercomChatRemoved -ConversationId ([string]$resolved.conversation.id)
+            Update-DpIntercomChatBinding -ConversationId ([string]$resolved.conversation.id)
             $null = Send-DpIntercomMessage -Title 'Archived.' -Line @(
                 "Hidden from the list: $([string]$resolved.conversation.title)",
-                'It is still in DeskPilot under "Show archived".'
+                'Send /chats all to see it again, or /unarchive to bring it back.'
             ) -Kind 'archive'
+        }
+
+        'unarchive' {
+            $choice = 0
+            if (-not [int]::TryParse(([string]$Command.text).Trim(), [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /chats all to see the archived ones, then /unarchive 2.') -Kind 'notice'
+                return
+            }
+            $resolved = Resolve-DpIntercomChat -Number $choice -IncludeArchived
+            if (-not $resolved.ok) {
+                $null = Send-DpIntercomMessage -Title 'I could not find that one.' -Line @($resolved.message) -Kind 'notice'
+                return
+            }
+            if (-not [bool](Get-DpPropertyValue -InputObject $resolved.conversation -Name @('archived') -Default $false)) {
+                $null = Send-DpIntercomMessage -Title 'That one is not archived.' -Line @(
+                    "Already in the list: $([string]$resolved.conversation.title)"
+                ) -Kind 'notice'
+                return
+            }
+            $resolved.conversation.archived = $false
+            Update-DpIntercomChatBinding -ConversationId ([string]$resolved.conversation.id)
+            $null = Send-DpIntercomMessage -Title 'Unarchived.' -Line @(
+                "Back in the list: $([string]$resolved.conversation.title)",
+                'Send /chats to see it, or /chat <n> to switch to it.'
+            ) -Kind 'unarchive'
         }
 
         'delete' {
@@ -198,7 +237,7 @@ function Invoke-DpIntercomCommand {
                 return
             }
             $null = $state.Conversations.Remove([string]$resolved.conversation.id)
-            Set-DpIntercomChatRemoved -ConversationId ([string]$resolved.conversation.id)
+            Update-DpIntercomChatBinding -ConversationId ([string]$resolved.conversation.id)
             $null = Send-DpIntercomMessage -Title 'Deleted.' -Line @($title) -Kind 'delete'
         }
 
