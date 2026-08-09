@@ -37,7 +37,7 @@ is a Skill.**
 | Sender authentication | A hard **allow-list on `chat_id`**, exactly one value, configurable. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. |
 | Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
 | Credential storage | The bot token lives in **`intercom.secret` in the data directory**, DPAPI-protected on Windows (`CurrentUser` scope) and mode-restricted elsewhere. It is never in `settings.json` (so a Settings backup cannot leak it), never returned by any route, and redacted from every log line and error message — the token is in the request URL, so an unredacted transport error would print it. |
-| Correlation | Dissolved, not solved. DeskPilot runs **one Turn at a time on one Engine Runspace**, and Intercom binds to exactly **one Conversation** — the last active one, rebindable with `/new`. A reply carries its nonce implicitly through Telegram's `reply_to_message`; a message with no reply is a new instruction. |
+| Correlation | Dissolved, not solved. DeskPilot runs **one Turn at a time on one Engine Runspace**, and Intercom binds to exactly **one Conversation** - the last active one, switchable with `/chats` and `/chat <n>` and rebindable with `/new`. A reply carries its nonce implicitly through Telegram's `reply_to_message`; a message with no reply is a new instruction. |
 | Question nonce | Each forwarded question records the Telegram `message_id` it was sent as. An answer is accepted only when it is a **reply to that message** and the question is still pending and unexpired (`questionTimeoutMinutes`, default 60). Nothing to type at a bus stop. |
 | Interrupt semantics | A message that arrives **while a Turn is running** is *queued* and delivered as the next prompt when the Turn ends. `/steer <text>` is the explicit interrupt: stop the Turn, then run `<text>`. Two honest primitives beat one ambiguous one. |
 | Outbound composition | DeskPilot composes every message from **structured fields**. The one exception is the agent's question, forwarded verbatim — see *Accepted risks*. |
@@ -96,18 +96,33 @@ Permanent, and named here so they are refused in review:
 
 ## Commands
 
-Every command requires the allow-listed chat. Control commands additionally
-require a selected, Intercom-enabled Project.
+Every command requires the allow-listed chat. Commands that **run work** in a
+Project additionally require that Project's `intercom` flag; commands that only
+**navigate** DeskPilot do not, because they execute nothing. Without that split,
+`/chats` would be unusable in exactly the situation where the operator needs it -
+no Project open, or the wrong one.
 
-| Message | Effect |
-| --- | --- |
-| A reply to a question message | Answers that question and releases the waiting Engine pipeline |
-| Any other plain text | Runs it as a prompt on the bound Conversation — or queues it when a Turn is running |
-| `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending |
-| `/stop` | Cancels the running Turn |
-| `/steer <text>` | Cancels the running Turn, then runs `<text>` |
-| `/new <text>` | Creates a Conversation, binds Intercom to it, and runs `<text>` |
-| `/help` | The command list |
+| Message | Effect | Needs an opted-in Project |
+| --- | --- | --- |
+| A reply to a question message | Answers that question and releases the waiting Engine pipeline | Implicitly - the question only reaches the phone from an opted-in Project |
+| Any other plain text | Runs it as a prompt on the bound Conversation - or queues it when a Turn is running | Yes |
+| `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending | No |
+| `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one | No |
+| `/chat <n>` | Binds Intercom to that Conversation | No |
+| `/new` | Creates a Conversation and binds Intercom to it | No |
+| `/new <text>` | The same, then runs `<text>` | Yes |
+| `/stop` | Cancels the running Turn | No |
+| `/steer <text>` | Cancels the running Turn, then runs `<text>` | Yes |
+| `/help` | The command list | No |
+
+The numbering `/chats` produces is a **snapshot**, not a Conversation property:
+the list is ordered by last activity, so running a Turn reorders it. The ids are
+remembered in `Intercom.ChatIndex` and `/chat <n>` resolves against them, so the
+number the operator saw is the Conversation they get.
+
+Conversation titles are derived from prompts, so `/chats` sends that text to the
+Channel. It is metadata rather than content, and it goes only to the one
+allow-listed chat, but it is not covered by the `sendFinalAnswer` switch.
 
 ## Flows
 

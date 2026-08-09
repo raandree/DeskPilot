@@ -83,6 +83,9 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             '/stop'            = 'stop'
             '/status'          = 'status'
             '/help'            = 'help'
+            '/chats'           = 'chats'
+            '/chat 3'          = 'chat'
+            '/new'             = 'new'
             '/new do a thing'  = 'new'
             '/steer do it now' = 'steer'
         }
@@ -90,6 +93,13 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text $text) -AllowedChatId '111'
             $result.kind | Should -Be $cases[$text]
         }
+    }
+
+    It 'carries the number given to /chat' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '/chat 4') -AllowedChatId '111'
+
+        $result.kind | Should -Be 'chat'
+        $result.text | Should -Be '4'
     }
 
     It 'carries the argument of /new and /steer' {
@@ -283,6 +293,128 @@ Describe 'Send-DpIntercomTurnResult' -Tag 'Unit' {
         { Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1 } | Should -Not -Throw
 
         @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'done'
+    }
+}
+
+Describe 'Intercom chat navigation' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $settings = Get-DpDefaultSettings
+        $settings.intercom.chatId = '111'
+        $conversations = @{}
+        # Deliberately out of order, so the listing has to sort by last activity.
+        foreach ($item in @(
+                @{ id = 'c1'; title = 'Oldest topic'; updated = '2026-08-01T10:00:00Z'; archived = $false },
+                @{ id = 'c2'; title = 'Statuspunkte fuer Turkish-Airlines-Flug'; updated = '2026-08-09T12:00:00Z'; archived = $false },
+                @{ id = 'c3'; title = 'Middle topic'; updated = '2026-08-05T10:00:00Z'; archived = $false },
+                @{ id = 'c4'; title = 'Put away'; updated = '2026-08-09T13:00:00Z'; archived = $true }
+            )) {
+            $conversations[$item.id] = @{
+                id = $item.id; title = $item.title; updatedUtc = $item.updated; archived = $item.archived
+                messages = [System.Collections.Generic.List[object]]::new()
+                history = [System.Collections.Generic.List[object]]::new()
+            }
+        }
+        $script:DeskPilot = @{
+            Settings      = $settings
+            Conversations = $conversations
+            TurnRunning   = $false
+            DataDir       = $null
+            Intercom      = @{
+                ConversationId = 'c3'
+                ChatIndex      = @()
+                QueuedPrompt   = $null
+                Outbound       = [System.Collections.Generic.Queue[hashtable]]::new()
+                RateWindow     = [System.Collections.Generic.List[DateTime]]::new()
+                Log            = [System.Collections.Generic.List[object]]::new()
+                Counters       = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
+                Token          = ''
+            }
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'lists conversations newest first and skips archived ones' {
+        $chats = @(Get-DpIntercomChatList)
+
+        $chats.Count | Should -Be 3
+        $chats[0].title | Should -Be 'Statuspunkte fuer Turkish-Airlines-Flug'
+        $chats[-1].title | Should -Be 'Oldest topic'
+        @($chats | Where-Object { $_.title -eq 'Put away' }).Count | Should -Be 0
+    }
+
+    It 'marks the conversation Intercom is bound to' {
+        @(Get-DpIntercomChatList | Where-Object { $_.current }).id | Should -Be 'c3'
+    }
+
+    It 'sends the list and remembers what each number meant' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+
+        $script:DeskPilot.Intercom.ChatIndex | Should -Be @('c2', 'c3', 'c1')
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match '1\. Statuspunkte'
+        $text | Should -Match '<- current'
+    }
+
+    It 'switches to the number the operator was shown, even after the order changes' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        # A Turn elsewhere reorders the list; the number they saw must still hold.
+        $script:DeskPilot.Conversations['c1'].updatedUtc = '2026-08-09T23:59:00Z'
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'chat'; text = '3'; reason = '' }
+
+        $script:DeskPilot.Intercom.ConversationId | Should -Be 'c1'
+    }
+
+    It 'refuses a number that is not on the list' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chat'; text = '99'; reason = '' }
+
+        $script:DeskPilot.Intercom.ConversationId | Should -Be 'c3'
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'no conversation 99'
+    }
+
+    It 'refuses something that is not a number' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chat'; text = 'the flight one'; reason = '' }
+
+        $script:DeskPilot.Intercom.ConversationId | Should -Be 'c3'
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'not a number'
+    }
+
+    It 'starts and binds a conversation on a bare /new without needing a project' {
+        # Nothing runs, so this only moves where Intercom points - no Project
+        # permission is involved, and there is no Project selected here.
+        Invoke-DpIntercomCommand -Command @{ kind = 'new'; text = ''; reason = '' }
+
+        $script:DeskPilot.Conversations.Count | Should -Be 5
+        $script:DeskPilot.Intercom.ConversationId | Should -Not -Be 'c3'
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'New conversation started'
+    }
+
+    It 'still requires an opted-in Project when /new carries work' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'new'; text = 'summarise the notes'; reason = '' }
+
+        $script:DeskPilot.Conversations.Count | Should -Be 4
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'refused'
+    }
+
+    It 'runs the work when /new carries it and the Project opted in' {
+        $script:DeskPilot.Settings.selectedProjectId = 'p1'
+        $script:DeskPilot.Settings.projects = @(@{ id = 'p1'; name = 'Lab'; path = 'C:\lab'; intercom = $true })
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'new'; text = 'summarise the notes'; reason = '' }
+
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -Be 'summarise the notes'
+    }
+
+    It 'offers the command list including the chat commands' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'help'; text = ''; reason = '' }
+
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match '/chats'
+        $text | Should -Match '/chat 3'
     }
 }
 

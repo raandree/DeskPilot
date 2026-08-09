@@ -15,7 +15,9 @@ function ConvertFrom-DpIntercomUpdate {
           stop     - /stop
           steer    - /steer <text>: cancel the running Turn, then run <text>
           status   - /status
-          new      - /new <text>: bind Intercom to a fresh Conversation
+          chats    - /chats: list the conversations that can be switched to
+          chat     - /chat <n>: switch to one of them
+          new      - /new [text]: start a fresh conversation, optionally with work
           help     - /help
           rejected - the chat is not allow-listed
           ignore   - nothing actionable (an edit, a photo, an empty message)
@@ -135,6 +137,11 @@ function ConvertFrom-DpIntercomUpdate {
         'status' { $result.kind = 'status' }
         'help' { $result.kind = 'help' }
         'start' { $result.kind = 'help' }
+        'chats' { $result.kind = 'chats' }
+        'chat' {
+            $result.kind = 'chat'
+            $result.text = $argument
+        }
         'new' {
             $result.kind = 'new'
             $result.text = $argument

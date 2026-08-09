@@ -44,6 +44,10 @@ function Initialize-DpIntercom {
         Running          = $false
         StartedUtc       = $null
         ConversationId   = $null
+        # The Conversation ids behind the numbers the last /chats listing showed,
+        # so /chat 3 selects what the operator saw even though the list reorders
+        # itself by last activity.
+        ChatIndex        = @()
         Offset           = 0
         # The first poll only learns the newest update id and discards the
         # backlog: acting on a command the operator sent while DeskPilot was not

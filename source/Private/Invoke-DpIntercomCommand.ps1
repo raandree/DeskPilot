@@ -89,11 +89,60 @@ function Invoke-DpIntercomCommand {
                 'Reply to a question message to answer it.',
                 'Send any other text to give the agent a new instruction.',
                 '/status - what is happening right now',
+                '/chats - list your conversations',
+                '/chat 3 - switch to conversation 3',
+                '/new - start a fresh conversation',
+                '/new <text> - start a fresh conversation and do this',
                 '/stop - stop the running job',
                 '/steer <text> - stop the job, then do this instead',
-                '/new <text> - start a fresh conversation and do this',
                 '/help - this list'
             ) -Kind 'help'
+        }
+
+        'chats' {
+            $chats = @(Get-DpIntercomChatList)
+            if ($chats.Count -eq 0) {
+                $null = Send-DpIntercomMessage -Title 'There are no conversations yet.' -Line @('Send /new to start one.') -Kind 'chats'
+                return
+            }
+            # Remember what each number pointed at: the list is ordered by last
+            # activity, so running a Turn reorders it under the operator's feet.
+            $intercom.ChatIndex = @($chats | ForEach-Object { $_.id })
+            $lines = @($chats | ForEach-Object {
+                    '{0}. {1}{2}' -f $_.number, $_.title, $(if ($_.current) { '  <- current' } else { '' })
+                })
+            $null = Send-DpIntercomMessage -Title 'Your conversations' -Line ($lines + @('', 'Send /chat 2 to switch, or /new to start one.')) -Kind 'chats'
+        }
+
+        'chat' {
+            if ([string]::IsNullOrWhiteSpace($Command.text)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /chats to see the list, then /chat 2.') -Kind 'notice'
+                return
+            }
+            $choice = 0
+            if (-not [int]::TryParse($Command.text.Trim(), [ref]$choice) -or $choice -lt 1) {
+                $null = Send-DpIntercomMessage -Title 'That is not a number from the list.' -Line @('Send /chats to see it again.') -Kind 'notice'
+                return
+            }
+            # Resolve against the numbering the operator was actually shown, and
+            # fall back to the current order when they never asked for a list.
+            $index = @($intercom.ChatIndex)
+            $conversationId = if ($choice -le $index.Count) {
+                [string]$index[$choice - 1]
+            }
+            else {
+                [string](@(Get-DpIntercomChatList) | Where-Object { $_.number -eq $choice } | Select-Object -First 1 -ExpandProperty id)
+            }
+            $conversation = if ($conversationId) { $state.Conversations[$conversationId] } else { $null }
+            if (-not $conversation) {
+                $null = Send-DpIntercomMessage -Title "There is no conversation $choice." -Line @('Send /chats to see the list.') -Kind 'notice'
+                return
+            }
+            $intercom.ConversationId = [string]$conversation.id
+            $null = Send-DpIntercomMessage -Title 'Switched.' -Line @(
+                "Now working in: $([string]$conversation.title)",
+                'Send an instruction, or /chats to switch again.'
+            ) -Kind 'chat'
         }
 
         'steer' {
@@ -116,25 +165,32 @@ function Invoke-DpIntercomCommand {
         }
 
         'new' {
-            if ([string]::IsNullOrWhiteSpace($Command.text)) {
-                $null = Send-DpIntercomMessage -Title 'Add the instruction after /new.' -Kind 'notice'
-                return
-            }
-            $decision = Test-DpIntercomProject -Settings $state.Settings
-            if (-not $decision.allowed) {
-                $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
-                return
-            }
             if ($state.TurnRunning) {
                 $null = Send-DpIntercomMessage -Title 'A job is running.' -Line @('Send /stop first, or /steer <text> to replace it.') -Kind 'notice'
                 return
+            }
+            # A bare /new only moves where Intercom is pointing, so it needs no
+            # Project permission; only running work in the Project does.
+            $hasWork = -not [string]::IsNullOrWhiteSpace($Command.text)
+            if ($hasWork) {
+                $decision = Test-DpIntercomProject -Settings $state.Settings
+                if (-not $decision.allowed) {
+                    $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
+                    return
+                }
             }
             $conversation = New-DpConversation -Model $state.Settings.model
             $state.Conversations[$conversation.id] = $conversation
             if ($state.DataDir) { Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir }
             $intercom.ConversationId = $conversation.id
-            $intercom.QueuedPrompt = [string]$Command.text
-            $null = Send-DpIntercomMessage -Title 'New conversation started. Working on it.' -Kind 'ack'
+            $intercom.ChatIndex = @()
+            if ($hasWork) {
+                $intercom.QueuedPrompt = [string]$Command.text
+                $null = Send-DpIntercomMessage -Title 'New conversation started. Working on it.' -Kind 'ack'
+            }
+            else {
+                $null = Send-DpIntercomMessage -Title 'New conversation started.' -Line @('Send an instruction whenever you are ready.') -Kind 'ack'
+            }
         }
 
         'prompt' {

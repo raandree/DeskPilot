@@ -121,18 +121,24 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | **Reply** to a question message | Answers that question; the agent carries on |
 | Any other message | The agent treats it as a new instruction |
 | `/status` | What is happening right now |
+| `/chats` | Lists your conversations, newest first, and marks the one you are in |
+| `/chat 2` | Switches to conversation 2 from that list |
+| `/new` | Starts a fresh conversation and switches to it |
+| `/new summarise yesterday's notes` | Starts a fresh conversation and does that |
 | `/stop` | Stops the running job |
 | `/steer clean up the tests instead` | Stops the job, then does that instead |
-| `/new summarise yesterday's notes` | Starts a fresh conversation and does that |
 | `/help` | The list above |
 
-Two things worth knowing:
+Three things worth knowing:
 
 - **Answer by replying.** Use Telegram's reply function on the question message
   itself — swipe it, or hold it and tap Reply. That is how DeskPilot knows which
   question you are answering, so there is no code to type.
 - **A message sent while a job is running is queued**, not jammed in. It runs as
   soon as the current job finishes. Use `/steer` if you want to interrupt.
+- **The agent cannot switch conversations itself.** If you ask it to, it will say
+  so — it has no way to see or change which conversation it is in. Use `/chats`
+  and `/chat 2`, which are handled by DeskPilot rather than the agent.
 
 ## The status message, and what silence means
 
