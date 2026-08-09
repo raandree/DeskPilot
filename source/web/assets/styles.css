@@ -2435,6 +2435,14 @@ button.tree-row {
     cursor: pointer;
 }
 
+.intercom-candidate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-top: 1px solid var(--border);
+}
+
 /* ===== Popover ===== */
 .popover {
     position: fixed;

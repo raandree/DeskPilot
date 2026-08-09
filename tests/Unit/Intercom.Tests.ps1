@@ -123,6 +123,77 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
     It 'ignores a null update without throwing' {
         { ConvertFrom-DpIntercomUpdate -Update $null -AllowedChatId '111' } | Should -Not -Throw
     }
+
+    It 'still reports who sent a rejected message, so pairing can offer it' {
+        $update = New-TestUpdate -ChatId '999' -Text '/start'
+        $update.message | Add-Member -MemberType NoteProperty -Name 'from' -Value ([pscustomobject]@{ first_name = 'Randy'; username = 'randree3' })
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.kind | Should -Be 'rejected'
+        $result.chatId | Should -Be '999'
+        $result.fromName | Should -Be 'Randy @randree3'
+        $result.preview | Should -Be '/start'
+        # Display-only: the command itself must still never be interpreted.
+        $result.text | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Intercom pairing' -Tag 'Unit' {
+    BeforeEach {
+        $script:DeskPilot = @{
+            Settings = Get-DpDefaultSettings
+            Intercom = @{
+                Log     = [System.Collections.Generic.List[object]]::new()
+                Token   = ''
+                Pairing = @{
+                    active     = $true
+                    startedUtc = [DateTime]::UtcNow
+                    candidates = [System.Collections.Generic.List[object]]::new()
+                }
+            }
+        }
+        $script:candidate = @{ chatId = '999'; fromName = 'Randy @randree3'; preview = '/start'; kind = 'rejected' }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'keeps a chat that messaged the bot while pairing is open' {
+        Add-DpIntercomPairingCandidate -Command $script:candidate
+
+        $script:DeskPilot.Intercom.Pairing.candidates.Count | Should -Be 1
+        $script:DeskPilot.Intercom.Pairing.candidates[0].chatId | Should -Be '999'
+        $script:DeskPilot.Intercom.Pairing.candidates[0].fromName | Should -Be 'Randy @randree3'
+    }
+
+    It 'does not duplicate a chat that sends several messages' {
+        Add-DpIntercomPairingCandidate -Command $script:candidate
+        Add-DpIntercomPairingCandidate -Command @{ chatId = '999'; fromName = 'Randy'; preview = 'hello?'; kind = 'rejected' }
+
+        $script:DeskPilot.Intercom.Pairing.candidates.Count | Should -Be 1
+        $script:DeskPilot.Intercom.Pairing.candidates[0].preview | Should -Be 'hello?'
+    }
+
+    It 'bounds the candidate list so a flood cannot bury the real one' {
+        1..10 | ForEach-Object { Add-DpIntercomPairingCandidate -Command @{ chatId = "chat$_"; fromName = 'X'; preview = 'y'; kind = 'rejected' } }
+
+        $script:DeskPilot.Intercom.Pairing.candidates.Count | Should -Be 5
+    }
+
+    It 'records nothing when pairing is not open' {
+        $script:DeskPilot.Intercom.Pairing.active = $false
+
+        Add-DpIntercomPairingCandidate -Command $script:candidate
+
+        $script:DeskPilot.Intercom.Pairing.candidates.Count | Should -Be 0
+    }
+
+    It 'never adopts a candidate on its own' {
+        Add-DpIntercomPairingCandidate -Command $script:candidate
+
+        # Adoption stays an explicit click at the machine; pairing only observes.
+        $script:DeskPilot.Settings.intercom.chatId | Should -BeNullOrEmpty
+    }
 }
 
 Describe 'Format-DpIntercomMessage' -Tag 'Unit' {
@@ -270,7 +341,7 @@ Describe 'Hide-DpIntercomSecret' -Tag 'Unit' {
 Describe 'Send-DpIntercomMessage' -Tag 'Unit' {
     BeforeEach {
         $script:DeskPilot = @{
-            Settings = @{ intercom = @{ maxMessagesPerHour = 2 } }
+            Settings = @{ intercom = @{ maxMessagesPerHour = 2; chatId = '111' } }
             Intercom = @{
                 Outbound    = [System.Collections.Generic.Queue[hashtable]]::new()
                 RateWindow  = [System.Collections.Generic.List[DateTime]]::new()
@@ -316,6 +387,13 @@ Describe 'Send-DpIntercomMessage' -Tag 'Unit' {
         $parts[0].capture | Should -Be 'question'
         $parts[1].capture | Should -Be ''
     }
+
+    It 'refuses to queue anything before a phone is linked' {
+        $script:DeskPilot.Settings.intercom.chatId = $null
+
+        Send-DpIntercomMessage -Title 'Done.' -Kind 'done' | Should -BeFalse
+        $script:DeskPilot.Intercom.Outbound.Count | Should -Be 0
+    }
 }
 
 Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
@@ -337,6 +415,7 @@ Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
                 NextCheckInUtc  = $null
                 Counters        = @{ received = 4; accepted = 3; rejected = 1; sent = 9; dropped = 0; errors = 0 }
                 Log             = [System.Collections.Generic.List[object]]::new()
+                Pairing         = @{ active = $false; startedUtc = $null; candidates = [System.Collections.Generic.List[object]]::new() }
             }
         }
     }
@@ -364,6 +443,24 @@ Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
         $script:DeskPilot.Settings.intercom.enabled = $false
 
         (Get-DpIntercomPayload).status | Should -Be 'off'
+    }
+
+    It 'reports needs-chat when no phone is linked and pairing is closed' {
+        $script:DeskPilot.Settings.intercom.chatId = $null
+
+        (Get-DpIntercomPayload).status | Should -Be 'needs-chat'
+    }
+
+    It 'reports pairing while the link window is open' {
+        $script:DeskPilot.Settings.intercom.chatId = $null
+        $script:DeskPilot.Intercom.Pairing.active = $true
+        $script:DeskPilot.Intercom.Pairing.startedUtc = [DateTime]::UtcNow
+
+        $payload = Get-DpIntercomPayload
+
+        $payload.status | Should -Be 'pairing'
+        $payload.pairing.active | Should -BeTrue
+        $payload.pairing.expiresUtc | Should -Not -BeNullOrEmpty
     }
 }
 

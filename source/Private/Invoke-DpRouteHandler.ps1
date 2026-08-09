@@ -1536,6 +1536,20 @@ function Invoke-DpRouteHandler {
                     Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_settings'; message = "$_" } }
                     return
                 }
+                if ($patch.ContainsKey('chatId')) {
+                    # A different allow-listed chat is a different link: close any
+                    # pairing window, drop the in-flight poll, and let the pump run
+                    # its enable transition again so the backlog is discarded and
+                    # the new chat gets the welcome message.
+                    $state.Intercom.Running = $false
+                    $state.Intercom.PollTask = $null
+                    $state.Intercom.StatusMessageId = 0
+                    $state.Intercom.PendingQuestion = $null
+                    $state.Intercom.Pairing.active = $false
+                    $state.Intercom.Pairing.startedUtc = $null
+                    $state.Intercom.Pairing.candidates.Clear()
+                    Add-DpIntercomLog -Direction 'system' -Kind 'paired' -Detail $(if ($merged.intercom.chatId) { "Chat $($merged.intercom.chatId) is now the only chat allowed to reach DeskPilot." } else { 'The allowed chat was cleared.' })
+                }
             }
 
             # Apply the change now rather than on the next idle tick, so the panel
@@ -1579,6 +1593,40 @@ function Invoke-DpRouteHandler {
                 ok      = $true
                 botName = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
             }
+        }
+        'pairIntercom' {
+            # Without this the setup cannot be completed at all: Intercom will not
+            # listen until it knows which chat is the operator's, so the bot cannot
+            # answer - not even /start - and there is no way to learn the chat id
+            # from it. This opens a five-minute window in which the poller runs with
+            # no allow-list, executes nothing, and only collects who messaged the
+            # bot. Adoption stays an explicit click at the machine.
+            $intercom = $state.Intercom
+            if (-not $intercom.TokenConfigured) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_token'; message = 'Store a bot token first.' } }
+                return
+            }
+            $stop = [bool](Get-DpPropertyValue -InputObject $Body -Name @('stop') -Default $false)
+            if ($stop) {
+                $intercom.Pairing.active = $false
+                $intercom.Pairing.startedUtc = $null
+                $intercom.Pairing.candidates.Clear()
+                Add-DpIntercomLog -Direction 'system' -Kind 'pairing' -Detail 'Pairing was cancelled.'
+            }
+            else {
+                if (-not [string]::IsNullOrWhiteSpace([string]$state.Settings.intercom.chatId)) {
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'already_paired'; message = 'A chat is already linked. Clear the chat id first if you want to link a different phone.' } }
+                    return
+                }
+                $intercom.Pairing.active = $true
+                $intercom.Pairing.startedUtc = [DateTime]::UtcNow
+                $intercom.Pairing.candidates.Clear()
+                $intercom.Running = $false
+                $intercom.PollTask = $null
+                Add-DpIntercomLog -Direction 'system' -Kind 'pairing' -Detail 'Pairing is open for five minutes. Message the bot from your phone.'
+            }
+            try { Update-DpIntercomState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
         }
         default {
             Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = "Unknown handler '$Name'." } }

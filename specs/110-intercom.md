@@ -35,6 +35,7 @@ is a Skill.**
 | Where the pump runs | `Update-DpIntercomState` is called from **two** places: the accept loop's idle tick (so Intercom works between Turns) and `Invoke-DpPendingRequest` (so it works *during* a Turn, which is exactly when the agent asks a question). |
 | Authority | A remote message may only act on a Project whose **`intercom` flag is on**. Inside such a Project a remote Turn has the *same* Permissions as a local one — including `git push` — because the flag is the boundary. With no Project selected, or the flag off, every control command is refused with a plain sentence. |
 | Sender authentication | A hard **allow-list on `chat_id`**, exactly one value, configurable. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. |
+| Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
 | Credential storage | The bot token lives in **`intercom.secret` in the data directory**, DPAPI-protected on Windows (`CurrentUser` scope) and mode-restricted elsewhere. It is never in `settings.json` (so a Settings backup cannot leak it), never returned by any route, and redacted from every log line and error message — the token is in the request URL, so an unredacted transport error would print it. |
 | Correlation | Dissolved, not solved. DeskPilot runs **one Turn at a time on one Engine Runspace**, and Intercom binds to exactly **one Conversation** — the last active one, rebindable with `/new`. A reply carries its nonce implicitly through Telegram's `reply_to_message`; a message with no reply is a new instruction. |
 | Question nonce | Each forwarded question records the Telegram `message_id` it was sent as. An answer is accepted only when it is a **reply to that message** and the question is still pending and unexpired (`questionTimeoutMinutes`, default 60). Nothing to type at a bus stop. |
@@ -167,6 +168,7 @@ controlled at all.
 | `GET /api/intercom` | Status, counters, audit log, and whether a token is configured. Never the token. |
 | `PUT /api/intercom` | Patch the Settings above and, write-only, set or clear `botToken`. |
 | `POST /api/intercom/test` | Verify the token with `getMe` and send one test message to the allow-listed chat. |
+| `POST /api/intercom/pair` | Open (or, with `{ stop: true }`, close) the five-minute pairing window. Refused with no token, and refused while a chat is already linked. |
 
 ## Implementation map
 

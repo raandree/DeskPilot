@@ -208,6 +208,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/intercom'; Name = 'getIntercom' }
             @{ Method = 'PUT'; Pattern = '/api/intercom'; Name = 'putIntercom' }
             @{ Method = 'POST'; Pattern = '/api/intercom/test'; Name = 'testIntercom' }
+            @{ Method = 'POST'; Pattern = '/api/intercom/pair'; Name = 'pairIntercom' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
             @{ Method = 'GET'; Pattern = '/api/update'; Name = 'getUpdate' }

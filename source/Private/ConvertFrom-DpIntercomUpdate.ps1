@@ -55,6 +55,11 @@ function ConvertFrom-DpIntercomUpdate {
         messageId        = 0
         replyToMessageId = 0
         reason           = ''
+        # Display-only, and populated even for a rejected chat so the pairing
+        # flow can show the operator who is trying to reach the bot. Never
+        # interpreted: 'text' stays empty unless the chat is allow-listed.
+        fromName         = ''
+        preview          = ''
     }
 
     if ($null -eq $Update) {
@@ -73,6 +78,17 @@ function ConvertFrom-DpIntercomUpdate {
     $chat = Get-DpPropertyValue -InputObject $message -Name @('chat') -Default $null
     $result.chatId = [string](Get-DpPropertyValue -InputObject $chat -Name @('id') -Default '')
     $result.messageId = [long](Get-DpPropertyValue -InputObject $message -Name @('message_id') -Default 0)
+
+    $from = Get-DpPropertyValue -InputObject $message -Name @('from') -Default $null
+    $firstName = [string](Get-DpPropertyValue -InputObject $from -Name @('first_name') -Default '')
+    $userName = [string](Get-DpPropertyValue -InputObject $from -Name @('username') -Default '')
+    $displayName = (@($firstName, $(if ($userName) { "@$userName" })) | Where-Object { $_ }) -join ' '
+    if ($displayName.Length -gt 60) { $displayName = $displayName.Substring(0, 60) }
+    $result.fromName = $displayName
+
+    $preview = ([string](Get-DpPropertyValue -InputObject $message -Name @('text') -Default '')).Trim()
+    if ($preview.Length -gt 60) { $preview = $preview.Substring(0, 60) + '...' }
+    $result.preview = $preview
 
     # The allow-list runs before the text is read. An update from any other chat
     # is recorded and dropped; its content never reaches command parsing.

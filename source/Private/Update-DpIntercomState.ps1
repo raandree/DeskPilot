@@ -36,8 +36,23 @@ function Update-DpIntercomState {
 
     $settings = $state.Settings.intercom
     $chatId = if ($settings) { [string]$settings.chatId } else { '' }
+
+    # A pairing window lets the poller run before a chat is allow-listed, purely
+    # so the operator can discover their own chat id. It expires on its own: an
+    # allow-list that is open indefinitely is not an allow-list.
+    $pairing = $intercom.Pairing
+    if ($pairing.active) {
+        $expired = (-not $pairing.startedUtc) -or ([DateTime]::UtcNow - [DateTime]$pairing.startedUtc).TotalMinutes -ge 5
+        if ($expired -or -not [string]::IsNullOrWhiteSpace($chatId)) {
+            $pairing.active = $false
+            $pairing.startedUtc = $null
+            if ($expired) { Add-DpIntercomLog -Direction 'system' -Kind 'pairing' -Detail 'The pairing window closed.' }
+        }
+    }
+    $isPairing = [bool]$pairing.active -and [string]::IsNullOrWhiteSpace($chatId)
+
     $shouldRun = [bool]$settings -and [bool]$settings.enabled -and
-        $intercom.TokenConfigured -and -not [string]::IsNullOrWhiteSpace($chatId)
+        $intercom.TokenConfigured -and (-not [string]::IsNullOrWhiteSpace($chatId) -or $isPairing)
 
     try {
         # 1. Enable / disable transitions.
@@ -46,9 +61,12 @@ function Update-DpIntercomState {
             $intercom.StartedUtc = [DateTime]::UtcNow
             $intercom.StatusMessageId = 0
             $intercom.LastHeartbeatUtc = $null
-            $intercom.Priming = $true
+            # During pairing the backlog is exactly what we want to see: those
+            # messages execute nothing, and the one the operator already sent is
+            # usually the fastest way for them to recognise their own chat.
+            $intercom.Priming = -not $isPairing
             $intercom.LastError = ''
-            Add-DpIntercomLog -Direction 'system' -Kind 'enabled' -Detail 'Intercom is on.'
+            Add-DpIntercomLog -Direction 'system' -Kind 'enabled' -Detail $(if ($isPairing) { 'Listening for a pairing message.' } else { 'Intercom is on.' })
             $null = Send-DpIntercomMessage -Title 'DeskPilot Intercom is on.' -Line @(
                 "Machine: $([Environment]::MachineName)",
                 'Send /help for the command list.'
@@ -153,6 +171,13 @@ function Update-DpIntercomState {
                             PendingQuestionMessageId = $pendingMessageId
                         }
                         $command = ConvertFrom-DpIntercomUpdate @commandParams
+                        # While pairing, chatId is empty, so every command comes back
+                        # 'rejected' and nothing executes. Keep the sender as a
+                        # candidate for the operator to confirm, and stop there.
+                        if ($isPairing) {
+                            Add-DpIntercomPairingCandidate -Command $command
+                            continue
+                        }
                         Invoke-DpIntercomCommand -Command $command
                         if ($intercom.PendingQuestion) { $pendingMessageId = [long]$intercom.PendingQuestion.messageId } else { $pendingMessageId = 0 }
                     }
@@ -183,6 +208,10 @@ function Update-DpIntercomState {
                 $intercom.PollTask = $null
             }
         }
+
+        # Pairing ends here: there is no chat to message, no heartbeat to send and
+        # no Turn to run until the operator has confirmed who they are.
+        if ($isPairing) { return }
 
         $now = [DateTime]::UtcNow
 

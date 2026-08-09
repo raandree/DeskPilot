@@ -3043,6 +3043,7 @@ async function refreshIntercom() {
     catch { return; }
     updateIntercomChip();
     renderIntercomPanel();
+    renderIntercomPairing();
 }
 
 function wireIntercomAutoRefresh() {
@@ -3055,6 +3056,87 @@ function wireIntercomAutoRefresh() {
     window.addEventListener('focus', tick);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
     setInterval(tick, 20000);
+    // While a pairing window is open the user is staring at the panel waiting for
+    // their own message to appear, so poll fast enough to feel immediate.
+    setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (!state.intercom || !state.intercom.pairing || !state.intercom.pairing.active) return;
+        refreshIntercom();
+    }, 2000);
+}
+
+// Start or stop the pairing window. Without this the setup is impossible to
+// finish: Intercom will not listen until it knows which chat is yours, so the
+// bot cannot answer even /start, and there is no way to learn the id from it.
+async function setIntercomPairing(stop) {
+    try {
+        state.intercom = await api('POST', '/api/intercom/pair', { stop: !!stop });
+        updateIntercomChip();
+        renderIntercomPanel();
+        renderIntercomPairing();
+    } catch (e) { toast((e && e.message) || 'Could not start linking.'); }
+}
+
+function renderIntercomPairing() {
+    const box = $('set-ic-pairing');
+    if (!box) return;
+    const i = state.intercom;
+    if (!i) { box.innerHTML = '<span class="muted tiny">Checking…</span>'; return; }
+
+    if (i.chatId) {
+        box.innerHTML = `<div class="intercom-state ok">Linked to chat ${escapeHtml(i.chatId)}</div>` +
+            '<div class="muted tiny">Only this chat can reach DeskPilot. To link a different phone, clear the box below and link again.</div>';
+        return;
+    }
+
+    if (!i.tokenConfigured) {
+        box.innerHTML = '<span class="muted tiny">Save your bot token first, then come back here.</span>';
+        return;
+    }
+
+    const pairing = i.pairing || {};
+    if (!pairing.active) {
+        box.innerHTML = '<div class="intercom-state warn">Not linked yet</div>' +
+            '<div class="muted tiny">DeskPilot ignores every message until you tell it which chat is yours — that is why your bot has not replied.</div>' +
+            '<div class="backup-row"><button class="btn btn-small btn-primary" id="ic-pair-start" type="button">Link my phone</button></div>';
+        $('ic-pair-start').onclick = () => setIntercomPairing(false);
+        return;
+    }
+
+    const candidates = asArray(pairing.candidates);
+    const rows = ['<div class="intercom-state warn">Listening… open Telegram and send your bot any message.</div>'];
+    if (pairing.expiresUtc) {
+        rows.push(`<div class="muted tiny">This stops on its own at ${new Date(pairing.expiresUtc).toLocaleTimeString()}.</div>`);
+    }
+    if (!candidates.length) {
+        rows.push('<div class="muted tiny">Nothing yet. Any message will do — even “hello”.</div>');
+    } else {
+        rows.push('<div class="muted tiny">Messages arrived. Pick the one that is you:</div>');
+        for (const c of candidates) {
+            rows.push(
+                `<div class="intercom-candidate"><button class="btn btn-small btn-primary" data-chat="${escapeHtml(c.chatId)}" type="button">This is me</button>` +
+                `<span class="tiny"><strong>${escapeHtml(c.fromName || 'Unknown')}</strong> <span class="muted">(${escapeHtml(c.chatId)})</span>` +
+                `${c.preview ? ' — “' + escapeHtml(c.preview) + '”' : ''}</span></div>`);
+        }
+    }
+    rows.push('<div class="backup-row"><button class="btn btn-small" id="ic-pair-stop" type="button">Cancel</button></div>');
+    box.innerHTML = rows.join('');
+
+    for (const btn of box.querySelectorAll('button[data-chat]')) {
+        btn.onclick = async () => {
+            const chatId = btn.dataset.chat;
+            try {
+                state.intercom = await api('PUT', '/api/intercom', { chatId });
+                const field = $('set-ic-chat');
+                if (field) field.value = chatId;
+                updateIntercomChip();
+                renderIntercomPanel();
+                renderIntercomPairing();
+                toast('Phone linked. Your bot will answer from now on.');
+            } catch (e) { toast((e && e.message) || 'Could not link that chat.'); }
+        };
+    }
+    $('ic-pair-stop').onclick = () => setIntercomPairing(true);
 }
 
 // The topbar chip. It is hidden entirely while Intercom is off, so a feature
@@ -3070,7 +3152,8 @@ function updateIntercomChip() {
         on: { icon: '📻', label: 'Intercom on', cls: 'ok' },
         error: { icon: '📻', label: 'Intercom problem', cls: 'bad' },
         'needs-token': { icon: '📻', label: 'Intercom needs a token', cls: 'warn' },
-        'needs-chat': { icon: '📻', label: 'Intercom needs a chat id', cls: 'warn' },
+        'needs-chat': { icon: '📻', label: 'Intercom: link your phone', cls: 'warn' },
+        pairing: { icon: '📻', label: 'Intercom: waiting for your message', cls: 'warn' },
         starting: { icon: '📻', label: 'Intercom starting…', cls: 'warn' },
     };
     const s = map[i.status] || map.starting;
@@ -3095,7 +3178,8 @@ function renderIntercomPanel() {
         on: 'On — connected',
         error: 'Problem',
         'needs-token': 'Needs a bot token',
-        'needs-chat': 'Needs a chat id',
+        'needs-chat': 'Not linked to a phone yet',
+        pairing: 'Waiting for a message from your phone',
         starting: 'Starting…',
     }[i.status] || i.status;
     const cls = i.status === 'on' ? 'ok' : (i.status === 'error' ? 'bad' : 'warn');
@@ -5626,6 +5710,7 @@ function openSettings() {
     $('set-ic-done').onchange = (e) => saveIntercom({ notifyOnDone: e.target.checked });
     $('set-ic-answer').onchange = (e) => saveIntercom({ sendFinalAnswer: e.target.checked });
     $('set-ic-chat').onchange = (e) => saveIntercom({ chatId: e.target.value.trim() });
+    renderIntercomPairing();
     icNumber('set-ic-heartbeat', 'heartbeatMinutes', 5, 1, 1440);
     icNumber('set-ic-stall', 'stallMinutes', 5, 1, 1440);
     icNumber('set-ic-question', 'questionTimeoutMinutes', 60, 1, 1440);

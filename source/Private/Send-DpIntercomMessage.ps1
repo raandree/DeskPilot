@@ -50,6 +50,11 @@ function Send-DpIntercomMessage {
     $intercom = $script:DeskPilot.Intercom
     if (-not $intercom) { return $false }
 
+    # There is nowhere to send to during pairing, when the operator has not yet
+    # confirmed which chat is theirs. Queuing would only build a backlog that
+    # arrives all at once the moment they do.
+    if ([string]::IsNullOrWhiteSpace([string]$script:DeskPilot.Settings.intercom.chatId)) { return $false }
+
     $isStatus = $Capture -eq 'status'
 
     if (-not $isStatus) {

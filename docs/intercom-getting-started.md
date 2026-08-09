@@ -59,32 +59,40 @@ your Windows account, in its own file — never in your settings file — so a
 settings backup can never carry it. It is never shown again, and never sent back
 to the browser.
 
-## Step 3 — Tell your bot who you are
+## Step 3 — Link your phone
 
-Your bot does not yet know which chat is yours, and Intercom will not talk to a
-chat it has not been told to trust.
+Your bot does not yet know which chat is yours, and **Intercom will not reply to
+a chat it has not been told to trust — not even to `/start`.** That is by design:
+until you finish this step, your bot will stay silent no matter what you send it.
+DeskPilot can find the number for you.
 
-1. In Telegram, search for the username you chose in step 1, for example
-   `@randre_deskpilot_bot`.
-2. Open the chat and tap **Start**. Send it any message, for example `hello`.
-3. Back in DeskPilot, still on the **Intercom** tab, click
-   **Send a test message**.
+1. In DeskPilot, still on the **Intercom** tab, click **Link my phone**.
+   It starts listening for five minutes.
+2. In Telegram, search for the username you chose in step 1, for example
+   `@randre_deskpilot_bot`. Open the chat and tap **Start**, or just send it
+   anything — `hello` will do.
+3. Within a second or two, DeskPilot lists the message it saw, with the sender's
+   name. Click **This is me** next to yours.
 
-If DeskPilot says it needs a chat id, get yours this way:
+That is the link made. DeskPilot fills in the chat id, closes the window, and
+your bot starts answering.
 
-1. In Telegram, search for **@userinfobot** and tap **Start**.
-2. It replies with your **Id**, a number like `123456789`.
-3. Type that number into **Allowed chat id** in DeskPilot and press Tab.
-4. Click **Send a test message** again.
+If you would rather type the number yourself, send `/start` to **@userinfobot**
+in Telegram — it replies with your **Id** — and paste that into the box under
+the Link button.
 
-A message should arrive on your phone within a couple of seconds. If it does,
-the link works.
+**Only the chat you confirmed can reach DeskPilot.** A message from anyone else
+is counted and thrown away without ever being read as an instruction — you can
+see those attempts in the **Status** box. DeskPilot never adopts a chat on its
+own: the click has to happen at the machine, so nobody who guesses your bot's
+username can link themselves.
 
-**Only that one chat can reach DeskPilot.** A message from anyone else is
-counted and thrown away without ever being read as an instruction — you can see
-those attempts in the **Status** box.
+## Step 4 — Check it works
 
-## Step 4 — Allow a project to be controlled
+Click **Send a test message**. A message should arrive on your phone within a
+couple of seconds. If it does, the link works.
+
+## Step 5 — Allow a project to be controlled
 
 This is the safety switch, and it is off for every project.
 
@@ -97,7 +105,7 @@ without it is invisible to Intercom: it will not run instructions for it, and it
 will not forward the agent's questions from it. If you keep sensitive work in a
 project, simply leave the tick off.
 
-## Step 5 — Switch Intercom on
+## Step 6 — Switch Intercom on
 
 Back on the **Intercom** tab, tick **Let me reach DeskPilot from my phone**.
 
@@ -175,11 +183,14 @@ only ever look like silence. The check-in time is how you tell the difference.
 | What you see | What to do |
 | --- | --- |
 | **Intercom needs a token** | Step 2 — paste the token from BotFather |
-| **Intercom needs a chat id** | Step 3 — put your numeric Telegram id in |
+| **The bot never answers, not even `/start`** | Your phone is not linked yet. Intercom deliberately ignores every chat until you confirm one — do step 3 |
+| **Intercom: link your phone** | Same thing — click **Link my phone** and send your bot a message |
+| **Listening… but nothing appears** | Make sure you are messaging *your* bot (the username you chose in step 1), not BotFather. The window closes after five minutes; click **Link my phone** again |
 | **Telegram did not accept the token** | The token is wrong or has been revoked. Send `/token` to BotFather to get the current one |
 | **The test message was not delivered** | You have not messaged your bot yet. Open the bot chat in Telegram and tap **Start**, then test again |
-| **"I cannot do that from here"** | The open project does not have **allow phone control** ticked — step 4 |
-| **Nothing arrives at all** | Check the chip says *Intercom on*, and look at the **Status** box in Settings. A rising **rejected** count means messages are arriving from a chat that is not yours |
+| **"I cannot do that from here"** | The open project does not have **allow phone control** ticked — step 5 |
+| **Messages you sent before linking did nothing** | Expected. DeskPilot throws away anything that arrived while it was not listening, rather than acting on an hour-old instruction. Send it again |
+| **A rising "rejected" count** | Messages are arriving from a chat that is not yours. Nothing was executed, but it is worth knowing |
 | **You want it off, now** | Untick **Let me reach DeskPilot from my phone**. It stops immediately |
 
 ## See Also

@@ -69,5 +69,14 @@ function Initialize-DpIntercom {
         Counters         = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
         Log              = [System.Collections.Generic.List[object]]::new()
         RateWindow       = [System.Collections.Generic.List[DateTime]]::new()
+        # A time-boxed window, opened by hand from Settings, in which the poller
+        # runs with no allow-list purely to collect the chat ids that message the
+        # bot. Nothing is executed and nothing is adopted without a click - see
+        # Add-DpIntercomPairingCandidate.
+        Pairing          = @{
+            active     = $false
+            startedUtc = $null
+            candidates = [System.Collections.Generic.List[object]]::new()
+        }
     }
 }
