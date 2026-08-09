@@ -33,7 +33,19 @@ function Invoke-DpIntercomTurn {
     $intercom = $state.Intercom
 
     $conversation = $null
-    if ($intercom.ConversationId) { $conversation = $state.Conversations[$intercom.ConversationId] }
+    if ($intercom.ConversationId) {
+        $conversation = $state.Conversations[$intercom.ConversationId]
+        # A Conversation that was bound and has since gone is an error, not an
+        # invitation to do the work somewhere else.
+        if (-not $conversation) {
+            $intercom.ConversationId = $null
+            $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
+                'The conversation we were working in no longer exists.',
+                'Send /chats to pick another, or /new to start one.'
+            ) -Kind 'refused'
+            return
+        }
+    }
     if (-not $conversation) {
         $conversation = @($state.Conversations.Values) |
             Where-Object { -not [bool](Get-DpPropertyValue -InputObject $_ -Name @('archived') -Default $false) } |
@@ -44,6 +56,16 @@ function Invoke-DpIntercomTurn {
         $conversation = New-DpConversation -Model $state.Settings.model
         $state.Conversations[$conversation.id] = $conversation
     }
+
+    $writable = Test-DpConversationWritable -Conversation $conversation
+    if (-not $writable.ok) {
+        $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
+            $writable.reason,
+            'Send /chats to pick another, or /new to start one.'
+        ) -Kind 'refused'
+        return
+    }
+
     $intercom.ConversationId = [string]$conversation.id
 
     $messagesBefore = $conversation.messages.Count

@@ -840,7 +840,9 @@ button.tree-row {
     font-size: 14px;
 }
 
-.conv-item .conv-del {
+/* The one-click row button. It archives (reversible); deleting lives in the
+   actions menu behind a confirmation. */
+.conv-item .conv-archive {
     opacity: 0;
     border: none;
     background: none;
@@ -851,12 +853,12 @@ button.tree-row {
     border-radius: 6px;
 }
 
-.conv-item:hover .conv-del {
+.conv-item:hover .conv-archive {
     opacity: 1;
 }
 
-.conv-item .conv-del:hover {
-    color: var(--danger);
+.conv-item .conv-archive:hover {
+    color: var(--text);
     background: var(--surface-2);
 }
 

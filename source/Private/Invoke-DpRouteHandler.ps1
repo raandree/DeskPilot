@@ -1053,6 +1053,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
+                return
+            }
             $prompt = if ($Body -and $Body.PSObject.Properties['prompt']) { [string]$Body.prompt } else { '' }
             if ([string]::IsNullOrWhiteSpace($prompt)) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_prompt'; message = 'A prompt is required.' } }
@@ -1086,6 +1091,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
+                return
+            }
             $lastUser = @($conversation.messages | Where-Object { $_.role -eq 'user' }) | Select-Object -Last 1
             if (-not $lastUser) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'nothing_to_regenerate'; message = 'There is no user message to regenerate.' } }
@@ -1106,6 +1116,11 @@ function Invoke-DpRouteHandler {
             }
             if ($state.TurnRunning) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
+                return
+            }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
                 return
             }
             $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name @('messageId') -Default '')

@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Choose how a message is sent.** **Settings → General → Send a message with**
+  offers **Ctrl+Enter** (the new default, with Enter making a new line) or
+  **Enter** (with Shift+Enter making a new line). Ctrl+Enter by default so a
+  stray Enter mid-thought cannot fire a half-written instruction at an agent that
+  can change files and run commands.
 - **Tidy up conversations from your phone.** `/archive 2` hides one from the
   list; `/delete 2` removes it for good and asks you to confirm first, offering
   `/archive` as the reversible alternative.

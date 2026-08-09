@@ -65,6 +65,19 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         }
     }
 
+    It 'keeps destructive conversation actions out of one click' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # The one-click button on a row archives; it used to delete outright.
+        $js | Should -Match ([regex]::Escape("archive.onclick = (e) => { e.stopPropagation(); toggleArchive(c.id, !c.archived); };"))
+        $js | Should -Not -Match ([regex]::Escape('del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };'))
+        # Deleting is reachable from the actions menu and the right-click menu.
+        $js | Should -Match ([regex]::Escape("mk('Delete…', () => deleteConversation(summary.id))"))
+        $js | Should -Match ([regex]::Escape('item.oncontextmenu'))
+        # And it always confirms, whoever calls it.
+        $js | Should -Match '(?s)async function deleteConversation\(id\).{0,600}window\.confirm'
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

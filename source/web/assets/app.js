@@ -189,6 +189,31 @@ function effectiveTheme() {
     return t;
 }
 
+// Which keystroke sends a prompt. A per-machine input preference, so it lives in
+// localStorage beside the theme rather than in Settings - the Host Server gains
+// nothing from knowing it, and it shapes no Turn. Ctrl+Enter is the default: a
+// stray Enter mid-thought should not send a half-written instruction to an agent
+// that can change files and run commands.
+function sendKeyMode() {
+    return localStorage.getItem('ad_sendkey') === 'enter' ? 'enter' : 'ctrl-enter';
+}
+
+// True when this keystroke means "send" under the current preference. Shift+Enter
+// always means a newline, in both modes.
+function isSendKey(e) {
+    if (e.key !== 'Enter' || e.shiftKey) return false;
+    const withModifier = e.ctrlKey || e.metaKey;
+    return sendKeyMode() === 'enter' ? !withModifier : withModifier;
+}
+
+function applySendKeyHint() {
+    const promptEl = $('prompt');
+    if (!promptEl) return;
+    promptEl.placeholder = sendKeyMode() === 'enter'
+        ? 'Message DeskPilot\u2026  (Enter to send, Shift+Enter for a new line)'
+        : 'Message DeskPilot\u2026  (Ctrl+Enter to send, Enter for a new line)';
+}
+
 function applyTheme() {
     const t = localStorage.getItem('ad_theme') || 'system';
     document.documentElement.dataset.theme = t;
@@ -223,6 +248,7 @@ if (window.matchMedia) {
 // ===== Init =====
 async function init() {
     applyTheme();
+    applySendKeyHint();
     wireGlobal();
     renderExamples();
     let health = null;
@@ -480,12 +506,17 @@ function renderConversationList() {
         menu.title = 'Conversation actions';
         menu.setAttribute('aria-label', 'Conversation actions');
         menu.onclick = (e) => { e.stopPropagation(); openConvMenu(c, menu); };
-        const del = el('conv-del', 'button');
-        del.textContent = '✕';
-        del.title = 'Delete';
-        del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
-        item.append(menu, del);
+        // The one-click button archives. Deleting is irreversible, so it lives in
+        // the actions menu behind a confirmation rather than a hair's breadth
+        // from the row you were only trying to tidy away.
+        const archive = el('conv-archive', 'button');
+        archive.textContent = c.archived ? '↩' : '✕';
+        archive.title = c.archived ? 'Unarchive' : 'Archive';
+        archive.setAttribute('aria-label', archive.title);
+        archive.onclick = (e) => { e.stopPropagation(); toggleArchive(c.id, !c.archived); };
+        item.append(menu, archive);
         item.onclick = () => selectConversation(c.id);
+        item.oncontextmenu = (e) => { e.preventDefault(); openConvMenu(c, item); };
         list.appendChild(item);
     }
     updateArchivedToggle();
@@ -590,6 +621,8 @@ function openConvMenu(summary, anchor) {
         mk('Export as Markdown', () => exportConversation(summary.id)),
         mk('Details', () => showConversationDetails(summary, anchor)),
         mk('Session info', () => openSessionInfo(anchor, summary.id)),
+        el('menu-divider'),
+        mk('Delete…', () => deleteConversation(summary.id)),
     );
     document.body.appendChild(menu);
     positionConvPopover(menu, anchor);
@@ -1145,6 +1178,11 @@ async function selectConversation(id) {
 }
 
 async function deleteConversation(id) {
+    // Deleting a Conversation cannot be undone, and archiving is what people
+    // usually mean, so the confirmation names both.
+    const summary = state.conversations.find((c) => c.id === id);
+    const title = (summary && summary.title) || 'this conversation';
+    if (!window.confirm(`Delete “${title}” permanently?\n\nThis cannot be undone. Archive it instead if you only want it out of the way.`)) return;
     await api('DELETE', '/api/conversations/' + id);
     state.conversations = state.conversations.filter((c) => c.id !== id);
     if (state.current && state.current.id === id) {
@@ -5518,6 +5556,14 @@ function openSettings() {
         <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
       </div>
       <div class="field">
+        <label>Send a message with</label>
+        <select id="set-sendkey">
+          <option value="ctrl-enter" ${sendKeyMode() === 'ctrl-enter' ? 'selected' : ''}>Ctrl+Enter (Enter makes a new line)</option>
+          <option value="enter" ${sendKeyMode() === 'enter' ? 'selected' : ''}>Enter (Shift+Enter makes a new line)</option>
+        </select>
+        <p class="hint">Ctrl+Enter by default, so a stray Enter mid-thought cannot send a half-written instruction.</p>
+      </div>
+      <div class="field">
         <label>Theme</label>
         <select id="set-theme">
           ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
@@ -5803,6 +5849,7 @@ function openSettings() {
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
+    $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
     $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
     $('update-check').onclick = () => checkForUpdates();
@@ -7019,15 +7066,15 @@ function wireGlobal() {
         maybeOpenComposerMenu();
     });
     promptEl.addEventListener('keydown', (e) => {
-        // While a Turn is streaming, Enter steers and Alt+Enter queues. Both
-        // skip the normal send path. Shift+Enter still inserts a newline.
-        if (state.streaming && e.key === 'Enter' && !e.shiftKey) {
+        // While a Turn is streaming the send keystroke steers instead, and adding
+        // Alt queues. Shift+Enter still inserts a newline.
+        if (state.streaming && isSendKey(e)) {
             e.preventDefault();
             if (e.altKey) dispatchEnqueue('queue');
             else dispatchEnqueue('steer');
             return;
         }
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
+        if (isSendKey(e)) { e.preventDefault(); send(); return; }
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
         const navigating = state.historyIndex !== -1;
         const collapsed = promptEl.selectionStart === promptEl.selectionEnd;

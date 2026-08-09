@@ -315,6 +315,20 @@ source: repository evidence
   instead, and long ones are capped with a count. Faithfulness to the source
   format is not the goal; being readable on the device is.
 
+- **Archiving is the user saying "I am done with this".** One rule
+  (`Test-DpConversationWritable`) refuses a Turn on an archived or deleted
+  Conversation at every entry point - the window's send/regenerate/edit routes and
+  Intercom alike. Intercom previously fell through to "the most recent one" when
+  its bound Conversation had gone, so the work landed somewhere the operator never
+  chose. Silently continuing is worse than refusing.
+- **The destructive action is never the one-click one.** The row button archives;
+  deleting lives in the actions menu and the right-click menu, and confirms by
+  naming the Conversation and offering archive instead.
+- **Ctrl+Enter sends by default.** A stray Enter mid-thought should not fire a
+  half-written instruction at an agent that can write files and run commands. The
+  preference is per-machine (`localStorage`, beside the theme): the Host Server
+  gains nothing from knowing it and it shapes no Turn.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

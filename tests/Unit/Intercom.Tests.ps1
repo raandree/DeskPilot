@@ -330,6 +330,93 @@ Describe 'Send-DpIntercomTurnResult' -Tag 'Unit' {
     }
 }
 
+Describe 'Test-DpConversationWritable' -Tag 'Unit' {
+    BeforeEach { Set-StrictMode -Version Latest }
+
+    It 'allows an ordinary Conversation' {
+        (Test-DpConversationWritable -Conversation @{ id = 'c1'; title = 'Notes'; archived = $false }).ok | Should -BeTrue
+    }
+
+    It 'allows a Conversation that never carried the archived key' {
+        (Test-DpConversationWritable -Conversation @{ id = 'c1'; title = 'Notes' }).ok | Should -BeTrue
+    }
+
+    It 'refuses an archived Conversation and names it' {
+        $decision = Test-DpConversationWritable -Conversation @{ id = 'c1'; title = 'Old plans'; archived = $true }
+
+        $decision.ok | Should -BeFalse
+        $decision.code | Should -Be 'conversation_archived'
+        $decision.reason | Should -Match 'Old plans'
+    }
+
+    It 'refuses a Conversation that no longer exists' {
+        $decision = Test-DpConversationWritable -Conversation $null
+
+        $decision.ok | Should -BeFalse
+        $decision.code | Should -Be 'conversation_missing'
+    }
+}
+
+Describe 'Intercom refuses a chat it may not write to' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $settings = Get-DpDefaultSettings
+        $settings.intercom.chatId = '111'
+        $settings.selectedProjectId = 'p1'
+        $settings.projects = @(@{ id = 'p1'; name = 'Lab'; path = 'C:\lab'; intercom = $true })
+        $conversations = @{
+            c1 = @{
+                id = 'c1'; title = 'Archived work'; updatedUtc = '2026-08-09T10:00:00Z'; archived = $true
+                messages = [System.Collections.Generic.List[object]]::new()
+                history = [System.Collections.Generic.List[object]]::new()
+            }
+        }
+        $script:DeskPilot = @{
+            Settings = $settings; Conversations = $conversations; TurnRunning = $false; DataDir = $null
+            Intercom = @{
+                ConversationId = 'c1'; ChatIndex = @(); QueuedPrompt = $null
+                LastActivityUtc = [DateTime]::UtcNow; StallNotified = $false
+                RemoteTurn = @{ active = $false; conversationId = $null; prompt = ''; startedUtc = $null; text = ''; reasoning = '' }
+                Outbound = [System.Collections.Generic.Queue[hashtable]]::new()
+                RateWindow = [System.Collections.Generic.List[DateTime]]::new()
+                Log = [System.Collections.Generic.List[object]]::new()
+                Counters = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
+                Token = ''
+            }
+        }
+        Mock Invoke-DpTurn { throw 'A Turn must not run against a chat Intercom may not write to.' }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'refuses to work in an archived conversation' {
+        Invoke-DpIntercomTurn -Prompt 'carry on'
+
+        Should -Invoke Invoke-DpTurn -Times 0
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match 'I did not run that'
+        $text | Should -Match 'Archived work'
+    }
+
+    It 'refuses rather than quietly working in a different conversation when the bound one is gone' {
+        # The old fallback silently picked "the most recent" one, so a deleted
+        # chat meant the work landed somewhere the operator never chose.
+        $script:DeskPilot.Conversations = @{
+            c2 = @{
+                id = 'c2'; title = 'Something else'; updatedUtc = '2026-08-09T11:00:00Z'; archived = $false
+                messages = [System.Collections.Generic.List[object]]::new()
+                history = [System.Collections.Generic.List[object]]::new()
+            }
+        }
+
+        Invoke-DpIntercomTurn -Prompt 'carry on'
+
+        Should -Invoke Invoke-DpTurn -Times 0
+        $script:DeskPilot.Intercom.ConversationId | Should -BeNullOrEmpty
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'no longer exists'
+    }
+}
+
 Describe 'Intercom chat navigation' -Tag 'Unit' {
     BeforeEach {
         Set-StrictMode -Version Latest
