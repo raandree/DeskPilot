@@ -250,6 +250,12 @@ source: repository evidence
   wrapped, and a failure there degrades to a minimal "the job finished, open
   DeskPilot" notice. A bug in the last step of a Turn should cost detail, not the
   entire result.
+- **A panel that swallows a failed poll lies.** `refreshIntercom` caught the
+  error and returned, so a stopped Host Server left the Settings panel frozen on
+  its last good response - counters, status and a stale error included - and a
+  dead DeskPilot was indistinguishable from a live one with an old fault. That
+  cost three round-trips of debugging a bug that was already fixed. A surface
+  that cannot reach its server says so.
 
 ## Anti-patterns to avoid
 
