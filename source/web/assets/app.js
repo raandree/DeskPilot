@@ -119,8 +119,11 @@ const state = {
     // fetch). Drives the update banner and the Settings "Updates" panel.
     update: null,
     // Latest cached Intercom status from GET /api/intercom. Drives the topbar
-    // chip and the Settings "Intercom" panel.
+    // chip and the Settings "Intercom" panel. intercomStale is set when the poll
+    // fails, so the panel can say it is out of date rather than keep painting the
+    // last good response as if it were live.
     intercom: null,
+    intercomStale: false,
     updateDismissed: false,
     restartDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
@@ -3044,8 +3047,19 @@ const INTERCOM_GUIDE_URL = 'https://github.com/raandree/DeskPilot/blob/main/docs
 // the transport; the SPA only reports what it finds, so this stays a cheap
 // local request.
 async function refreshIntercom() {
-    try { state.intercom = await api('GET', '/api/intercom'); }
-    catch { return; }
+    try {
+        state.intercom = await api('GET', '/api/intercom');
+        state.intercomStale = false;
+    }
+    catch {
+        // A dead Host Server used to leave this panel frozen on its last good
+        // response - counters, status and all - so a stopped DeskPilot looked
+        // exactly like a running one with an old error.
+        state.intercomStale = true;
+        updateIntercomChip();
+        renderIntercomPanel();
+        return;
+    }
     updateIntercomChip();
     renderIntercomPanel();
     renderIntercomPairing();
@@ -3153,6 +3167,13 @@ function updateIntercomChip() {
     const i = state.intercom;
     if (!i || !i.enabled) { chip.classList.add('hidden'); return; }
     chip.classList.remove('hidden');
+    if (state.intercomStale) {
+        chip.classList.remove('ok', 'warn');
+        chip.classList.add('bad');
+        chip.innerHTML = '<span aria-hidden="true">📻</span> <span>DeskPilot not responding</span>';
+        chip.title = 'The DeskPilot window has stopped. Restart it and reload this page.';
+        return;
+    }
     const map = {
         on: { icon: '📻', label: 'Intercom on', cls: 'ok' },
         error: { icon: '📻', label: 'Intercom problem', cls: 'bad' },
@@ -3177,6 +3198,13 @@ function renderIntercomPanel() {
     if (!box) return;
     const i = state.intercom;
     if (!i) { box.innerHTML = '<span class="muted tiny">Checking…</span>'; return; }
+
+    if (state.intercomStale) {
+        box.innerHTML = '<div class="intercom-state bad">DeskPilot is not responding</div>' +
+            '<div class="intercom-err tiny">This page cannot reach DeskPilot, so everything below is out of date — including any error. ' +
+            'Restart DeskPilot, then reload this page.</div>';
+        return;
+    }
 
     const label = {
         off: 'Off',
