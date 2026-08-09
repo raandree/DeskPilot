@@ -10,27 +10,41 @@ source: repository evidence
 
 ## Current focus
 
-**Dictation and read-aloud can now be set to German (`main`, 2026-08-09,
-uncommitted).** Both speech APIs were hard-wired to `navigator.language`, so the
-spoken language was whatever the browser's UI language happened to be — a German
-speaker on an English Windows got an English recogniser transcribing nonsense and
-an English voice reading the answer back. New `ad_voicelang` preference (auto /
-en-US / en-GB / de-DE / de-AT / de-CH) in **Settings → General → Voice language**,
-localStorage beside the theme and the send key, because it is a per-machine input
-preference the Host Server gains nothing from knowing and it shapes no Turn.
+**Voice: German support, and read-aloud speaking Markdown punctuation (`main`,
+2026-08-09, on `ai/voice-language`).** Two parts of the same report.
 
-Two non-obvious parts. (1) Setting `SpeechSynthesisUtterance.lang` alone is not
+**(1) Language.** Both speech APIs were hard-wired to `navigator.language`, so
+the spoken language was whatever the browser's UI language happened to be — a
+German speaker on an English Windows got an English recogniser transcribing
+nonsense and an English voice reading the answer back. New `ad_voicelang`
+preference (auto / en-US / en-GB / de-DE / de-AT / de-CH) in **Settings → General
+→ Voice language**, localStorage beside the theme and the send key, because it is
+a per-machine input preference the Host Server gains nothing from knowing and it
+shapes no Turn. Two traps: setting `SpeechSynthesisUtterance.lang` alone is not
 enough — browsers keep reading with the default voice unless `voice` is assigned,
 so `voiceFor(lang)` picks an exact match, then any voice sharing the base tag
-(de-AT falls back to a de-DE voice), then nothing. (2) Chrome populates
+(de-AT falls back to a de-DE voice), then nothing; and Chrome populates
 `speechSynthesis.getVoices()` asynchronously and returns `[]` until it lands, so
-`initVoice` asks for it once at startup or the first read-aloud misses its German
-voice. An unrecognised stored value falls back to `auto` rather than handing the
-browser a language tag it will reject.
+`initVoice` asks for it once at startup. An unrecognised stored value falls back
+to `auto` rather than handing the browser a tag it will reject.
 
-Guard in `WebAssets.Tests.ps1` runs the helper block through `node`'s `vm` with a
-faked `localStorage`/`navigator`/`speechSynthesis`, and asserts textually that
-neither API reads `navigator.language` directly again.
+**(2) Punctuation.** `speakText` only stripped code fences, so an answer was
+spoken verbatim: "hash hash Setup", "star star", a table read as a run of
+"vertical bar". New `markdownToSpeech(src)` in `markdown.js` — deliberately
+beside `renderMarkdown` and mirroring its line grammar, so what the renderer
+treats as syntax is exactly what is never spoken and the two cannot drift.
+Headings, list items, blockquotes and table rows become sentences with a full
+stop (without one the reader runs them together), links are read by label, rules
+are dropped, and a code block is announced as "Code block." rather than spelled
+out. No spoken label was invented for task-list checkboxes: the marker is simply
+dropped, because "Done:"/"To do:" would be English words injected into German
+speech.
+
+Guards in `WebAssets.Tests.ps1`: the language helpers run under `node`'s `vm`
+with a faked `localStorage`/`navigator`/`speechSynthesis`; `markdownToSpeech` is
+imported as ESM and asserted to drop every syntax character while keeping every
+label. Textual assertions keep both speech APIs off `navigator.language` and keep
+`speakText` on the stripper.
 
 ## Previous focus — the Thinking box arrived collapsed and below the fold
 

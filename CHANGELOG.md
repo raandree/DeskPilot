@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Read aloud no longer reads the punctuation.** An answer was spoken exactly as
+  it was written, so a heading came out as "hash hash Setup", bold text as "star
+  star", a table as a run of "vertical bar", and a bullet list as a string of
+  "dash". Formatting is now removed before anything is spoken: headings, list
+  items and table rows are read as ordinary sentences, a link is read by its
+  label rather than its address, and a code block is announced instead of being
+  spelled out character by character.
 - **The model's thinking is now actually shown.** With **Show the model's
   thinking** turned on, the Thinking box arrived collapsed, so you still had to
   find and click it on every answer — and because it only appeared after the view

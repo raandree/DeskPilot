@@ -8,7 +8,7 @@ import {
     statusGlyph,
     statusLabel,
 } from './diff.js';
-import { renderMarkdown } from './markdown.js';
+import { markdownToSpeech, renderMarkdown } from './markdown.js';
 import {
     createQuestionnaireState,
     getQuestionnaireOptionFocusIndex,
@@ -6696,8 +6696,7 @@ function speakText(text, btn) {
     if (!canSpeak()) return;
     const wasSameBtn = speech.btn === btn;
     if (speech.speaking) { window.speechSynthesis.cancel(); resetSpeakBtn(); if (wasSameBtn) return; }
-    // Strip code so the reader doesn't dictate punctuation soup.
-    const clean = text.replace(/```[\s\S]*?```/g, ' (code block) ').replace(/`([^`]+)`/g, '$1');
+    const clean = markdownToSpeech(text);
     if (!clean.trim()) return;
     const u = new SpeechSynthesisUtterance(clean);
     u.lang = voiceLang();

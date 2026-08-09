@@ -608,6 +608,77 @@ assert.equal(context.voiceLangPref(), 'auto');
         $app | Should -Match 'id="set-voicelang"'
         $app | Should -Match ([regex]::Escape("localStorage.setItem('ad_voicelang'"))
     }
+
+    It 'reads a Message as prose, not as Markdown punctuation' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'markdown.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { markdownToSpeech } = await import(pathToFileURL(process.argv[1]).href);
+
+const spoken = markdownToSpeech([
+    '## Setup steps',
+    '',
+    'Run **build.ps1** with the *test* task, see [the docs](https://example.com/a).',
+    '',
+    '- first step',
+    '- second step',
+    '',
+    '1. numbered step',
+    '',
+    '| Task | State |',
+    '| --- | --- |',
+    '| build | green |',
+    '',
+    '---',
+    '',
+    '> a quoted note',
+    '',
+    '```powershell',
+    './build.ps1 -Tasks test',
+    '```',
+    '',
+    'Inline `Get-ChildItem` stays readable.',
+].join('\n'));
+
+// None of this is language. Spoken, it is "hash hash", "star star", "vertical bar".
+for (const syntax of ['#', '*', '|', '---', '>', '`', '](', 'https://']) {
+    assert.ok(!spoken.includes(syntax), `still speaks ${syntax}: ${spoken}`);
+}
+
+// The prose, including every label the syntax was wrapped around, survives.
+for (const kept of ['Setup steps', 'build.ps1', 'test', 'the docs', 'first step', 'second step',
+    'numbered step', 'Task', 'green', 'a quoted note', 'Get-ChildItem']) {
+    assert.ok(spoken.includes(kept), `lost ${kept}: ${spoken}`);
+}
+
+// A heading, a list item and a table row are sentences to the ear; without a
+// full stop the reader runs each one into the next.
+assert.match(spoken, /Setup steps\./);
+assert.match(spoken, /first step\./);
+assert.match(spoken, /Task, State\./);
+
+// Code is announced, never spelled out.
+assert.ok(spoken.includes('Code block.'));
+assert.ok(!spoken.includes('-Tasks'));
+
+// Prose with no Markdown in it comes back unchanged.
+assert.equal(markdownToSpeech('Just a sentence.'), 'Just a sentence.');
+assert.equal(markdownToSpeech(''), '');
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+
+        # Read aloud used to strip code fences only, so every heading, bullet and
+        # table pipe was spoken out.
+        $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $app | Should -Match 'import \{[^}]*markdownToSpeech[^}]*\} from ''\./markdown\.js'';'
+        $app | Should -Match '(?s)function speakText\([^)]*\).{0,400}markdownToSpeech\(text\)'
+    }
 }
 
 Describe 'Web asset reference casing' -Tag 'Unit' {

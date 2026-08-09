@@ -137,3 +137,107 @@ export function renderMarkdown(src) {
 
     return out.join('\n');
 }
+
+// ===== Speech =====
+// Markdown is punctuation to a screen reader: '## Setup' is spoken "hash hash
+// Setup" and '| a | b |' is spoken "vertical bar". These strip it back to prose,
+// mirroring the line grammar above so what the renderer treats as syntax is
+// exactly what is never spoken.
+const TABLE_SEPARATOR = /^\s*\|?[\s:|-]+\|[\s:|-]+$/;
+
+function speakInline(text) {
+    let t = String(text);
+    t = t.replace(/`([^`]+)`/g, '$1');
+    t = t.replace(/!\[([^\]]*)\]\([^)\s]*\)/g, '$1');
+    t = t.replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1');
+    t = t.replace(/\*\*\*([^*]+)\*\*\*/g, '$1');
+    t = t.replace(/___([^_]+)___/g, '$1');
+    t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
+    t = t.replace(/__([^_]+)__/g, '$1');
+    t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1$2');
+    t = t.replace(/(^|[^_])_([^_\n]+)_/g, '$1$2');
+    t = t.replace(/~~([^~]+)~~/g, '$1');
+    return t.replace(/\s+/g, ' ').trim();
+}
+
+// A heading, list item or table row is a sentence to the ear; without a stop the
+// reader runs each one into the next.
+function speechSentence(text) {
+    const t = text.trim();
+    if (!t) return '';
+    return /[.!?:;]$/.test(t) ? t : t + '.';
+}
+
+export function markdownToSpeech(src) {
+    const lines = String(src || '').replace(/\r\n?/g, '\n').split('\n');
+    const out = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        // Code is announced, never spelled out: it is punctuation soup aloud.
+        if (/^\s*```/.test(line)) {
+            i++;
+            while (i < lines.length && !/^\s*```/.test(lines[i])) i++;
+            i++;
+            out.push('Code block.');
+            continue;
+        }
+
+        if (/^\s*$/.test(line)) { out.push(''); i++; continue; }
+
+        // A rule is a visual divider and says nothing out loud.
+        if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { i++; continue; }
+
+        const h = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*$/);
+        if (h) { out.push(speechSentence(speakInline(h[2]))); i++; continue; }
+
+        if (/\|/.test(line) && i + 1 < lines.length && TABLE_SEPARATOR.test(lines[i + 1])) {
+            const rows = [line];
+            i += 2; // header + separator; the separator is pure syntax
+            while (i < lines.length && /\|/.test(lines[i]) && !/^\s*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+            for (const row of rows) {
+                const cells = row.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|')
+                    .map((c) => speakInline(c)).filter(Boolean);
+                if (cells.length) out.push(speechSentence(cells.join(', ')));
+            }
+            continue;
+        }
+
+        if (/^\s*>\s?/.test(line)) {
+            const buf = [];
+            while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, '')); i++; }
+            out.push(speechSentence(speakInline(buf.join(' '))));
+            continue;
+        }
+
+        if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+            while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+                const item = lines[i]
+                    .replace(/^\s*[-*+]\s+/, '')
+                    .replace(/^\s*(\d+)[.)]\s+/, '$1. ')
+                    .replace(/^\[[ xX]\]\s*/, '');
+                out.push(speechSentence(speakInline(item)));
+                i++;
+            }
+            continue;
+        }
+
+        const para = [];
+        while (
+            i < lines.length &&
+            !/^\s*$/.test(lines[i]) &&
+            !/^\s*```/.test(lines[i]) &&
+            !/^\s*(#{1,6})\s/.test(lines[i]) &&
+            !/^\s*>\s?/.test(lines[i]) &&
+            !/^\s*([-*+]|\d+[.)])\s+/.test(lines[i])
+        ) {
+            para.push(lines[i]); i++;
+        }
+        if (!para.length) { para.push(lines[i]); i++; }
+        out.push(speakInline(para.join(' ')));
+    }
+
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
