@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Copy your own messages with one click.** Hovering a message you sent now
+  shows a ⧉ button beside the edit one, the same as on DeskPilot's replies — no
+  more selecting a prompt by hand to reuse it. Both also fall back to an older
+  copy method if the browser refuses clipboard access.
 - **Send files from your phone.** Attach a document, photo, voice note or video
   in Telegram — with or without a caption — and DeskPilot saves it into your
   project folder and puts the agent to work on it; photos also go to the model's
