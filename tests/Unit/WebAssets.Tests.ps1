@@ -33,6 +33,86 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match 'wireExplorerResize\(\)'
     }
 
+    It 'links the Intercom setup guide, and opens every external link safely' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $js | Should -Match ([regex]::Escape('const INTERCOM_GUIDE_URL'))
+        $js | Should -Match ([regex]::Escape('docs/intercom-getting-started.md'))
+        $js | Should -Match ([regex]::Escape('href="${INTERCOM_GUIDE_URL}"'))
+        # target="_blank" without rel="noopener noreferrer" hands the opened page a
+        # window.opener it can navigate away (reverse tabnabbing).
+        foreach ($match in [regex]::Matches($js, '<a\s[^>]*target="_blank"[^>]*>')) {
+            $match.Value | Should -Match 'rel="noopener noreferrer"'
+        }
+    }
+
+    It 'renders every Intercom control it binds to' {
+        # A handler bound to an id the template never renders fails silently: the
+        # control is simply absent and nothing throws. That shipped once - the
+        # pairing panel's container was missing, so "Link my phone" never appeared
+        # while every API test still passed.
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $bound = [regex]::Matches($js, "\`$\('(set-ic-[a-z-]+|set-intercom-[a-z-]+|btn-intercom|stab-intercom)'\)") |
+            ForEach-Object { $_.Groups[1].Value } |
+            Select-Object -Unique
+
+        $bound.Count | Should -BeGreaterThan 5
+        foreach ($id in $bound) {
+            $rendered = $js.Contains("id=`"$id`"") -or
+                (Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw).Contains("id=`"$id`"")
+            $rendered | Should -BeTrue -Because "app.js binds `$('$id') but nothing renders that id"
+        }
+    }
+
+    It 'lets both sides of a conversation be copied in one click' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # A user message used to offer edit-and-resend only.
+        $js | Should -Match '(?s)function buildUserEl.{0,2000}copyMessageText\(m\.text\)'
+        $js | Should -Match '(?s)function buildMessageActions.{0,600}copyMessageText\(text\)'
+        # One helper, so the clipboard fallback exists on both paths.
+        $js | Should -Match 'async function copyMessageText'
+        $js | Should -Match ([regex]::Escape("document.execCommand('copy')"))
+        # The actions are hover-revealed, so focus has to reveal them as well.
+        $css | Should -Match ([regex]::Escape('.msg-user:focus-within .user-actions'))
+    }
+
+    It 'keeps destructive conversation actions out of one click' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # The one-click button on a row archives; it used to delete outright.
+        $js | Should -Match ([regex]::Escape("archive.onclick = (e) => { e.stopPropagation(); toggleArchive(c.id, !c.archived); };"))
+        $js | Should -Not -Match ([regex]::Escape('del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };'))
+        # Deleting is reachable from the actions menu and the right-click menu.
+        $js | Should -Match ([regex]::Escape("mk('Delete…', () => deleteConversation(summary.id))"))
+        $js | Should -Match ([regex]::Escape('item.oncontextmenu'))
+        # And it always confirms, whoever calls it.
+        $js | Should -Match '(?s)async function deleteConversation\(id\).{0,600}window\.confirm'
+    }
+
+    It 'offers a checkpoint on a prompt, and confirms before discarding anything' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # The divider is only meaningful where a snapshot was actually taken, so
+        # it has to be gated on the message carrying one.
+        $js | Should -Match ([regex]::Escape("m.role === 'user' && m.checkpoint && m.checkpoint.sha"))
+        $js | Should -Match 'function buildCheckpointEl'
+        $js | Should -Match ([regex]::Escape('Restore Checkpoint'))
+        # The live bubble is built before the server has taken the snapshot, so
+        # rendering only on thread rebuild leaves the turn you just ran without a
+        # divider until you switch conversations and back.
+        $js | Should -Match 'function syncCheckpointDividers'
+        $js | Should -Match '(?s)async function refreshCurrentConversation.{0,400}syncCheckpointDividers\(\)'
+        # Restoring throws away messages and rewrites files; it must never be one click.
+        $js | Should -Match '(?s)async function restoreCheckpoint\(m\).{0,900}window\.confirm'
+        # The discarded prompt goes back in the composer, or the user loses what they typed.
+        $js | Should -Match '(?s)async function restoreCheckpoint\(m\).{0,2000}promptEl\.value = r\.prompt'
+        $css | Should -Match ([regex]::Escape('.checkpoint-label'))
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

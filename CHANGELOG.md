@@ -7,16 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Asking for choices now gets you choices.** "Give me a list to choose from"
+  or "what are my options" used to be answered with a written list you could only
+  read. The agent now offers those as a real question you can answer — a
+  questionnaire in the window, tappable buttons on your phone — so picking one
+  actually carries on the conversation. It still will not turn a simple request
+  into a wizard: it never asks to confirm something it can just do.
+- **Tap to answer, instead of typing.** When the agent asks a question with a
+  list of choices, Telegram now shows a button for each one — tap it and that is
+  your answer. `/chats` gives you a button per conversation too, so switching no
+  longer means reading a list and typing a number. You can still reply in writing
+  whenever you prefer, and questions that let you pick several answers at once
+  still ask for a written reply, because one tap cannot say "these two".
+- **Rewind a conversation to before a prompt.** Every message you send now
+  carries a **Restore Checkpoint** marker above it. Clicking it takes you back to
+  the moment just before you hit send: the message and everything after it leave
+  the conversation, your prompt goes back into the box so you can reword it, and
+  any file DeskPilot changed since is put back the way it was. Files you edited
+  yourself are left alone, and DeskPilot asks before it discards anything. The
+  marker appears as soon as the turn finishes — you do not have to reopen the
+  conversation to see it.
+- **Undo from your phone.** Send `/undo` to Intercom and DeskPilot tells you
+  exactly what it would throw away — how many messages, how many files — then
+  waits. `/undo confirm` takes you back to just before your last instruction,
+  puts back the files it changed, and sends your prompt back so you can reword it
+  and try again. It refuses while a job is running, so send `/stop` first.
+
 ### Fixed
 
-- **Undoing a file now clears it from the review list.** The diff viewer kept the
-  file list it opened with, so after you confirmed an undo the file was still
-  listed, still showed its old diff, and still offered a second **Undo this
-  file** for a change that was already gone. The viewer now re-reads the change
-  set after every Keep or Undo: a file that no longer differs drops out, the
-  selection moves to the next file, and the viewer closes when nothing is left
-  to review. A file put back through Git also stops being reported as an
-  unreviewed DeskPilot change.
+- **The window keeps up with your phone.** Archiving, unarchiving, deleting or
+  starting a conversation from Telegram now updates the DeskPilot sidebar within
+  a few seconds, instead of leaving a deleted conversation listed and
+  unclickable. Clicking a conversation that has since gone says so and refreshes
+  the list, rather than doing nothing at all.
+- **An archived conversation no longer accepts new work.** Sending, regenerating
+  or editing a turn in an archived conversation — from the window or from your
+  phone — is refused with a message telling you to unarchive it first. Archiving
+  is you saying you are done with it.
+- **Deleting the conversation your phone was working in is now an error.**
+  Intercom used to fall through to "the most recent one" and quietly do the work
+  somewhere you never chose. It now refuses and asks you to pick one with
+  `/chats` or start one with `/new`.
+- **Deleting a conversation asks first.** The ✕ button beside a conversation now
+  **archives** it (reversible); deleting moved into the ⋯ menu — also reachable
+  by right-clicking the row — and always confirms.
+- **Linking your phone to Intercom no longer requires hunting for a chat id.**
+  Intercom ignores every chat until you confirm one, which meant your bot stayed
+  silent — even to `/start` — and there was no way to discover the number from
+  it. **Settings → Intercom → Link my phone** now listens for five minutes,
+  shows you the message it saw, and links the chat when you click **This is me**.
+  Nothing is ever linked automatically, and nothing you send during that window
+  is executed.
 - **A model with no published rate no longer reads as free.** The engine prices a
   turn from a table keyed by exact model id; a model newer than that table (for
   example `claude-opus-5`) comes back with *no* price, and DeskPilot was showing
@@ -29,6 +72,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Copy your own messages with one click.** Hovering a message you sent now
+  shows a ⧉ button beside the edit one, the same as on DeskPilot's replies — no
+  more selecting a prompt by hand to reuse it. Both also fall back to an older
+  copy method if the browser refuses clipboard access.
+- **Send files from your phone.** Attach a document, photo, voice note or video
+  in Telegram — with or without a caption — and DeskPilot saves it into your
+  project folder and puts the agent to work on it; photos also go to the model's
+  vision input. Previously an attachment was ignored without so much as a reply.
+  Files up to 20 MB (Telegram's own limit), and only from a project with **allow
+  phone control** ticked.
+- **Choose how a message is sent.** **Settings → General → Send a message with**
+  offers **Ctrl+Enter** (the new default, with Enter making a new line) or
+  **Enter** (with Shift+Enter making a new line). Ctrl+Enter by default so a
+  stray Enter mid-thought cannot fire a half-written instruction at an agent that
+  can change files and run commands.
+- **Tidy up conversations from your phone.** `/archive 2` hides one from the
+  list, `/unarchive 2` brings it back, and `/chats all` lists the archived ones
+  so you can see their numbers; `/delete 2` removes one for good and asks you to
+  confirm first, offering `/archive` as the reversible alternative.
+- **Watch a phone-driven job from the machine.** While a job you sent from
+  Telegram is running, the DeskPilot window marks that conversation and shows the
+  answer being written — including the model's thinking when that is switched on.
+  No page refresh.
+- **Telegram messages are formatted properly.** The agent writes Markdown and
+  Telegram renders none of it, so answers used to arrive as a wall of `##`, `**`
+  and pipe-delimited tables. Headings, bold, bullets, links, code and tables now
+  come through readable, and a message Telegram cannot render is resent as plain
+  text rather than lost. Telegram has no tables at all, so a narrow one is shown
+  as an aligned block and a wide one as one labelled record per row — long tables
+  are trimmed with a note pointing you back to DeskPilot for the rest.
+- **Switch conversations from your phone.** Intercom gains `/chats` to list your
+  conversations (newest first, marking the one you are in), `/chat 2` to switch
+  to one, and `/new` to start a fresh one. Asking the *agent* to switch chats
+  never worked and never could — which conversation is open is DeskPilot's state,
+  not something the agent can see or change. Listing and switching run nothing,
+  so they work even when no project is open; `/new <text>` still needs a project
+  with **allow phone control** ticked, because that runs work.
+- **Reach DeskPilot from your phone (Intercom).** When the agent needs an
+  answer, finishes, fails, or goes quiet, DeskPilot messages you on Telegram —
+  and you can reply to answer it, send a new instruction, `/stop` the job,
+  `/steer` it somewhere else, or `/new` a fresh conversation, without a remote
+  desktop session. It is **off by default** and stays off for every project until
+  you tick **allow phone control** on that project, so nothing can be driven
+  remotely by accident. Exactly one Telegram chat is allowed; anything else is
+  counted and thrown away without being read as an instruction. The bot token is
+  encrypted for your Windows account in its own file, so a settings backup can
+  never carry it. DeskPilot also keeps one silently-updating status message on
+  your phone that always states the time of its next check-in — if that time has
+  passed, DeskPilot has stopped. Set it up under **Settings → Intercom**; the
+  [getting-started guide](docs/intercom-getting-started.md) walks through it.
 - **The files panel is resizable.** Drag its left edge to make it as wide as you
   need (up to 60 % of the window), double-click the edge to snap back to the
   default, or focus it and use `←`/`→` — `Shift` for bigger steps, `Home` to

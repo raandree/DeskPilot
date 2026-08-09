@@ -1,0 +1,129 @@
+function Invoke-DpIntercomTurn {
+    <#
+    .SYNOPSIS
+        Runs a Turn requested from the phone and reports the outcome.
+    .DESCRIPTION
+        Resolves the bound Conversation (creating one on first use), runs the Turn
+        with the SSE stream pointed at Stream.Null - no browser is attached, but
+        the Conversation, Usage, Activity and pending change set are updated
+        exactly as for a local Turn - then pushes the result.
+
+        Called only from the pump's final step, on the accept loop, with no Turn
+        running. Invoke-DpTurn keeps servicing the listener while it runs, so the
+        browser stays responsive and /stop still lands.
+
+        The outcome message is composed from structured fields DeskPilot owns. The
+        agent's answer text is included only when sendFinalAnswer is on, and is
+        bounded and split by Format-DpIntercomMessage.
+    .PARAMETER Prompt
+        The prompt received from the phone.
+    .PARAMETER Image
+        An image Attachment to hand the Engine's native Vision input.
+    .OUTPUTS
+        None.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Driven by the pump from an already-authorised message; ShouldProcess is not meaningful on the accept thread.')]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Prompt,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Image
+    )
+
+    $state = $script:DeskPilot
+    $intercom = $state.Intercom
+
+    $conversation = $null
+    if ($intercom.ConversationId) {
+        $conversation = $state.Conversations[$intercom.ConversationId]
+        # A Conversation that was bound and has since gone is an error, not an
+        # invitation to do the work somewhere else.
+        if (-not $conversation) {
+            $intercom.ConversationId = $null
+            $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
+                'The conversation we were working in no longer exists.',
+                'Send /chats to pick another, or /new to start one.'
+            ) -Kind 'refused'
+            return
+        }
+    }
+    if (-not $conversation) {
+        $conversation = @($state.Conversations.Values) |
+            Where-Object { -not [bool](Get-DpPropertyValue -InputObject $_ -Name @('archived') -Default $false) } |
+            Sort-Object -Property updatedUtc -Descending |
+            Select-Object -First 1
+    }
+    if (-not $conversation) {
+        $conversation = New-DpConversation -Model $state.Settings.model
+        $state.Conversations[$conversation.id] = $conversation
+    }
+
+    $writable = Test-DpConversationWritable -Conversation $conversation
+    if (-not $writable.ok) {
+        $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
+            $writable.reason,
+            'Send /chats to pick another, or /new to start one.'
+        ) -Kind 'refused'
+        return
+    }
+
+    $intercom.ConversationId = [string]$conversation.id
+
+    $messagesBefore = $conversation.messages.Count
+    $intercom.LastActivityUtc = [DateTime]::UtcNow
+    $intercom.StallNotified = $false
+
+    # Publish what is running so the window can show it live: the SPA has no SSE
+    # stream for a Turn it did not start.
+    $intercom.RemoteTurn.active = $true
+    $intercom.RemoteTurn.conversationId = [string]$conversation.id
+    $intercom.RemoteTurn.prompt = $Prompt
+    $intercom.RemoteTurn.startedUtc = [DateTime]::UtcNow
+    $intercom.RemoteTurn.text = ''
+    $intercom.RemoteTurn.reasoning = ''
+
+    Add-DpIntercomLog -Direction 'system' -Kind 'turn-start' -Detail $Prompt
+
+    try {
+        $turnParams = @{
+            Conversation = $conversation
+            Prompt       = $Prompt
+            Stream       = [System.IO.Stream]::Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Image)) { $turnParams.Image = @($Image) }
+        Invoke-DpTurn @turnParams
+    }
+    catch {
+        $failure = Hide-DpIntercomSecret -Text "$_"
+        Add-DpIntercomLog -Direction 'system' -Kind 'turn-error' -Detail $failure -Accepted $false
+        $null = Send-DpIntercomMessage -Title 'The job failed to run.' -Line @($failure) -Kind 'failed'
+        return
+    }
+    finally {
+        $intercom.StallNotified = $false
+        $intercom.RemoteTurn.active = $false
+    }
+
+    if (-not [bool]$state.Settings.intercom.notifyOnDone) { return }
+
+    # Reporting must never be able to lose a finished job. Under Set-StrictMode
+    # -Version Latest a missing hashtable key is a terminating error, so an
+    # optional field read the wrong way used to throw here - after the Turn had
+    # run - and the operator was told nothing at all.
+    try {
+        Send-DpIntercomTurnResult -Conversation $conversation -MessagesBefore $messagesBefore
+    }
+    catch {
+        $reportError = Hide-DpIntercomSecret -Text "$_"
+        Add-DpIntercomLog -Direction 'system' -Kind 'report-error' -Detail $reportError -Accepted $false
+        $null = Send-DpIntercomMessage -Title 'The job finished.' -Line @(
+            "Conversation: $([string]$conversation.title)",
+            'Open DeskPilot to read the result.'
+        ) -Kind 'done'
+    }
+}

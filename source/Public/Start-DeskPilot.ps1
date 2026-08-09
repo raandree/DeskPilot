@@ -108,6 +108,15 @@ function Start-DeskPilot {
         # Files DeskPilot has changed but the user has not yet kept or undone,
         # keyed by Project folder and paired with a pre-Turn snapshot commit.
         Changes         = $changeStore
+        # Bumped whenever something other than the browser changes the Conversation
+        # list - which in practice means Intercom. The SPA polls it and reloads,
+        # because the Host Server has no way to push (see spec 110).
+        ConversationsRevision = 0
+        # Remote control from a phone over a Telegram bot (spec 110). Inert until
+        # it is enabled, a token is stored and a chat is allow-listed; the pump
+        # (Update-DpIntercomState) runs on the accept loop's idle tick and from
+        # Invoke-DpPendingRequest, so it also works while a Turn holds the thread.
+        Intercom        = Initialize-DpIntercom -Directory $dataDirFull
         DataDir         = $dataDirFull
         Engine          = $engine
         WebRoot         = $webRootFull
@@ -200,6 +209,11 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/git/cleanup'; Name = 'gitCleanup' }
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
             @{ Method = 'POST'; Pattern = '/api/atelier/setup'; Name = 'atelierSetup' }
+            @{ Method = 'GET'; Pattern = '/api/intercom'; Name = 'getIntercom' }
+            @{ Method = 'GET'; Pattern = '/api/intercom/turn'; Name = 'getIntercomTurn' }
+            @{ Method = 'PUT'; Pattern = '/api/intercom'; Name = 'putIntercom' }
+            @{ Method = 'POST'; Pattern = '/api/intercom/test'; Name = 'testIntercom' }
+            @{ Method = 'POST'; Pattern = '/api/intercom/pair'; Name = 'pairIntercom' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
             @{ Method = 'GET'; Pattern = '/api/update'; Name = 'getUpdate' }
@@ -219,6 +233,7 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/messages'; Name = 'postMessage' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/regenerate'; Name = 'regenerateTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/edit'; Name = 'editTurn' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/checkpoint'; Name = 'restoreCheckpoint' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/question'; Name = 'submitUserPrompt' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/stop'; Name = 'stopTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/title'; Name = 'titleConversation' }
@@ -281,6 +296,10 @@ function Start-DeskPilot {
                 # Reap a finished update check and re-trigger it when due, without
                 # ever blocking the accept loop (the Gallery call is off-thread).
                 try { Update-DpUpdateCheckState } catch { $null = $_ }
+                # Advance Intercom. -AllowTurn is passed only here: this is the one
+                # caller with no Turn on the stack, so a prompt that arrived from
+                # the phone can safely start one.
+                try { Update-DpIntercomState -AllowTurn } catch { $null = $_ }
                 Start-Sleep -Milliseconds 50
                 continue
             }
@@ -291,6 +310,8 @@ function Start-DeskPilot {
     finally {
         $script:DeskPilot.Listener = $null
         if ($script:DeskPilot.UpdateJob) { $script:DeskPilot.UpdateJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.UpdateJob = $null }
+        # Tell the phone we are going, so silence never has to be interpreted.
+        try { Stop-DpIntercom -Confirm:$false } catch { $null = $_ }
         try { $listener.Stop() } catch { $null = $_ }
         Write-Host 'DeskPilot stopped.' -ForegroundColor DarkGray
     }

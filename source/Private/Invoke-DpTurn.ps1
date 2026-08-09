@@ -36,6 +36,10 @@ function Invoke-DpTurn {
     $writer = New-DpSseWriter -Stream $Stream
     $script:DeskPilot.TurnRunning = $true
     $script:DeskPilot.CancelRequested = $false
+    if ($script:DeskPilot.Intercom) {
+        $script:DeskPilot.Intercom.LastActivityUtc = [DateTime]::UtcNow
+        $script:DeskPilot.Intercom.StallNotified = $false
+    }
     $startTime = [DateTime]::UtcNow
     $assistantId = New-DpId -Prefix 'm'
     $settings = $script:DeskPilot.Settings
@@ -58,6 +62,13 @@ function Invoke-DpTurn {
     $flush = {
         if ($turnState.pendingEvent -and $turnState.pendingText.Length -gt 0) {
             $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $turnState.pendingText.ToString() }))
+            # A Turn started from the phone has no browser request to stream over,
+            # so the same text is also buffered for the SPA to poll (spec 110).
+            $remote = if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.RemoteTurn } else { $null }
+            if ($remote -and $remote.active) {
+                if ($turnState.pendingEvent -eq 'reasoning') { $remote.reasoning += $turnState.pendingText.ToString() }
+                else { $remote.text += $turnState.pendingText.ToString() }
+            }
         }
         $turnState.pendingEvent = $null
         [void]$turnState.pendingText.Clear()
@@ -80,6 +91,20 @@ function Invoke-DpTurn {
                     title      = $questionnaire.title
                     questions  = $questionnaire.questions
                 }))
+        # The phone learns about the question in the same breath as the window, so
+        # an operator who is away is never the last to know (spec 110).
+        try {
+            $questionParams = @{
+                RequestId      = [string]$request.Id
+                ConversationId = [string]$request.ConversationId
+                Questionnaire  = $questionnaire
+            }
+            Send-DpIntercomQuestion @questionParams
+        }
+        catch {
+            $intercomError = $_
+            Write-Verbose "Could not forward the question to Intercom: $intercomError"
+        }
     }
 
     # Translate each Engine Information record into at most one SSE frame:
@@ -95,6 +120,9 @@ function Invoke-DpTurn {
     # preserved exactly.
     $emit = {
         param($Record)
+        # Intercom's stall watchdog measures silence, so every record the Engine
+        # produces is proof of life - stamped before any of it is interpreted.
+        if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.LastActivityUtc = [DateTime]::UtcNow }
         if ($userPromptBridge) {
             $questionText = Get-DpUserPromptText -Record $Record
             if ($questionText) { $userPromptBridge.CaptureQuestion($questionText) }
@@ -204,6 +232,16 @@ function Invoke-DpTurn {
         if ($settings.workspaceFolder) {
             $snapshot = New-DpChangeSnapshot -Root $settings.workspaceFolder -Id $assistantId
             if ($snapshot.sha) { $turnSnapshotSha = $snapshot.sha }
+        }
+
+        # The same snapshot, made addressable from the transcript: the user Message
+        # carries the Checkpoint the thread offers to go back to.
+        if ($turnSnapshotSha) {
+            $userMessage.checkpoint = @{
+                sha        = $turnSnapshotSha
+                root       = [string]$settings.workspaceFolder
+                createdUtc = [DateTime]::UtcNow.ToString('o')
+            }
         }
 
         # Run the Engine call with a bounded retry for transient PRE-STREAM

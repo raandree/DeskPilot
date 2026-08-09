@@ -32,6 +32,12 @@
     $listener = $state.Listener
     if (-not $listener) { return }
 
+    # Advance Intercom from inside the Turn loop as well. This is exactly when it
+    # matters: an Ask-User question has to reach the phone, the answer has to come
+    # back, and /stop has to land - all while this thread is busy streaming.
+    # -AllowTurn is deliberately not passed: a Turn is already running.
+    try { Update-DpIntercomState } catch { $null = $_ }
+
     $handled = 0
     while ($handled -lt $MaxRequests -and $listener.Pending())
     {

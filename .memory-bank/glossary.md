@@ -38,7 +38,7 @@ synonym.
 | Attachment | A file added to one Turn through the Attach button, drag-and-drop, or clipboard paste. DeskPilot uploads it before sending the prompt; image Attachments are also passed to the Engine's native Vision input. | Reference File, Artifact, embedded file |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
-| Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint, backup, snapshot (that is the pre-Turn snapshot), stage |
+| Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint (that is the pre-Turn restore point), backup, snapshot (that is the pre-Turn snapshot), stage |
 | Save Message | The one-line description recorded with a Save. Prefilled from the change set, optionally written by the Model on request, and always editable before the Save happens. | commit message (in UI copy), comment, note, caption |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
 | Default Branch | The repository's primary integration branch and the only Merge target: `origin/HEAD` if set, else a local `main`, else `master`. | trunk, mainline, master (when you mean the concept rather than the literal branch name) |
@@ -56,7 +56,13 @@ synonym.
 | Agent Memory | Durable, declarative notes the **agent** curates about the user and their environment across Conversations (conventions, tools, observed preferences, lessons), bounded and injected into every Turn. Learned automatically (throttled) or edited by hand. | memory (bare), agent notes, the memory bank |
 | CopilotAtelier | The sibling repository (`raandree/CopilotAtelier`) of curated Customizations (agents, skills, instructions, prompt files) that DeskPilot can download and register into `~/.copilot` via an opt-in, consent-gated **CopilotAtelier setup** in the Agent menu. | plugin pack, marketplace, extension store, the atelier (bare) |
 | Update | Replacing the installed DeskPilot — and, in lock-step, the Engine (ShellPilot) — with a newer PowerShell Gallery release. DeskPilot checks for one periodically and on demand, but only ever installs on explicit user consent, and the new version takes effect on the next launch. | upgrade, patch, self-update (in UI copy) |
+| Intercom | DeskPilot's two-way link to the operator's phone: it pushes a blocked question, a finished or failed job, and a stall warning to one allow-listed Telegram chat, and accepts answers, instructions and commands back. Off by default, and inert for any Project that has not opted in. | beacon, relay, remote control, bot, notifier, companion |
+| Channel | The transport an Intercom speaks over — Telegram in v1. An Intercom speaks over a Channel; the two are not interchangeable. | transport (in UI copy), provider, connector |
+| Check-in | One refresh of the live status message, which always states the time of the **next** check-in. A check-in time that has passed is how the operator detects that DeskPilot has stopped. | heartbeat (in UI copy), ping, keepalive |
+| Keyboard | The row of tappable buttons Intercom attaches under a Channel message so a closed choice can be answered with one tap instead of typed. Offered for a single-select question and the `/chats` list; the written form always still works. | inline keyboard (in UI copy), menu, quick reply, chips, buttons (in identifiers) |
 | Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
+| Checkpoint | The pre-Turn snapshot made addressable from the transcript: a marker above a user Message offering to go back to the moment just before it was sent. Restoring one discards that Message and every later one, and puts back the files the discarded Turns wrote. | restore point, revert point, save point, rollback, snapshot (that is the underlying commit), Save (that is a Git commit) |
+| Restore (a Checkpoint) | Going back to a Checkpoint: the Conversation is truncated, the discarded prompt returns to the composer, and the files those Turns wrote are put back. The user's own edits to other files are untouched. Reachable from the window and from Intercom's `/undo`. | roll back, rewind, revert (that is a Git revert), reset, undo (that is a single-file Undo) |
 
 ## Notes
 
@@ -95,6 +101,14 @@ synonym.
   what makes the work durable and sendable. **Undo** puts a file back the way it
   was before DeskPilot touched it. Saving a file also ends its pending state, but
   Keeping one never commits it; never use the two words interchangeably.
+- **Checkpoint vs. Undo vs. Save.** All three put files back, at different
+  scopes. **Undo** reverts one pending file. A **Checkpoint** reverts everything
+  a run of Turns wrote *and* rewinds the Conversation to before the prompt that
+  started them — it is the only one of the three that touches the transcript.
+  **Save** does the opposite: it makes the current state permanent. A Checkpoint
+  restores only what DeskPilot wrote, never the whole folder, so hand edits the
+  user made in the meantime survive; that is the same boundary the pending change
+  set draws, and why a Checkpoint is not a `git reset`.
 - **Default Branch vs. the literal name.** **Default Branch** is the *concept*
   (the only Merge target); the actual branch is named `main` or `master`. Use
   **Default Branch** in code, UI copy, and docs; only write `main`/`master` when
@@ -175,3 +189,11 @@ synonym.
   ShellPilot **modules** from the PowerShell Gallery (`Install-Module`), while the
   **CopilotAtelier setup** provisions the `~/.copilot` Customization **roots** from
   a repository zip. Keep them distinct in code and copy.
+- **Intercom is bidirectional.** The word normally suggests one-way signalling;
+  here it is deliberately two-way — DeskPilot pushes *and* accepts instructions.
+  Never describe it as a beacon, a notifier, or an alerting feature: those names
+  hide the half that carries authority. **Beacon** was rejected precisely because
+  it is both one-way and, in security tooling, the word for malware calling home.
+- **Intercom vs. Channel vs. Check-in.** The **Intercom** is the feature. The
+  **Channel** is what it speaks over (Telegram). A **Check-in** is one refresh of
+  the live status message. Three distinct concepts; do not collapse them.

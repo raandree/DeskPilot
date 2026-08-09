@@ -840,7 +840,9 @@ button.tree-row {
     font-size: 14px;
 }
 
-.conv-item .conv-del {
+/* The one-click row button. It archives (reversible); deleting lives in the
+   actions menu behind a confirmation. */
+.conv-item .conv-archive {
     opacity: 0;
     border: none;
     background: none;
@@ -851,12 +853,12 @@ button.tree-row {
     border-radius: 6px;
 }
 
-.conv-item:hover .conv-del {
+.conv-item:hover .conv-archive {
     opacity: 1;
 }
 
-.conv-item .conv-del:hover {
-    color: var(--danger);
+.conv-item .conv-archive:hover {
+    color: var(--text);
     background: var(--surface-2);
 }
 
@@ -2320,6 +2322,150 @@ button.tree-row {
 .update-interval-row input {
     width: 90px;
     flex: 0 0 auto;
+}
+
+/* ===== Intercom (remote control from a phone) ===== */
+
+/* Topbar chip. Hidden entirely while Intercom is off, so a feature nobody uses
+   adds no chrome; once on, its colour is the whole health report. */
+.intercom-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.intercom-chip:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.intercom-chip.ok {
+    border-color: var(--ok, #2e7d5b);
+    color: var(--ok, #2e7d5b);
+}
+
+.intercom-chip.warn {
+    border-color: var(--warn, #b8860b);
+    color: var(--warn, #b8860b);
+}
+
+.intercom-chip.bad {
+    border-color: var(--danger, #b3261e);
+    color: var(--danger, #b3261e);
+}
+
+.intercom-panel {
+    font-size: 13px;
+    color: var(--text);
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.intercom-state {
+    font-weight: 600;
+}
+
+.intercom-state.ok {
+    color: var(--ok, #2e7d5b);
+}
+
+.intercom-state.warn {
+    color: var(--warn, #b8860b);
+}
+
+.intercom-state.bad {
+    color: var(--danger, #b3261e);
+}
+
+.intercom-err {
+    margin-top: 4px;
+    color: var(--danger, #b3261e);
+}
+
+.intercom-counts {
+    margin-top: 6px;
+    color: var(--muted);
+}
+
+.intercom-log {
+    margin-top: 8px;
+    max-height: 180px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 6px;
+}
+
+.intercom-log-row {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    padding: 2px 0;
+}
+
+/* A rejected message is a possible attack, so it is the one row that shouts. */
+.intercom-log-row.rejected .intercom-kind {
+    color: var(--danger, #b3261e);
+    font-weight: 600;
+}
+
+.intercom-arrow {
+    color: var(--muted);
+}
+
+.intercom-kind {
+    color: var(--muted);
+    min-width: 74px;
+}
+
+.project-remote {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.intercom-candidate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+    border-top: 1px solid var(--border);
+}
+
+/* A conversation the phone is currently driving. */
+.conv-working {
+    flex: 0 0 auto;
+    font-size: 12px;
+    animation: conv-working-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes conv-working-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .conv-working { animation: none; }
+}
+
+/* The live view of a Turn started from the phone, replaced by the recorded
+   message once it finishes. */
+.remote-live .msg-assistant.is-remote {
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
 }
 
 /* ===== Popover ===== */
@@ -4643,6 +4789,53 @@ button.tree-row {
     font-family: var(--mono);
 }
 
+/* ===== Checkpoint divider ===== */
+/* A rule across the thread with the action sitting in the gap, so it reads as a
+   point in time you can return to rather than as another message. */
+.checkpoint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 18px 0 6px;
+    opacity: 0.55;
+    transition: opacity 0.12s ease;
+}
+
+.checkpoint::before,
+.checkpoint::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.checkpoint:hover,
+.checkpoint:focus-within {
+    opacity: 1;
+}
+
+.checkpoint-label {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 10px;
+    padding: 2px 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.checkpoint-label:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
 /* ===== Message edit & action buttons (regenerate, edit) ===== */
 .user-actions {
     display: flex;
@@ -4654,6 +4847,11 @@ button.tree-row {
 }
 
 .msg-user:hover .user-actions {
+    opacity: 1;
+}
+
+/* Keyboard focus must reveal them too, or tabbing lands on an invisible button. */
+.msg-user:focus-within .user-actions {
     opacity: 1;
 }
 

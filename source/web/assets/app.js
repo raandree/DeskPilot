@@ -3,7 +3,6 @@ import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.j
 import {
     newFileRows,
     parseUnifiedDiff,
-    reconcileDiffFiles,
     splitRelPath,
     statusGlyph,
     statusLabel,
@@ -119,6 +118,22 @@ const state = {
     // Latest cached update status from GET /api/update (or null before the first
     // fetch). Drives the update banner and the Settings "Updates" panel.
     update: null,
+    // Latest cached Intercom status from GET /api/intercom. Drives the topbar
+    // chip and the Settings "Intercom" panel. intercomStale is set when the poll
+    // fails, so the panel can say it is out of date rather than keep painting the
+    // last good response as if it were live.
+    intercom: null,
+    intercomStale: false,
+    // Latest /api/intercom/turn payload: what a Turn started from the phone is
+    // producing right now. Polled rather than streamed - a remote Turn has no
+    // browser request to stream over, and a long-lived SSE channel would hold
+    // the Host Server's single accept thread.
+    remoteTurn: null,
+    remoteTurnWasActive: false,
+    // Last conversation-store revision the sidebar was rendered from. Intercom
+    // can create, archive, unarchive and delete conversations, and the Host
+    // Server cannot push - so the window compares this and reloads.
+    conversationsRevision: null,
     updateDismissed: false,
     restartDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
@@ -178,6 +193,31 @@ function effectiveTheme() {
     return t;
 }
 
+// Which keystroke sends a prompt. A per-machine input preference, so it lives in
+// localStorage beside the theme rather than in Settings - the Host Server gains
+// nothing from knowing it, and it shapes no Turn. Ctrl+Enter is the default: a
+// stray Enter mid-thought should not send a half-written instruction to an agent
+// that can change files and run commands.
+function sendKeyMode() {
+    return localStorage.getItem('ad_sendkey') === 'enter' ? 'enter' : 'ctrl-enter';
+}
+
+// True when this keystroke means "send" under the current preference. Shift+Enter
+// always means a newline, in both modes.
+function isSendKey(e) {
+    if (e.key !== 'Enter' || e.shiftKey) return false;
+    const withModifier = e.ctrlKey || e.metaKey;
+    return sendKeyMode() === 'enter' ? !withModifier : withModifier;
+}
+
+function applySendKeyHint() {
+    const promptEl = $('prompt');
+    if (!promptEl) return;
+    promptEl.placeholder = sendKeyMode() === 'enter'
+        ? 'Message DeskPilot\u2026  (Enter to send, Shift+Enter for a new line)'
+        : 'Message DeskPilot\u2026  (Ctrl+Enter to send, Enter for a new line)';
+}
+
 function applyTheme() {
     const t = localStorage.getItem('ad_theme') || 'system';
     document.documentElement.dataset.theme = t;
@@ -212,6 +252,7 @@ if (window.matchMedia) {
 // ===== Init =====
 async function init() {
     applyTheme();
+    applySendKeyHint();
     wireGlobal();
     renderExamples();
     let health = null;
@@ -233,6 +274,8 @@ async function enterApp() {
     await refreshUsage();
     refreshUpdateStatus();
     wireUpdateAutoRefresh();
+    refreshIntercom();
+    wireIntercomAutoRefresh();
     // Deep link: /?c=<id> opens that Conversation directly (used by "Open in new
     // window"), else fall back to the most recent, else a fresh Conversation.
     const deepId = new URLSearchParams(location.search).get('c');
@@ -425,6 +468,11 @@ async function resetLifetime() {
 }
 
 // ===== Conversations =====
+function remoteWorkingOn() {
+    const r = state.remoteTurn;
+    return r && r.active ? r.conversationId : null;
+}
+
 function renderConversationList() {
     if (state.searchResults) { renderSearchResults(); return; }
     const list = $('conversation-list');
@@ -446,6 +494,12 @@ function renderConversationList() {
         const name = el('conv-name');
         name.textContent = (c.pinned ? '📌 ' : '') + (c.title || 'New conversation');
         item.appendChild(name);
+        if (remoteWorkingOn() === c.id) {
+            const working = el('conv-working');
+            working.textContent = '📻';
+            working.title = 'Working on a request from your phone';
+            item.appendChild(working);
+        }
         if (c.unread) {
             const unreadDot = el('conv-unread-dot');
             unreadDot.title = 'Unread';
@@ -456,12 +510,17 @@ function renderConversationList() {
         menu.title = 'Conversation actions';
         menu.setAttribute('aria-label', 'Conversation actions');
         menu.onclick = (e) => { e.stopPropagation(); openConvMenu(c, menu); };
-        const del = el('conv-del', 'button');
-        del.textContent = '✕';
-        del.title = 'Delete';
-        del.onclick = (e) => { e.stopPropagation(); deleteConversation(c.id); };
-        item.append(menu, del);
+        // The one-click button archives. Deleting is irreversible, so it lives in
+        // the actions menu behind a confirmation rather than a hair's breadth
+        // from the row you were only trying to tidy away.
+        const archive = el('conv-archive', 'button');
+        archive.textContent = c.archived ? '↩' : '✕';
+        archive.title = c.archived ? 'Unarchive' : 'Archive';
+        archive.setAttribute('aria-label', archive.title);
+        archive.onclick = (e) => { e.stopPropagation(); toggleArchive(c.id, !c.archived); };
+        item.append(menu, archive);
         item.onclick = () => selectConversation(c.id);
+        item.oncontextmenu = (e) => { e.preventDefault(); openConvMenu(c, item); };
         list.appendChild(item);
     }
     updateArchivedToggle();
@@ -566,6 +625,8 @@ function openConvMenu(summary, anchor) {
         mk('Export as Markdown', () => exportConversation(summary.id)),
         mk('Details', () => showConversationDetails(summary, anchor)),
         mk('Session info', () => openSessionInfo(anchor, summary.id)),
+        el('menu-divider'),
+        mk('Delete…', () => deleteConversation(summary.id)),
     );
     document.body.appendChild(menu);
     positionConvPopover(menu, anchor);
@@ -1065,6 +1126,27 @@ async function copyTranscript(id) {
     }
 }
 
+// Copy a Message to the clipboard. The Clipboard API needs a secure context,
+// which loopback is - but a denied permission or an older browser still lands
+// here, so the textarea fallback keeps a one-click action from doing nothing.
+async function copyMessageText(text, label) {
+    const value = (text || '').toString();
+    const done = label || 'Copied message.';
+    try {
+        await navigator.clipboard.writeText(value);
+        toast(done);
+        return;
+    } catch { /* fall through */ }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    toast(ok ? done : 'Could not copy.');
+}
+
 // Build a Markdown transcript of a Conversation and download it.
 async function exportConversation(id) {
     let conv;
@@ -1103,7 +1185,19 @@ function goHome() {
 }
 
 async function selectConversation(id) {
-    state.current = await api('GET', '/api/conversations/' + id);
+    try {
+        state.current = await api('GET', '/api/conversations/' + id);
+    }
+    catch (e) {
+        // The row can outlive the Conversation: Intercom may have deleted it
+        // since the sidebar was drawn. Clicking it used to do nothing at all.
+        if (e && e.status === 404) {
+            toast('That conversation no longer exists.');
+            await syncConversationsFromServer();
+            return;
+        }
+        throw e;
+    }
     $('conv-title').value = state.current.title || '';
     setModelSelect(state.current.model || state.defaultModel);
     seedPromptHistory(state.current.messages);
@@ -1121,6 +1215,11 @@ async function selectConversation(id) {
 }
 
 async function deleteConversation(id) {
+    // Deleting a Conversation cannot be undone, and archiving is what people
+    // usually mean, so the confirmation names both.
+    const summary = state.conversations.find((c) => c.id === id);
+    const title = (summary && summary.title) || 'this conversation';
+    if (!window.confirm(`Delete “${title}” permanently?\n\nThis cannot be undone. Archive it instead if you only want it out of the way.`)) return;
     await api('DELETE', '/api/conversations/' + id);
     state.conversations = state.conversations.filter((c) => c.id !== id);
     if (state.current && state.current.id === id) {
@@ -1141,6 +1240,7 @@ function renderThread() {
         return;
     }
     for (const m of state.current.messages) {
+        if (m.role === 'user' && m.checkpoint && m.checkpoint.sha) thread.appendChild(buildCheckpointEl(m));
         thread.appendChild(m.role === 'user' ? buildUserEl(m) : finalizeAssistant(buildAssistantEl(m), m));
     }
     markLastAssistant();
@@ -1165,6 +1265,53 @@ function buildEmptyState() {
     return wrap;
 }
 
+// The marker above a prompt: everything from here on can be undone in one go.
+// DeskPilot already snapshots the project before every turn, so a checkpoint is
+// that snapshot made reachable from the transcript.
+function buildCheckpointEl(m) {
+    const wrap = el('checkpoint');
+    const label = el('checkpoint-label', 'button');
+    label.type = 'button';
+    label.title = 'Go back to how things were just before this message';
+    // Inline SVG rather than a glyph: the branch characters in Unicode have
+    // patchy font coverage and fall back to a tofu box on some Windows installs.
+    label.innerHTML = '<svg class="checkpoint-ico" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">' +
+        '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" ' +
+        'd="M4.5 4.2v7.6M4.5 7.4h4a3 3 0 0 0 3-3v-.6"/>' +
+        '<circle cx="4.5" cy="2.8" r="1.4" fill="currentColor"/>' +
+        '<circle cx="4.5" cy="13.2" r="1.4" fill="currentColor"/>' +
+        '<circle cx="11.5" cy="2.8" r="1.4" fill="currentColor"/>' +
+        '</svg> Restore Checkpoint';
+    label.onclick = () => restoreCheckpoint(m);
+    wrap.appendChild(label);
+    return wrap;
+}
+
+async function restoreCheckpoint(m) {
+    if (state.streaming) { toast('Finish the current turn first.'); return; }
+    if (!state.current) return;
+    const when = m.checkpoint && m.checkpoint.createdUtc ? new Date(m.checkpoint.createdUtc).toLocaleTimeString() : '';
+    const confirmed = window.confirm(
+        `Go back to before this message${when ? ' (' + when + ')' : ''}?\n\n` +
+        'This removes it and everything after it from the conversation, and puts back any files DeskPilot changed since. ' +
+        'Your own edits to other files are left alone. This cannot be undone.');
+    if (!confirmed) return;
+    try {
+        const r = await api('POST', '/api/conversations/' + state.current.id + '/checkpoint', { messageId: m.id });
+        await selectConversation(state.current.id);
+        const promptEl = $('prompt');
+        if (promptEl && r.prompt) {
+            promptEl.value = r.prompt;
+            autoGrow(promptEl);
+            setSendEnabled(true);
+            promptEl.focus();
+        }
+        await refreshExplorer({ silent: true }).catch(() => {});
+        const touched = (r.restored || []).length + (r.removed || []).length;
+        toast(touched ? `Restored checkpoint — ${touched} file${touched === 1 ? '' : 's'} put back.` : 'Restored checkpoint.');
+    } catch (e) { toast((e && e.message) || 'Could not restore that checkpoint.'); }
+}
+
 function buildUserEl(m) {
     const wrap = el('msg msg-user');
     if (m && m.id) wrap.dataset.id = m.id;
@@ -1180,9 +1327,16 @@ function buildUserEl(m) {
         badge.textContent = 'Sent from queue';
         wrap.appendChild(badge);
     }
-    // Edit & resend (only meaningful for a persisted message with an id).
+    // Edit & resend, and copy (only meaningful for a persisted message with text).
     if (m && m.id && m.text) {
         const actions = el('user-actions');
+        const copy = el('msg-action-btn', 'button');
+        copy.type = 'button';
+        copy.title = 'Copy message';
+        copy.setAttribute('aria-label', 'Copy message');
+        copy.textContent = '⧉';
+        copy.onclick = () => copyMessageText(m.text);
+        actions.appendChild(copy);
         const edit = el('msg-action-btn', 'button');
         edit.type = 'button';
         edit.title = 'Edit & resend';
@@ -1375,10 +1529,7 @@ async function undoTurnFiles(paths, btn, node) {
         if (r.skipped && r.skipped.length) parts.push(r.skipped.length + ' skipped');
         toast(parts.length ? 'Undo: ' + parts.join(', ') + '.' : 'Nothing to undo.');
         if (node) { node.classList.add('hidden'); node.innerHTML = ''; }
-        gitChanges.at = 0;
-        aiChanges.at = 0;
-        await refreshExplorer();
-        await refreshDiffViewer();
+        refreshExplorer();
     } catch (e) { toast(e.message); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Undo'; } }
 }
@@ -1405,35 +1556,6 @@ function openDiffViewer(files, selectRel) {
 function closeDiffViewer() {
     $('diff-backdrop').classList.add('hidden');
     $('diff-modal').classList.add('hidden');
-}
-
-function diffViewerIsOpen() {
-    return !$('diff-modal').classList.contains('hidden');
-}
-
-// What the change sets currently hold for a path, or null when nothing differs
-// any more. The pending set wins: its record carries the pre-Turn snapshot the
-// viewer diffs against.
-function changeRecordFor(rel) {
-    const key = String(rel || '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-    if (!key) return null;
-    const pending = aiChanges.files.get(key);
-    if (pending && pending.status !== 'unchanged') return pending;
-    return gitChangeList().find((f) => String(f.rel).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() === key) || null;
-}
-
-// Keep and Undo change the working tree under an open viewer. Re-derive its list
-// from the refreshed change sets so an undone file stops being listed (and stops
-// offering a second undo), and close the viewer when nothing is left to review.
-// Callers must refresh the change sets first.
-async function refreshDiffViewer() {
-    if (!diffViewerIsOpen()) return;
-    const next = reconcileDiffFiles(diffView.files, diffView.index, changeRecordFor);
-    if (!next.files.length) { closeDiffViewer(); return; }
-    diffView.files = next.files;
-    diffView.index = next.index;
-    renderDiffFileList();
-    await loadDiffFile();
 }
 
 function renderDiffFileList() {
@@ -2592,6 +2714,20 @@ function renderProjectsManager() {
         const row = el('project-row' + (isSel ? ' selected' : ''));
         const meta = el('project-meta');
         meta.innerHTML = `<div class="project-name">${escapeHtml(p.name)}${isSel ? ' <span class="project-badge">selected</span>' : ''}</div><div class="muted tiny path">${escapeHtml(p.path)}</div>`;
+        // Remote control is opted into per project, never inherited: this is the
+        // boundary that decides whether a message from a phone may act at all.
+        const remote = document.createElement('label');
+        remote.className = 'project-remote tiny';
+        remote.title = 'Allow this project to be controlled from your phone (Settings → Intercom)';
+        const remoteBox = document.createElement('input');
+        remoteBox.type = 'checkbox';
+        remoteBox.checked = p.intercom === true;
+        remoteBox.onchange = () => {
+            const next = projects().map((x) => (x.id === p.id ? Object.assign({}, x, { intercom: remoteBox.checked }) : x));
+            projectAction({ projects: next });
+        };
+        remote.append(remoteBox, document.createTextNode(' allow phone control'));
+        meta.appendChild(remote);
         const actions = el('project-actions');
         if (!isSel) {
             const use = document.createElement('button');
@@ -3044,6 +3180,313 @@ function wireUpdateAutoRefresh() {
     window.addEventListener('focus', tick);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
     setInterval(tick, 60000);
+}
+
+// ===== Intercom =====
+let _intercomAutoWired = false;
+
+// The setup guide. Intercom is the one feature where reading first genuinely
+// matters - a message from a phone can drive the agent - so the Settings panel
+// links straight to it rather than just telling the user it exists.
+const INTERCOM_GUIDE_URL = 'https://github.com/raandree/DeskPilot/blob/main/docs/intercom-getting-started.md';
+
+// Reflect the Host Server's Intercom state. The server owns the poll loop and
+// the transport; the SPA only reports what it finds, so this stays a cheap
+// local request.
+async function refreshIntercom() {
+    try {
+        state.intercom = await api('GET', '/api/intercom');
+        state.intercomStale = false;
+    }
+    catch {
+        // A dead Host Server used to leave this panel frozen on its last good
+        // response - counters, status and all - so a stopped DeskPilot looked
+        // exactly like a running one with an old error.
+        state.intercomStale = true;
+        updateIntercomChip();
+        renderIntercomPanel();
+        return;
+    }
+    updateIntercomChip();
+    renderIntercomPanel();
+    renderIntercomPairing();
+}
+
+function wireIntercomAutoRefresh() {
+    if (_intercomAutoWired) return;
+    _intercomAutoWired = true;
+    const tick = () => {
+        if (document.visibilityState !== 'visible') return;
+        refreshIntercom();
+    };
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') tick(); });
+    setInterval(tick, 20000);
+    // While a pairing window is open the user is staring at the panel waiting for
+    // their own message to appear, so poll fast enough to feel immediate.
+    setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (!state.intercom || !state.intercom.pairing || !state.intercom.pairing.active) return;
+        refreshIntercom();
+    }, 2000);
+    setInterval(pollRemoteTurn, 3000);
+}
+
+// Follow a Turn the phone started. There is no SSE stream for it - the Host
+// Server accepts on one thread, so a persistent event channel would hold the
+// only thread it has - and the request that drives a normal Turn does not exist
+// here. Polling a cheap local route is what fits the architecture.
+// Re-read the Conversation list after something other than this window changed
+// it, and make sure the open Conversation still exists.
+async function syncConversationsFromServer() {
+    await loadConversations();
+    const openId = state.current && state.current.id;
+    if (openId && !state.conversations.some((c) => c.id === openId)) {
+        state.current = null;
+        if (state.conversations.length) await selectConversation(state.conversations[0].id);
+        else await newConversation();
+        return;
+    }
+    if (!openId && state.conversations.length) await selectConversation(state.conversations[0].id);
+}
+
+async function pollRemoteTurn() {
+    if (document.visibilityState !== 'visible') return;
+    // Our own Turn owns the thread while it streams; never paint over it.
+    if (state.streaming) return;
+    let data;
+    try { data = await api('GET', '/api/intercom/turn'); }
+    catch { return; }
+
+    const wasActive = state.remoteTurnWasActive;
+    state.remoteTurn = data;
+    state.remoteTurnWasActive = !!data.active;
+
+    if (data.active || wasActive) renderConversationList();
+    renderRemoteLive();
+
+    // Intercom can create, archive, unarchive and delete conversations. Without
+    // this the sidebar kept showing a deleted one, and clicking it did nothing.
+    const revision = data.conversationsRevision;
+    if (typeof revision === 'number' && state.conversationsRevision !== null && revision !== state.conversationsRevision) {
+        state.conversationsRevision = revision;
+        try { await syncConversationsFromServer(); } catch { /* a transient failure just leaves the list as it was */ }
+    }
+    else if (typeof revision === 'number') {
+        state.conversationsRevision = revision;
+    }
+
+    if (wasActive && !data.active) {
+        // The live view was an approximation; the recorded Message is the truth,
+        // and it carries the activity, usage and task list the buffer never had.
+        try {
+            await loadConversations();
+            if (state.current && data.conversationId && state.current.id === data.conversationId) {
+                await selectConversation(data.conversationId);
+            }
+        } catch { /* a transient failure just leaves the list as it was */ }
+    }
+}
+
+// The live bubble: the prompt that arrived from the phone, plus the answer as it
+// is written. Replaced by the real Message once the Turn ends.
+function renderRemoteLive() {
+    const thread = $('thread');
+    if (!thread) return;
+    const data = state.remoteTurn;
+    const show = data && data.active && !state.streaming &&
+        state.current && data.conversationId && state.current.id === data.conversationId;
+
+    let node = document.getElementById('remote-live');
+    if (!show) { if (node) node.remove(); return; }
+
+    if (!node) {
+        node = el('remote-live');
+        node.id = 'remote-live';
+        const promptWrap = el('msg msg-user');
+        const bubble = el('bubble');
+        bubble.textContent = data.prompt || '';
+        const badge = el('steered-badge');
+        badge.textContent = '📻 From your phone';
+        promptWrap.append(bubble, badge);
+        const answer = buildAssistantEl({ id: 'remote-live-msg' });
+        answer.classList.add('is-remote');
+        node.append(promptWrap, answer);
+        node._refs = answer._refs;
+        thread.appendChild(node);
+        const emptyState = thread.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+    }
+
+    const refs = node._refs;
+    refs.content.innerHTML = renderMarkdown(data.text || '') ||
+        '<span class="muted tiny">Working…</span>';
+    if (data.reasoning) {
+        const thinking = node.querySelector('.thinking');
+        thinking.classList.remove('hidden');
+        node.querySelector('.thinking .disclosure-body').textContent = data.reasoning;
+    }
+    scrollThread();
+}
+
+// Start or stop the pairing window. Without this the setup is impossible to
+// finish: Intercom will not listen until it knows which chat is yours, so the
+// bot cannot answer even /start, and there is no way to learn the id from it.
+async function setIntercomPairing(stop) {
+    try {
+        state.intercom = await api('POST', '/api/intercom/pair', { stop: !!stop });
+        updateIntercomChip();
+        renderIntercomPanel();
+        renderIntercomPairing();
+    } catch (e) { toast((e && e.message) || 'Could not start linking.'); }
+}
+
+function renderIntercomPairing() {
+    const box = $('set-ic-pairing');
+    if (!box) return;
+    const i = state.intercom;
+    if (!i) { box.innerHTML = '<span class="muted tiny">Checking…</span>'; return; }
+
+    if (i.chatId) {
+        box.innerHTML = `<div class="intercom-state ok">Linked to chat ${escapeHtml(i.chatId)}</div>` +
+            '<div class="muted tiny">Only this chat can reach DeskPilot. To link a different phone, clear the box below and link again.</div>';
+        return;
+    }
+
+    if (!i.tokenConfigured) {
+        box.innerHTML = '<span class="muted tiny">Save your bot token first, then come back here.</span>';
+        return;
+    }
+
+    const pairing = i.pairing || {};
+    if (!pairing.active) {
+        box.innerHTML = '<div class="intercom-state warn">Not linked yet</div>' +
+            '<div class="muted tiny">DeskPilot ignores every message until you tell it which chat is yours — that is why your bot has not replied.</div>' +
+            '<div class="backup-row"><button class="btn btn-small btn-primary" id="ic-pair-start" type="button">Link my phone</button></div>';
+        $('ic-pair-start').onclick = () => setIntercomPairing(false);
+        return;
+    }
+
+    const candidates = asArray(pairing.candidates);
+    const rows = ['<div class="intercom-state warn">Listening… open Telegram and send your bot any message.</div>'];
+    if (pairing.expiresUtc) {
+        rows.push(`<div class="muted tiny">This stops on its own at ${new Date(pairing.expiresUtc).toLocaleTimeString()}.</div>`);
+    }
+    if (!candidates.length) {
+        rows.push('<div class="muted tiny">Nothing yet. Any message will do — even “hello”.</div>');
+    } else {
+        rows.push('<div class="muted tiny">Messages arrived. Pick the one that is you:</div>');
+        for (const c of candidates) {
+            rows.push(
+                `<div class="intercom-candidate"><button class="btn btn-small btn-primary" data-chat="${escapeHtml(c.chatId)}" type="button">This is me</button>` +
+                `<span class="tiny"><strong>${escapeHtml(c.fromName || 'Unknown')}</strong> <span class="muted">(${escapeHtml(c.chatId)})</span>` +
+                `${c.preview ? ' — “' + escapeHtml(c.preview) + '”' : ''}</span></div>`);
+        }
+    }
+    rows.push('<div class="backup-row"><button class="btn btn-small" id="ic-pair-stop" type="button">Cancel</button></div>');
+    box.innerHTML = rows.join('');
+
+    for (const btn of box.querySelectorAll('button[data-chat]')) {
+        btn.onclick = async () => {
+            const chatId = btn.dataset.chat;
+            try {
+                state.intercom = await api('PUT', '/api/intercom', { chatId });
+                const field = $('set-ic-chat');
+                if (field) field.value = chatId;
+                updateIntercomChip();
+                renderIntercomPanel();
+                renderIntercomPairing();
+                toast('Phone linked. Your bot will answer from now on.');
+            } catch (e) { toast((e && e.message) || 'Could not link that chat.'); }
+        };
+    }
+    $('ic-pair-stop').onclick = () => setIntercomPairing(true);
+}
+
+// The topbar chip. It is hidden entirely while Intercom is off, so a feature
+// nobody uses adds no chrome; once on, it says in one glance whether the phone
+// link is healthy.
+function updateIntercomChip() {
+    const chip = $('btn-intercom');
+    if (!chip) return;
+    const i = state.intercom;
+    if (!i || !i.enabled) { chip.classList.add('hidden'); return; }
+    chip.classList.remove('hidden');
+    if (state.intercomStale) {
+        chip.classList.remove('ok', 'warn');
+        chip.classList.add('bad');
+        chip.innerHTML = '<span aria-hidden="true">📻</span> <span>DeskPilot not responding</span>';
+        chip.title = 'The DeskPilot window has stopped. Restart it and reload this page.';
+        return;
+    }
+    const map = {
+        on: { icon: '📻', label: 'Intercom on', cls: 'ok' },
+        error: { icon: '📻', label: 'Intercom problem', cls: 'bad' },
+        'needs-token': { icon: '📻', label: 'Intercom needs a token', cls: 'warn' },
+        'needs-chat': { icon: '📻', label: 'Intercom: link your phone', cls: 'warn' },
+        pairing: { icon: '📻', label: 'Intercom: waiting for your message', cls: 'warn' },
+        starting: { icon: '📻', label: 'Intercom starting…', cls: 'warn' },
+    };
+    const s = map[i.status] || map.starting;
+    chip.classList.remove('ok', 'warn', 'bad');
+    chip.classList.add(s.cls);
+    const waiting = i.questionPending ? ' · waiting for your answer' : '';
+    chip.innerHTML = `<span aria-hidden="true">${s.icon}</span> <span>${escapeHtml(s.label)}</span>`;
+    chip.title = `${s.label}${waiting}` + (i.lastError ? ` — ${i.lastError}` : '');
+    chip.onclick = () => { openSettings(); const tab = $('stab-intercom'); if (tab) tab.click(); };
+}
+
+// The Settings panel body. Only the live parts are re-rendered here; the inputs
+// are built once by openSettings so typing is never interrupted by a poll.
+function renderIntercomPanel() {
+    const box = $('set-intercom-status');
+    if (!box) return;
+    const i = state.intercom;
+    if (!i) { box.innerHTML = '<span class="muted tiny">Checking…</span>'; return; }
+
+    if (state.intercomStale) {
+        box.innerHTML = '<div class="intercom-state bad">DeskPilot is not responding</div>' +
+            '<div class="intercom-err tiny">This page cannot reach DeskPilot, so everything below is out of date — including any error. ' +
+            'Restart DeskPilot, then reload this page.</div>';
+        return;
+    }
+
+    const label = {
+        off: 'Off',
+        on: 'On — connected',
+        error: 'Problem',
+        'needs-token': 'Needs a bot token',
+        'needs-chat': 'Not linked to a phone yet',
+        pairing: 'Waiting for a message from your phone',
+        starting: 'Starting…',
+    }[i.status] || i.status;
+    const cls = i.status === 'on' ? 'ok' : (i.status === 'error' ? 'bad' : 'warn');
+
+    const rows = [`<div class="intercom-state ${cls}">${escapeHtml(label)}</div>`];
+    if (i.lastError) rows.push(`<div class="intercom-err tiny">${escapeHtml(i.lastError)}</div>`);
+    if (i.enabled && !i.projectAllowed && i.projectReason) {
+        rows.push(`<div class="intercom-err tiny">${escapeHtml(i.projectReason)}</div>`);
+    }
+    const c = i.counters || {};
+    rows.push(
+        `<div class="intercom-counts tiny">Received ${c.received || 0} · accepted ${c.accepted || 0} · ` +
+        `<strong>rejected ${c.rejected || 0}</strong> · sent ${c.sent || 0} · dropped ${c.dropped || 0} · errors ${c.errors || 0}</div>`);
+    if (i.nextCheckInUtc) {
+        rows.push(`<div class="muted tiny">Next check-in by ${new Date(i.nextCheckInUtc).toLocaleTimeString()}</div>`);
+    }
+
+    const log = asArray(i.log).slice(-12).reverse();
+    if (log.length) {
+        const items = log.map((e) => {
+            const when = new Date(e.utc).toLocaleTimeString();
+            const arrow = e.direction === 'in' ? '←' : (e.direction === 'out' ? '→' : '·');
+            return `<div class="intercom-log-row${e.accepted ? '' : ' rejected'}">` +
+                `<span class="tiny muted">${escapeHtml(when)}</span> <span class="intercom-arrow">${arrow}</span> ` +
+                `<span class="intercom-kind tiny">${escapeHtml(e.kind)}</span> <span class="tiny">${escapeHtml(e.detail || '')}</span></div>`;
+        }).join('');
+        rows.push(`<div class="intercom-log">${items}</div>`);
+    }
+    box.innerHTML = rows.join('');
 }
 
 // The dismissible "update available" banner. Once installed it flips to a
@@ -3603,7 +4046,6 @@ async function afterChangeDecision() {
     gitChanges.at = 0;
     await refreshExplorer();
     renderThread();
-    await refreshDiffViewer();
 }
 
 // ===== Save (one commit over every uncommitted file) =====
@@ -5191,6 +5633,9 @@ async function importSettings(file) {
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
+    // Intercom's own fields come from GET /api/intercom (the token lives outside
+    // Settings), falling back to the Settings copy before the first fetch lands.
+    const ic = state.intercom || s.intercom || {};
     // The drawer groups its fields into tabs so it stays easy to navigate as
     // settings grow. Every panel is rendered up front (only the active one is
     // shown) so all the field handlers below can bind by id exactly as before.
@@ -5202,6 +5647,7 @@ function openSettings() {
       <button type="button" class="settings-tab-btn" role="tab" id="stab-custom" data-tab="custom" aria-controls="spane-custom" aria-selected="false" tabindex="-1">Customizations</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-memory" data-tab="memory" aria-controls="spane-memory" aria-selected="false" tabindex="-1">Memory &amp; context</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-engine" data-tab="engine" aria-controls="spane-engine" aria-selected="false" tabindex="-1">Engine &amp; data</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-intercom" data-tab="intercom" aria-controls="spane-intercom" aria-selected="false" tabindex="-1">Intercom</button>
     </nav>
     <section class="settings-tab active" id="spane-general" data-tab="general" role="tabpanel" aria-labelledby="stab-general">
       <div class="field">
@@ -5225,6 +5671,14 @@ function openSettings() {
       <div class="field">
         <label>Max tool iterations</label>
         <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
+      </div>
+      <div class="field">
+        <label>Send a message with</label>
+        <select id="set-sendkey">
+          <option value="ctrl-enter" ${sendKeyMode() === 'ctrl-enter' ? 'selected' : ''}>Ctrl+Enter (Enter makes a new line)</option>
+          <option value="enter" ${sendKeyMode() === 'enter' ? 'selected' : ''}>Enter (Shift+Enter makes a new line)</option>
+        </select>
+        <p class="hint">Ctrl+Enter by default, so a stray Enter mid-thought cannot send a half-written instruction.</p>
       </div>
       <div class="field">
         <label>Theme</label>
@@ -5348,6 +5802,64 @@ function openSettings() {
         </div>
         <p class="hint">Save your projects, permissions, agent and tool settings to a JSON file, or restore them. Restore replaces the current settings.</p>
       </div>
+    </section>
+    <section class="settings-tab" id="spane-intercom" data-tab="intercom" role="tabpanel" aria-labelledby="stab-intercom" hidden>
+      <div class="field">
+        <label><input type="checkbox" id="set-ic-enabled" ${ic.enabled ? 'checked' : ''} /> Let me reach DeskPilot from my phone</label>
+        <p class="hint">DeskPilot messages you on Telegram when the agent needs an answer, finishes, fails, or goes quiet — and you can reply to answer it or give it a new instruction. Off by default. <a href="${INTERCOM_GUIDE_URL}" target="_blank" rel="noopener noreferrer"><strong>Follow the getting-started guide</strong></a> before switching this on.</p>
+      </div>
+      <div class="field">
+        <label>Status</label>
+        <div class="intercom-panel" id="set-intercom-status">Checking…</div>
+      </div>
+      <div class="field">
+        <label>Bot token ${ic.tokenConfigured ? '<span class="project-badge">stored</span>' : ''}</label>
+        <input type="password" id="set-ic-token" autocomplete="off" spellcheck="false" placeholder="123456789:AA… from @BotFather" />
+        <div class="backup-row">
+          <button class="btn btn-small" id="set-ic-token-save" type="button">Save token</button>
+          <button class="btn btn-small btn-danger" id="set-ic-token-clear" type="button">Remove token</button>
+        </div>
+        <p class="hint">Anyone holding this token <em>is</em> your bot. It is stored encrypted for your Windows account, never in your settings file, and never shown again — so a settings backup can never leak it. Lost your phone? Revoke it in @BotFather.</p>
+      </div>
+      <div class="field">
+        <label>Your phone</label>
+        <div class="intercom-panel" id="set-ic-pairing">Checking…</div>
+        <input type="text" id="set-ic-chat" inputmode="numeric" spellcheck="false" placeholder="e.g. 123456789" value="${escapeHtml(ic.chatId || '')}" />
+        <p class="hint">Only this one Telegram chat can reach DeskPilot. A message from anywhere else is counted and thrown away without being read as a command. Use <strong>Link my phone</strong> above and DeskPilot will find this number for you — you never have to look it up.</p>
+      </div>
+      <div class="field">
+        <div class="backup-row">
+          <button class="btn btn-small" id="set-ic-test" type="button">Send a test message</button>
+        </div>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="set-ic-done" ${ic.notifyOnDone !== false ? 'checked' : ''} /> Tell me when a job finishes or fails</label>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="set-ic-answer" ${ic.sendFinalAnswer !== false ? 'checked' : ''} /> Include the agent’s answer in that message</label>
+        <p class="hint">Turn this off if you would rather read results only at the machine — the answer text passes through Telegram’s servers.</p>
+      </div>
+      <div class="field">
+        <label>Check in every (minutes)</label>
+        <input type="number" id="set-ic-heartbeat" min="1" max="1440" value="${ic.heartbeatMinutes || 5}" />
+        <p class="hint">DeskPilot keeps one status message up to date on your phone, always stating the time of its next check-in. It updates silently, so it never notifies you. If that time has passed, DeskPilot has stopped.</p>
+      </div>
+      <div class="field">
+        <label>Warn me if the agent goes quiet for (minutes)</label>
+        <input type="number" id="set-ic-stall" min="1" max="1440" value="${ic.stallMinutes || 5}" />
+      </div>
+      <div class="field">
+        <label>A question expires after (minutes)</label>
+        <input type="number" id="set-ic-question" min="1" max="1440" value="${ic.questionTimeoutMinutes || 60}" />
+      </div>
+      <div class="field">
+        <label>Never send more than (messages per hour)</label>
+        <input type="number" id="set-ic-rate" min="1" max="1000" value="${ic.maxMessagesPerHour || 60}" />
+      </div>
+      <div class="field">
+        <label>What this cannot do</label>
+        <p class="hint">If the machine loses power, is put to sleep, or loses its network, DeskPilot <strong>cannot</strong> tell you — nothing is left running to send the message. That is what the check-in time above is for: if it has passed, assume DeskPilot has stopped. It also only covers jobs running <em>in DeskPilot</em>, not ones you started in VS Code.</p>
+      </div>
     </section>`;
 
     buildPermList($('set-perms'));
@@ -5454,6 +5966,7 @@ function openSettings() {
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
+    $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
     $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
     $('update-check').onclick = () => checkForUpdates();
@@ -5462,6 +5975,60 @@ function openSettings() {
     $('set-update-interval').onchange = (e) => { let v = parseInt(e.target.value, 10); if (!v || v < 1) { v = 5; } if (v > 1440) { v = 1440; } e.target.value = v; save({ updateCheckIntervalMinutes: v }); };
     renderUpdatePanel();
     refreshUpdateStatus();
+
+    // Intercom. Everything here goes through PUT /api/intercom rather than the
+    // Settings route, because that endpoint also owns the write-only bot token.
+    const saveIntercom = async (patch) => {
+        try {
+            state.intercom = await api('PUT', '/api/intercom', patch);
+            updateIntercomChip();
+            renderIntercomPanel();
+        } catch (e) { toast((e && e.message) || 'Could not save Intercom settings.'); refreshIntercom(); }
+    };
+    const icNumber = (id, key, fallback, min, max) => {
+        $(id).onchange = (e) => {
+            let v = parseInt(e.target.value, 10);
+            if (!v || v < min) { v = fallback; }
+            if (v > max) { v = max; }
+            e.target.value = v;
+            saveIntercom({ [key]: v });
+        };
+    };
+    $('set-ic-enabled').onchange = (e) => saveIntercom({ enabled: e.target.checked });
+    $('set-ic-done').onchange = (e) => saveIntercom({ notifyOnDone: e.target.checked });
+    $('set-ic-answer').onchange = (e) => saveIntercom({ sendFinalAnswer: e.target.checked });
+    $('set-ic-chat').onchange = (e) => saveIntercom({ chatId: e.target.value.trim() });
+    renderIntercomPairing();
+    icNumber('set-ic-heartbeat', 'heartbeatMinutes', 5, 1, 1440);
+    icNumber('set-ic-stall', 'stallMinutes', 5, 1, 1440);
+    icNumber('set-ic-question', 'questionTimeoutMinutes', 60, 1, 1440);
+    icNumber('set-ic-rate', 'maxMessagesPerHour', 60, 1, 1000);
+    $('set-ic-token-save').onclick = async () => {
+        const field = $('set-ic-token');
+        const value = field.value.trim();
+        if (!value) { toast('Paste the token from @BotFather first.'); return; }
+        await saveIntercom({ botToken: value });
+        // Never leave a bearer credential sitting in a form field.
+        field.value = '';
+        toast('Bot token stored.');
+    };
+    $('set-ic-token-clear').onclick = async () => {
+        if (!window.confirm('Remove the stored bot token? Intercom will stop until you add one again.')) return;
+        await saveIntercom({ botToken: '' });
+        $('set-ic-token').value = '';
+        toast('Bot token removed.');
+    };
+    $('set-ic-test').onclick = async () => {
+        const btn = $('set-ic-test'); const old = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+            const r = await api('POST', '/api/intercom/test', {});
+            toast(r && r.botName ? `Test message sent by @${r.botName}.` : 'Test message sent.');
+        } catch (e) { toast((e && e.message) || 'Could not send the test message.'); }
+        finally { btn.disabled = false; btn.textContent = old; refreshIntercom(); }
+    };
+    renderIntercomPanel();
+    refreshIntercom();
     $('set-export').onclick = () => exportSettings();
     $('set-import').onclick = () => $('set-import-file').click();
     $('set-import-file').addEventListener('change', (e) => {
@@ -5809,7 +6376,7 @@ function buildMessageActions(node, m) {
     copy.title = 'Copy message';
     copy.setAttribute('aria-label', 'Copy message');
     copy.textContent = '⧉';
-    copy.onclick = () => navigator.clipboard.writeText(text).then(() => toast('Copied message.'), () => toast('Copy failed.'));
+    copy.onclick = () => copyMessageText(text);
     node.appendChild(copy);
     if (canSpeak()) {
         const speak = el('msg-action-btn', 'button');
@@ -5944,7 +6511,22 @@ async function _streamRerun({ endpoint, body }) {
 async function refreshCurrentConversation() {
     if (!state.current) return;
     try { state.current = await api('GET', '/api/conversations/' + state.current.id); } catch { /* keep optimistic */ }
+    syncCheckpointDividers();
     renderContextMeter();
+}
+
+// The bubble for a live turn is built optimistically, before the server has
+// taken the snapshot, so its checkpoint only exists once the conversation is
+// refreshed. Fill the dividers in then rather than re-rendering the thread.
+function syncCheckpointDividers() {
+    const thread = $('thread');
+    if (!thread || !state.current || !state.current.messages) return;
+    for (const m of state.current.messages) {
+        if (m.role !== 'user' || !m.checkpoint || !m.checkpoint.sha || !m.id) continue;
+        const el = thread.querySelector(`.msg-user[data-id="${CSS.escape(m.id)}"]`);
+        if (!el || (el.previousElementSibling && el.previousElementSibling.classList.contains('checkpoint'))) continue;
+        thread.insertBefore(buildCheckpointEl(m), el);
+    }
 }
 
 // ===== Voice: dictation (speech-to-text) =====
@@ -6616,15 +7198,15 @@ function wireGlobal() {
         maybeOpenComposerMenu();
     });
     promptEl.addEventListener('keydown', (e) => {
-        // While a Turn is streaming, Enter steers and Alt+Enter queues. Both
-        // skip the normal send path. Shift+Enter still inserts a newline.
-        if (state.streaming && e.key === 'Enter' && !e.shiftKey) {
+        // While a Turn is streaming the send keystroke steers instead, and adding
+        // Alt queues. Shift+Enter still inserts a newline.
+        if (state.streaming && isSendKey(e)) {
             e.preventDefault();
             if (e.altKey) dispatchEnqueue('queue');
             else dispatchEnqueue('steer');
             return;
         }
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); return; }
+        if (isSendKey(e)) { e.preventDefault(); send(); return; }
         if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
         const navigating = state.historyIndex !== -1;
         const collapsed = promptEl.selectionStart === promptEl.selectionEnd;

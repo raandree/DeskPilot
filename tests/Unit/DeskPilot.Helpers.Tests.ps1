@@ -408,6 +408,13 @@ Describe 'New-DpTurnParameter' {
         $p.SystemPrompt | Should -Match 'selectedOptions'
         $p.SystemPrompt | Should -Match 'ask_questions'
         $p.SystemPrompt | Should -Match 'Do not call ask_user repeatedly'
+        # "Give me a list to choose from" used to be answered with prose, because the
+        # only stated trigger was the agent needing information - not the user
+        # asking to be offered a choice.
+        $p.SystemPrompt | Should -Match 'asks to be offered a choice'
+        $p.SystemPrompt | Should -Match 'what are my options'
+        # And a guard the other way, so it does not turn every request into a wizard.
+        $p.SystemPrompt | Should -Match 'reasonably infer'
     }
     It 'omits the Questionnaire protocol when Ask-User is disabled' {
         $settings = Get-DpDefaultSettings
@@ -3955,6 +3962,29 @@ Describe 'Pending change set against a real repository' -Skip:(-not (Get-Command
         $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $snap.sha
         $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
         (& git -C $script:csRepo rev-parse --verify --quiet 'refs/deskpilot/snapshots/t_six' 2>$null) | Should -BeNullOrEmpty
+    }
+
+    It 'keeps a snapshot ref a checkpoint still restores from' {
+        # Keeping a change clears its pending entry, which used to delete the
+        # snapshot commit outright - including the one the message's Checkpoint
+        # restores from, leaving a button that could not restore.
+        $snap = New-DpChangeSnapshot -Root $script:csRepo -Id 't_seven'
+        $script:DeskPilot = @{
+            Conversations = @{
+                c1 = @{
+                    messages = @(
+                        @{ id = 'u1'; role = 'user'; text = 'go'; checkpoint = @{ sha = $snap.sha; root = $script:csRepo; createdUtc = '2026-01-01T00:00:00.0000000Z' } }
+                    )
+                }
+            }
+        }
+        try {
+            $store = @{}
+            $null = Add-DpChangeEntry -Store $store -Root $script:csRepo -Paths @('tracked.txt') -SnapshotSha $snap.sha
+            $null = Remove-DpChangeEntry -Store $store -Root $script:csRepo
+            (& git -C $script:csRepo rev-parse --verify --quiet 'refs/deskpilot/snapshots/t_seven' 2>$null) | Should -Not -BeNullOrEmpty
+        }
+        finally { $script:DeskPilot = $null }
     }
 }
 

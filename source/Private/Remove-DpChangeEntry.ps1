@@ -64,8 +64,19 @@ function Remove-DpChangeEntry {
     if ($remaining.Count -gt 0) { $Store[$key] = @($remaining) } else { $null = $Store.Remove($key) }
     $result.remaining = $remaining.Count
 
+    # A Checkpoint restores from a snapshot commit, so that commit outlives the
+    # pending entries that created it. Deleting it here would leave a restore
+    # button that cannot restore. Read once, not per sha.
+    # Built then filled: an empty result unrolls to $null, which the HashSet
+    # constructor rejects.
+    $checkpointShas = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($checkpointSha in @(Get-DpCheckpointSha -Root $rootFull)) {
+        if (-not [string]::IsNullOrWhiteSpace($checkpointSha)) { [void]$checkpointShas.Add([string]$checkpointSha) }
+    }
+
     foreach ($sha in $droppedShas) {
         if ($keptShas.Contains($sha)) { continue }
+        if ($checkpointShas.Contains($sha)) { continue }
         $refs = Invoke-DpGitCommand -Path $rootFull -Arguments @('for-each-ref', '--format=%(refname) %(objectname)', 'refs/deskpilot/snapshots')
         if (-not $refs.Ok) { break }
         foreach ($line in ($refs.StdOut -split '\r?\n')) {

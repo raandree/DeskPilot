@@ -25,12 +25,25 @@ function Merge-DpSettings {
 
     $validEfforts = @('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
     $permissionKeys = @('browsing', 'file', 'terminal', 'askUser', 'userTools')
+    # Bounded numeric Intercom keys: name -> minimum, maximum.
+    $intercomRanges = @{
+        heartbeatMinutes       = @(1, 1440)
+        stallMinutes           = @(1, 1440)
+        questionTimeoutMinutes = @(1, 1440)
+        maxMessagesPerHour     = @(1, 1000)
+        maxAttachmentMB        = @(1, 20)
+    }
 
-    # Clone current (nested permissions and projects) so the input is never mutated.
+    # Clone current (nested permissions, intercom and projects) so the input is
+    # never mutated.
     $merged = @{}
     foreach ($key in $Current.Keys) { $merged[$key] = $Current[$key] }
     $merged.permissions = @{}
     foreach ($key in $Current.permissions.Keys) { $merged.permissions[$key] = $Current.permissions[$key] }
+    $merged.intercom = @{}
+    if ($Current.intercom) {
+        foreach ($key in $Current.intercom.Keys) { $merged.intercom[$key] = $Current.intercom[$key] }
+    }
     $merged.projects = @(foreach ($project in @($Current.projects)) { $clone = ConvertTo-DpProject -InputObject $project; if ($clone) { $clone } })
 
     # Normalise the patch into a name -> value map.
@@ -115,6 +128,39 @@ function Merge-DpSettings {
                 foreach ($permKey in $permMap.Keys) {
                     if ($permissionKeys -notcontains $permKey) { throw "Unknown permission '$permKey'." }
                     $merged.permissions[$permKey] = [bool]$permMap[$permKey]
+                }
+            }
+            'intercom' {
+                $intercomMap = @{}
+                if ($value -is [hashtable]) { foreach ($k in $value.Keys) { $intercomMap[$k] = $value[$k] } }
+                elseif ($null -ne $value) { foreach ($p in $value.PSObject.Properties) { $intercomMap[$p.Name] = $p.Value } }
+                foreach ($intercomKey in $intercomMap.Keys) {
+                    $intercomValue = $intercomMap[$intercomKey]
+                    switch ($intercomKey) {
+                        'enabled' { $merged.intercom.enabled = [bool]$intercomValue }
+                        'notifyOnDone' { $merged.intercom.notifyOnDone = [bool]$intercomValue }
+                        'sendFinalAnswer' { $merged.intercom.sendFinalAnswer = [bool]$intercomValue }
+                        'chatId' {
+                            $chat = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
+                            if ($chat -and $chat -notmatch '^-?\d{1,20}$') {
+                                throw 'intercom.chatId must be a Telegram chat id (digits, optionally leading -).'
+                            }
+                            $merged.intercom.chatId = if ($chat) { $chat } else { $null }
+                        }
+                        # The bot token is never a Setting: it lives in
+                        # intercom.secret so a Settings backup cannot carry a
+                        # credential that grants control of this machine.
+                        'botToken' { throw 'The Intercom bot token is not a setting. Use PUT /api/intercom.' }
+                        default {
+                            if (-not $intercomRanges.ContainsKey($intercomKey)) { throw "Unknown intercom setting '$intercomKey'." }
+                            $range = $intercomRanges[$intercomKey]
+                            $number = [int]$intercomValue
+                            if ($number -lt $range[0] -or $number -gt $range[1]) {
+                                throw "intercom.$intercomKey must be between $($range[0]) and $($range[1])."
+                            }
+                            $merged.intercom[$intercomKey] = $number
+                        }
+                    }
                 }
             }
             'projects' {

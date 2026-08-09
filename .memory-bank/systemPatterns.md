@@ -175,16 +175,250 @@ source: repository evidence
 - **Pricing belongs to the Engine.** DeskPilot never hard-codes a rate; a missing
   price is fixed upstream in ShellPilot's `data/PriceTable.psd1`. Mirroring the
   table here would fork the number that matters most and guarantee drift.
-- **An open modal is a stale snapshot until it re-reads.** The diff viewer opens
-  with the change set it was handed; Keep, Undo and Save all move the working
-  tree underneath it. Every action that mutates the tree now re-derives the
-  viewer from the refreshed change sets (`reconcileDiffFiles`) instead of
-  trusting the list it opened with. The sidebar refreshed and the modal did not,
-  so the same file was simultaneously gone and still listed.
-- **An undo has to clear every list that claims the file changed.** Reverting a
-  file through `/api/git/restore` now also drops it from the pending change set,
-  the way the commit route does. Restoring the bytes but leaving the record
-  behind keeps offering an undo for work that no longer exists.
+
+- **A network call on the accept thread is a frozen UI.** Intercom's Telegram
+  long-poll would park the single accept thread for 25 seconds, which is the same
+  sentence as "the whole window stops responding" - the failure
+  `Invoke-DpGitCommand` exists to prevent. Every Telegram call is an `HttpClient`
+  `Task` started on one pump tick and reaped on a later one. The pump reaps what
+  finished, starts what is due, and returns.
+- **A feature that only works between Turns is useless during one.** The moment
+  Intercom matters most is mid-Turn: the agent is blocked on a question and the
+  operator is away. So the pump runs from `Invoke-DpPendingRequest` as well as the
+  idle tick - and only the idle-tick caller passes `-AllowTurn`, so a command
+  arriving mid-Turn is queued instead of re-entering `Invoke-DpTurn`. Starting a
+  Turn is deliberately the pump's *last* step.
+- **Silence is the one state a remote channel cannot explain.** A dead machine
+  cannot report that it is dead, and DeskPilot has no relay. So Intercom keeps one
+  status message and *edits* it on a timer, always stating the time of the next
+  check-in. Telegram does not notify on an edit, so this costs nothing and never
+  floods - and when the machine dies the message freezes with a deadline in the
+  past. Absence becomes a self-dating fact instead of an ambiguous silence.
+- **Discard the backlog on startup.** The first `getUpdates` only learns the
+  newest update id and throws the rest away. Executing an instruction the operator
+  sent an hour ago, the moment DeskPilot launches, is a dangerous surprise, not a
+  helpful catch-up.
+- **Authority is a Project flag, not a second Permission set.** A remote message
+  may only act on a Project that opted in; inside such a Project it has exactly the
+  Permissions a local Turn has. One boundary the user can see and reason about
+  beats a parallel permission model they have to keep in sync.
+- **Never answer a caller you just rejected.** Replying to a non-allow-listed chat
+  confirms the bot exists and turns it into a free oracle for anyone probing it.
+  The rejection is counted and logged loudly instead - a rejection is a possible
+  attack, and the panel shows it in red.
+- **A credential in the request URL is a credential in every error string.** The
+  Telegram bot token travels in the path, so an unredacted transport error would
+  print it into the audit log, a route response, or the console. Every Intercom
+  error goes through `Hide-DpIntercomSecret` first, and the token is stored outside
+  `settings.json` so a Settings backup can never carry it.
+- **An outbound channel is an exfiltration channel.** Intercom composes messages
+  from structured fields DeskPilot owns; the agent's own question text is the one
+  forwarded verbatim, which a poisoned repository file can exploit through a
+  perfectly well-behaved agent. This is *accepted*, not mitigated (spec 110, A1),
+  and bounded by the same Project flag - a Project that never opts in can never
+  exfiltrate this way.
+
+- **An allow-list needs a way in.** Intercom refuses every chat until one is
+  confirmed - which meant the bot could not answer `/start`, and the operator had
+  no way to learn their own chat id from it. Setup was impossible to finish. The
+  fix is a *time-boxed* window where the poller runs with an empty allow-list,
+  executes nothing, and only collects candidates for a human to confirm at the
+  machine. Any security control that has no bootstrap path is a control users
+  will route around or abandon.
+- **Never adopt the first caller.** The obvious shortcut - take the chat id of
+  whoever messages the bot first - hands control of the machine to anyone who
+  guessed the bot's username. The candidate is shown; the click happens locally.
+- **A handler bound to an id nothing renders fails silently.** `$('missing-id')`
+  returns null, the render function returns early, and the control is simply
+  absent - no error, no log. The "Link my phone" button shipped that way because
+  the template edit failed while the handler edit succeeded, and every API test
+  still passed: they exercise routes, not the DOM. A WebAssets guard now asserts
+  that every id the SPA binds is rendered somewhere. When an edit tool reports a
+  failed replacement, verify *that* replacement - not a neighbouring one.
+- **Under strict mode an optional field is not `$null`, it is an exception.**
+  `Prefix.ps1` sets `Set-StrictMode -Version Latest`, so `$message.stopped` on a
+  Message that never set the key *throws*. Read anything optional through
+  `Get-DpPropertyValue`; direct member access is only for fields the producer
+  always writes. This shipped: a remote Turn ran, answered, and then reported
+  nothing, because the outcome push threw after the work was done.
+- **Tests that skip strict mode validate different code than production.** The
+  unit tests dot-source `source/Private` without `Prefix.ps1`, so a missing key
+  quietly returned `$null` in the suite and threw for the user.
+  `Intercom.Tests.ps1` sets strict mode itself; the rest of the suite still does
+  not, which is a standing gap.
+- **Reporting must never be able to lose finished work.** The outcome push is
+  wrapped, and a failure there degrades to a minimal "the job finished, open
+  DeskPilot" notice. A bug in the last step of a Turn should cost detail, not the
+  entire result.
+- **A panel that swallows a failed poll lies.** `refreshIntercom` caught the
+  error and returned, so a stopped Host Server left the Settings panel frozen on
+  its last good response - counters, status and a stale error included - and a
+  dead DeskPilot was indistinguishable from a live one with an old fault. That
+  cost three round-trips of debugging a bug that was already fixed. A surface
+  that cannot reach its server says so.
+
+- **Navigating is not acting.** `/chats`, `/chat <n>` and a bare `/new` only move
+  where Intercom points; they run nothing, so they are not gated on the Project
+  flag. Gating them would make `/chats` unusable in exactly the situation that
+  needs it - no Project open, or the wrong one. The gate belongs on running work,
+  not on looking around.
+- **A number the user was shown must keep meaning what they saw.** The `/chats`
+  list is ordered by last activity, so a Turn reorders it. The ids behind the
+  numbering are snapshotted in `Intercom.ChatIndex` and `/chat 3` resolves against
+  that, not against a freshly computed order.
+- **If the agent has no tool for it, the agent is the wrong place to ask.** The
+  user asked the agent to switch conversations and got a polite, accurate refusal:
+  Conversation selection is Host Server state. A capability the product owns needs
+  a product command, not a better prompt.
+
+- **Escape first, then format.** Telegram messages are HTML: the text is escaped
+  and only then are known constructs turned into tags, so nothing the agent - or a
+  file it read - wrote can inject markup. MarkdownV2 was rejected because one
+  missed escape makes Telegram reject the *whole* message, losing a finished
+  result rather than formatting it badly. A rejected message is still retried once
+  as plain text.
+- **Polling is the right answer when you own one thread.** The window follows a
+  phone-started Turn by polling `GET /api/intercom/turn`, not by an SSE channel: a
+  long-lived event stream would hold the Host Server's single accept thread, and a
+  remote Turn has no browser request to stream over in the first place. The live
+  buffer is an approximation, discarded the moment the recorded Message - which
+  carries Activity, Usage and the Task List - is available.
+- **Make the irreversible thing take two messages.** `/delete <n>` warns and only
+  `/delete <n> confirm` acts, with `/archive` offered in the same breath. A phone
+  is where a mistyped number is most likely and an undo is least available.
+
+- **Not subscribing to an event is not the same as handling it.** Intercom asked
+  Telegram for `message` only, so an edited command was never delivered - the
+  operator's correction vanished with no reply, and the visible answer belonged to
+  the *original* text. Edits are now fetched and acknowledged but never run: a
+  fresh update for an already-executed command would re-run it with different
+  text. Where a protocol has a "changed" event, decide explicitly whether to run,
+  refuse, or explain - silence is none of those.
+
+- **An empty collection is falsy, so `-not $list` is a bug waiting to happen.**
+  `Add-DpIntercomLog` guarded with `-not $intercom.Log` and therefore refused
+  every entry while the ring was empty - which it always was, because nothing
+  could ever be added. The audit trail the spec presents as a security control had
+  never recorded anything. Test for `$null` explicitly when the thing may legally
+  be empty. This is the same PowerShell unrolling trap already recorded for
+  collection-returning `if` expressions.
+- **Advance a cursor per item, after attempting it.** The Telegram poll advanced
+  its offset for the whole batch up front, so one throwing handler jumped to the
+  outer catch and every remaining message was lost for good with nothing logged.
+  Per-item isolation plus a per-item cursor loses nothing and cannot spin on a
+  poison item either.
+
+- **When the target cannot represent the shape, change the shape.** Telegram has
+  no tables. Wrapping one in `<pre>` only works while the lines are short enough
+  not to wrap - past that, the alignment the block existed for is destroyed and it
+  reads worse than plain text. A wide table becomes one labelled record per row
+  instead, and long ones are capped with a count. Faithfulness to the source
+  format is not the goal; being readable on the device is.
+
+- **Archiving is the user saying "I am done with this".** One rule
+  (`Test-DpConversationWritable`) refuses a Turn on an archived or deleted
+  Conversation at every entry point - the window's send/regenerate/edit routes and
+  Intercom alike. Intercom previously fell through to "the most recent one" when
+  its bound Conversation had gone, so the work landed somewhere the operator never
+  chose. Silently continuing is worse than refusing.
+- **The destructive action is never the one-click one.** The row button archives;
+  deleting lives in the actions menu and the right-click menu, and confirms by
+  naming the Conversation and offering archive instead.
+- **Ctrl+Enter sends by default.** A stray Enter mid-thought should not fire a
+  half-written instruction at an agent that can write files and run commands. The
+  preference is per-machine (`localStorage`, beside the theme): the Host Server
+  gains nothing from knowing it and it shapes no Turn.
+
+- **If the server cannot push, give the client something cheap to compare.**
+  Intercom can create, archive, unarchive and delete Conversations, and the
+  single-threaded accept loop rules out an event channel - so the sidebar kept
+  showing a Conversation that had been deleted from a phone, and clicking that row
+  did nothing. The Host Server now carries a `ConversationsRevision` counter,
+  bumped only where something *other than the browser* changed the list, and the
+  SPA's existing three-second poll reloads when it moves. A revision beats
+  reloading on every tick: the common case costs one integer comparison.
+- **A row can outlive the thing it points at.** `selectConversation` awaited a
+  `GET` that could 404 and nothing caught it, so a stale row failed in complete
+  silence. Any click that can race a deletion must say what happened and
+  resynchronise.
+
+- **Read the shape the protocol actually sends.** A Telegram file message has no
+  `text` member at all - the words are in `caption`, and the file sits in a
+  differently shaped member per kind - so a parser that reads only `text` drops
+  every attachment on the floor without a reply. Three separate silent-drop bugs
+  in Intercom came from assuming one message shape: the edit, the file, and the
+  unknown update type.
+- **A name from outside is the part that escapes.** A sender-supplied file name
+  is sanitised to a leaf before it is ever joined to a directory, and the path
+  `getFile` hands back is validated before it is fetched. Content can be
+  untrusted and merely risky; a name can be untrusted and *directly* dangerous.
+
+- **The data for a feature is often already being written.** Checkpoints needed
+  no new capture at all: DeskPilot had committed a pre-Turn snapshot per Turn
+  since the change set shipped. The feature was one field on the user Message
+  (`checkpoint.sha`) plus a way to reach it. Before building a capture pipeline,
+  check whether the value is already on disk and merely unaddressed.
+- **A shared resource needs an owner set, not one owner.** The snapshot commit
+  was garbage-collected by `Remove-DpChangeEntry` the moment its pending entries
+  cleared, because pending changes were assumed to be its only consumer. A second
+  consumer means the cleanup must ask everyone (`Get-DpCheckpointSha`) before it
+  deletes. Reading the live store rather than taking a parameter means a new call
+  site cannot forget to ask.
+- **Restore what you changed, not where you are.** A Checkpoint puts back only
+  the paths from `activity.filesWritten`, never the whole folder. A wholesale
+  checkout would silently destroy the hand edits the user made in between - the
+  exact distinction the pending change set exists to draw. "Undo the agent" and
+  "revert the working tree" are different operations and must stay so.
+- **Normalise at the point the identity is decided.** `filesWritten` holds
+  whatever the Engine reported; the pending change set keys on Project-relative
+  forward-slash paths. Restoring had to produce that same form or the git
+  pathspec, the entry lookup, and the later removal would each match a different
+  string. Reusing the wrong helper (a git-relative converter) failed loudly;
+  reusing none would have failed silently.
+
+- **An optimistic bubble cannot carry a server-assigned field.** The live user
+  Message is drawn from the typed text before the request is even sent, so a
+  value the server computes mid-Turn (the Checkpoint sha, taken after the `start`
+  frame) is structurally absent from it. Rendering only on thread rebuild meant
+  the divider appeared for every past Turn but never the one just run - which
+  reads as "the feature is broken", not "the feature is late". Anything the
+  server assigns has to be filled in from the post-Turn refresh.
+
+- **A confirmation must state facts, not estimates.** Intercom's `/undo` asks
+  before it acts, and the numbers it quotes come from a real
+  `Restore-DpCheckpoint -Preview` over the same code path the confirmed call
+  takes - not from a second, approximate count written for the message. A
+  confirmation the operator cannot trust is worse than none, because it teaches
+  them to skim it.
+
+- **An affordance that cannot express the answer is a trap.** Intercom offers
+  Telegram buttons only for a single-question, single-select Ask-User. A
+  multi-select Questionnaire keeps the written-reply flow, because one tap cannot
+  say "these two" and a keyboard that silently drops the second choice is worse
+  than no keyboard. Degrade to the older interaction rather than to a wrong answer.
+- **A control that never disappears needs a nonce.** Telegram leaves inline
+  buttons on screen indefinitely, so a tap on a question answered hours ago would
+  otherwise answer whatever is waiting now. The button data carries the pending
+  question's token and is refused when it does not match. Any long-lived UI
+  element that triggers a stateful action has this problem.
+- **Data we minted still arrives untrusted.** `callback_data` is generated by
+  DeskPilot, but it comes back through the client, so the nonce and the option
+  index are both validated before anything happens. Provenance at send time is not
+  provenance at receive time.
+
+- **A rule about a core Tool belongs to whoever owns the Tool.** "Give me a list
+  to choose from" was answered with prose because the only stated trigger for
+  `ask_questions` was *the agent needing information*, never *the user asking to
+  be offered a choice*. The fix went in DeskPilot's own askUser system-prompt
+  block, not the selected Agent (which would fix one persona and leave every other
+  one broken, in a file DeskPilot does not own) and not a Skill (progressive
+  disclosure means it is absent on the turns that need it). Always-on behaviour
+  about a built-in capability cannot live in an on-demand or per-persona file.
+- **A "when to use" rule needs its opposite in the same breath.** Telling the
+  model to offer a Questionnaire whenever a choice is implied invites a wizard in
+  place of an answer, so the same paragraph forbids using it to confirm something
+  it can simply do or to ask what it can infer. A trigger without a brake trades
+  one bad behaviour for another.
 
 ## Anti-patterns to avoid
 
@@ -203,3 +437,6 @@ source: repository evidence
   nothing, so `$x` is `$null` and the next `.Add()` throws. Declare the list, then
   fill it. The same unrolling makes a helper that returns an empty array yield
   `$null` at the call site - wrap the call in `@(…)`.
+- Guarding on a collection's truthiness (`if (-not $list)`) when empty is a legal
+  state. An empty collection is falsy, so the guard fires exactly when the list is
+  waiting to be filled.

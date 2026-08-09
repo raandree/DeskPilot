@@ -1053,6 +1053,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
+                return
+            }
             $prompt = if ($Body -and $Body.PSObject.Properties['prompt']) { [string]$Body.prompt } else { '' }
             if ([string]::IsNullOrWhiteSpace($prompt)) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_prompt'; message = 'A prompt is required.' } }
@@ -1086,6 +1091,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
+                return
+            }
             $lastUser = @($conversation.messages | Where-Object { $_.role -eq 'user' }) | Select-Object -Last 1
             if (-not $lastUser) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'nothing_to_regenerate'; message = 'There is no user message to regenerate.' } }
@@ -1108,6 +1118,11 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
+            $writable = Test-DpConversationWritable -Conversation $conversation
+            if (-not $writable.ok) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = $writable.code; message = $writable.reason } }
+                return
+            }
             $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name @('messageId') -Default '')
             $prompt = if ($Body -and $Body.PSObject.Properties['prompt']) { [string]$Body.prompt } else { '' }
             if ([string]::IsNullOrWhiteSpace($messageId) -or [string]::IsNullOrWhiteSpace($prompt)) {
@@ -1120,6 +1135,49 @@ function Invoke-DpRouteHandler {
                 return
             }
             Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
+        }
+        'restoreCheckpoint' {
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                return
+            }
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is running. Wait for it to finish.' } }
+                return
+            }
+            $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name @('messageId') -Default '')
+            if ([string]::IsNullOrWhiteSpace($messageId)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_request'; message = 'A messageId is required.' } }
+                return
+            }
+            $skipFiles = [bool](Get-DpPropertyValue -InputObject $Body -Name @('skipFiles') -Default $false)
+            $restoreParams = @{
+                Conversation = $conversation
+                MessageId    = $messageId
+                Root         = [string]$state.Settings.workspaceFolder
+                SkipFiles    = $skipFiles
+            }
+            $restore = Restore-DpCheckpoint @restoreParams
+            if (-not $restore.ok) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'checkpoint_failed'; message = $restore.error } }
+                return
+            }
+            if ($state.DataDir) {
+                Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir
+                Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir
+            }
+            # The thread just lost messages, so a phone sitting on it is looking at
+            # something that no longer exists.
+            $state.ConversationsRevision = [int]$state.ConversationsRevision + 1
+            Write-DpResponse -Stream $Stream -Json @{
+                ok       = $true
+                prompt   = $restore.prompt
+                restored = @($restore.restored)
+                removed  = @($restore.removed)
+                skipped  = @($restore.skipped)
+                files    = [bool]$restore.filesTried
+            }
         }
         'submitUserPrompt' {
             $conversation = $state.Conversations[$RouteParams.id]
@@ -1452,13 +1510,6 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'restore_failed'; message = $result.error } }
                 return
             }
-            # A file that actually went back is no longer an unreviewed change;
-            # leaving it pending would keep offering an undo for work already gone.
-            $done = @(@($result.restored) + @($result.removed))
-            if ($done.Count -gt 0) {
-                $null = Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths $done
-                if ($state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
-            }
             Write-DpResponse -Stream $Stream -Json $result
         }
         'atelierHealth' {
@@ -1486,6 +1537,181 @@ function Invoke-DpRouteHandler {
                 scriptPath = $r.ScriptPath
                 message    = $r.Message
             }
+        }
+        'getIntercom' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
+        }
+        'getIntercomTurn' {
+            # A Turn started from the phone streams over no browser request, and a
+            # long-lived SSE channel is impossible on a single-threaded accept
+            # loop - it would hold the only thread. The SPA polls this instead
+            # while a remote Turn is running, so the window shows the same answer
+            # taking shape rather than needing a reload afterwards.
+            $remote = $state.Intercom.RemoteTurn
+            $text = [string]$remote.text
+            $reasoning = [string]$remote.reasoning
+            $maxChars = 40000
+            $truncated = $text.Length -gt $maxChars
+            if ($truncated) { $text = $text.Substring($text.Length - $maxChars) }
+            if ($reasoning.Length -gt $maxChars) { $reasoning = $reasoning.Substring($reasoning.Length - $maxChars) }
+            Write-DpResponse -Stream $Stream -Json @{
+                active         = [bool]$remote.active
+                conversationId = [string]$remote.conversationId
+                prompt         = [string]$remote.prompt
+                startedUtc     = $(if ($remote.startedUtc) { ([DateTime]$remote.startedUtc).ToString('o') } else { $null })
+                text           = $text
+                reasoning      = $reasoning
+                truncated      = $truncated
+                # Also the window's liveness poll: Intercom can create, archive,
+                # unarchive and delete Conversations, and nothing else would tell
+                # the browser its sidebar is now wrong.
+                conversationsRevision = [int]$state.ConversationsRevision
+            }
+        }
+        'putIntercom' {
+            if ($null -eq $Body) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'An Intercom settings body is required.' } }
+                return
+            }
+
+            # botToken is write-only and never a Setting: it is split off here so it
+            # cannot reach settings.json, a Settings export, or any response.
+            $patch = @{}
+            $tokenSupplied = $false
+            $token = ''
+            foreach ($property in $Body.PSObject.Properties) {
+                if ($property.Name -eq 'botToken') {
+                    $tokenSupplied = $true
+                    $token = [string]$property.Value
+                    continue
+                }
+                $patch[$property.Name] = $property.Value
+            }
+
+            if ($tokenSupplied) {
+                $trimmed = $token.Trim()
+                if ($trimmed -and $trimmed -notmatch '^\d{6,}:[A-Za-z0-9_-]{30,}$') {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_token'; message = 'That does not look like a Telegram bot token. BotFather gives you one shaped like 123456789:AA…' } }
+                    return
+                }
+                try {
+                    $configured = Save-DpIntercomSecret -Token $trimmed -Directory $state.DataDir -Confirm:$false
+                }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'token_store_failed'; message = (Hide-DpIntercomSecret -Text "$_") } }
+                    return
+                }
+                $state.Intercom.Token = $trimmed
+                $state.Intercom.TokenConfigured = $configured
+                # A new credential invalidates everything the old one established.
+                $state.Intercom.Running = $false
+                $state.Intercom.PollTask = $null
+                $state.Intercom.StatusMessageId = 0
+                $state.Intercom.PendingQuestion = $null
+                Add-DpIntercomLog -Direction 'system' -Kind 'token' -Detail $(if ($configured) { 'A bot token was stored.' } else { 'The bot token was removed.' })
+            }
+
+            if ($patch.Count -gt 0) {
+                try {
+                    $merged = Merge-DpSettings -Current $state.Settings -Patch @{ intercom = $patch }
+                    $state.Settings = $merged
+                    if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }
+                }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_settings'; message = "$_" } }
+                    return
+                }
+                if ($patch.ContainsKey('chatId')) {
+                    # A different allow-listed chat is a different link: close any
+                    # pairing window, drop the in-flight poll, and let the pump run
+                    # its enable transition again so the backlog is discarded and
+                    # the new chat gets the welcome message.
+                    $state.Intercom.Running = $false
+                    $state.Intercom.PollTask = $null
+                    $state.Intercom.StatusMessageId = 0
+                    $state.Intercom.PendingQuestion = $null
+                    $state.Intercom.Pairing.active = $false
+                    $state.Intercom.Pairing.startedUtc = $null
+                    $state.Intercom.Pairing.candidates.Clear()
+                    Add-DpIntercomLog -Direction 'system' -Kind 'paired' -Detail $(if ($merged.intercom.chatId) { "Chat $($merged.intercom.chatId) is now the only chat allowed to reach DeskPilot." } else { 'The allowed chat was cleared.' })
+                }
+            }
+
+            # Apply the change now rather than on the next idle tick, so the panel
+            # reports the real state instead of the state it is about to be in.
+            try { Update-DpIntercomState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
+        }
+        'testIntercom' {
+            $intercom = $state.Intercom
+            if (-not $intercom.TokenConfigured -or -not $intercom.Client) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_token'; message = 'Store a bot token first.' } }
+                return
+            }
+            $chatId = [string]$state.Settings.intercom.chatId
+            if ([string]::IsNullOrWhiteSpace($chatId)) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_chat'; message = 'Enter the chat id that is allowed to control DeskPilot.' } }
+                return
+            }
+
+            # The one place Intercom waits on the network: the user pressed a
+            # button and is watching, and it is bounded by the client timeout.
+            $identity = Receive-DpTelegramResponse -Task (Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe')
+            if (-not $identity.ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'telegram_error'; message = "Telegram did not accept the token: $($identity.error)" } }
+                return
+            }
+
+            $testPayload = @{
+                chat_id                  = $chatId
+                text                     = "DeskPilot Intercom test from $([Environment]::MachineName). If you can read this, you are connected."
+                disable_web_page_preview = $true
+            }
+            $sent = Receive-DpTelegramResponse -Task (Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'sendMessage' -Payload $testPayload)
+            if (-not $sent.ok) {
+                Write-DpResponse -Stream $Stream -Status 502 -Json @{ error = @{ code = 'telegram_error'; message = "The test message was not delivered: $($sent.error)" } }
+                return
+            }
+
+            Add-DpIntercomLog -Direction 'out' -Kind 'test' -Detail 'Sent a test message.'
+            Write-DpResponse -Stream $Stream -Json @{
+                ok      = $true
+                botName = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
+            }
+        }
+        'pairIntercom' {
+            # Without this the setup cannot be completed at all: Intercom will not
+            # listen until it knows which chat is the operator's, so the bot cannot
+            # answer - not even /start - and there is no way to learn the chat id
+            # from it. This opens a five-minute window in which the poller runs with
+            # no allow-list, executes nothing, and only collects who messaged the
+            # bot. Adoption stays an explicit click at the machine.
+            $intercom = $state.Intercom
+            if (-not $intercom.TokenConfigured) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'no_token'; message = 'Store a bot token first.' } }
+                return
+            }
+            $stop = [bool](Get-DpPropertyValue -InputObject $Body -Name @('stop') -Default $false)
+            if ($stop) {
+                $intercom.Pairing.active = $false
+                $intercom.Pairing.startedUtc = $null
+                $intercom.Pairing.candidates.Clear()
+                Add-DpIntercomLog -Direction 'system' -Kind 'pairing' -Detail 'Pairing was cancelled.'
+            }
+            else {
+                if (-not [string]::IsNullOrWhiteSpace([string]$state.Settings.intercom.chatId)) {
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'already_paired'; message = 'A chat is already linked. Clear the chat id first if you want to link a different phone.' } }
+                    return
+                }
+                $intercom.Pairing.active = $true
+                $intercom.Pairing.startedUtc = [DateTime]::UtcNow
+                $intercom.Pairing.candidates.Clear()
+                $intercom.Running = $false
+                $intercom.PollTask = $null
+                Add-DpIntercomLog -Direction 'system' -Kind 'pairing' -Detail 'Pairing is open for five minutes. Message the bot from your phone.'
+            }
+            try { Update-DpIntercomState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
         }
         default {
             Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = "Unknown handler '$Name'." } }
