@@ -4803,6 +4803,11 @@ button.tree-row {
     opacity: 1;
 }
 
+/* Keyboard focus must reveal them too, or tabbing lands on an invisible button. */
+.msg-user:focus-within .user-actions {
+    opacity: 1;
+}
+
 .msg-assistant:not(.is-last) .regen-btn {
     display: none;
 }

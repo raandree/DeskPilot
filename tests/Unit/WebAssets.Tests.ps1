@@ -65,6 +65,20 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         }
     }
 
+    It 'lets both sides of a conversation be copied in one click' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # A user message used to offer edit-and-resend only.
+        $js | Should -Match '(?s)function buildUserEl.{0,2000}copyMessageText\(m\.text\)'
+        $js | Should -Match '(?s)function buildMessageActions.{0,600}copyMessageText\(text\)'
+        # One helper, so the clipboard fallback exists on both paths.
+        $js | Should -Match 'async function copyMessageText'
+        $js | Should -Match ([regex]::Escape("document.execCommand('copy')"))
+        # The actions are hover-revealed, so focus has to reveal them as well.
+        $css | Should -Match ([regex]::Escape('.msg-user:focus-within .user-actions'))
+    }
+
     It 'keeps destructive conversation actions out of one click' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

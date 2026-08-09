@@ -1126,6 +1126,27 @@ async function copyTranscript(id) {
     }
 }
 
+// Copy a Message to the clipboard. The Clipboard API needs a secure context,
+// which loopback is - but a denied permission or an older browser still lands
+// here, so the textarea fallback keeps a one-click action from doing nothing.
+async function copyMessageText(text, label) {
+    const value = (text || '').toString();
+    const done = label || 'Copied message.';
+    try {
+        await navigator.clipboard.writeText(value);
+        toast(done);
+        return;
+    } catch { /* fall through */ }
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    ta.remove();
+    toast(ok ? done : 'Could not copy.');
+}
+
 // Build a Markdown transcript of a Conversation and download it.
 async function exportConversation(id) {
     let conv;
@@ -1258,9 +1279,16 @@ function buildUserEl(m) {
         badge.textContent = 'Sent from queue';
         wrap.appendChild(badge);
     }
-    // Edit & resend (only meaningful for a persisted message with an id).
+    // Edit & resend, and copy (only meaningful for a persisted message with text).
     if (m && m.id && m.text) {
         const actions = el('user-actions');
+        const copy = el('msg-action-btn', 'button');
+        copy.type = 'button';
+        copy.title = 'Copy message';
+        copy.setAttribute('aria-label', 'Copy message');
+        copy.textContent = '⧉';
+        copy.onclick = () => copyMessageText(m.text);
+        actions.appendChild(copy);
         const edit = el('msg-action-btn', 'button');
         edit.type = 'button';
         edit.title = 'Edit & resend';
@@ -6300,7 +6328,7 @@ function buildMessageActions(node, m) {
     copy.title = 'Copy message';
     copy.setAttribute('aria-label', 'Copy message');
     copy.textContent = '⧉';
-    copy.onclick = () => navigator.clipboard.writeText(text).then(() => toast('Copied message.'), () => toast('Copy failed.'));
+    copy.onclick = () => copyMessageText(text);
     node.appendChild(copy);
     if (canSpeak()) {
         const speak = el('msg-action-btn', 'button');
