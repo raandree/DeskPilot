@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Undoing a file now clears it from the review list.** The diff viewer kept the
+  file list it opened with, so after you confirmed an undo the file was still
+  listed, still showed its old diff, and still offered a second **Undo this
+  file** for a change that was already gone. The viewer now re-reads the change
+  set after every Keep or Undo: a file that no longer differs drops out, the
+  selection moves to the next file, and the viewer closes when nothing is left
+  to review. A file put back through Git also stops being reported as an
+  unreviewed DeskPilot change.
 - **The window keeps up with your phone.** Archiving, unarchiving, deleting or
   starting a conversation from Telegram now updates the DeskPilot sidebar within
   a few seconds, instead of leaving a deleted conversation listed and

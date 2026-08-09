@@ -1510,6 +1510,13 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'restore_failed'; message = $result.error } }
                 return
             }
+            # A file that actually went back is no longer an unreviewed change;
+            # leaving it pending would keep offering an undo for work already gone.
+            $done = @(@($result.restored) + @($result.removed))
+            if ($done.Count -gt 0) {
+                $null = Remove-DpChangeEntry -Store $state.Changes -Root $root -Paths $done
+                if ($state.DataDir) { Save-DpChangeStore -Store $state.Changes -Directory $state.DataDir }
+            }
             Write-DpResponse -Stream $Stream -Json $result
         }
         'atelierHealth' {

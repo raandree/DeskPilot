@@ -10,7 +10,25 @@ source: repository evidence
 
 ## Current focus
 
-**Intercom inline keyboards — tap instead of type (`ai/intercom`, 2026-08-09).**
+**Green build restored on `main` (2026-08-09).** `./build.ps1 -Tasks build,test`
+was failing 2 of 748. The tests were right and the code was wrong: merge
+**665b260** (Intercom PR #4) carried the worktree revert of **42641d7** — the
+2026-08-06 "undo doesn't work" fix — into `main` while keeping that commit's
+tests, so the suite reported its own regression.
+
+Only the *call sites* were lost; `reconcileDiffFiles` survived in `diff.js`. The
+`gitRestore` route stopped clearing a restored file from the pending change set,
+and `app.js` lost the import, `refreshDiffViewer` and its two callers. Restored
+verbatim from 42641d7 rather than rewritten, along with the CHANGELOG entry and
+the two `systemPatterns` entries that were reverted with it. **No test was
+changed.** Full suite **748/748**, build EXIT 0.
+
+The *Known repository state* note below is therefore resolved: the revert is
+gone from `main`.
+
+## Previous focus — Intercom inline keyboards
+
+**Tap instead of type (`ai/intercom`, 2026-08-09).**
 Parity with BotFather: a closed choice should be a button, not a number to read
 and retype at a bus stop. Buttons ride under an Ask-User question and the
 `/chats` listing; the written form always still works, so nothing depends on them
@@ -65,9 +83,9 @@ snapshot a Message still references.
 - SPA structural guards in `tests/Unit/WebAssets.Tests.ps1`: the divider is gated
   on `m.checkpoint.sha`, restoring always confirms, the prompt is put back in the
   composer, and `refreshCurrentConversation` calls `syncCheckpointDividers`.
-- Full suite **735/737**. The two failures are the **pre-existing revert** — see
-  *Known repository state* below.
-- PSScriptAnalyzer clean on every new source file; `./build.ps1 -Tasks build`
+- Full suite **748/748** after the revert was undone; before that, 735/737 with
+  the two failures caused by it.
+- PSScriptAnalyzer clean on every new source file; `./build.ps1 -Tasks build,test`
   EXIT 0.
 - **Not yet live-smoked.** Restoring rewrites files on disk, and the keyboard path
   has never touched a real Bot API; exercise both against a real Project and a
@@ -76,15 +94,10 @@ snapshot a Message still references.
 ## Known repository state — not mine
 
 `.memory-bank/progress.md`, `.memory-bank/systemPatterns.md`, `CHANGELOG.md` and
-the `gitRestore` case in `Invoke-DpRouteHandler.ps1` carried **uncommitted
-deletions before this session started**: a wholesale revert of the 2026-08-06
-"undo doesn't work" fix. `refreshDiffViewer` is gone from `app.js` and the
-`Remove-DpChangeEntry` block is gone from the `gitRestore` route, so those two
-tests fail. It was left untouched on purpose — it is unrelated in-progress work —
-and it has since been **carried into `ai/intercom` by this session's commits**, so
-it is now in HEAD rather than sitting in the worktree. The two failures are
-therefore a branch-level condition, not a dirty tree. Decide whether to restore
-the fix or keep the revert before the next release.
+the `gitRestore` case in `Invoke-DpRouteHandler.ps1` carried a wholesale revert
+of the 2026-08-06 "undo doesn't work" fix — uncommitted at first, then carried
+into `ai/intercom` and merged to `main` as **665b260**. **Resolved on
+2026-08-09** by restoring 42641d7's hunks verbatim. Nothing outstanding here.
 
 ## Next step
 
@@ -97,10 +110,11 @@ an older question's buttons should be refused rather than misrouted. Then a
 Checkpoint restore from both surfaces — confirm the divider appears on the turn
 just run, the prompt returns to the composer, a file the agent wrote is put back
 and one it created is deleted, a hand edit to an untouched file survives, and
-`/undo` previews accurate numbers before `/undo confirm` acts. Then resolve the
-repository revert above.
+`/undo` previews accurate numbers before `/undo confirm` acts. Also live-smoke
+the restored undo path: confirming an undo in the diff viewer should drop the
+file from the modal's list rather than leave it there with a second Undo button.
 
-## Previous focus
+## Previous focus — Intercom
 
 **Intercom — remote control from a phone (spec 110).** Telegram bot, long-polling
 only, no inbound port and no relay. `Update-DpIntercomState` never waits on the
