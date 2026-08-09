@@ -2,6 +2,32 @@
 
 Recurring issues and how they were resolved.
 
+## A Windows path literal in a unit test is a Linux-only failure (2026-08-09)
+
+**Symptom:** `Checkpoint.Tests.ps1` passed 21/21 on Windows and failed 4 in CI on
+Linux. Every failure said the same thing in a different way — `filesTried` false,
+`Remove-DpChangeEntry` never called, an injected restore error never surfacing,
+`files` count 0 instead of 2. All of them mean `Restore-DpCheckpoint` found **no
+files inside the Project**.
+
+**Root cause:** the test built its Project as `'C:\proj'` and its written files as
+`"$Root\src\one.ps1"`. On Linux a backslash is an ordinary filename character, so
+`C:\proj\src\one.ps1` is neither rooted nor under the Project. The code then takes
+the `Join-Path $rootTrim $path` branch, and PowerShell's Unix FileSystem provider
+normalises the backslashes to forward slashes while `$rootTrim` — built by
+`[IO.Path]::GetFullPath`, which leaves them alone — does not. The boundary check
+`StartsWith($rootTrim + $separator)` therefore rejects every path.
+
+**Why the sibling test still passed:** `Get-DpCheckpointSha`'s root filter only
+*compares* two `GetFullPath` results, so it never hits the mismatch — which is what
+ruled out "`GetFullPath` threw" and pointed at `Join-Path`.
+
+**Fix + rule:** a test that exercises real path arithmetic must use the running
+platform's own root — `if ($IsWindows) { 'C:\proj' } else { '/proj' }` — and build
+child paths with `[System.IO.Path]::Combine`. A hard-coded `C:\...` is only safe
+for a value the code stores and returns verbatim, never for one it takes apart.
+The production code was correct on both platforms; only the test data was not.
+
 ## Validate `web/assets/app.js` in ESM mode, not plain `node --check` (2026-06-11)
 
 **Symptom:** UI hung on load — no models in the dropdown, Send permanently

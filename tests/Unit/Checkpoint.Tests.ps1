@@ -9,10 +9,20 @@ BeforeAll {
     $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 
+    # These tests exercise real path arithmetic against a Project root. A literal
+    # 'C:\proj' is only a path on Windows - on Linux the backslash is an ordinary
+    # filename character, so nothing lands inside the Project and the file set
+    # comes back empty. Use the running platform's own root.
+    $script:projectRoot = if ($IsWindows) { 'C:\proj' } else { '/proj' }
+    $script:otherRoot = if ($IsWindows) { 'C:\other' } else { '/other' }
+    $script:dataDir = if ($IsWindows) { 'C:\data' } else { '/data' }
+
     function New-TestCheckpointConversation {
         [CmdletBinding()]
         [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'A test helper that builds an in-memory Conversation; it changes nothing.')]
-        param([string]$Sha = 'abc123', [string]$Root = 'C:\proj')
+        param([string]$Sha = 'abc123', [string]$Root)
+
+        if ([string]::IsNullOrEmpty($Root)) { $Root = $script:projectRoot }
 
         @{
             id       = 'c1'
@@ -21,7 +31,12 @@ BeforeAll {
                 @{ id = 'u1'; role = 'user'; text = 'first' }
                 @{ id = 'a1'; role = 'assistant'; text = 'ok'; activity = @{ filesWritten = @() } }
                 @{ id = 'u2'; role = 'user'; text = 'second prompt'; checkpoint = @{ sha = $Sha; root = $Root; createdUtc = '2026-01-01T00:00:00.0000000Z' } }
-                @{ id = 'a2'; role = 'assistant'; text = 'done'; activity = @{ filesWritten = @("$Root\src\one.ps1", "$Root\src\two.ps1") } }
+                @{ id = 'a2'; role = 'assistant'; text = 'done'; activity = @{ filesWritten = @(
+                            [System.IO.Path]::Combine($Root, 'src', 'one.ps1')
+                            [System.IO.Path]::Combine($Root, 'src', 'two.ps1')
+                        )
+                    }
+                }
             )
             history  = [System.Collections.Generic.List[object]]@()
         }
@@ -44,16 +59,16 @@ Describe 'Get-DpCheckpointSha' -Tag 'Unit' {
     It 'keeps only the checkpoints taken in the given project' {
         $script:DeskPilot = @{
             Conversations = @{
-                c1 = (New-TestCheckpointConversation -Sha 'here' -Root 'C:\proj')
-                c2 = (New-TestCheckpointConversation -Sha 'elsewhere' -Root 'C:\other')
+                c1 = (New-TestCheckpointConversation -Sha 'here' -Root $script:projectRoot)
+                c2 = (New-TestCheckpointConversation -Sha 'elsewhere' -Root $script:otherRoot)
             }
         }
-        Get-DpCheckpointSha -Root 'C:\proj' | Should -Be @('here')
+        Get-DpCheckpointSha -Root $script:projectRoot | Should -Be @('here')
     }
 
     It 'survives an empty store' {
         $script:DeskPilot = @{ Conversations = @{} }
-        @(Get-DpCheckpointSha -Root 'C:\proj').Count | Should -Be 0
+        @(Get-DpCheckpointSha -Root $script:projectRoot).Count | Should -Be 0
     }
 }
 
@@ -67,7 +82,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { @{ restored = @('src\one.ps1'); removed = @('src\two.ps1'); skipped = @(); kept = @(); error = $null } }
         Mock Remove-DpChangeEntry { }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot
 
         $result.ok | Should -BeTrue
         $result.prompt | Should -Be 'second prompt'
@@ -81,7 +96,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { $script:captured = $Entries; @{ restored = @('src\one.ps1'); removed = @(); skipped = @(); kept = @(); error = $null } }
         Mock Remove-DpChangeEntry { }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot
 
         $result.filesTried | Should -BeTrue
         @($script:captured).Count | Should -Be 2
@@ -96,14 +111,14 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { @{ restored = @(); removed = @(); skipped = @(); kept = @(); error = $null } }
         Mock Remove-DpChangeEntry { }
 
-        $null = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj'
+        $null = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot
 
         Should -Invoke Remove-DpChangeEntry -Times 1 -Exactly
     }
 
     It 'refuses a message that is not in the conversation' {
         $conversation = New-TestCheckpointConversation
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'nope' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'nope' -Root $script:projectRoot
 
         $result.ok | Should -BeFalse
         $result.error | Should -Match 'no longer'
@@ -112,7 +127,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
 
     It 'refuses an assistant message' {
         $conversation = New-TestCheckpointConversation
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'a2' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'a2' -Root $script:projectRoot
 
         $result.ok | Should -BeFalse
         $result.error | Should -Match 'message you sent'
@@ -125,7 +140,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { throw 'must not be called' }
         Mock Remove-DpChangeEntry { }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot
 
         $result.ok | Should -BeTrue
         $result.filesTried | Should -BeFalse
@@ -137,7 +152,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { throw 'must not be called' }
         Mock Remove-DpChangeEntry { }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj' -SkipFiles
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot -SkipFiles
 
         $result.ok | Should -BeTrue
         $result.filesTried | Should -BeFalse
@@ -149,7 +164,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { @{ restored = @(); removed = @(); skipped = @(); kept = @(); error = 'git exploded' } }
         Mock Remove-DpChangeEntry { }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj'
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot
 
         $result.ok | Should -BeFalse
         $result.error | Should -Be 'git exploded'
@@ -172,7 +187,7 @@ Describe 'Restore-DpCheckpoint' -Tag 'Unit' {
         Mock Invoke-DpChangeUndo { throw 'must not be called' }
         Mock Remove-DpChangeEntry { throw 'must not be called' }
 
-        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root 'C:\proj' -Preview
+        $result = Restore-DpCheckpoint -Conversation $conversation -MessageId 'u2' -Root $script:projectRoot -Preview
 
         $result.ok | Should -BeTrue
         $result.prompt | Should -Be 'second prompt'
@@ -196,10 +211,10 @@ Describe 'Restore-DpIntercomCheckpoint' -Tag 'Unit' {
         $script:conv = New-TestCheckpointConversation
         $script:conv.id = 'c1'
         $script:DeskPilot = @{
-            Settings              = @{ workspaceFolder = 'C:\proj' }
+            Settings              = @{ workspaceFolder = $script:projectRoot }
             Conversations         = @{ c1 = $script:conv }
             Changes               = @{}
-            DataDir               = 'C:\data'
+            DataDir               = $script:dataDir
             TurnRunning           = $false
             ConversationsRevision = 0
             Intercom              = @{ ConversationId = 'c1'; Log = [System.Collections.Generic.List[object]]::new() }
@@ -264,7 +279,7 @@ Describe 'Restore-DpIntercomCheckpoint' -Tag 'Unit' {
     }
 
     It 'goes back to the most recent checkpoint, not the first' {
-        $script:conv.messages[0].checkpoint = @{ sha = 'older'; root = 'C:\proj'; createdUtc = '2025-01-01T00:00:00.0000000Z' }
+        $script:conv.messages[0].checkpoint = @{ sha = 'older'; root = $script:projectRoot; createdUtc = '2025-01-01T00:00:00.0000000Z' }
 
         Restore-DpIntercomCheckpoint -Confirmed
 

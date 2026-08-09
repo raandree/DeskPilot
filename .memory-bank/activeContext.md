@@ -10,8 +10,25 @@ source: repository evidence
 
 ## Current focus
 
-**Green build restored on `main` (2026-08-09).** `./build.ps1 -Tasks build,test`
-was failing 2 of 748. The tests were right and the code was wrong: merge
+**Making the suite pass on Linux too (`main`, 2026-08-09, uncommitted).**
+`Checkpoint.Tests.ps1` was green on Windows and failed 4 in CI. The four
+failures all reduce to one fact: `Restore-DpCheckpoint` found no files inside
+the Project, because the test built its Project as `'C:\proj'` and its written
+files as `"$Root\src\one.ps1"`. On Linux a backslash is an ordinary filename
+character, so neither is a path under that root; the `Join-Path` branch then
+normalises `\` to `/` through the Unix FileSystem provider while `$rootTrim`
+(from `[IO.Path]::GetFullPath`) keeps them, and the boundary check rejects
+everything.
+
+Test data only: the root is now platform-native and child paths come from
+`[System.IO.Path]::Combine`. The production code was already correct on both
+platforms, so nothing under `source/` changed and no assertion was weakened.
+Windows suite **748/748**, build EXIT 0; Linux is for CI to confirm.
+
+## Previous focus — green build restored on `main`
+
+`./build.ps1 -Tasks build,test` was failing 2 of 748. The tests were right and
+the code was wrong: merge
 **665b260** (Intercom PR #4) carried the worktree revert of **42641d7** — the
 2026-08-06 "undo doesn't work" fix — into `main` while keeping that commit's
 tests, so the suite reported its own regression.
