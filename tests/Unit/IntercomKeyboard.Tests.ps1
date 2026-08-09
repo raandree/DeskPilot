@@ -230,6 +230,26 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         ($script:captured['Line'] -join ' ') | Should -Match 'Tap an answer'
     }
 
+    It 'offers buttons for a questionnaire that came through the real normaliser' {
+        # The other cases in this block hand-build the Questionnaire shape. If
+        # ConvertTo-DpQuestionnaire ever emits a different one, those would still
+        # pass while the phone quietly went back to a numbered list.
+        $raw = @{
+            title     = 'Pick a number'
+            questions = @(@{ header = 'Number'; question = 'Which one?'; options = @('47', '3', '92'); multiSelect = $false; allowFreeformInput = $false })
+        } | ConvertTo-Json -Depth 8
+
+        Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire (ConvertTo-DpQuestionnaire -InputObject $raw)
+
+        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 3
+        $script:captured['Keyboard'].inline_keyboard[0][0].text | Should -Be '47'
+        # Each button must carry its own index, or every option answers the first.
+        @(0..2) | ForEach-Object {
+            $script:captured['Keyboard'].inline_keyboard[$_][0].callback_data |
+                Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|$_"
+        }
+    }
+
     It 'falls back to a written reply for a multi-select question' {
         $questionnaire = @{
             title     = 'Pick'
