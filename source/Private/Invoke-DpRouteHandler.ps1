@@ -1519,6 +1519,10 @@ function Invoke-DpRouteHandler {
                 text           = $text
                 reasoning      = $reasoning
                 truncated      = $truncated
+                # Also the window's liveness poll: Intercom can create, archive,
+                # unarchive and delete Conversations, and nothing else would tell
+                # the browser its sidebar is now wrong.
+                conversationsRevision = [int]$state.ConversationsRevision
             }
         }
         'putIntercom' {

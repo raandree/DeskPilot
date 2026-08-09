@@ -278,6 +278,7 @@ function Invoke-DpIntercomCommand {
             $conversation = New-DpConversation -Model $state.Settings.model
             $state.Conversations[$conversation.id] = $conversation
             if ($state.DataDir) { Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir }
+            $state.ConversationsRevision = [int]$state.ConversationsRevision + 1
             $intercom.ConversationId = $conversation.id
             $intercom.ChatIndex = @()
             if ($hasWork) {

@@ -108,6 +108,10 @@ function Start-DeskPilot {
         # Files DeskPilot has changed but the user has not yet kept or undone,
         # keyed by Project folder and paired with a pre-Turn snapshot commit.
         Changes         = $changeStore
+        # Bumped whenever something other than the browser changes the Conversation
+        # list - which in practice means Intercom. The SPA polls it and reloads,
+        # because the Host Server has no way to push (see spec 110).
+        ConversationsRevision = 0
         # Remote control from a phone over a Telegram bot (spec 110). Inert until
         # it is enabled, a token is stored and a chat is allow-listed; the pump
         # (Update-DpIntercomState) runs on the accept loop's idle tick and from

@@ -329,6 +329,19 @@ source: repository evidence
   preference is per-machine (`localStorage`, beside the theme): the Host Server
   gains nothing from knowing it and it shapes no Turn.
 
+- **If the server cannot push, give the client something cheap to compare.**
+  Intercom can create, archive, unarchive and delete Conversations, and the
+  single-threaded accept loop rules out an event channel - so the sidebar kept
+  showing a Conversation that had been deleted from a phone, and clicking that row
+  did nothing. The Host Server now carries a `ConversationsRevision` counter,
+  bumped only where something *other than the browser* changed the list, and the
+  SPA's existing three-second poll reloads when it moves. A revision beats
+  reloading on every tick: the common case costs one integer comparison.
+- **A row can outlive the thing it points at.** `selectConversation` awaited a
+  `GET` that could 404 and nothing caught it, so a stale row failed in complete
+  silence. Any click that can race a deletion must say what happened and
+  resynchronise.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

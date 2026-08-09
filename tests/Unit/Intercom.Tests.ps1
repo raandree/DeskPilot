@@ -449,6 +449,7 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
             Conversations = $conversations
             TurnRunning   = $false
             DataDir       = $null
+            ConversationsRevision = 0
             Intercom      = @{
                 ConversationId = 'c3'
                 ChatIndex      = @()
@@ -595,6 +596,30 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
         Invoke-DpIntercomCommand -Command @{ kind = 'unarchive'; text = ''; reason = '' }
 
         @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match '/chats all'
+    }
+
+    It 'bumps the conversation revision so the window knows to reload' {
+        # The Host Server cannot push, so the window polls this number. Without
+        # it the sidebar kept showing a conversation Intercom had deleted, and
+        # clicking that row did nothing at all.
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $before = [int]$script:DeskPilot.ConversationsRevision
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'delete'; text = '1 confirm'; reason = '' }
+
+        [int]$script:DeskPilot.ConversationsRevision | Should -BeGreaterThan $before
+    }
+
+    It 'bumps the revision for archive and for a new conversation too' {
+        Invoke-DpIntercomCommand -Command @{ kind = 'chats'; text = ''; reason = '' }
+        $start = [int]$script:DeskPilot.ConversationsRevision
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'archive'; text = '1'; reason = '' }
+        $afterArchive = [int]$script:DeskPilot.ConversationsRevision
+        $afterArchive | Should -BeGreaterThan $start
+
+        Invoke-DpIntercomCommand -Command @{ kind = 'new'; text = ''; reason = '' }
+        [int]$script:DeskPilot.ConversationsRevision | Should -BeGreaterThan $afterArchive
     }
 
     It 'archives a conversation and stops listing it' {

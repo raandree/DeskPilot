@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window keeps up with your phone.** Archiving, unarchiving, deleting or
+  starting a conversation from Telegram now updates the DeskPilot sidebar within
+  a few seconds, instead of leaving a deleted conversation listed and
+  unclickable. Clicking a conversation that has since gone says so and refreshes
+  the list, rather than doing nothing at all.
+- **An archived conversation no longer accepts new work.** Sending, regenerating
+  or editing a turn in an archived conversation — from the window or from your
+  phone — is refused with a message telling you to unarchive it first. Archiving
+  is you saying you are done with it.
+- **Deleting the conversation your phone was working in is now an error.**
+  Intercom used to fall through to "the most recent one" and quietly do the work
+  somewhere you never chose. It now refuses and asks you to pick one with
+  `/chats` or start one with `/new`.
+- **Deleting a conversation asks first.** The ✕ button beside a conversation now
+  **archives** it (reversible); deleting moved into the ⋯ menu — also reachable
+  by right-clicking the row — and always confirms.
 - **Linking your phone to Intercom no longer requires hunting for a chat id.**
   Intercom ignores every chat until you confirm one, which meant your bot stayed
   silent — even to `/start` — and there was no way to discover the number from

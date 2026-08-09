@@ -37,4 +37,7 @@ function Update-DpIntercomChatBinding {
     }
 
     if ($state.DataDir) { Save-DpConversationStore -Store $state.Conversations -Directory $state.DataDir }
+
+    # The window did not ask for this, so tell it something changed.
+    $state.ConversationsRevision = [int]$state.ConversationsRevision + 1
 }

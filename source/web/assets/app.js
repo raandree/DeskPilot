@@ -130,6 +130,10 @@ const state = {
     // the Host Server's single accept thread.
     remoteTurn: null,
     remoteTurnWasActive: false,
+    // Last conversation-store revision the sidebar was rendered from. Intercom
+    // can create, archive, unarchive and delete conversations, and the Host
+    // Server cannot push - so the window compares this and reloads.
+    conversationsRevision: null,
     updateDismissed: false,
     restartDismissed: false,
     // Conversation organisation: archived items are hidden unless showArchived is
@@ -1160,7 +1164,19 @@ function goHome() {
 }
 
 async function selectConversation(id) {
-    state.current = await api('GET', '/api/conversations/' + id);
+    try {
+        state.current = await api('GET', '/api/conversations/' + id);
+    }
+    catch (e) {
+        // The row can outlive the Conversation: Intercom may have deleted it
+        // since the sidebar was drawn. Clicking it used to do nothing at all.
+        if (e && e.status === 404) {
+            toast('That conversation no longer exists.');
+            await syncConversationsFromServer();
+            return;
+        }
+        throw e;
+    }
     $('conv-title').value = state.current.title || '';
     setModelSelect(state.current.model || state.defaultModel);
     seedPromptHistory(state.current.messages);
@@ -3144,6 +3160,20 @@ function wireIntercomAutoRefresh() {
 // Server accepts on one thread, so a persistent event channel would hold the
 // only thread it has - and the request that drives a normal Turn does not exist
 // here. Polling a cheap local route is what fits the architecture.
+// Re-read the Conversation list after something other than this window changed
+// it, and make sure the open Conversation still exists.
+async function syncConversationsFromServer() {
+    await loadConversations();
+    const openId = state.current && state.current.id;
+    if (openId && !state.conversations.some((c) => c.id === openId)) {
+        state.current = null;
+        if (state.conversations.length) await selectConversation(state.conversations[0].id);
+        else await newConversation();
+        return;
+    }
+    if (!openId && state.conversations.length) await selectConversation(state.conversations[0].id);
+}
+
 async function pollRemoteTurn() {
     if (document.visibilityState !== 'visible') return;
     // Our own Turn owns the thread while it streams; never paint over it.
@@ -3158,6 +3188,17 @@ async function pollRemoteTurn() {
 
     if (data.active || wasActive) renderConversationList();
     renderRemoteLive();
+
+    // Intercom can create, archive, unarchive and delete conversations. Without
+    // this the sidebar kept showing a deleted one, and clicking it did nothing.
+    const revision = data.conversationsRevision;
+    if (typeof revision === 'number' && state.conversationsRevision !== null && revision !== state.conversationsRevision) {
+        state.conversationsRevision = revision;
+        try { await syncConversationsFromServer(); } catch { /* a transient failure just leaves the list as it was */ }
+    }
+    else if (typeof revision === 'number') {
+        state.conversationsRevision = revision;
+    }
 
     if (wasActive && !data.active) {
         // The live view was an approximation; the recorded Message is the truth,
