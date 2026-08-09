@@ -5541,9 +5541,10 @@ function openSettings() {
         <p class="hint">Anyone holding this token <em>is</em> your bot. It is stored encrypted for your Windows account, never in your settings file, and never shown again — so a settings backup can never leak it. Lost your phone? Revoke it in @BotFather.</p>
       </div>
       <div class="field">
-        <label>Allowed chat id</label>
+        <label>Your phone</label>
+        <div class="intercom-panel" id="set-ic-pairing">Checking…</div>
         <input type="text" id="set-ic-chat" inputmode="numeric" spellcheck="false" placeholder="e.g. 123456789" value="${escapeHtml(ic.chatId || '')}" />
-        <p class="hint">Only this one Telegram chat can reach DeskPilot. A message from anywhere else is counted and thrown away without being read as a command. Send <code>/start</code> to your bot, then use the test button to find your id.</p>
+        <p class="hint">Only this one Telegram chat can reach DeskPilot. A message from anywhere else is counted and thrown away without being read as a command. Use <strong>Link my phone</strong> above and DeskPilot will find this number for you — you never have to look it up.</p>
       </div>
       <div class="field">
         <div class="backup-row">

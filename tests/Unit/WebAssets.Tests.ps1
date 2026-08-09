@@ -46,6 +46,25 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         }
     }
 
+    It 'renders every Intercom control it binds to' {
+        # A handler bound to an id the template never renders fails silently: the
+        # control is simply absent and nothing throws. That shipped once - the
+        # pairing panel's container was missing, so "Link my phone" never appeared
+        # while every API test still passed.
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $bound = [regex]::Matches($js, "\`$\('(set-ic-[a-z-]+|set-intercom-[a-z-]+|btn-intercom|stab-intercom)'\)") |
+            ForEach-Object { $_.Groups[1].Value } |
+            Select-Object -Unique
+
+        $bound.Count | Should -BeGreaterThan 5
+        foreach ($id in $bound) {
+            $rendered = $js.Contains("id=`"$id`"") -or
+                (Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw).Contains("id=`"$id`"")
+            $rendered | Should -BeTrue -Because "app.js binds `$('$id') but nothing renders that id"
+        }
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'
