@@ -141,6 +141,11 @@ Three things worth knowing:
 - **The agent cannot switch conversations itself.** If you ask it to, it will say
   so — it has no way to see or change which conversation it is in. Use `/chats`
   and `/chat 2`, which are handled by DeskPilot rather than the agent.
+- **Editing a message does not resend it.** If you fix a typo in a command you
+  already sent, DeskPilot will reply *"I did not run that"* — send it again as a
+  new message instead. Edits are deliberately never acted on, because Telegram
+  delivers them as fresh updates and a command that already ran could otherwise
+  run again with different text.
 - **Watch it from the machine too.** While a job you started from your phone is
   running, the DeskPilot window marks that conversation with 📻 and shows the
   answer being written — including the model's thinking when that is switched on.

@@ -287,6 +287,14 @@ source: repository evidence
   `/delete <n> confirm` acts, with `/archive` offered in the same breath. A phone
   is where a mistyped number is most likely and an undo is least available.
 
+- **Not subscribing to an event is not the same as handling it.** Intercom asked
+  Telegram for `message` only, so an edited command was never delivered - the
+  operator's correction vanished with no reply, and the visible answer belonged to
+  the *original* text. Edits are now fetched and acknowledged but never run: a
+  fresh update for an already-executed command would re-run it with different
+  text. Where a protocol has a "changed" event, decide explicitly whether to run,
+  refuse, or explain - silence is none of those.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
