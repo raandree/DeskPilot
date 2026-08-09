@@ -57,5 +57,20 @@ function Get-DpIntercomStatus {
         $lines.Add("Next check-in by: $(([DateTime]$intercom.NextCheckInUtc).ToLocalTime().ToString('HH:mm:ss')) - if this time has passed, DeskPilot has stopped.")
     }
 
+    # Which build is actually loaded. A DeskPilot left running across a rebuild
+    # keeps the old functions in memory, which looks exactly like a broken feature:
+    # the file on disk has the fix and the machine does not. Best-effort - the
+    # status message is the heartbeat, so it must never be the thing that throws.
+    try {
+        $module = $ExecutionContext.SessionState.Module
+        if ($module -and $module.Path -and (Test-Path -LiteralPath $module.Path)) {
+            $built = (Get-Item -LiteralPath $module.Path).LastWriteTime.ToString('yyyy-MM-dd HH:mm')
+            $lines.Add("Build: $built - restart DeskPilot if that is older than your last change.")
+        }
+    }
+    catch {
+        Write-Verbose "Could not read the loaded module's build stamp: $_"
+    }
+
     @{ title = 'DeskPilot Intercom'; lines = @($lines.ToArray()) }
 }

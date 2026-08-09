@@ -62,6 +62,16 @@ function Send-DpIntercomQuestion {
     # The nonce is only meaningful if the buttons carrying it actually shipped.
     if (-not $keyboard) { $token = ''; $options = @() }
 
+    # Why a question arrived as a numbered list rather than buttons is otherwise
+    # invisible from the phone, and every cause looks identical there.
+    if (-not $keyboard) {
+        $why = if ($questions.Count -ne 1) { "$($questions.Count) questions" }
+        elseif (@($questions[0].options).Count -eq 0) { 'no options' }
+        elseif ([bool]$questions[0].multiSelect) { 'multi-select' }
+        else { 'the keyboard could not be built' }
+        Add-DpIntercomLog -Direction 'out' -Kind 'question-no-keyboard' -Detail "Sent as a numbered list: $why."
+    }
+
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add($(if ($keyboard) { 'Tap an answer below, or reply to this message with your own.' } else { 'Reply to this message to answer.' }))
 

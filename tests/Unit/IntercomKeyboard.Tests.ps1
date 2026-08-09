@@ -209,7 +209,12 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
 
         $script:DeskPilot = @{
             Settings = @{ intercom = @{ questionTimeoutMinutes = 60 } }
-            Intercom = @{ Running = $true; PendingQuestion = $null }
+            Intercom = @{
+                Running         = $true
+                PendingQuestion = $null
+                Log             = [System.Collections.Generic.List[object]]::new()
+                Token           = 'test-token'
+            }
         }
     }
 
@@ -261,6 +266,8 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         $script:captured['HasKeyboard'] | Should -BeFalse
         $script:DeskPilot.Intercom.PendingQuestion.token | Should -BeNullOrEmpty
         ($script:captured['Line'] -join ' ') | Should -Match 'Reply to this message'
+        # The reason is otherwise invisible from the phone: every cause looks the same there.
+        @($script:DeskPilot.Intercom.Log)[-1].detail | Should -Match 'multi-select'
     }
 
     It 'falls back to a written reply when there is more than one question' {
