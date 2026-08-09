@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A Windows-written Markdown file no longer freezes the window.** Opening a
+  `.md` file saved with Windows line endings — which is most files DeskPilot did
+  not write itself — left the preview stuck on "Loading…" and locked up the whole
+  window until the tab was closed. The first heading was the trigger: the
+  renderer did not recognise it, then had no way to move past the line, and went
+  round forever. Line endings are now normalised before anything is rendered, and
+  the renderer can no longer get stuck on a line it does not understand.
 - **Undoing a file now clears it from the review list.** The diff viewer kept the
   file list it opened with, so after you confirmed an undo the file was still
   listed, still showed its old diff, and still offered a second **Undo this

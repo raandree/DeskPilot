@@ -10,7 +10,29 @@ source: repository evidence
 
 ## Current focus
 
-**Making the suite pass on Linux too (`main`, 2026-08-09, uncommitted).**
+**The file viewer froze the window on a CRLF Markdown file (`main`, 2026-08-09,
+uncommitted).** Reported against `C:\Git\Kinesiologie\vorlagen\kontakt-email-vorlage.md`;
+other files opened fine. Not the Host Server — `Get-DpFileContent` and
+`Write-DpResponse` are correct. `renderMarkdown` in `web/assets/markdown.js` never
+normalised line endings, and its heading branch is `/^(#{1,3})\s+(.*)$/`: without
+the `m` flag `$` only matches end-of-input and `.` cannot cross a `\r`, so the
+pattern fails on `## Heading\r` while the paragraph gatherer's exclusion
+`/^(#{1,3})\s/` still matches. The gatherer therefore consumed nothing, `i` never
+advanced, and the loop spun — freezing the JS thread, which is why the modal was
+still painting "Loading…".
+
+The fix normalises `\r\n?` to `\n` before escaping, and the paragraph branch now
+consumes the current line when no other branch claimed it, so no future regex
+drift can stall the renderer again. Node-based regression test in
+`WebAssets.Tests.ps1`, run out of process under a timeout because the failure mode
+is a hang. Unit suite **739/739**.
+
+Separately observed, not fixed: `escapeHtml` runs before the line parse, so `>`
+is already `&gt;` and the blockquote branch is unreachable — blockquotes have
+never rendered anywhere in the SPA.
+
+## Previous focus — Linux-only `Checkpoint.Tests.ps1` failures
+
 `Checkpoint.Tests.ps1` was green on Windows and failed 4 in CI. The four
 failures all reduce to one fact: `Restore-DpCheckpoint` found no files inside
 the Project, because the test built its Project as `'C:\proj'` and its written

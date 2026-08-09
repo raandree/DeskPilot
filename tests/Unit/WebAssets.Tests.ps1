@@ -478,6 +478,44 @@ assert.equal(serializeQuestionnaireAnswer(plain), 'Berlin');
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
+    It 'renders a CRLF Markdown file instead of spinning forever' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'markdown.js'
+        $scriptPath = Join-Path $TestDrive 'markdown-crlf.mjs'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { renderMarkdown } = await import(pathToFileURL(process.argv[2]).href);
+
+// A Windows-authored file is CRLF end to end. A stray \r defeats the
+// $-anchored heading pattern, which left the paragraph gatherer with a line it
+// refused to consume and no way to advance - an infinite loop that froze the
+// browser tab on the file viewer's first heading.
+const html = renderMarkdown('# Title\r\n\r\nText **bold**\r\n\r\n- one\r\n- two\r\n\r\n```ps\r\ncode\r\n```\r\n');
+
+assert.match(html, /<h1>Title<\/h1>/);
+assert.match(html, /<p>Text <strong>bold<\/strong><\/p>/);
+assert.match(html, /<ul><li>one<\/li><li>two<\/li><\/ul>/);
+assert.match(html, /<code>code<\/code>/);
+assert.equal(/\r/.test(html), false, 'no carriage return may leak into the HTML');
+assert.equal(html.includes('<p></p>'), false, 'an empty paragraph means a line was consumed by nothing');
+'@
+        Set-Content -LiteralPath $scriptPath -Value $nodeScript -Encoding utf8
+
+        # Run out of process under a hard timeout: the regression guarded here
+        # is a non-terminating loop, which would otherwise hang the whole run.
+        $outPath = Join-Path $TestDrive 'markdown-crlf.out'
+        $errPath = Join-Path $TestDrive 'markdown-crlf.err'
+        $proc = Start-Process -FilePath 'node' -ArgumentList $scriptPath, $modulePath -PassThru -NoNewWindow -RedirectStandardOutput $outPath -RedirectStandardError $errPath
+        $finished = $proc.WaitForExit(30000)
+        if (-not $finished) { $proc.Kill($true) }
+        $output = @(Get-Content -LiteralPath $outPath -ErrorAction SilentlyContinue) +
+            @(Get-Content -LiteralPath $errPath -ErrorAction SilentlyContinue)
+
+        $finished | Should -BeTrue -Because 'renderMarkdown must terminate on CRLF input'
+        $proc.ExitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+    }
+
     It 'switches to an immediate stopping state and renders stopped Turn Usage' {
         $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

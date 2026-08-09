@@ -53,7 +53,9 @@ function renderTable(rows) {
 }
 
 export function renderMarkdown(src) {
-    const escaped = escapeHtml(src || '');
+    // Normalize CRLF/CR first: a trailing \r defeats the $-anchored line patterns
+    // below, so a Windows-authored file would fall through every branch.
+    const escaped = escapeHtml((src || '').replace(/\r\n?/g, '\n'));
     const lines = escaped.split('\n');
     const out = [];
     let i = 0;
@@ -128,6 +130,8 @@ export function renderMarkdown(src) {
         ) {
             para.push(lines[i]); i++;
         }
+        // A line no branch claimed must still be consumed, or the loop spins forever.
+        if (!para.length) { para.push(lines[i]); i++; }
         out.push(`<p>${inline(para.join('<br/>'))}</p>`);
     }
 

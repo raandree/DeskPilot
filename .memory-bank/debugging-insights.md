@@ -2,6 +2,33 @@
 
 Recurring issues and how they were resolved.
 
+## "Loading…" that never repaints is a blocked JS thread, not a slow server (2026-08-09)
+
+**Symptom:** opening one `.md` file in the explorer froze the whole browser
+window with the viewer stuck on "Loading…". Other files opened fine.
+
+**Reading the symptom:** `renderFileView` sets `file-meta` *before* it renders the
+body, so a stuck "Loading…" with no meta line means the thread never got back to
+the event loop — a pending `fetch` would have left the window responsive. That
+ruled out the Host Server before a single line of PowerShell was read.
+
+**Root cause:** `renderMarkdown` did not normalise line endings. Its heading
+branch `/^(#{1,3})\s+(.*)$/` has no `m` flag, so `$` matches only end-of-input and
+`.` cannot cross a `\r` — the pattern fails on `## Heading\r`. The paragraph
+gatherer's exclusion `/^(#{1,3})\s/` has no `$`, so it still matched: the gatherer
+consumed zero lines, `i` never advanced, and the `while` loop ran forever. Every
+CRLF Markdown file with an ATX heading; agent-written LF files were unaffected,
+which is what made it look file-specific.
+
+**Rule:** a line-based parser must normalise `\r\n?` to `\n` at the door, and a
+branch's "claim" regex and the fallback's "exclusion" regex must be the same
+pattern or the loop can stall. Where they cannot be, the fallback must consume
+the current line unconditionally.
+
+**Testing a hang:** assert it out of process. `Start-Process node ... -PassThru`
+plus `WaitForExit(30000)` and `Kill($true)` turns a non-terminating loop into a
+failed assertion instead of a hung test run.
+
 ## A Windows path literal in a unit test is a Linux-only failure (2026-08-09)
 
 **Symptom:** `Checkpoint.Tests.ps1` passed 21/21 on Windows and failed 4 in CI on

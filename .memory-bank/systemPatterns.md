@@ -429,6 +429,16 @@ source: repository evidence
   place of an answer, so the same paragraph forbids using it to confirm something
   it can simply do or to ask what it can infer. A trigger without a brake trades
   one bad behaviour for another.
+- **A line parser normalises line endings at the door.** `renderMarkdown` split on
+  `\n` and left the `\r`, so every `$`-anchored line pattern silently stopped
+  matching on a Windows-authored file. Normalise `\r\n?` to `\n` before the first
+  pattern runs; anything else makes each pattern individually responsible for a
+  character that carries no meaning.
+- **A fallback branch must consume unconditionally.** The paragraph gatherer
+  skipped lines that "belong" to another branch, using a *different* regex from
+  the branch that claims them. The moment the two disagreed the loop stopped
+  advancing and the browser tab froze. A dispatch loop's last branch must always
+  move the cursor, whatever it decides to do with the line.
 
 ## Anti-patterns to avoid
 
