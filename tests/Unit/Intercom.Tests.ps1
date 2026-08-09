@@ -153,6 +153,8 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         $result.kind | Should -Be 'edited'
         # The command must not be interpreted, or an edit would re-run something.
         $result.text | Should -BeNullOrEmpty
+        # But the operator still needs to see what they typed, to resend it.
+        $result.preview | Should -Be '/chat 2'
     }
 
     It 'still rejects an edited message from a chat that is not allow-listed' {
@@ -502,11 +504,15 @@ Describe 'Intercom chat navigation' -Tag 'Unit' {
     }
 
     It 'tells the operator an edited message did nothing, and changes no state' {
-        Invoke-DpIntercomCommand -Command @{ kind = 'edited'; text = ''; reason = 'An edited message is not run.' }
+        Invoke-DpIntercomCommand -Command @{ kind = 'edited'; text = ''; preview = '/chat 2'; reason = 'An edited message is not run.' }
 
         $script:DeskPilot.Intercom.ConversationId | Should -Be 'c3'
         $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
-        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Match 'Send it again as a new message'
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match 'Send it again as a new message'
+        # Naming the cause is the point: nobody edits a message here on purpose.
+        $text | Should -Match 'up arrow'
+        $text | Should -Match 'You wrote: /chat 2'
     }
 }
 
@@ -945,5 +951,121 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
 
         Should -Invoke Invoke-DpIntercomTurn -Times 0
         $script:DeskPilot.Intercom.QueuedPrompt | Should -Be 'do the thing'
+    }
+}
+
+Describe 'Add-DpIntercomLog' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $script:DeskPilot = @{
+            Intercom = @{
+                Log   = [System.Collections.Generic.List[object]]::new()
+                Token = ''
+            }
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'records the very first entry' {
+        # An empty List is falsy, so a "-not $intercom.Log" guard rejected every
+        # entry while the ring was empty - which it always was.
+        Add-DpIntercomLog -Direction 'in' -Kind 'prompt' -Detail 'hello'
+
+        $script:DeskPilot.Intercom.Log.Count | Should -Be 1
+        $script:DeskPilot.Intercom.Log[0].kind | Should -Be 'prompt'
+    }
+
+    It 'redacts a token that reaches the log' {
+        Add-DpIntercomLog -Direction 'out' -Kind 'error' -Detail 'failed for bot123456789:AAHqWeRtYuIoPaSdFgHjKlZxCvBnM12'
+
+        $script:DeskPilot.Intercom.Log[0].detail | Should -Not -Match 'AAHqWeRtYuIoPaSdFgHjKlZxCvBnM12'
+    }
+
+    It 'bounds the ring so a flood cannot grow it forever' {
+        1..250 | ForEach-Object { Add-DpIntercomLog -Direction 'in' -Kind 'prompt' -Detail "message $_" }
+
+        $script:DeskPilot.Intercom.Log.Count | Should -Be 200
+        # The oldest are the ones dropped.
+        $script:DeskPilot.Intercom.Log[-1].detail | Should -Be 'message 250'
+    }
+}
+
+Describe 'Intercom update batching' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $script:dataDir = Join-Path $TestDrive ('batch-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:dataDir | Out-Null
+        $settings = Get-DpDefaultSettings
+        $settings.intercom.enabled = $true
+        $settings.intercom.chatId = '111'
+        $script:DeskPilot = @{
+            Settings      = $settings
+            Conversations = @{}
+            TurnRunning   = $false
+            DataDir       = $script:dataDir
+            Intercom      = Initialize-DpIntercom -Directory $script:dataDir
+        }
+        $script:DeskPilot.Intercom.TokenConfigured = $true
+        $script:DeskPilot.Intercom.Token = '123456789:AAHqWeRtYuIoPaSdFgHjKlZxCvBnM12'
+        # Already running, past priming: this exercises the steady-state path.
+        $script:DeskPilot.Intercom.Running = $true
+        $script:DeskPilot.Intercom.Priming = $false
+
+        # A real completed Task carrying three updates, so the pump's own reap
+        # code runs rather than a stand-in for it.
+        $body = @{
+            ok     = $true
+            result = @(
+                @{ update_id = 10; message = @{ message_id = 1; chat = @{ id = '111' }; text = 'first' } },
+                @{ update_id = 11; message = @{ message_id = 2; chat = @{ id = '111' }; text = 'poison' } },
+                @{ update_id = 12; message = @{ message_id = 3; chat = @{ id = '111' }; text = 'third' } }
+            )
+        } | ConvertTo-Json -Depth 6
+        $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+        $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+        $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+
+        # The next poll must never reach the network: hand back a Task that never
+        # completes, so the pump simply leaves it in flight.
+        Mock Invoke-DpTelegramRequest {
+            ([System.Threading.Tasks.TaskCompletionSource[System.Net.Http.HttpResponseMessage]]::new()).Task
+        }
+
+        $script:handled = [System.Collections.Generic.List[string]]::new()
+        Mock Invoke-DpIntercomCommand {
+            param($Command)
+            $script:handled.Add([string]$Command.text)
+            if ([string]$Command.text -eq 'poison') { throw 'handler blew up' }
+        }
+    }
+
+    AfterEach {
+        if ($script:DeskPilot.Intercom.Client) { $script:DeskPilot.Intercom.Client.Dispose() }
+        $script:DeskPilot = $null
+    }
+
+    It 'keeps handling the batch after one update throws' {
+        # The offset used to advance for the whole batch up front, so a throw here
+        # jumped to the outer catch and everything behind it was lost for good.
+        { Update-DpIntercomState } | Should -Not -Throw
+
+        $script:handled | Should -Be @('first', 'poison', 'third')
+    }
+
+    It 'advances past every update it attempted, including the one that threw' {
+        Update-DpIntercomState
+
+        $script:DeskPilot.Intercom.Offset | Should -Be 13
+    }
+
+    It 'records the failure against the update that caused it' {
+        Update-DpIntercomState
+
+        $entry = @($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'handler-error' } | Select-Object -First 1
+        $entry | Should -Not -BeNullOrEmpty
+        $entry.detail | Should -Match 'Update 11'
+        $entry.accepted | Should -BeFalse
+        $script:DeskPilot.Intercom.Counters.errors | Should -Be 1
     }
 }

@@ -40,7 +40,10 @@ function Add-DpIntercomLog {
     )
 
     $intercom = $script:DeskPilot.Intercom
-    if (-not $intercom -or -not $intercom.Log) { return }
+    # An empty collection is falsy in PowerShell, so "-not $intercom.Log" was true
+    # for the empty ring - the audit log could never record its first entry, and
+    # therefore never recorded anything at all.
+    if (-not $intercom -or $null -eq $intercom.Log) { return }
 
     $text = Hide-DpIntercomSecret -Text $Detail
     if ($text.Length -gt 300) { $text = $text.Substring(0, 300) + '...' }

@@ -161,43 +161,48 @@ function Update-DpIntercomState {
             if ($response.ok) {
                 $intercom.LastError = ''
                 $updates = @($response.result)
-                $highest = 0
+
                 foreach ($update in $updates) {
                     $updateId = [long](Get-DpPropertyValue -InputObject $update -Name @('update_id') -Default 0)
-                    if ($updateId -gt $highest) { $highest = $updateId }
+                    try {
+                        if ($intercom.Priming) {
+                            # Anything queued while DeskPilot was not running is
+                            # discarded. Executing an instruction the operator sent
+                            # an hour ago, on startup, is a dangerous surprise.
+                            Add-DpIntercomLog -Direction 'system' -Kind 'primed' -Detail 'Discarded a message that arrived while DeskPilot was not running.'
+                        }
+                        else {
+                            $pendingMessageId = 0
+                            if ($intercom.PendingQuestion) { $pendingMessageId = [long]$intercom.PendingQuestion.messageId }
+                            $commandParams = @{
+                                Update                   = $update
+                                AllowedChatId            = $chatId
+                                PendingQuestionMessageId = $pendingMessageId
+                            }
+                            $command = ConvertFrom-DpIntercomUpdate @commandParams
+                            # While pairing, chatId is empty, so every command comes
+                            # back 'rejected' and nothing executes. Keep the sender
+                            # as a candidate for the operator to confirm.
+                            if ($isPairing) { Add-DpIntercomPairingCandidate -Command $command }
+                            else { Invoke-DpIntercomCommand -Command $command }
+                        }
+                    }
+                    catch {
+                        # One bad update must not cost the ones behind it. Before,
+                        # the offset advanced for the whole batch up front and a
+                        # throw here jumped to the outer catch - so every remaining
+                        # message was lost with nothing recorded against it.
+                        $intercom.Counters.errors++
+                        $failure = Hide-DpIntercomSecret -Text "$_"
+                        $intercom.LastError = $failure
+                        Add-DpIntercomLog -Direction 'in' -Kind 'handler-error' -Detail "Update $updateId could not be handled: $failure" -Accepted $false
+                    }
+                    # Advance past this update once it has been attempted, so a
+                    # failure neither loses what follows nor retries forever.
+                    if ($updateId -ge $intercom.Offset) { $intercom.Offset = $updateId + 1 }
                 }
-                if ($highest -gt 0) { $intercom.Offset = $highest + 1 }
 
-                if ($intercom.Priming) {
-                    # Everything queued while DeskPilot was not running is discarded.
-                    # Executing a command the operator sent an hour ago, on startup,
-                    # would be a genuinely dangerous surprise.
-                    $intercom.Priming = $false
-                    if ($updates.Count -gt 0) {
-                        Add-DpIntercomLog -Direction 'system' -Kind 'primed' -Detail "Discarded $($updates.Count) message(s) that arrived while DeskPilot was not running."
-                    }
-                }
-                else {
-                    $pendingMessageId = 0
-                    if ($intercom.PendingQuestion) { $pendingMessageId = [long]$intercom.PendingQuestion.messageId }
-                    foreach ($update in $updates) {
-                        $commandParams = @{
-                            Update                   = $update
-                            AllowedChatId            = $chatId
-                            PendingQuestionMessageId = $pendingMessageId
-                        }
-                        $command = ConvertFrom-DpIntercomUpdate @commandParams
-                        # While pairing, chatId is empty, so every command comes back
-                        # 'rejected' and nothing executes. Keep the sender as a
-                        # candidate for the operator to confirm, and stop there.
-                        if ($isPairing) {
-                            Add-DpIntercomPairingCandidate -Command $command
-                            continue
-                        }
-                        Invoke-DpIntercomCommand -Command $command
-                        if ($intercom.PendingQuestion) { $pendingMessageId = [long]$intercom.PendingQuestion.messageId } else { $pendingMessageId = 0 }
-                    }
-                }
+                if ($intercom.Priming) { $intercom.Priming = $false }
             }
             else {
                 $intercom.Counters.errors++

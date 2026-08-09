@@ -49,10 +49,19 @@ function Invoke-DpIntercomCommand {
 
     if ($Command.kind -eq 'edited') {
         Add-DpIntercomLog -Direction 'in' -Kind 'edited' -Detail 'An edited message was acknowledged, not run.' -Accepted $false
-        $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @(
-            'Editing a message you already sent does not reach me as a new instruction.',
-            'Send it again as a new message.'
-        ) -Kind 'notice'
+        # Almost nobody edits a message on purpose here. In Telegram Desktop and
+        # Web, the up arrow in an empty input box opens the last message for
+        # editing - a reflex for anyone with shell history habits - and the result
+        # looks exactly like sending. Naming that is the difference between a
+        # baffling refusal and an obvious one.
+        $lines = [System.Collections.Generic.List[string]]::new()
+        $lines.Add('That arrived as an edit of an earlier message, not as a new one.')
+        $lines.Add('Telegram does this when you press the up arrow in an empty message box - it reopens your last message instead of starting a new one.')
+        if (-not [string]::IsNullOrWhiteSpace([string]$Command.preview)) {
+            $lines.Add("You wrote: $([string]$Command.preview)")
+        }
+        $lines.Add('Send it again as a new message and I will run it.')
+        $null = Send-DpIntercomMessage -Title 'I did not run that.' -Line @($lines.ToArray()) -Kind 'notice'
         return
     }
 
