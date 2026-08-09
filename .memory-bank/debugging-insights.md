@@ -2,6 +2,27 @@
 
 Recurring issues and how they were resolved.
 
+## The first voice for a language is the worst one installed (2026-08-09)
+
+**Symptom:** read-aloud "sounds like from the last decade", flat and unemphasised,
+even on a machine with modern voices installed.
+
+**Root cause:** taking the first `getVoices()` entry whose language matches.
+Windows enumerates the 2010-era SAPI voices first — on this machine
+`Microsoft Hedda Desktop` sorts ahead of `Microsoft Katja`, and Edge's
+`Microsoft Katja Online (Natural)` neural voice sorts last. The API offers no
+quality field, so the only signals are the name (`Natural`, `Online`, `Neural`,
+`Google`, `Desktop`) and `localService === false`, which is true for the network
+neural voices in both Edge and Chrome.
+
+**Rule:** rank, never take the first match. Rank the requested language tag above
+quality, or an explicit en-GB gets answered in American.
+
+**Related:** the Web Speech API has **no SSML** — `<say-as interpret-as="date">`
+is read out literally — so pronunciation can only be fixed by rewriting the text
+itself. Rewriting is safe only with a strong contextual cue: a bare four-digit
+number is as likely to be a port as a year.
+
 ## `utterance.lang` does not choose a voice, and `getVoices()` starts empty (2026-08-09)
 
 **Symptom:** read-aloud set to German still read the answer with an English

@@ -14,7 +14,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
     }
@@ -581,12 +581,6 @@ store.set('ad_voicelang', 'de-DE');
 assert.equal(context.voiceLangPref(), 'de-DE');
 assert.equal(context.voiceLang(), 'de-DE');
 
-// Setting lang alone is not enough: browsers keep reading German with the
-// default English voice unless an actual voice is picked.
-assert.equal(context.voiceFor('de-DE').lang, 'de-DE');
-assert.equal(context.voiceFor('de-AT').lang, 'de-DE', 'a regional variant falls back to the same language');
-assert.equal(context.voiceFor('fr-FR'), null, 'no French voice installed');
-
 // A stale or hand-edited value must not break speech outright.
 store.set('ad_voicelang', 'not-a-language');
 assert.equal(context.voiceLangPref(), 'auto');
@@ -601,12 +595,72 @@ assert.equal(context.voiceLangPref(), 'auto');
         # Both speech APIs used to be hard-wired to navigator.language, so a German
         # speaker on an English browser got an English recogniser and reader.
         $app | Should -Match ([regex]::Escape('rec.lang = voiceLang();'))
-        $app | Should -Match ([regex]::Escape('u.lang = voiceLang();'))
+        $app | Should -Match ([regex]::Escape('u.lang = lang;'))
         $app | Should -Not -Match 'rec\.lang = navigator\.language'
         $app | Should -Not -Match 'u\.lang = navigator\.language'
         # And the choice has to be reachable and persisted, or it cannot be made.
         $app | Should -Match 'id="set-voicelang"'
         $app | Should -Match ([regex]::Escape("localStorage.setItem('ad_voicelang'"))
+    }
+
+    It 'picks a modern voice and reads a year as a year' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'speech.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { numbersToSpeech, pickVoice } = await import(pathToFileURL(process.argv[1]).href);
+
+// Windows lists its 2010-era SAPI "... Desktop" voices first, so taking the first
+// language match is exactly what made read-aloud sound a decade old.
+const voices = [
+    { name: 'Microsoft Hedda Desktop - German (Germany)', lang: 'de-DE', localService: true },
+    { name: 'Microsoft Katja - German (Germany)', lang: 'de-DE', localService: true },
+    { name: 'Microsoft Katja Online (Natural) - German (Germany)', lang: 'de-DE', localService: false },
+    { name: 'Microsoft David Desktop - English (United States)', lang: 'en-US', localService: true },
+    { name: 'Microsoft Sonia Online (Natural) - English (United Kingdom)', lang: 'en-GB', localService: false },
+];
+
+assert.equal(pickVoice(voices, 'de-DE').name, 'Microsoft Katja Online (Natural) - German (Germany)');
+// A modern voice beats an old one, but never a language the user did not ask for.
+assert.equal(pickVoice(voices, 'de-AT').name, 'Microsoft Katja Online (Natural) - German (Germany)');
+assert.equal(pickVoice(voices, 'en-US').name, 'Microsoft David Desktop - English (United States)');
+assert.equal(pickVoice(voices, 'fr-FR'), null);
+assert.equal(pickVoice([], 'de-DE'), null);
+
+// A saved choice wins, but only while it still speaks the chosen language.
+assert.equal(pickVoice(voices, 'de-DE', 'Microsoft Katja - German (Germany)').name, 'Microsoft Katja - German (Germany)');
+assert.equal(pickVoice(voices, 'en-US', 'Microsoft Katja - German (Germany)').name, 'Microsoft David Desktop - English (United States)');
+
+// Engines read a bare 1945 as "one thousand nine hundred forty-five".
+assert.equal(numbersToSpeech('It was signed in 1945.', 'en-US'), 'It was signed in nineteen forty-five.');
+assert.equal(numbersToSpeech('from 1905 to 1900', 'en-US'), 'from nineteen oh five to nineteen hundred');
+assert.equal(numbersToSpeech('shipped in 2020, planned since 2005', 'en-GB'), 'shipped in twenty twenty, planned since two thousand five');
+assert.equal(numbersToSpeech('Es war im Jahr 1945.', 'de-DE'), 'Es war im Jahr neunzehnhundertfünfundvierzig.');
+assert.equal(numbersToSpeech('seit 2020 und ab 2001', 'de-DE'), 'seit zweitausendzwanzig und ab zweitausendeins');
+
+// Only a year cue makes a number a year: a port, a count and an out-of-range
+// number all have to survive untouched.
+assert.equal(numbersToSpeech('listening on 8080', 'en-US'), 'listening on 8080');
+assert.equal(numbersToSpeech('ran 1945 tests', 'en-US'), 'ran 1945 tests');
+assert.equal(numbersToSpeech('in 3000 ports', 'en-US'), 'in 3000 ports');
+assert.equal(numbersToSpeech('in 19450 ms', 'en-US'), 'in 19450 ms');
+// A language we cannot spell out is left alone rather than mangled.
+assert.equal(numbersToSpeech('en 1945', 'fr-FR'), 'en 1945');
+assert.equal(numbersToSpeech('', 'en-US'), '');
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+
+        $app = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $app | Should -Match 'import \{[^}]*numbersToSpeech[^}]*\} from ''\./speech\.js'';'
+        $app | Should -Match 'id="set-voice"'
+        $app | Should -Match ([regex]::Escape("localStorage.setItem('ad_voicename'"))
+        # The voice list arrives late in Chrome, so the picker has to refill itself.
+        $app | Should -Match ([regex]::Escape('onvoiceschanged'))
     }
 
     It 'reads a Message as prose, not as Markdown punctuation' {

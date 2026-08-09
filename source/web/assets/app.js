@@ -19,6 +19,7 @@ import {
     setQuestionnaireStep,
     toggleQuestionnaireOption,
 } from './questionnaire.js';
+import { numbersToSpeech, pickVoice } from './speech.js';
 
 // ===== Session token =====
 const token =
@@ -5729,6 +5730,11 @@ function openSettings() {
         <p class="hint">Used by 🎤 Dictate and 🔊 Read aloud. Auto follows your browser — pick a language when your browser is set to one and you speak another.</p>
       </div>
       <div class="field">
+        <label>Voice</label>
+        <select id="set-voice"></select>
+        <p class="hint">A voice marked <em>Natural</em> or <em>Online</em> is a modern one; a <em>Desktop</em> voice is the old robotic set Windows ships with. Automatic already prefers the best one installed.</p>
+      </div>
+      <div class="field">
         <label>Theme</label>
         <select id="set-theme">
           ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
@@ -6015,7 +6021,14 @@ function openSettings() {
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
-    $('set-voicelang').onchange = (e) => { localStorage.setItem('ad_voicelang', e.target.value); stopDictation(); };
+    $('set-voicelang').onchange = (e) => {
+        localStorage.setItem('ad_voicelang', e.target.value);
+        localStorage.removeItem('ad_voicename'); // a voice chosen for German cannot read English
+        stopDictation();
+        renderVoiceOptions();
+    };
+    $('set-voice').onchange = (e) => { localStorage.setItem('ad_voicename', e.target.value); };
+    renderVoiceOptions();
     $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
     $('update-check').onclick = () => checkForUpdates();
@@ -6604,20 +6617,29 @@ function voiceLang() {
     return v === 'auto' ? (navigator.language || 'en-US') : v;
 }
 
-// Browsers keep reading with the default (usually English) voice even when the
-// utterance's lang is German, so the voice has to be picked explicitly. Falls
-// back across regions: de-AT is better served by a de-DE voice than by none.
-function voiceFor(lang) {
-    const synth = window.speechSynthesis;
-    if (!synth || typeof synth.getVoices !== 'function') return null;
-    const langOf = (v) => String((v && v.lang) || '').toLowerCase().replace('_', '-');
-    const want = String(lang || '').toLowerCase().replace('_', '-');
-    const base = want.split('-')[0];
-    if (!base) return null;
-    const voices = synth.getVoices() || [];
-    return voices.find((v) => langOf(v) === want)
-        || voices.find((v) => langOf(v).split('-')[0] === base)
-        || null;
+function availableVoices() {
+    try { return window.speechSynthesis.getVoices() || []; } catch { return []; }
+}
+
+function preferredVoiceName() { return localStorage.getItem('ad_voicename') || ''; }
+
+// The list arrives late in Chrome and the picker is only in the DOM while
+// Settings is open, so this has to be safe to call at any moment.
+function renderVoiceOptions() {
+    const sel = $('set-voice');
+    if (!sel) return;
+    const lang = voiceLang();
+    const base = lang.toLowerCase().replace('_', '-').split('-')[0];
+    const matches = availableVoices()
+        .filter((v) => String(v.lang || '').toLowerCase().replace('_', '-').split('-')[0] === base);
+    if (!matches.length) {
+        sel.innerHTML = '<option value="">No voice installed for this language</option>';
+        return;
+    }
+    const auto = pickVoice(matches, lang);
+    const saved = preferredVoiceName();
+    sel.innerHTML = `<option value="">Automatic${auto ? ' \u2014 ' + escapeHtml(auto.name) : ''}</option>` +
+        matches.map((v) => `<option value="${escapeHtml(v.name)}" ${v.name === saved ? 'selected' : ''}>${escapeHtml(v.name)}</option>`).join('');
 }
 
 // ===== Voice: dictation (speech-to-text) =====
@@ -6630,7 +6652,10 @@ function speechRecognitionCtor() {
 function initVoice() {
     // Chrome loads the voice list asynchronously and returns [] until it lands,
     // so ask once up front or the first read-aloud misses its German voice.
-    if (canSpeak()) { try { window.speechSynthesis.getVoices(); } catch { /* ignore */ } }
+    if (canSpeak()) {
+        try { window.speechSynthesis.getVoices(); } catch { /* ignore */ }
+        window.speechSynthesis.onvoiceschanged = () => renderVoiceOptions();
+    }
     const micBtn = $('btn-mic');
     if (!micBtn || !speechRecognitionCtor()) return; // unsupported → stays hidden
     micBtn.classList.remove('hidden');
@@ -6696,11 +6721,12 @@ function speakText(text, btn) {
     if (!canSpeak()) return;
     const wasSameBtn = speech.btn === btn;
     if (speech.speaking) { window.speechSynthesis.cancel(); resetSpeakBtn(); if (wasSameBtn) return; }
-    const clean = markdownToSpeech(text);
+    const lang = voiceLang();
+    const clean = numbersToSpeech(markdownToSpeech(text), lang);
     if (!clean.trim()) return;
     const u = new SpeechSynthesisUtterance(clean);
-    u.lang = voiceLang();
-    const v = voiceFor(u.lang);
+    u.lang = lang;
+    const v = pickVoice(availableVoices(), lang, preferredVoiceName());
     if (v) u.voice = v;
     u.onend = () => resetSpeakBtn();
     u.onerror = () => resetSpeakBtn();

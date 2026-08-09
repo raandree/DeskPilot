@@ -46,6 +46,23 @@ imported as ESM and asserted to drop every syntax character while keeping every
 label. Textual assertions keep both speech APIs off `navigator.language` and keep
 `speakText` on the stripper.
 
+**(3) Quality.** Reported as "sounds like from the last decade, not fluent, not
+well emphasized; 1945 is read as a number, not a year". Root cause was voice
+*selection*, not the API: `voiceFor` took the first language match, and Windows
+lists its 2010-era SAPI `… Desktop` voices first (this machine: Hedda Desktop
+before Katja). New `speech.js` — `pickVoice(voices, lang, preferredName)` scores
+exact language tag first (an explicit en-GB must never be answered in en-US),
+then quality: `Natural`/`Online`/`Neural` +4, a Google voice +3,
+`localService === false` +2, `Desktop` −3. A **Voice** picker in Settings lists
+every voice for the chosen language and overrides the ranking; the saved name is
+dropped when the language changes, because a German voice cannot read English.
+Years: the Web Speech API has **no SSML**, so a date cannot be marked up —
+`numbersToSpeech(text, lang)` rewrites the digits into words instead, but only
+after a year cue word (`in`, `since`, `im`, `seit`, `Jahr`…) and only inside
+1100–2099, so `8080`, `ran 1945 tests` and `in 3000 ports` are untouched. Only
+`en` and `de` are spelled out; any other language is returned unchanged rather
+than mangled.
+
 ## Previous focus — the Thinking box arrived collapsed and below the fold
 
 Two defects in one report. (1) `buildAssistantEl` created the

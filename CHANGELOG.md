@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transcription nonsense and had your answers read back in an English accent.
   **Settings → General → Voice language** now lets you choose: German (Germany,
   Austria, Switzerland), English (US, UK), or Auto to keep following the browser.
-  Read aloud also picks a voice that actually speaks the chosen language instead
-  of leaving it to the browser's default.
+  A **Voice** setting sits underneath it, listing every voice installed for that
+  language so you can pick the one you like — or leave it on Automatic, which
+  picks the best one for you.
 - **Asking for choices now gets you choices.** "Give me a list to choose from"
   or "what are my options" used to be answered with a written list you could only
   read. The agent now offers those as a real question you can answer — a
@@ -44,6 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Read aloud no longer sounds like a robot from ten years ago.** It used the
+  first voice the system happened to list for the language, which on Windows is
+  the oldest one installed — the flat, clipped "Desktop" set. It now prefers a
+  modern voice when one is available (the ones labelled *Natural* or *Online* in
+  Microsoft Edge, or the Google voices in Chrome), which is a different era of
+  sound: real intonation, real emphasis, real pauses. If you would rather choose
+  yourself, every installed voice for your language is listed in Settings.
+- **Years are read as years.** "in 1945" was read out as "one thousand nine
+  hundred forty-five". It is now spoken the way a person would say it —
+  "nineteen forty-five", or "neunzehnhundertfünfundvierzig" in German. Only a
+  number that actually follows a date word is treated this way, so a port number
+  or a count of files is still read exactly as written.
 - **Read aloud no longer reads the punctuation.** An answer was spoken exactly as
   it was written, so a heading came out as "hash hash Setup", bold text as "star
   star", a table as a run of "vertical bar", and a bullet list as a string of
