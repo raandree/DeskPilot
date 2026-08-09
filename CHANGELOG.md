@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Linking your phone to Intercom no longer requires hunting for a chat id.**
+  Intercom ignores every chat until you confirm one, which meant your bot stayed
+  silent — even to `/start` — and there was no way to discover the number from
+  it. **Settings → Intercom → Link my phone** now listens for five minutes,
+  shows you the message it saw, and links the chat when you click **This is me**.
+  Nothing is ever linked automatically, and nothing you send during that window
+  is executed.
 - **A model with no published rate no longer reads as free.** The engine prices a
   turn from a table keyed by exact model id; a model newer than that table (for
   example `claude-opus-5`) comes back with *no* price, and DeskPilot was showing

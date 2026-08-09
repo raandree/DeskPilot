@@ -218,6 +218,17 @@ source: repository evidence
   and bounded by the same Project flag - a Project that never opts in can never
   exfiltrate this way.
 
+- **An allow-list needs a way in.** Intercom refuses every chat until one is
+  confirmed - which meant the bot could not answer `/start`, and the operator had
+  no way to learn their own chat id from it. Setup was impossible to finish. The
+  fix is a *time-boxed* window where the poller runs with an empty allow-list,
+  executes nothing, and only collects candidates for a human to confirm at the
+  machine. Any security control that has no bootstrap path is a control users
+  will route around or abandon.
+- **Never adopt the first caller.** The obvious shortcut - take the chat id of
+  whoever messages the bot first - hands control of the machine to anyone who
+  guessed the bot's username. The candidate is shown; the click happens locally.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
