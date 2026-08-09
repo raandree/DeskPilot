@@ -10,8 +10,31 @@ source: repository evidence
 
 ## Current focus
 
-**The Thinking box arrived collapsed and below the fold (`main`, 2026-08-09,
-uncommitted).** Two defects in one report. (1) `buildAssistantEl` created the
+**Dictation and read-aloud can now be set to German (`main`, 2026-08-09,
+uncommitted).** Both speech APIs were hard-wired to `navigator.language`, so the
+spoken language was whatever the browser's UI language happened to be — a German
+speaker on an English Windows got an English recogniser transcribing nonsense and
+an English voice reading the answer back. New `ad_voicelang` preference (auto /
+en-US / en-GB / de-DE / de-AT / de-CH) in **Settings → General → Voice language**,
+localStorage beside the theme and the send key, because it is a per-machine input
+preference the Host Server gains nothing from knowing and it shapes no Turn.
+
+Two non-obvious parts. (1) Setting `SpeechSynthesisUtterance.lang` alone is not
+enough — browsers keep reading with the default voice unless `voice` is assigned,
+so `voiceFor(lang)` picks an exact match, then any voice sharing the base tag
+(de-AT falls back to a de-DE voice), then nothing. (2) Chrome populates
+`speechSynthesis.getVoices()` asynchronously and returns `[]` until it lands, so
+`initVoice` asks for it once at startup or the first read-aloud misses its German
+voice. An unrecognised stored value falls back to `auto` rather than handing the
+browser a language tag it will reject.
+
+Guard in `WebAssets.Tests.ps1` runs the helper block through `node`'s `vm` with a
+faked `localStorage`/`navigator`/`speechSynthesis`, and asserts textually that
+neither API reads `navigator.language` directly again.
+
+## Previous focus — the Thinking box arrived collapsed and below the fold
+
+Two defects in one report. (1) `buildAssistantEl` created the
 `<details>` without `open`, so "Show the model's thinking" only unhid a box the
 user still had to click on every answer — the Setting is a request for
 visibility, so it now sets `thinking.open` from `state.settings.showThinking` at

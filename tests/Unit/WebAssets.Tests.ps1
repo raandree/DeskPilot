@@ -545,6 +545,69 @@ assert.equal(html.includes('<p></p>'), false, 'an empty paragraph means a line w
         ([regex]::Matches($app, 'renderScheduled\s*=\s*false;\s*if\s*\(state\.stopRequested\s*\|\|\s*turnStopped\)\s*return;')).Count |
             Should -Be 2
     }
+
+    It 'speaks and listens in the chosen language, not just the browser''s' {
+        $appPath = Join-Path $script:webRoot 'assets' 'app.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const source = fs.readFileSync(process.argv[1], 'utf8');
+const start = source.indexOf('// ===== Voice: language =====');
+const end = source.indexOf('// ===== Voice: dictation', start);
+assert.notEqual(start, -1, 'Voice language helpers must be present');
+assert.notEqual(end, -1, 'Voice dictation boundary must be present');
+
+const store = new Map();
+const voices = [{ lang: 'en-US', name: 'English' }, { lang: 'de-DE', name: 'Deutsch' }];
+const context = {
+    localStorage: {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+    },
+    navigator: { language: 'en-GB' },
+    window: { speechSynthesis: { getVoices: () => voices } },
+};
+vm.runInNewContext(source.slice(start, end) + '\nglobalThis.VOICE_LANGS = VOICE_LANGS;', context);
+
+// Unset means "follow the browser", which is what shipped before the setting.
+assert.equal(context.voiceLangPref(), 'auto');
+assert.equal(context.voiceLang(), 'en-GB');
+
+// German is offered, and overrides the browser language once chosen.
+assert.ok(context.VOICE_LANGS.some((l) => l.id === 'de-DE'), 'German must be selectable');
+store.set('ad_voicelang', 'de-DE');
+assert.equal(context.voiceLangPref(), 'de-DE');
+assert.equal(context.voiceLang(), 'de-DE');
+
+// Setting lang alone is not enough: browsers keep reading German with the
+// default English voice unless an actual voice is picked.
+assert.equal(context.voiceFor('de-DE').lang, 'de-DE');
+assert.equal(context.voiceFor('de-AT').lang, 'de-DE', 'a regional variant falls back to the same language');
+assert.equal(context.voiceFor('fr-FR'), null, 'no French voice installed');
+
+// A stale or hand-edited value must not break speech outright.
+store.set('ad_voicelang', 'not-a-language');
+assert.equal(context.voiceLangPref(), 'auto');
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $appPath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+
+        $app = Get-Content -LiteralPath $appPath -Raw
+        # Both speech APIs used to be hard-wired to navigator.language, so a German
+        # speaker on an English browser got an English recogniser and reader.
+        $app | Should -Match ([regex]::Escape('rec.lang = voiceLang();'))
+        $app | Should -Match ([regex]::Escape('u.lang = voiceLang();'))
+        $app | Should -Not -Match 'rec\.lang = navigator\.language'
+        $app | Should -Not -Match 'u\.lang = navigator\.language'
+        # And the choice has to be reachable and persisted, or it cannot be made.
+        $app | Should -Match 'id="set-voicelang"'
+        $app | Should -Match ([regex]::Escape("localStorage.setItem('ad_voicelang'"))
+    }
 }
 
 Describe 'Web asset reference casing' -Tag 'Unit' {

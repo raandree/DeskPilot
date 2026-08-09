@@ -2,6 +2,25 @@
 
 Recurring issues and how they were resolved.
 
+## `utterance.lang` does not choose a voice, and `getVoices()` starts empty (2026-08-09)
+
+**Symptom:** read-aloud set to German still read the answer with an English
+voice, and the very first read-aloud after a page load ignored the setting
+entirely even once a German voice was installed.
+
+**Root cause, two parts.** (1) `SpeechSynthesisUtterance.lang` is a *hint*.
+Browsers fall back to the default system voice — usually the browser's UI
+language — unless `utterance.voice` is assigned an actual `SpeechSynthesisVoice`.
+(2) Chrome/Edge load the voice list asynchronously and `speechSynthesis.getVoices()`
+returns `[]` until it lands, so a voice lookup on the first click finds nothing
+and silently falls back.
+
+**Rule:** always resolve and assign a voice (exact tag → any voice sharing the
+base tag → `null`), and prime `getVoices()` once at startup so the list is warm
+before the first click. Never assume a language tag the user (or storage) supplies
+is one the recogniser accepts — validate against the offered list and fall back to
+`auto`.
+
 ## "Loading…" that never repaints is a blocked JS thread, not a slow server (2026-08-09)
 
 **Symptom:** opening one `.md` file in the explorer froze the whole browser

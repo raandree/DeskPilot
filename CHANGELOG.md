@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dictate and read aloud in German.** Voice used to follow whatever language
+  your browser was set to, so speaking German into an English Windows produced
+  transcription nonsense and had your answers read back in an English accent.
+  **Settings → General → Voice language** now lets you choose: German (Germany,
+  Austria, Switzerland), English (US, UK), or Auto to keep following the browser.
+  Read aloud also picks a voice that actually speaks the chosen language instead
+  of leaving it to the browser's default.
 - **Asking for choices now gets you choices.** "Give me a list to choose from"
   or "what are my options" used to be answered with a written list you could only
   read. The agent now offers those as a real question you can answer — a

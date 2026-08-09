@@ -5722,6 +5722,13 @@ function openSettings() {
         <p class="hint">Ctrl+Enter by default, so a stray Enter mid-thought cannot send a half-written instruction.</p>
       </div>
       <div class="field">
+        <label>Voice language</label>
+        <select id="set-voicelang">
+          ${VOICE_LANGS.map((l) => `<option value="${l.id}" ${voiceLangPref() === l.id ? 'selected' : ''}>${escapeHtml(l.label)}</option>`).join('')}
+        </select>
+        <p class="hint">Used by 🎤 Dictate and 🔊 Read aloud. Auto follows your browser — pick a language when your browser is set to one and you speak another.</p>
+      </div>
+      <div class="field">
         <label>Theme</label>
         <select id="set-theme">
           ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
@@ -6008,6 +6015,7 @@ function openSettings() {
     $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
+    $('set-voicelang').onchange = (e) => { localStorage.setItem('ad_voicelang', e.target.value); stopDictation(); };
     $('set-reauth').onclick = () => { closeSettings(); showAuth({ expired: true }); };
     $('atelier-refresh').onclick = () => loadAtelierHealth();
     $('update-check').onclick = () => checkForUpdates();
@@ -6570,6 +6578,48 @@ function syncCheckpointDividers() {
     }
 }
 
+// ===== Voice: language =====
+// Which language 🎤 Dictate and 🔊 Read aloud use. A per-machine input
+// preference, so it lives in localStorage beside the theme rather than in
+// Settings - the Host Server gains nothing from knowing it. "auto" follows the
+// browser, which is only right while the browser's UI language and the language
+// the user actually speaks agree; a German speaker on an English Windows got an
+// English recogniser that transcribed nonsense.
+const VOICE_LANGS = [
+    { id: 'auto', label: 'Auto (browser language)' },
+    { id: 'en-US', label: 'English (United States)' },
+    { id: 'en-GB', label: 'English (United Kingdom)' },
+    { id: 'de-DE', label: 'German (Germany)' },
+    { id: 'de-AT', label: 'German (Austria)' },
+    { id: 'de-CH', label: 'German (Switzerland)' },
+];
+
+function voiceLangPref() {
+    const v = localStorage.getItem('ad_voicelang') || 'auto';
+    return VOICE_LANGS.some((l) => l.id === v) ? v : 'auto';
+}
+
+function voiceLang() {
+    const v = voiceLangPref();
+    return v === 'auto' ? (navigator.language || 'en-US') : v;
+}
+
+// Browsers keep reading with the default (usually English) voice even when the
+// utterance's lang is German, so the voice has to be picked explicitly. Falls
+// back across regions: de-AT is better served by a de-DE voice than by none.
+function voiceFor(lang) {
+    const synth = window.speechSynthesis;
+    if (!synth || typeof synth.getVoices !== 'function') return null;
+    const langOf = (v) => String((v && v.lang) || '').toLowerCase().replace('_', '-');
+    const want = String(lang || '').toLowerCase().replace('_', '-');
+    const base = want.split('-')[0];
+    if (!base) return null;
+    const voices = synth.getVoices() || [];
+    return voices.find((v) => langOf(v) === want)
+        || voices.find((v) => langOf(v).split('-')[0] === base)
+        || null;
+}
+
 // ===== Voice: dictation (speech-to-text) =====
 const voice = { rec: null, listening: false, base: '' };
 
@@ -6578,6 +6628,9 @@ function speechRecognitionCtor() {
 }
 
 function initVoice() {
+    // Chrome loads the voice list asynchronously and returns [] until it lands,
+    // so ask once up front or the first read-aloud misses its German voice.
+    if (canSpeak()) { try { window.speechSynthesis.getVoices(); } catch { /* ignore */ } }
     const micBtn = $('btn-mic');
     if (!micBtn || !speechRecognitionCtor()) return; // unsupported → stays hidden
     micBtn.classList.remove('hidden');
@@ -6589,7 +6642,7 @@ function toggleDictation() {
     const Ctor = speechRecognitionCtor();
     if (!Ctor) return;
     const rec = new Ctor();
-    rec.lang = navigator.language || 'en-US';
+    rec.lang = voiceLang();
     rec.interimResults = true;
     rec.continuous = true;
     const promptEl = $('prompt');
@@ -6647,7 +6700,9 @@ function speakText(text, btn) {
     const clean = text.replace(/```[\s\S]*?```/g, ' (code block) ').replace(/`([^`]+)`/g, '$1');
     if (!clean.trim()) return;
     const u = new SpeechSynthesisUtterance(clean);
-    u.lang = navigator.language || 'en-US';
+    u.lang = voiceLang();
+    const v = voiceFor(u.lang);
+    if (v) u.voice = v;
     u.onend = () => resetSpeakBtn();
     u.onerror = () => resetSpeakBtn();
     speech.speaking = true;
