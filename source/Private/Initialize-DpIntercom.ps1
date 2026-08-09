@@ -31,7 +31,9 @@ function Initialize-DpIntercom {
         # Must exceed the long-poll timeout below, or every idle poll would fault.
         $client.Timeout = [TimeSpan]::FromSeconds(45)
         # A bounded read, so a hostile or broken response cannot exhaust memory.
-        $client.MaxResponseContentBufferSize = 4MB
+        # Large enough for a Telegram file download, which the Bot API caps at
+        # 20 MB and Intercom caps again by its own setting.
+        $client.MaxResponseContentBufferSize = 25MB
     }
     catch {
         Write-Verbose "Could not create the Intercom HTTP client: $_"
@@ -67,6 +69,21 @@ function Initialize-DpIntercom {
         # A prompt received from the phone, run by the pump's final step once the
         # Engine Runspace is free. This is also how /steer resumes after its stop.
         QueuedPrompt     = $null
+        # An image Attachment to hand the Engine's Vision input alongside it.
+        QueuedImage      = $null
+        # A file the operator sent, being fetched across two Telegram calls. Both
+        # are started on one pump tick and reaped on a later one, because a
+        # multi-megabyte download on the accept thread would freeze the window.
+        Download         = @{
+            stage      = ''
+            task       = $null
+            fileId     = ''
+            fileName   = ''
+            mimeType   = ''
+            isImage    = $false
+            caption    = ''
+            startedUtc = $null
+        }
         LastActivityUtc  = [DateTime]::UtcNow
         # What a Turn started from the phone is producing right now. The browser
         # has no request to stream over for a remote Turn, and the single-threaded

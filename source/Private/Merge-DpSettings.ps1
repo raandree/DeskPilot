@@ -31,6 +31,7 @@ function Merge-DpSettings {
         stallMinutes           = @(1, 1440)
         questionTimeoutMinutes = @(1, 1440)
         maxMessagesPerHour     = @(1, 1000)
+        maxAttachmentMB        = @(1, 20)
     }
 
     # Clone current (nested permissions, intercom and projects) so the input is

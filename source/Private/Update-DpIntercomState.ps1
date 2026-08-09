@@ -236,6 +236,15 @@ function Update-DpIntercomState {
         # no Turn to run until the operator has confirmed who they are.
         if ($isPairing) { return }
 
+        # Advance a file the operator sent. It becomes the queued prompt once it
+        # has landed on disk.
+        try { Update-DpIntercomDownload } catch {
+            $intercom.Counters.errors++
+            Add-DpIntercomLog -Direction 'in' -Kind 'attachment-error' -Detail (Hide-DpIntercomSecret -Text "$_") -Accepted $false
+            $intercom.Download.stage = ''
+            $intercom.Download.task = $null
+        }
+
         $now = [DateTime]::UtcNow
 
         # 6. Heartbeat: refresh the live status message. This is an edit, so it
@@ -279,8 +288,11 @@ function Update-DpIntercomState {
         #    can never re-enter a Turn that is already running.
         if ($AllowTurn -and $intercom.QueuedPrompt -and -not $state.TurnRunning) {
             $prompt = [string]$intercom.QueuedPrompt
+            $image = [string]$intercom.QueuedImage
             $intercom.QueuedPrompt = $null
-            Invoke-DpIntercomTurn -Prompt $prompt
+            $intercom.QueuedImage = $null
+            if ($image) { Invoke-DpIntercomTurn -Prompt $prompt -Image $image }
+            else { Invoke-DpIntercomTurn -Prompt $prompt }
         }
     }
     catch {

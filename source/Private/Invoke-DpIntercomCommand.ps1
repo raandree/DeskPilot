@@ -296,6 +296,10 @@ function Invoke-DpIntercomCommand {
                 $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
                 return
             }
+            if ($Command.attachment) {
+                Start-DpIntercomDownload -Attachment $Command.attachment -Caption ([string]$Command.text)
+                return
+            }
             if ($intercom.QueuedPrompt) {
                 $null = Send-DpIntercomMessage -Title 'One instruction is already queued.' -Line @('Send /stop if you want to replace what is running.') -Kind 'notice'
                 return

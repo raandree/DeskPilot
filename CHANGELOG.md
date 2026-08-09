@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Send files from your phone.** Attach a document, photo, voice note or video
+  in Telegram — with or without a caption — and DeskPilot saves it into your
+  project folder and puts the agent to work on it; photos also go to the model's
+  vision input. Previously an attachment was ignored without so much as a reply.
+  Files up to 20 MB (Telegram's own limit), and only from a project with **allow
+  phone control** ticked.
 - **Choose how a message is sent.** **Settings → General → Send a message with**
   offers **Ctrl+Enter** (the new default, with Enter making a new line) or
   **Enter** (with Shift+Enter making a new line). Ctrl+Enter by default so a

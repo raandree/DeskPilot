@@ -178,6 +178,79 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         (ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111').kind | Should -Be 'rejected'
     }
 
+    It 'reads a document message, whose words live in the caption not the text' {
+        # A file message has no 'text' at all, so reading only that made an
+        # attachment vanish with no reply.
+        $update = New-TestUpdate -Text 'ignored'
+        $update.message.PSObject.Properties.Remove('text')
+        $update.message | Add-Member -MemberType NoteProperty -Name 'caption' -Value 'What is this?'
+        $update.message | Add-Member -MemberType NoteProperty -Name 'document' -Value ([pscustomobject]@{
+                file_id = 'BQACAgIAAx'; file_name = 'psconf.eu.pdf'; mime_type = 'application/pdf'; file_size = 408780
+            })
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.kind | Should -Be 'prompt'
+        $result.text | Should -Be 'What is this?'
+        $result.attachment.fileName | Should -Be 'psconf.eu.pdf'
+        $result.attachment.fileId | Should -Be 'BQACAgIAAx'
+        $result.attachment.size | Should -Be 408780
+        $result.attachment.isImage | Should -BeFalse
+    }
+
+    It 'accepts a file sent with no caption at all' {
+        $update = New-TestUpdate -Text 'ignored'
+        $update.message.PSObject.Properties.Remove('text')
+        $update.message | Add-Member -MemberType NoteProperty -Name 'document' -Value ([pscustomobject]@{
+                file_id = 'abc'; file_name = 'notes.txt'; mime_type = 'text/plain'; file_size = 10
+            })
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.kind | Should -Be 'prompt'
+        $result.attachment.fileName | Should -Be 'notes.txt'
+    }
+
+    It 'takes the largest size of a photo, which arrives smallest first' {
+        $update = New-TestUpdate -Text 'ignored'
+        $update.message.PSObject.Properties.Remove('text')
+        $update.message | Add-Member -MemberType NoteProperty -Name 'photo' -Value @(
+            [pscustomobject]@{ file_id = 'small'; file_size = 100 },
+            [pscustomobject]@{ file_id = 'large'; file_size = 9000 }
+        )
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.attachment.fileId | Should -Be 'large'
+        $result.attachment.isImage | Should -BeTrue
+    }
+
+    It 'never lets a sent file name escape its folder' {
+        $update = New-TestUpdate -Text 'ignored'
+        $update.message.PSObject.Properties.Remove('text')
+        $update.message | Add-Member -MemberType NoteProperty -Name 'document' -Value ([pscustomobject]@{
+                file_id = 'abc'; file_name = '../../../Windows/System32/evil.dll'; mime_type = 'application/octet-stream'; file_size = 10
+            })
+
+        $name = (ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111').attachment.fileName
+
+        $name | Should -Be 'evil.dll'
+        $name | Should -Not -Match '[\\/]'
+    }
+
+    It 'still refuses a file from a chat that is not allow-listed' {
+        $update = New-TestUpdate -ChatId '999' -Text 'ignored'
+        $update.message.PSObject.Properties.Remove('text')
+        $update.message | Add-Member -MemberType NoteProperty -Name 'document' -Value ([pscustomobject]@{
+                file_id = 'abc'; file_name = 'x.pdf'; mime_type = 'application/pdf'; file_size = 10
+            })
+
+        $result = ConvertFrom-DpIntercomUpdate -Update $update -AllowedChatId '111'
+
+        $result.kind | Should -Be 'rejected'
+        $result.attachment | Should -BeNullOrEmpty
+    }
+
     It 'ignores a null update without throwing' {
         { ConvertFrom-DpIntercomUpdate -Update $null -AllowedChatId '111' } | Should -Not -Throw
     }
@@ -335,6 +408,24 @@ Describe 'Send-DpIntercomTurnResult' -Tag 'Unit' {
         { Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1 } | Should -Not -Throw
 
         @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'done'
+    }
+}
+
+Describe 'Invoke-DpTelegramFileRequest' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $script:client = [System.Net.Http.HttpClient]::new()
+    }
+
+    AfterEach { $script:client.Dispose() }
+
+    It 'refuses a path that tries to climb out of the bot file root' {
+        # The path comes from Telegram's getFile response, so it is data rather
+        # than something we chose.
+        foreach ($path in '../../etc/passwd', 'documents/../../x', 'https://evil.example/x', 'C:\Windows\x') {
+            { Invoke-DpTelegramFileRequest -Client $script:client -Token 'abc' -FilePath $path } |
+                Should -Throw -ExpectedMessage '*will not be fetched*'
+        }
     }
 }
 

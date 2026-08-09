@@ -120,6 +120,7 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | --- | --- |
 | **Reply** to a question message | Answers that question; the agent carries on |
 | Any other message | The agent treats it as a new instruction |
+| A file, with or without a caption | DeskPilot saves it into your project folder and the agent works on it; your caption is the instruction |
 | `/status` | What is happening right now |
 | `/chats` | Lists your conversations, newest first, and marks the one you are in |
 | `/chats all` | The same, including the archived ones (marked) |

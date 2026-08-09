@@ -76,6 +76,7 @@ function Get-DpDefaultSettings {
             maxMessagesPerHour     = 60
             notifyOnDone           = $true
             sendFinalAnswer        = $true
+            maxAttachmentMB        = 20
         }
     }
 }

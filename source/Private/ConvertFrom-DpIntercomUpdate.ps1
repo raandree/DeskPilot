@@ -66,6 +66,8 @@ function ConvertFrom-DpIntercomUpdate {
         # interpreted: 'text' stays empty unless the chat is allow-listed.
         fromName         = ''
         preview          = ''
+        # A file the operator sent, to be downloaded before the prompt runs.
+        attachment       = $null
     }
 
     if ($null -eq $Update) {
@@ -110,7 +112,16 @@ function ConvertFrom-DpIntercomUpdate {
     }
 
     $rawText = [string](Get-DpPropertyValue -InputObject $message -Name @('text') -Default '')
-    if ([string]::IsNullOrWhiteSpace($rawText)) {
+
+    # A file message carries no 'text' at all - the words are in 'caption' - so
+    # reading only 'text' made an attachment vanish without a reply.
+    $attachment = Get-DpIntercomAttachmentRef -Message $message
+    if ($attachment) {
+        $rawText = [string](Get-DpPropertyValue -InputObject $message -Name @('caption') -Default '')
+        $result.preview = $(if ($rawText) { $rawText } else { [string]$attachment.fileName })
+    }
+
+    if ([string]::IsNullOrWhiteSpace($rawText) -and -not $attachment) {
         $result.reason = 'Message carried no text.'
         return $result
     }
@@ -133,6 +144,15 @@ function ConvertFrom-DpIntercomUpdate {
     $replyTo = Get-DpPropertyValue -InputObject $message -Name @('reply_to_message') -Default $null
     if ($replyTo) {
         $result.replyToMessageId = [long](Get-DpPropertyValue -InputObject $replyTo -Name @('message_id') -Default 0)
+    }
+
+    # A file is always work to do, never a command: a caption beginning with a
+    # slash is far more likely to be a filename than an instruction.
+    if ($attachment) {
+        $result.kind = 'prompt'
+        $result.text = $text
+        $result.attachment = $attachment
+        return $result
     }
 
     if (-not $text.StartsWith('/')) {

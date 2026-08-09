@@ -342,6 +342,17 @@ source: repository evidence
   silence. Any click that can race a deletion must say what happened and
   resynchronise.
 
+- **Read the shape the protocol actually sends.** A Telegram file message has no
+  `text` member at all - the words are in `caption`, and the file sits in a
+  differently shaped member per kind - so a parser that reads only `text` drops
+  every attachment on the floor without a reply. Three separate silent-drop bugs
+  in Intercom came from assuming one message shape: the edit, the file, and the
+  unknown update type.
+- **A name from outside is the part that escapes.** A sender-supplied file name
+  is sanitised to a leaf before it is ever joined to a directory, and the path
+  `getFile` hands back is validated before it is fetched. Content can be
+  untrusted and merely risky; a name can be untrusted and *directly* dangerous.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

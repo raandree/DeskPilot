@@ -17,6 +17,8 @@ function Invoke-DpIntercomTurn {
         bounded and split by Format-DpIntercomMessage.
     .PARAMETER Prompt
         The prompt received from the phone.
+    .PARAMETER Image
+        An image Attachment to hand the Engine's native Vision input.
     .OUTPUTS
         None.
     #>
@@ -26,7 +28,11 @@ function Invoke-DpIntercomTurn {
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string]$Prompt
+        [string]$Prompt,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Image
     )
 
     $state = $script:DeskPilot
@@ -84,7 +90,13 @@ function Invoke-DpIntercomTurn {
     Add-DpIntercomLog -Direction 'system' -Kind 'turn-start' -Detail $Prompt
 
     try {
-        Invoke-DpTurn -Conversation $conversation -Prompt $Prompt -Stream ([System.IO.Stream]::Null)
+        $turnParams = @{
+            Conversation = $conversation
+            Prompt       = $Prompt
+            Stream       = [System.IO.Stream]::Null
+        }
+        if (-not [string]::IsNullOrWhiteSpace($Image)) { $turnParams.Image = @($Image) }
+        Invoke-DpTurn @turnParams
     }
     catch {
         $failure = Hide-DpIntercomSecret -Text "$_"
