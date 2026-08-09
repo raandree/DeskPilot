@@ -36,7 +36,7 @@ function Invoke-DpIntercomTurn {
     if ($intercom.ConversationId) { $conversation = $state.Conversations[$intercom.ConversationId] }
     if (-not $conversation) {
         $conversation = @($state.Conversations.Values) |
-            Where-Object { -not $_.archived } |
+            Where-Object { -not [bool](Get-DpPropertyValue -InputObject $_ -Name @('archived') -Default $false) } |
             Sort-Object -Property updatedUtc -Descending |
             Select-Object -First 1
     }
@@ -67,42 +67,19 @@ function Invoke-DpIntercomTurn {
 
     if (-not [bool]$state.Settings.intercom.notifyOnDone) { return }
 
-    $last = if ($conversation.messages.Count -gt 0) { $conversation.messages[$conversation.messages.Count - 1] } else { $null }
-
-    # Invoke-DpTurn records the user Message first and only adds an assistant
-    # Message when the Engine answered, so a trailing user Message means the Turn
-    # failed before producing anything.
-    if (-not $last -or [string]$last.role -ne 'assistant' -or $conversation.messages.Count -le $messagesBefore) {
-        $null = Send-DpIntercomMessage -Title 'The job failed.' -Line @(
+    # Reporting must never be able to lose a finished job. Under Set-StrictMode
+    # -Version Latest a missing hashtable key is a terminating error, so an
+    # optional field read the wrong way used to throw here - after the Turn had
+    # run - and the operator was told nothing at all.
+    try {
+        Send-DpIntercomTurnResult -Conversation $conversation -MessagesBefore $messagesBefore
+    }
+    catch {
+        $reportError = Hide-DpIntercomSecret -Text "$_"
+        Add-DpIntercomLog -Direction 'system' -Kind 'report-error' -Detail $reportError -Accepted $false
+        $null = Send-DpIntercomMessage -Title 'The job finished.' -Line @(
             "Conversation: $([string]$conversation.title)",
-            'Open DeskPilot to see what went wrong.'
-        ) -Kind 'failed'
-        return
+            'Open DeskPilot to read the result.'
+        ) -Kind 'done'
     }
-
-    if ([bool]$last.stopped) {
-        $null = Send-DpIntercomMessage -Title 'The job was stopped.' -Line @("Conversation: $([string]$conversation.title)") -Kind 'stopped'
-        return
-    }
-
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("Conversation: $([string]$conversation.title)")
-    $lines.Add("Took: $([int]([double]$last.durationMs / 1000)) s")
-    if ($last.activity) {
-        $written = @($last.activity.filesWritten).Count
-        $commands = @($last.activity.commandsRun).Count
-        if ($written -gt 0) { $lines.Add("Files changed: $written") }
-        if ($commands -gt 0) { $lines.Add("Commands run: $commands") }
-    }
-
-    $body = $null
-    if ([bool]$state.Settings.intercom.sendFinalAnswer) { $body = [string]$last.text }
-
-    $sendParams = @{
-        Title = 'Done.'
-        Line  = @($lines.ToArray())
-        Kind  = 'done'
-    }
-    if (-not [string]::IsNullOrWhiteSpace($body)) { $sendParams.Body = $body }
-    $null = Send-DpIntercomMessage @sendParams
 }

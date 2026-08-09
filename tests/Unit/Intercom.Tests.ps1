@@ -1,6 +1,12 @@
 #requires -Version 7.0
 
 BeforeAll {
+    # The module runs under Set-StrictMode -Version Latest (source/Prefix.ps1),
+    # where reading a missing hashtable key is a terminating error rather than
+    # $null. Tests that run without it validate different semantics than
+    # production - which is exactly how an optional field read the wrong way
+    # reached a user.
+    Set-StrictMode -Version Latest
     $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 }
@@ -193,6 +199,90 @@ Describe 'Intercom pairing' -Tag 'Unit' {
 
         # Adoption stays an explicit click at the machine; pairing only observes.
         $script:DeskPilot.Settings.intercom.chatId | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Send-DpIntercomTurnResult' -Tag 'Unit' {
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $settings = Get-DpDefaultSettings
+        $settings.intercom.chatId = '111'
+        $script:DeskPilot = @{
+            Settings = $settings
+            Intercom = @{
+                Outbound   = [System.Collections.Generic.Queue[hashtable]]::new()
+                RateWindow = [System.Collections.Generic.List[DateTime]]::new()
+                Log        = [System.Collections.Generic.List[object]]::new()
+                Counters   = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
+                Token      = ''
+            }
+        }
+        $script:conversation = New-DpConversation -Title 'Notes'
+        $script:conversation.messages.Add(@{ id = 'm1'; role = 'user'; text = 'in which project are we?' })
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'reports a finished Turn whose message carries no stopped key' {
+        # The regression: a successful assistant Message never sets 'stopped', and
+        # under strict mode reading it directly threw after the Turn had run, so
+        # the operator was told nothing at all.
+        $script:conversation.messages.Add(@{
+                id = 'm2'; role = 'assistant'; text = 'You are in AutomatedLab.'
+                durationMs = 4200
+                activity = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+            })
+
+        { Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1 } | Should -Not -Throw
+
+        $queued = @($script:DeskPilot.Intercom.Outbound.ToArray())
+        $queued.Count | Should -BeGreaterThan 0
+        $queued[0].kind | Should -Be 'done'
+        $queued[0].text | Should -Match 'You are in AutomatedLab\.'
+    }
+
+    It 'counts the files and commands the Turn reported' {
+        $script:conversation.messages.Add(@{
+                id = 'm2'; role = 'assistant'; text = 'done'; durationMs = 1000
+                activity = @{ filesRead = @(); filesWritten = @('a.txt', 'b.txt'); commandsRun = @('git status'); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+            })
+
+        Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1
+
+        $text = @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text
+        $text | Should -Match 'Files changed: 2'
+        $text | Should -Match 'Commands run: 1'
+    }
+
+    It 'leaves the answer out when sendFinalAnswer is off' {
+        $script:DeskPilot.Settings.intercom.sendFinalAnswer = $false
+        $script:conversation.messages.Add(@{ id = 'm2'; role = 'assistant'; text = 'secret answer'; durationMs = 10; activity = $null })
+
+        Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].text | Should -Not -Match 'secret answer'
+    }
+
+    It 'reports a stopped Turn' {
+        $script:conversation.messages.Add(@{ id = 'm2'; role = 'assistant'; text = ''; stopped = $true; durationMs = 10; activity = $null })
+
+        Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'stopped'
+    }
+
+    It 'reports a Turn that produced nothing as failed' {
+        Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'failed'
+    }
+
+    It 'survives an assistant Message missing every optional field' {
+        $script:conversation.messages.Add(@{ id = 'm2'; role = 'assistant' })
+
+        { Send-DpIntercomTurnResult -Conversation $script:conversation -MessagesBefore 1 } | Should -Not -Throw
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].kind | Should -Be 'done'
     }
 }
 
