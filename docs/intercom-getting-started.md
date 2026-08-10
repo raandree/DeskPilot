@@ -126,6 +126,12 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | `/chats` | Lists your conversations, newest first, and marks the one you are in |
 | `/chats all` | The same, including the archived ones (marked) |
 | `/chat 2` | Switches to conversation 2 from that list |
+| `/agents` | Lists the agents you can pick from, and marks the one in use |
+| `/agent 2` | Switches to agent 2 — it applies to your next instruction |
+| `/agent none` | Goes back to the default agent |
+| `/projects` | Lists your projects, marks the one that is open, and flags the ones you cannot work in from your phone |
+| `/project 2` | Switches to project 2 |
+| `/project new C:\Git\Notes` | Adds that folder as a project and switches to it |
 | `/archive 2` | Hides it from the list (it stays in DeskPilot under **Show archived**) |
 | `/unarchive 2` | Brings an archived one back — use `/chats all` first to see its number |
 | `/delete 2` | Removes it for good — asks you to confirm first |
@@ -161,6 +167,11 @@ Three things worth knowing:
 - **The agent cannot switch conversations itself.** If you ask it to, it will say
   so — it has no way to see or change which conversation it is in. Use `/chats`
   and `/chat 2`, which are handled by DeskPilot rather than the agent.
+- **A project you add from your phone cannot be worked in from your phone —
+  yet.** `/project new` registers the folder and switches to it, but leaves
+  remote control switched off. Anyone holding your phone would otherwise be able
+  to point DeskPilot at any folder on the machine and set it to work there. Tick
+  the project under **Settings → Intercom** at the machine when you want it.
 - **Editing a message does not resend it — and you can edit one by accident.** In
   Telegram Desktop and Web, pressing the **up arrow** in an empty message box
   reopens your *last* message for editing. If you have shell habits and press ↑ to

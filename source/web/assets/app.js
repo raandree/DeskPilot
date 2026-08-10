@@ -3255,6 +3255,28 @@ async function refreshIntercom() {
     updateIntercomChip();
     renderIntercomPanel();
     renderIntercomPairing();
+    syncSettingsFromIntercom();
+}
+
+// Intercom can change the Project and the Agent from the phone, so this window
+// is no longer the only writer of Settings. Without a re-read the composer would
+// keep naming a project and an agent the next Turn no longer uses - two surfaces
+// disagreeing about the same fact, which is worse than either being empty.
+// Only the selection matters here, so an unchanged read costs one cheap local
+// request and no re-render.
+async function syncSettingsFromIntercom() {
+    if (!state.intercom || state.intercom.status !== 'on') return;
+    if (state.streaming) return;
+    let fresh;
+    try { fresh = await api('GET', '/api/settings'); } catch { return; }
+    const before = state.settings || {};
+    const projectsChanged = JSON.stringify(before.projects || []) !== JSON.stringify(fresh.projects || []);
+    if (before.selectedProjectId === fresh.selectedProjectId
+        && before.selectedAgent === fresh.selectedAgent
+        && !projectsChanged) return;
+    state.settings = fresh;
+    populateProjectSelect();
+    updateAgentChip();
 }
 
 function wireIntercomAutoRefresh() {

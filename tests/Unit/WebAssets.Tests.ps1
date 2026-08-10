@@ -129,6 +129,20 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Not -Match ([regex]::Escape(".thinking .disclosure-body').textContent = think"))
     }
 
+    It 'follows a project or agent switched from the phone' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # Intercom made this window stop being the only writer of Settings. Without
+        # a re-read the composer keeps naming a project and an agent the next Turn
+        # no longer uses.
+        $js | Should -Match '(?s)async function refreshIntercom\(\).{0,1200}syncSettingsFromIntercom\(\)'
+        $js | Should -Match 'async function syncSettingsFromIntercom'
+        # Polling Settings when nothing can change them remotely is pure noise.
+        $js | Should -Match ([regex]::Escape("state.intercom.status !== 'on'"))
+        # Both chips read the selection, so both have to be repainted.
+        $js | Should -Match '(?s)async function syncSettingsFromIntercom.{0,900}populateProjectSelect\(\);\s*updateAgentChip\(\);'
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

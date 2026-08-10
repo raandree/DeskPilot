@@ -79,6 +79,23 @@ function Invoke-DpIntercomCallback {
             ) -Kind 'chat'
         }
 
+        'g' {
+            # An Agent id is a file name with no length bound, so this button
+            # carries the number from the listing that produced it.
+            $index = @($intercom.AgentIndex)
+            $number = 0
+            if ($parts.Count -lt 2 -or -not [int]::TryParse($parts[1], [ref]$number) -or $number -lt 1 -or $number -gt $index.Count) {
+                $null = Send-DpIntercomMessage -Title 'That list has moved on.' -Line @('Send /agents for the current one.') -Kind 'notice'
+                return
+            }
+            Switch-DpIntercomAgent -AgentId ([string]$index[$number - 1])
+        }
+
+        'p' {
+            if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[1])) { return }
+            Switch-DpIntercomProject -ProjectId ([string]$parts[1])
+        }
+
         default {
             Add-DpIntercomLog -Direction 'in' -Kind 'callback-unknown' -Detail "Unrecognised button data '$([string]$Command.text)'." -Accepted $false
         }

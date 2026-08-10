@@ -44,6 +44,10 @@ function Get-DpIntercomStatus {
     $lines.Add("Status: $status")
     $lines.Add("Conversation: $(if ($conversation) { [string]$conversation.title } else { 'none yet' })")
     $lines.Add("Project: $projectName$(if (-not $projectAllowed) { ' (remote control off)' })")
+    # The file stem, not the display name: resolving that means parsing every
+    # agent file, and this runs on every heartbeat.
+    $agentName = if ($settings.selectedAgent) { ([string]$settings.selectedAgent) -replace '\.agent\.md$', '' } else { 'default' }
+    $lines.Add("Agent: $agentName")
 
     if ($state.TurnRunning) {
         $quiet = [int]([DateTime]::UtcNow - $intercom.LastActivityUtc).TotalMinutes

@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Switch agent and project from your phone.** Intercom could switch
+  conversations but not the two things that decide *how* and *where* the agent
+  works. `/agents` lists the agents you have, marks the one in use and gives you
+  a button per agent; `/agent 2` picks one and `/agent none` goes back to the
+  default. `/projects` does the same for your projects and says on every line
+  which ones you are allowed to work in from your phone, so you learn that before
+  you send an instruction rather than from a refusal. `/project new C:\Git\Notes`
+  registers a folder as a project — creating that last folder if it does not
+  exist yet — and `/status` now names the agent in use. A project added from your
+  phone is deliberately **not** remote-controllable until you switch that on at
+  the machine.
 - **Dictate and read aloud in German.** Voice used to follow whatever language
   your browser was set to, so speaking German into an English Windows produced
   transcription nonsense and had your answers read back in an English accent.

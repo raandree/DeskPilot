@@ -10,6 +10,58 @@ source: repository evidence
 
 ## Current focus
 
+**Intercom can switch the agent and the project, not just the conversation
+(`ai/installer-decisions`, 2026-08-10).** `/chats` and `/chat <n>` shipped with
+the original Intercom, which left the two settings that decide *how* and *where*
+the agent works reachable only at the machine — exactly the thing Intercom exists
+to avoid. New `/agents`, `/agent <n|none>`, `/projects`, `/project <n>` and
+`/project new <path>`, each with an inline keyboard, plus an `Agent:` line in
+`/status`.
+
+Four decisions carried the design:
+
+- **Selecting is navigation; creating is work.** Picking an Agent or a Project
+  executes nothing — it decides the next Turn's `-SystemPrompt` and
+  `workspaceFolder` — so neither needs an opted-in Project, the same split that
+  keeps `/chats` usable when no Project is open. `/project new` writes to disk, so
+  it requires one: a phone that cannot run anything cannot create folders either.
+- **A remotely created Project is never remote-enabled.** If a remote message
+  could opt a folder into remote control, the Project flag would be decorative —
+  anyone holding the phone could point DeskPilot at any folder and run there. The
+  reply says the flag is off and where to turn it on.
+- **The Project button carries an id; the Agent button carries a number.** An
+  Agent's id is its `*.agent.md` file name and has no length bound, and
+  `Get-DpIntercomKeyboard` drops the *whole* keyboard when one button would
+  exceed the 64-byte `callback_data` cap. `AgentIndex`/`ProjectIndex` snapshot
+  the listing the way `ChatIndex` already does, and a number the index no longer
+  backs is refused rather than resolved against whatever now sits there.
+- **The window is no longer the only writer of Settings.** `refreshIntercom`
+  now re-reads `/api/settings` while Intercom is on and repaints the Project and
+  Agent chips when the selection changed. Without it the composer would keep
+  naming a project and an agent the next Turn no longer uses.
+
+Every switch reply states the remote-control status of the Project it moved to,
+so the operator learns it before sending an instruction rather than from a
+refusal.
+
+## Verification
+
+- `tests/Unit/IntercomNavigation.Tests.ps1` — **35/35**: parsing of all six
+  verbs and their arguments (still rejected from a chat that is not
+  allow-listed), the numbered listings and their index snapshots, switching by
+  number and by tap, `/agent none`, refusals for a non-number and an out-of-range
+  number, an agent button from a listing that has moved on, and creation —
+  registering an existing folder, creating only the last segment, refusing a
+  tree, a relative path, a drive root, a file, and the whole command when no
+  Project has opted in; that the new Project is not remote-enabled; and that an
+  already-registered path switches instead of erroring.
+- `tests/Unit/WebAssets.Tests.ps1` — a structural guard that `refreshIntercom`
+  calls the settings re-read, that it only runs while Intercom is on, and that it
+  repaints both chips.
+- Full Sampler build **789/789**, 16 tasks, 0 errors, 0 warnings, EXIT 0.
+
+## Previous focus — Voice: German support, and read-aloud speaking Markdown punctuation
+
 **Voice: German support, and read-aloud speaking Markdown punctuation (`main`,
 2026-08-09, on `ai/voice-language`).** Two parts of the same report.
 

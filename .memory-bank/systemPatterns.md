@@ -227,6 +227,28 @@ source: repository evidence
   perfectly well-behaved agent. This is *accepted*, not mitigated (spec 110, A1),
   and bounded by the same Project flag - a Project that never opts in can never
   exfiltrate this way.
+- **Selecting is navigation; creating is work.** Picking a Conversation, an Agent
+  or a Project from the phone executes nothing, so none of them needs an opted-in
+  Project - the split that keeps `/chats` usable in the exact situation where the
+  operator needs it. `/project new` writes to disk, so it takes the same authority
+  an instruction does: a phone that cannot run anything cannot create folders
+  either.
+- **A remote message must never be able to grant itself authority.** A Project
+  created from the phone is never remote-enabled. If it were, the Project flag
+  would be decorative - anyone holding the phone could point DeskPilot at any
+  folder and set the agent to work there. The flag is set at the machine, and the
+  reply says so rather than leaving the refusal to be discovered later.
+- **A button carries an id when the id is bounded, and a number when it is not.**
+  `callback_data` is capped at 64 bytes and `Get-DpIntercomKeyboard` drops the
+  *whole* keyboard when one button would exceed it, so an Agent - whose id is its
+  `*.agent.md` file name - would cost every button for one long file name. Those
+  carry the listing's number against `AgentIndex`, and a number the index no
+  longer backs is refused rather than resolved against whatever now sits there.
+- **The window is not the only writer of Settings any more.** Intercom can change
+  the selected Project and Agent, so `refreshIntercom` re-reads `/api/settings`
+  while Intercom is on and repaints both chips. A composer naming a project the
+  next Turn will not use is the same "two surfaces disagreeing" failure the diff
+  viewer had.
 
 - **An allow-list needs a way in.** Intercom refuses every chat until one is
   confirmed - which meant the bot could not answer `/start`, and the operator had

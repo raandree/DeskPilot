@@ -17,6 +17,10 @@ function ConvertFrom-DpIntercomUpdate {
           status   - /status
           chats    - /chats [all]: list the conversations that can be switched to
           chat     - /chat <n>: switch to one of them
+          agents   - /agents: list the agents that can be switched to
+          agent    - /agent <n|none>: switch to one of them, or clear the selection
+          projects - /projects: list the registered projects
+          project  - /project <n|new <path>>: switch to one, or register a folder
           archive  - /archive <n>: hide one from the list
           unarchive - /unarchive <n>: bring an archived one back
           delete   - /delete <n> [confirm]: remove one for good
@@ -221,6 +225,16 @@ function ConvertFrom-DpIntercomUpdate {
         }
         'chat' {
             $result.kind = 'chat'
+            $result.text = $argument
+        }
+        'agents' { $result.kind = 'agents' }
+        'agent' {
+            $result.kind = 'agent'
+            $result.text = $argument
+        }
+        'projects' { $result.kind = 'projects' }
+        'project' {
+            $result.kind = 'project'
             $result.text = $argument
         }
         'archive' {

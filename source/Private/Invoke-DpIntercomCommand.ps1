@@ -101,6 +101,12 @@ function Invoke-DpIntercomCommand {
                 '/chats - list your conversations',
                 '/chats all - include the archived ones',
                 '/chat 3 - switch to conversation 3',
+                '/agents - list the agents you can pick from',
+                '/agent 2 - switch to agent 2',
+                '/agent none - go back to the default agent',
+                '/projects - list your projects',
+                '/project 2 - switch to project 2',
+                '/project new C:\Git\Notes - add that folder as a project',
                 '/new - start a fresh conversation',
                 '/new <text> - start a fresh conversation and do this',
                 '/archive 3 - hide conversation 3 from the list',
@@ -172,6 +178,118 @@ function Invoke-DpIntercomCommand {
                 "Now working in: $([string]$resolved.conversation.title)",
                 'Send an instruction, or /chats to switch again.'
             ) -Kind 'chat'
+        }
+
+        'agents' {
+            $agents = @(Get-DpIntercomAgentList)
+            if ($agents.Count -eq 0) {
+                $null = Send-DpIntercomMessage -Title 'There are no agents to pick from.' -Line @(
+                    'DeskPilot found no agent files. Add one at the machine, under Settings > Agents.'
+                ) -Kind 'agents'
+                return
+            }
+            # Remember what each number pointed at, the same way /chats does: the
+            # folder can gain or lose a file between listing and picking.
+            $intercom.AgentIndex = @($agents | ForEach-Object { $_.id })
+            $lines = @($agents | ForEach-Object {
+                    '{0}. {1}{2}' -f $_.number, $_.name, $(if ($_.current) { '  <- current' } else { '' })
+                })
+            $listParams = @{
+                Title = 'Your agents'
+                Line  = ($lines + @('', 'Tap one to switch, or send /agent none for the default one.'))
+                Kind  = 'agents'
+            }
+            # The id is a file name and has no length bound, so the button carries
+            # the number instead - a whole keyboard dropped over one long file name
+            # would be a worse trade here than it is for a question.
+            $keyboard = Get-DpIntercomKeyboard -Choice @($agents | ForEach-Object {
+                    @{ label = '{0}. {1}{2}' -f $_.number, $_.name, $(if ($_.current) { ' <- current' } else { '' }); data = "g|$($_.number)" }
+                })
+            if ($keyboard) { $listParams.Keyboard = $keyboard }
+            $null = Send-DpIntercomMessage @listParams
+        }
+
+        'agent' {
+            $argument = ([string]$Command.text).Trim()
+            if ([string]::IsNullOrWhiteSpace($argument)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /agents to see the list, then /agent 2.') -Kind 'notice'
+                return
+            }
+            if ($argument.ToLowerInvariant() -in @('none', 'off', 'default')) {
+                Switch-DpIntercomAgent -AgentId ''
+                return
+            }
+            $choice = 0
+            if (-not [int]::TryParse($argument, [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'That is not a number from the list.' -Line @('Send /agents to see it again.') -Kind 'notice'
+                return
+            }
+            $index = @($intercom.AgentIndex)
+            $agentId = if ($choice -ge 1 -and $choice -le $index.Count) { [string]$index[$choice - 1] }
+            else { [string](@(Get-DpIntercomAgentList) | Where-Object { $_.number -eq $choice } | Select-Object -First 1 -ExpandProperty id) }
+            if (-not $agentId) {
+                $null = Send-DpIntercomMessage -Title "There is no agent $choice." -Line @('Send /agents to see the list.') -Kind 'notice'
+                return
+            }
+            Switch-DpIntercomAgent -AgentId $agentId
+        }
+
+        'projects' {
+            $projects = @(Get-DpIntercomProjectList)
+            if ($projects.Count -eq 0) {
+                $null = Send-DpIntercomMessage -Title 'There are no projects yet.' -Line @(
+                    'Send /project new C:\Git\Notes to add one, or add it at the machine under Settings > Projects.'
+                ) -Kind 'projects'
+                return
+            }
+            $intercom.ProjectIndex = @($projects | ForEach-Object { $_.id })
+            # Whether a Project allows remote control is the fact that decides
+            # whether the next instruction runs at all, so it is on every line
+            # rather than discovered through a refusal.
+            $lines = @($projects | ForEach-Object {
+                    '{0}. {1}{2}{3}' -f $_.number, $_.name,
+                    $(if ($_.current) { '  <- current' } else { '' }),
+                    $(if ($_.remote) { '' } else { '  (remote control off)' })
+                })
+            $listParams = @{
+                Title = 'Your projects'
+                Line  = ($lines + @('', 'Tap one to switch, or send /project new <folder> to add one.'))
+                Kind  = 'projects'
+            }
+            $keyboard = Get-DpIntercomKeyboard -Choice @($projects | ForEach-Object {
+                    @{ label = '{0}. {1}{2}' -f $_.number, $_.name, $(if ($_.current) { ' <- current' } else { '' }); data = "p|$($_.id)" }
+                })
+            if ($keyboard) { $listParams.Keyboard = $keyboard }
+            $null = Send-DpIntercomMessage @listParams
+        }
+
+        'project' {
+            $argument = ([string]$Command.text).Trim()
+            if ([string]::IsNullOrWhiteSpace($argument)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @(
+                    'Send /projects to see the list, then /project 2.',
+                    'Or /project new C:\Git\Notes to add a folder.'
+                ) -Kind 'notice'
+                return
+            }
+            $parts = $argument -split '\s+', 2
+            if ($parts[0].ToLowerInvariant() -eq 'new') {
+                New-DpIntercomProject -Path $(if ($parts.Count -gt 1) { $parts[1] } else { '' })
+                return
+            }
+            $choice = 0
+            if (-not [int]::TryParse($argument, [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'That is not a number from the list.' -Line @('Send /projects to see it again.') -Kind 'notice'
+                return
+            }
+            $index = @($intercom.ProjectIndex)
+            $projectId = if ($choice -ge 1 -and $choice -le $index.Count) { [string]$index[$choice - 1] }
+            else { [string](@(Get-DpIntercomProjectList) | Where-Object { $_.number -eq $choice } | Select-Object -First 1 -ExpandProperty id) }
+            if (-not $projectId) {
+                $null = Send-DpIntercomMessage -Title "There is no project $choice." -Line @('Send /projects to see the list.') -Kind 'notice'
+                return
+            }
+            Switch-DpIntercomProject -ProjectId $projectId
         }
 
         'archive' {
