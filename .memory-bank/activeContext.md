@@ -17,7 +17,7 @@ credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
 lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Five have shipped.
+00-README carries the evidence table). Six have shipped.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
@@ -91,14 +91,36 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   --exclude-standard`; `.git`, `node_modules`, `output`, `bin` and `obj` go
   whether tracked or not; binary files are skipped on a NUL byte with a UTF-16/32
   BOM exempted. `truncated` is always reported. Tied to the **File Access**
-  Permission through `Set-DpSearchTool`, mirroring `Set-DpQuestionnaireTool`,
+  Permission through `Set-DpWorkspaceTool`, mirroring `Set-DpQuestionnaireTool`,
   because a registered User Tool is a separate Engine category that
   `-DisableFileAccess` does not reach.
+- **Every edit was a whole-file rewrite.** `write_file` overwrites, so changing
+  three lines of a 900-line file meant reproducing the other 897 from memory — a
+  data-loss risk that is the *expected* outcome at that size, not a hypothetical.
+  `replace_in_file` changes one exact block: **exactly one occurrence or nothing
+  happens** (zero and several are refused with distinct messages and the file is
+  left byte-identical), BOM/encoding/dominant line ending preserved with a
+  throwing decoder so a file that cannot round-trip losslessly is refused rather
+  than corrupted, and the model may send plain newlines because `oldText` is
+  retried converted to the file's own ending. It returns `lineStart`/`lineEnd` so
+  the model need not re-read. Confinement is the search tools' — literally: root
+  resolution and the per-candidate test moved into `Resolve-DpWorkspaceRoot` and
+  `Resolve-DpWorkspacePath`, so search and edit cannot drift apart, and
+  `Set-DpSearchTool`/`Initialize-DpSearchTool` became
+  `Set-DpWorkspaceTool`/`Initialize-DpWorkspaceTool` over all three tools with one
+  root global, `DeskPilotWorkspaceRoot`. **The accounting is the non-obvious
+  half:** ShellPilot fills `result.FilesWritten` only from its own `write_file`
+  (`:4202`), so an edit made here would be invisible to the Activity card, the
+  pending change set and Undo — the tool appends to a Runspace ledger that
+  `Get-DpEngineEditedFile` drains into `$mapped.activity.filesWritten` once the
+  pipeline is complete. `Get-DpStreamFrame` also emits the live `file` frame for
+  it, parsed rather than pattern-matched because `newText` can contain the literal
+  text `"path":`.
 
 ## Verification
 
 - `./build.ps1 -Tasks test` at each step: baseline **845/845**, then 860, 890,
-  898, **931/931**, and **1011/1011**, 0 failed, 9 tasks, 0 errors.
+  898, **931/931**, **1011/1011**, and **1054/1054**, 0 failed, 9 tasks, 0 errors.
 - `Invoke-ScriptAnalyzer` clean on every new file; the findings on
   `New-DpTurnParameter.ps1`, `Get-DpDefaultSettings.ps1` and `Merge-DpSettings.ps1`
   (`PSUseBOMForUnicodeEncodedFile`, `PSUseSingularNouns`,
@@ -118,8 +140,16 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   (`{"query":"Get-DpStreamFrame"}` → 43 matches), ran **zero** shell commands, and
   answered with the definition and every call site for 11,970 tokens / $0.052.
   The description did its job; no tightening was needed.
-- **Nothing else here is live-smoked — that is still the gap that matters.** No
-  real Turn has streamed through the narration, instruction-push or
+- **The edit tool is live-smoked, and passed first time too.** A real Turn was
+  pointed at a throwaway git repository holding a real **630-line** source file
+  and asked to add a three-line comment above one specific line, changing nothing
+  else. It chose `search_files → search_text → read_file → replace_in_file`, never
+  touched `write_file`, sent 253 characters of `newText` instead of the whole
+  file, and `git diff --numstat` reported **`3  0`** — three lines added, none
+  removed. 27,922 tokens / $0.062. That diff is the acceptance signal prompt 05
+  named.
+- **Prompts 01-03 and 06 are still not live-smoked — that is the gap that
+  matters.** No real Turn has streamed through the narration, instruction-push or
   workspace-context work. The acceptance signal for the instruction work is
   concrete and unmet: a real Turn's answer must open with the PRE-FLIGHT banner.
   Restart the whole DeskPilot process, not just the tab — the SPA hot-reloads
@@ -127,9 +157,8 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
 
 ## Open, deliberately not done
 
-- **Prompt 05, 08–09 remain.** A targeted edit tool, the Turn transcript, and the
-  parity eval harness. **07 is now diagnosed** (below); its fix is unchosen and
-  deliberately unwritten.
+- **Prompts 08–09 remain.** The Turn transcript and the parity eval harness.
+  **07 is now diagnosed** (below); its fix is unchosen and deliberately unwritten.
 - **A search call does not appear on the Activity card, and that is deferred.**
   ShellPilot fills `result.FilesRead` only from its built-in `read_file`, so a
   User Tool never lands in the card's `Read` group; it does reach

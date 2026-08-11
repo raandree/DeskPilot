@@ -69,40 +69,52 @@ Tool for a non-technical user; turning it on is a deliberate act.
 **DeskPilot's own User Tools are not covered by that 1:1 mapping.** A Tool
 registered with `Register-ShpTool` belongs to the User Tools category, so
 `-DisableFileAccess` does not reach it. DeskPilot therefore registers and
-unregisters its file-reading Tools by hand as the matching Permission changes:
-`Set-DpSearchTool` removes `search_files` and `search_text` when File is off and
-re-registers them when it is on, exactly as `Set-DpQuestionnaireTool` does for
-`ask_questions` and Ask-User. Without that, a Permission the UI reports as off
-would still be in force.
+unregisters its file-reading and file-writing Tools by hand as the matching
+Permission changes: `Set-DpWorkspaceTool` removes `search_files`, `search_text`
+and `replace_in_file` when File is off and re-registers them when it is on,
+exactly as `Set-DpQuestionnaireTool` does for `ask_questions` and Ask-User.
+Without that, a Permission the UI reports as off would still be in force.
 
-## Search Tools (`search_files`, `search_text`)
+## Workspace Tools (`search_files`, `search_text`, `replace_in_file`)
 
-Unlike the Engine's File Tools, the search Tools **are** confined to the
+Unlike the Engine's File Tools, DeskPilot's own Tools **are** confined to the
 Workspace Folder, and deliberately so: a search Tool the model can aim at
-`C:\Users` is a data-exfiltration path wearing a search Tool's name.
+`C:\Users` is a data-exfiltration path wearing a search Tool's name, and an edit
+Tool it can aim there is worse.
 
 - **The root is never a Tool parameter.** `New-ShpToolSchema` turns every
   parameter into a JSON-schema property the model may fill in, so the Workspace
   Folder is passed out of band as a Runspace global that only DeskPilot writes.
   The result cap, the per-match text bound and the wall-clock budget are literals
   for the same reason.
-- **Two confinement guards.** A pattern that is absolute, drive-qualified, UNC,
-  `~`-relative or carries a `..` segment is refused by shape before the file
-  system sees it; and every resolved candidate is checked against the root
-  prefix and again through its final link target, so a symlink or junction
-  pointing outside the Workspace Folder is dropped and the directory walk will
-  not pass through one.
-- **No Project means no search.** Both Tools return a structured error asking the
-  user to select a Project. They never fall back to the process working
-  directory.
+- **Two confinement guards.** A path or pattern that is absolute,
+  drive-qualified, UNC, `~`-relative or carries a `..` segment is refused by
+  shape before the file system sees it; and every resolved candidate is checked
+  against the root prefix and again through its final link target, so a symlink
+  or junction pointing outside the Workspace Folder is dropped and the directory
+  walk will not pass through one. Both checks live in one place
+  (`Get-DpSearchPatternError`, `Resolve-DpWorkspaceRoot`,
+  `Resolve-DpWorkspacePath`), so search and edit cannot drift apart.
+- **No Project means no Tool.** Each returns a structured error asking the user
+  to select a Project. They never fall back to the process working directory.
 - **Ignored and excluded content is never returned.** Inside a repository the
   candidate list comes from `git ls-files --cached --others --exclude-standard`,
   so `.gitignore` is honoured and an ignored secret is not offered to the model;
   `.git`, `node_modules`, `output`, `bin` and `obj` are dropped whether tracked
-  or not; binary files are skipped.
+  or not; binary files are skipped and cannot be edited.
 - **Bounded, and honest about it.** Results are capped, matched text is trimmed,
   execution is time-boxed, and `truncated` is always reported — a silently short
   result set teaches the model a false negative it cannot detect.
+- **An edit is all-or-nothing.** `replace_in_file` requires exactly one
+  occurrence; zero and several are both refused with distinct messages and the
+  file is left byte-identical. Encoding, BOM and dominant line ending are
+  preserved, and a file that cannot be decoded losslessly is refused rather than
+  rewritten — a Tool that silently normalises a file destroys the reviewability
+  the Changes card exists to provide.
+- **Every edit is accounted for.** ShellPilot records only its own `write_file`
+  in `result.FilesWritten`, so `replace_in_file` appends to a Runspace ledger
+  that `Invoke-DpTurn` drains into the Turn's Activity. Without it an edit would
+  be invisible to the Changes card and therefore un-undoable.
 
 ## Workspace Folder
 

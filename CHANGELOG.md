@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agent can change three lines without rewriting the file.** Until now its
+  only way to edit anything was to write the file out whole — so changing a
+  couple of lines in a 900-line file meant reproducing the other 898 from memory,
+  and whatever it failed to reproduce was simply gone. On a large file that is
+  not a risk, it is the expected outcome. A new **replace_in_file** tool changes
+  one exact block of text and leaves every other byte alone: your file's
+  encoding, its byte-order mark and its line endings all survive, so a three-line
+  change shows up in the Changes card as three lines rather than as a whole-file
+  rewrite you cannot review. The text it is asked to replace has to appear
+  **exactly once** — if it appears twice, or not at all, the tool refuses and the
+  file is left untouched, because an edit that lands in the wrong place is worse
+  than an edit that does not happen. It is confined to your selected Project on
+  the same terms as the search tools, refuses binary files, and follows the
+  **File access** permission. Edits made through it appear in the Activity card
+  and in the Changes card, so **Undo** still puts everything back.
 - **The agent can search your project.** It had no search of any kind: to find a
   file by name, or find where something is defined, it had to fall back to
   running a shell command and reading the console output that came back. That is

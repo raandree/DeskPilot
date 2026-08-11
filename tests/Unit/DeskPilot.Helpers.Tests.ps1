@@ -5386,7 +5386,7 @@ Describe 'Invoke-DpFileSearchTool' {
         Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
     }
     AfterEach {
-        Remove-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
     }
 
     It 'tells the model to ask for a Project when none is selected' {
@@ -5406,7 +5406,7 @@ Describe 'Invoke-DpFileSearchTool' {
         @{ Pattern = '' }
     ) {
         $root = New-ToolRoot
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpFileSearchTool -pattern $Pattern | ConvertFrom-Json
         $r.error | Should -Be 'invalid-pattern'
         $r.PSObject.Properties.Name | Should -Not -Contain 'paths'
@@ -5415,7 +5415,7 @@ Describe 'Invoke-DpFileSearchTool' {
     It 'returns workspace-relative paths and the root it searched' {
         $root = New-ToolRoot
         Add-ToolFile -Root $root -Relative 'source/Private/Invoke-DpTurn.ps1'
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpFileSearchTool -pattern '**/*.ps1' | ConvertFrom-Json
         $r.paths | Should -Be @('source/Private/Invoke-DpTurn.ps1')
         $r.root | Should -Match ([regex]::Escape((Split-Path -Leaf $root)))
@@ -5428,7 +5428,7 @@ Describe 'Invoke-DpFileSearchTool' {
         # "no such file" for a repository full of them is a false negative.
         $root = New-ToolRoot
         Add-ToolFile -Root $root -Relative 'source/DeskPilot.psd1'
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         (Invoke-DpFileSearchTool -pattern '*.psd1' | ConvertFrom-Json).paths | Should -Be @('source/DeskPilot.psd1')
     }
 
@@ -5436,14 +5436,14 @@ Describe 'Invoke-DpFileSearchTool' {
         $root = New-ToolRoot
         Add-ToolFile -Root $root -Relative 'keep.js'
         foreach ($name in @('node_modules', 'output', 'bin', 'obj', '.git')) { Add-ToolFile -Root $root -Relative "$name/junk.js" }
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         (Invoke-DpFileSearchTool -pattern '**/*.js' | ConvertFrom-Json).paths | Should -Be @('keep.js')
     }
 
     It 'says truncated and states the true total when the cap bites' {
         $root = New-ToolRoot
         foreach ($i in 1..12) { Add-ToolFile -Root $root -Relative ('file{0:d2}.txt' -f $i) }
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpFileSearchTool -pattern '*.txt' -maxResults 5 | ConvertFrom-Json
         $r.returned | Should -Be 5
         $r.totalMatches | Should -Be 12
@@ -5455,7 +5455,7 @@ Describe 'Invoke-DpFileSearchTool' {
         # against the model as well as for it.
         $root = New-ToolRoot
         foreach ($i in 1..205) { Add-ToolFile -Root $root -Relative ('f{0:d3}.txt' -f $i) }
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpFileSearchTool -pattern '*.txt' -maxResults 5000 | ConvertFrom-Json
         $r.returned | Should -Be 200
         $r.totalMatches | Should -Be 205
@@ -5482,7 +5482,7 @@ Describe 'Invoke-DpTextSearchTool' {
         Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
     }
     AfterEach {
-        Remove-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
     }
 
     It 'tells the model to ask for a Project when none is selected' {
@@ -5494,7 +5494,7 @@ Describe 'Invoke-DpTextSearchTool' {
     It 'finds the same needle literally and by regex' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'src/app.ps1' -Content "# header`nfunction Get-Thing {}`n"
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
 
         $literal = Invoke-DpTextSearchTool -query 'Get-Thing' | ConvertFrom-Json
         $literal.totalMatches | Should -Be 1
@@ -5510,7 +5510,7 @@ Describe 'Invoke-DpTextSearchTool' {
     It 'treats a literal query as literal, not as an expression' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'a.txt' -Content "aab`na.b`n"
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query 'a.b' | ConvertFrom-Json
         $r.totalMatches | Should -Be 1
         $r.matches[0].text | Should -Be 'a.b'
@@ -5519,7 +5519,7 @@ Describe 'Invoke-DpTextSearchTool' {
     It 'answers an invalid regex with a structured error instead of throwing' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'a.txt' -Content 'x'
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query '(unclosed' -isRegex $true | ConvertFrom-Json
         $r.error | Should -Be 'invalid-regex'
         $r.message | Should -Match 'isRegex'
@@ -5531,13 +5531,13 @@ Describe 'Invoke-DpTextSearchTool' {
         @{ Include = '~/.copilot/*' }
     ) {
         $root = New-TextRoot
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         (Invoke-DpTextSearchTool -query 'x' -includePattern $Include | ConvertFrom-Json).error | Should -Be 'invalid-pattern'
     }
 
     It 'refuses an empty query' {
         $root = New-TextRoot
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         (Invoke-DpTextSearchTool -query '' | ConvertFrom-Json).error | Should -Be 'invalid-query'
     }
 
@@ -5545,7 +5545,7 @@ Describe 'Invoke-DpTextSearchTool' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'a.ps1' -Content 'needle'
         Add-TextFile -Root $root -Relative 'b.txt' -Content 'needle'
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query 'needle' -includePattern '**/*.ps1' | ConvertFrom-Json
         $r.totalMatches | Should -Be 1
         $r.matches[0].path | Should -Be 'a.ps1'
@@ -5556,7 +5556,7 @@ Describe 'Invoke-DpTextSearchTool' {
         Add-TextFile -Root $root -Relative 'good.txt' -Content 'needle here'
         $binary = [System.Text.Encoding]::UTF8.GetBytes('needle') + [byte[]]@(0x00, 0x01, 0x02)
         [System.IO.File]::WriteAllBytes((Join-Path $root 'blob.bin'), $binary)
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json
         $r.totalMatches | Should -Be 1
         $r.matches[0].path | Should -Be 'good.txt'
@@ -5566,7 +5566,7 @@ Describe 'Invoke-DpTextSearchTool' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'keep.txt' -Content 'needle'
         foreach ($name in @('node_modules', 'output', 'bin', 'obj', '.git')) { Add-TextFile -Root $root -Relative "$name/junk.txt" -Content 'needle' }
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json
         $r.totalMatches | Should -Be 1
         $r.matches[0].path | Should -Be 'keep.txt'
@@ -5575,7 +5575,7 @@ Describe 'Invoke-DpTextSearchTool' {
     It 'says truncated and states the true total when the cap bites' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'many.txt' -Content ((1..12 | ForEach-Object { "line $_ needle" }) -join "`n")
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $r = Invoke-DpTextSearchTool -query 'needle' -maxResults 4 | ConvertFrom-Json
         $r.returned | Should -Be 4
         $r.totalMatches | Should -Be 12
@@ -5585,7 +5585,7 @@ Describe 'Invoke-DpTextSearchTool' {
     It 'bounds the text of a match so one long line cannot fill the context' {
         $root = New-TextRoot
         Add-TextFile -Root $root -Relative 'long.txt' -Content ('needle' + ('a' * 500))
-        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $root
         $text = (Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json).matches[0].text
         $text.Length | Should -Be 200
         $text | Should -BeLike '*…'
@@ -5593,8 +5593,8 @@ Describe 'Invoke-DpTextSearchTool' {
 }
 
 
-Describe 'Initialize-DpSearchTool' {
-    # No Invoke-DpGitCommand mock anywhere in here: Initialize-DpSearchTool
+Describe 'Initialize-DpWorkspaceTool' {
+    # No Invoke-DpGitCommand mock anywhere in here: Initialize-DpWorkspaceTool
     # re-declares the backing commands in the Engine Runspace from their own
     # definitions, and a mocked command's definition is Pester's mock body.
     BeforeAll {
@@ -5626,16 +5626,17 @@ Describe 'Initialize-DpSearchTool' {
         $script:engineModule | Should -Not -BeNullOrEmpty
     }
 
-    It 'registers both search tools and steers the model away from run_command' {
+    It 'registers all three workspace tools and steers the model away from run_command and write_file' {
         $runspace = New-EngineRunspace
         try {
             $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
-            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+            Initialize-DpWorkspaceTool -Runspace $runspace -Root $root | Should -BeTrue
 
             $registered = Get-RegisteredToolName -Runspace $runspace
             @($registered.Name) | Should -Contain 'search_files'
             @($registered.Name) | Should -Contain 'search_text'
+            @($registered.Name) | Should -Contain 'replace_in_file'
             # The description is the whole argument contract: ShellPilot derives the
             # schema from parameter metadata and describes every property as "The
             # pattern parameter of Invoke-DpFileSearchTool".
@@ -5645,6 +5646,12 @@ Describe 'Initialize-DpSearchTool' {
             $textTool = $registered | Where-Object { $_.Name -eq 'search_text' }
             $textTool.Description | Should -Match 'grep'
             $textTool.Description | Should -Match 'includePattern'
+            # The description is the only thing that makes the model prefer this
+            # over write_file, which is the whole point of the tool.
+            $editTool = $registered | Where-Object { $_.Name -eq 'replace_in_file' }
+            $editTool.Description | Should -Match 'write_file'
+            $editTool.Description | Should -Match 'EXACTLY ONCE'
+            $editTool.Description | Should -Match 'oldText \(string, required\)'
         }
         finally {
             $runspace.Dispose()
@@ -5659,7 +5666,7 @@ Describe 'Initialize-DpSearchTool' {
             $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
             [System.IO.File]::WriteAllText((Join-Path $root 'notes.txt'), "first`nthe needle is here`n")
-            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+            Initialize-DpWorkspaceTool -Runspace $runspace -Root $root | Should -BeTrue
 
             $callShell = [powershell]::Create()
             $callShell.Runspace = $runspace
@@ -5688,7 +5695,7 @@ Describe 'Initialize-DpSearchTool' {
         try {
             $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
-            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+            Initialize-DpWorkspaceTool -Runspace $runspace -Root $root | Should -BeTrue
 
             $callShell = [powershell]::Create()
             $callShell.Runspace = $runspace
@@ -5702,7 +5709,7 @@ Describe 'Initialize-DpSearchTool' {
         }
     }
 
-    It 'removes both tools when File Access is off and restores them when it is on' {
+    It 'removes every tool when File Access is off and restores them when it is on' {
         # A registered User Tool is a separate Engine category from the built-in
         # file tools, so -DisableFileAccess does not reach it: without the removal
         # the Permission would mean something in the UI and nothing in fact.
@@ -5710,21 +5717,21 @@ Describe 'Initialize-DpSearchTool' {
         try {
             $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Path $root | Out-Null
-            Set-DpSearchTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
-            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 2
+            Set-DpWorkspaceTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
+            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 3
 
-            Set-DpSearchTool -Runspace $runspace -Enabled:$false -Root $root | Should -BeFalse
+            Set-DpWorkspaceTool -Runspace $runspace -Enabled:$false -Root $root | Should -BeFalse
             @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 0
 
             $probeShell = [powershell]::Create()
             $probeShell.Runspace = $runspace
-            $null = $probeShell.AddScript('[string]$global:DeskPilotSearchRoot')
+            $null = $probeShell.AddScript('[string]$global:DeskPilotWorkspaceRoot')
             $storedRoot = [string]@($probeShell.Invoke())[-1]
             $probeShell.Dispose()
             $storedRoot | Should -Be ''
 
-            Set-DpSearchTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
-            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 2
+            Set-DpWorkspaceTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
+            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 3
         }
         finally {
             $runspace.Dispose()
@@ -5734,7 +5741,7 @@ Describe 'Initialize-DpSearchTool' {
     It 'removes cleanly from a runspace that never had the tools' {
         $runspace = New-EngineRunspace
         try {
-            Set-DpSearchTool -Runspace $runspace -Enabled:$false -Root '' | Should -BeFalse
+            Set-DpWorkspaceTool -Runspace $runspace -Enabled:$false -Root '' | Should -BeFalse
         }
         finally {
             $runspace.Dispose()
@@ -5742,7 +5749,7 @@ Describe 'Initialize-DpSearchTool' {
     }
 }
 
-Describe 'the Turn offers the search tools' -Tag 'Unit' {
+Describe 'the Turn offers the workspace tools' -Tag 'Unit' {
     BeforeAll {
         $script:searchTurnSource = Get-Content -LiteralPath (
             Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
@@ -5751,11 +5758,349 @@ Describe 'the Turn offers the search tools' -Tag 'Unit' {
     It 'registers them once per Turn, beside the Questionnaire tool' {
         # Registration is runspace-scoped and survives a Turn, so it belongs where
         # the runspace is prepared - not inside the streaming loop.
-        $script:searchTurnSource | Should -Match 'Set-DpSearchTool @searchToolParams'
+        $script:searchTurnSource | Should -Match 'Set-DpWorkspaceTool @workspaceToolParams'
     }
 
-    It 'ties availability to File Access and the search to the Workspace Folder' {
+    It 'ties availability to File Access and the tools to the Workspace Folder' {
         $script:searchTurnSource | Should -Match 'Enabled\s*=\s*\[bool\]\$settings\.permissions\.file'
         $script:searchTurnSource | Should -Match 'Root\s*=\s*\[string\]\$settings\.workspaceFolder'
+    }
+
+    It 'merges the edited-file ledger into the activity the change set is built from' {
+        # ShellPilot fills result.FilesWritten only from its own write_file, so
+        # without this an edit made through replace_in_file is invisible to the
+        # Activity card, the pending change set and Undo.
+        $script:searchTurnSource | Should -Match 'Get-DpEngineEditedFile -Runspace'
+        $script:searchTurnSource | Should -Match '\$mapped\.activity\.filesWritten\s*='
+    }
+}
+
+
+Describe 'Resolve-DpWorkspaceRoot' {
+    It 'refuses a root that is not a usable folder' -ForEach @(
+        @{ Root = '' }
+        @{ Root = $null }
+        @{ Root = '   ' }
+        @{ Root = 'X:\does\not\exist' }
+    ) {
+        $r = Resolve-DpWorkspaceRoot -Root $Root
+        $r.ok | Should -BeFalse
+        $r.error | Should -Be 'no-workspace'
+        $r.message | Should -Match 'select a Project'
+    }
+
+    It 'refuses a root that is a file' {
+        $file = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + '.txt')
+        [System.IO.File]::WriteAllText($file, 'x')
+        (Resolve-DpWorkspaceRoot -Root $file).ok | Should -BeFalse
+    }
+
+    It 'returns a fully resolved folder' {
+        $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        $r = Resolve-DpWorkspaceRoot -Root (Join-Path $dir '.')
+        $r.ok | Should -BeTrue
+        $r.root | Should -Not -Match '\.$'
+        (Resolve-DpWorkspaceRoot -Root $dir).root | Should -Be $r.root
+    }
+}
+
+Describe 'Resolve-DpWorkspacePath' {
+    BeforeAll {
+        $script:confineRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:confineRoot | Out-Null
+        $script:confineRoot = (Resolve-DpWorkspaceRoot -Root $script:confineRoot).root
+    }
+
+    It 'accepts a path inside the root and returns it resolved' {
+        $full = Resolve-DpWorkspacePath -Root $script:confineRoot -Path 'src/app.ps1'
+        $full | Should -Not -BeNullOrEmpty
+        $full | Should -BeLike (Join-Path $script:confineRoot '*')
+    }
+
+    It 'refuses a path that leaves the root' -ForEach @(
+        @{ Candidate = '../outside.txt' }
+        @{ Candidate = 'a/../../outside.txt' }
+        @{ Candidate = '..\outside.txt' }
+    ) {
+        Resolve-DpWorkspacePath -Root $script:confineRoot -Path $Candidate | Should -BeNullOrEmpty
+    }
+
+    It 'refuses an absolute path outside the root' {
+        Resolve-DpWorkspacePath -Root $script:confineRoot -Path ([System.IO.Path]::GetTempPath()) | Should -BeNullOrEmpty
+    }
+
+    It 'keeps a candidate that no longer exists' {
+        # git can list a file deleted a moment ago; dropping it silently would hide
+        # a file the caller has every reason to believe is there.
+        Resolve-DpWorkspacePath -Root $script:confineRoot -Path 'gone.txt' | Should -Not -BeNullOrEmpty
+    }
+
+    It 'refuses a link whose final target leaves the root' {
+        $outside = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $outside | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $outside 'secret.txt'), 'token')
+        $link = Join-Path $script:confineRoot 'escape.txt'
+        try { New-Item -ItemType HardLink -Path $link -Target (Join-Path $outside 'secret.txt') -ErrorAction Stop | Out-Null }
+        catch {
+            try { New-Item -ItemType SymbolicLink -Path $link -Target (Join-Path $outside 'secret.txt') -ErrorAction Stop | Out-Null }
+            catch {
+                Set-ItResult -Skipped -Because 'this platform or account cannot create a file link'
+                return
+            }
+            Resolve-DpWorkspacePath -Root $script:confineRoot -Path 'escape.txt' | Should -BeNullOrEmpty
+            return
+        }
+        # A hard link has no reparse point and is indistinguishable from the file
+        # itself, so it is correctly NOT refused; only a symlink is a way out.
+        Resolve-DpWorkspacePath -Root $script:confineRoot -Path 'escape.txt' | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Invoke-DpReplaceInFileTool' {
+    BeforeAll {
+        function script:New-EditRoot {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            Set-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -Value $dir
+            Set-Variable -Name 'DeskPilotFilesEdited' -Scope Global -Value ([System.Collections.Generic.List[string]]::new())
+            $dir
+        }
+        function script:Write-EditFile {
+            param([string]$Root, [string]$Relative, [string]$Content, [byte[]]$Bom = @())
+            $full = Join-Path $Root ($Relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+            $parent = Split-Path -Parent $full
+            if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            $bytes = $Bom + [System.Text.Encoding]::UTF8.GetBytes($Content)
+            [System.IO.File]::WriteAllBytes($full, $bytes)
+            $full
+        }
+    }
+    AfterEach {
+        Remove-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name 'DeskPilotFilesEdited' -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It 'replaces a single occurrence and reports the lines it landed on' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'src/app.ps1' -Content "one`ntwo`nthree`nfour`n"
+        $r = Invoke-DpReplaceInFileTool -path 'src/app.ps1' -oldText 'two' -newText 'TWO' | ConvertFrom-Json
+        $r.replaced | Should -BeTrue
+        $r.occurrences | Should -Be 1
+        $r.lineStart | Should -Be 2
+        $r.lineEnd | Should -Be 2
+        $r.path | Should -Be 'src/app.ps1'
+        [System.IO.File]::ReadAllText($full) | Should -Be "one`nTWO`nthree`nfour`n"
+    }
+
+    It 'records the edit so the Activity card and Undo can see it' {
+        $root = New-EditRoot
+        Write-EditFile -Root $root -Relative 'a.txt' -Content 'alpha' | Out-Null
+        Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'alpha' -newText 'beta' | Out-Null
+        @($global:DeskPilotFilesEdited) | Should -Be @('a.txt')
+    }
+
+    It 'leaves the file untouched when the text is not there' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "alpha`nbeta`n"
+        $before = [System.IO.File]::ReadAllBytes($full)
+        $r = Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'gamma' -newText 'x' | ConvertFrom-Json
+        $r.error | Should -Be 'text-not-found'
+        $r.message | Should -Match 'nothing was changed'
+        [System.IO.File]::ReadAllBytes($full) | Should -Be $before
+        @($global:DeskPilotFilesEdited).Count | Should -Be 0
+    }
+
+    It 'leaves the file untouched and states the count when the text is ambiguous' {
+        # Ambiguity plus a silent first-match rule is how an edit lands in the
+        # wrong place, so the count is the actionable part of the message.
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "dup`nother`ndup`ndup`n"
+        $before = [System.IO.File]::ReadAllBytes($full)
+        $r = Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'dup' -newText 'x' | ConvertFrom-Json
+        $r.error | Should -Be 'ambiguous-match'
+        $r.message | Should -Match '3 times'
+        $r.message | Should -Match 'more surrounding lines'
+        [System.IO.File]::ReadAllBytes($full) | Should -Be $before
+    }
+
+    It 'refuses a path that leaves the workspace folder' -ForEach @(
+        @{ Target = 'C:\Users\install\secrets.txt' }
+        @{ Target = '/etc/passwd' }
+        @{ Target = '../outside.txt' }
+        @{ Target = '..\outside.txt' }
+        @{ Target = '~/.copilot/agents/x.md' }
+        @{ Target = '' }
+    ) {
+        New-EditRoot | Out-Null
+        (Invoke-DpReplaceInFileTool -path $Target -oldText 'a' -newText 'b' | ConvertFrom-Json).error | Should -Be 'invalid-path'
+    }
+
+    It 'refuses a glob rather than guessing which file was meant' {
+        New-EditRoot | Out-Null
+        $r = Invoke-DpReplaceInFileTool -path '**/*.ps1' -oldText 'a' -newText 'b' | ConvertFrom-Json
+        $r.error | Should -Be 'invalid-path'
+        $r.message | Should -Match 'search_files'
+    }
+
+    It 'tells the model to ask for a Project when none is selected' {
+        Remove-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
+        $r = Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'a' -newText 'b' | ConvertFrom-Json
+        $r.error | Should -Be 'no-workspace'
+        $r.message | Should -Match 'select a Project'
+    }
+
+    It 'points at write_file when the file does not exist yet' {
+        New-EditRoot | Out-Null
+        $r = Invoke-DpReplaceInFileTool -path 'missing.txt' -oldText 'a' -newText 'b' | ConvertFrom-Json
+        $r.error | Should -Be 'file-not-found'
+        $r.message | Should -Match 'write_file'
+    }
+
+    It 'refuses a binary file' {
+        $root = New-EditRoot
+        [System.IO.File]::WriteAllBytes((Join-Path $root 'blob.bin'), ([byte[]]@(0x41, 0x00, 0x42)))
+        (Invoke-DpReplaceInFileTool -path 'blob.bin' -oldText 'A' -newText 'B' | ConvertFrom-Json).error | Should -Be 'binary-file'
+    }
+
+    It 'refuses an empty oldText and a no-op edit' -ForEach @(
+        @{ Old = ''; New = 'x' }
+        @{ Old = 'same'; New = 'same' }
+    ) {
+        $root = New-EditRoot
+        Write-EditFile -Root $root -Relative 'a.txt' -Content 'same' | Out-Null
+        (Invoke-DpReplaceInFileTool -path 'a.txt' -oldText $Old -newText $New | ConvertFrom-Json).error | Should -Be 'invalid-argument'
+    }
+
+    It 'treats regex metacharacters in oldText and newText literally' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "value = a.b`nvalue = axb`n"
+        (Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'a.b' -newText '$1(x)' | ConvertFrom-Json).replaced | Should -BeTrue
+        [System.IO.File]::ReadAllText($full) | Should -Be "value = `$1(x)`nvalue = axb`n"
+    }
+
+    It 'replaces a multi-line block and reports the whole span' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "head`nfirst`nsecond`ntail`n"
+        $r = Invoke-DpReplaceInFileTool -path 'a.txt' -oldText "first`nsecond" -newText "only" | ConvertFrom-Json
+        $r.lineStart | Should -Be 2
+        $r.lineEnd | Should -Be 3
+        [System.IO.File]::ReadAllText($full) | Should -Be "head`nonly`ntail`n"
+    }
+
+    It 'edits the final line of a file that has no trailing newline' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "head`nlast"
+        (Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'last' -newText 'end' | ConvertFrom-Json).replaced | Should -BeTrue
+        [System.IO.File]::ReadAllText($full) | Should -Be "head`nend"
+    }
+
+    It 'leaves a CRLF file CRLF even when the model sends plain newlines' {
+        # A tool that silently rewrites CRLF to LF turns a three-line change into a
+        # whole-file diff and destroys the review value it exists to create.
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "one`r`ntwo`r`nthree`r`nfour`r`n"
+        $r = Invoke-DpReplaceInFileTool -path 'a.txt' -oldText "two`nthree" -newText "TWO`nTHREE" | ConvertFrom-Json
+        $r.replaced | Should -BeTrue
+        $text = [System.IO.File]::ReadAllText($full)
+        $text | Should -Be "one`r`nTWO`r`nTHREE`r`nfour`r`n"
+        $text | Should -Not -Match "(?<!`r)`n"
+    }
+
+    It 'preserves a UTF-8 BOM and every byte outside the replaced span' {
+        $root = New-EditRoot
+        $bom = [byte[]]@(0xEF, 0xBB, 0xBF)
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "kopf`numlaut ae oe ue: aeoeue`nfuss`n" -Bom $bom
+        Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'kopf' -newText 'head' | Out-Null
+        $bytes = [System.IO.File]::ReadAllBytes($full)
+        $bytes[0..2] | Should -Be $bom
+        [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3) | Should -Be "head`numlaut ae oe ue: aeoeue`nfuss`n"
+    }
+
+    It 'preserves non-ASCII bytes it did not touch' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "gruess`nMuenchen: Muenchen`nende`n"
+        $original = [System.IO.File]::ReadAllBytes($full)
+        Invoke-DpReplaceInFileTool -path 'a.txt' -oldText 'ende' -newText 'ENDE' | Out-Null
+        $after = [System.IO.File]::ReadAllBytes($full)
+        $after.Length | Should -Be $original.Length
+        [System.Text.Encoding]::UTF8.GetString($after) | Should -Be "gruess`nMuenchen: Muenchen`nENDE`n"
+    }
+
+    It 'deletes the matched block when newText is empty' {
+        $root = New-EditRoot
+        $full = Write-EditFile -Root $root -Relative 'a.txt' -Content "keep`ndrop`n"
+        (Invoke-DpReplaceInFileTool -path 'a.txt' -oldText "drop`n" -newText '' | ConvertFrom-Json).replaced | Should -BeTrue
+        [System.IO.File]::ReadAllText($full) | Should -Be "keep`n"
+    }
+}
+
+Describe 'Get-DpEngineEditedFile' {
+    It 'returns nothing for a runspace that is not open' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        try { @(Get-DpEngineEditedFile -Runspace $runspace) | Should -HaveCount 0 }
+        finally { $runspace.Dispose() }
+    }
+
+    It 'returns nothing for a runspace that never had the tools' {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        try { @(Get-DpEngineEditedFile -Runspace $runspace) | Should -HaveCount 0 }
+        finally { $runspace.Dispose() }
+    }
+
+    It 'drains the ledger once, de-duplicated and in order' {
+        # Draining is what stops one Turn''s edits being attributed to the next.
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        try {
+            $seed = [powershell]::Create()
+            $seed.Runspace = $runspace
+            $null = $seed.AddScript('$global:DeskPilotFilesEdited = [System.Collections.Generic.List[string]]::new(); $global:DeskPilotFilesEdited.Add("a.txt"); $global:DeskPilotFilesEdited.Add("b/c.txt"); $global:DeskPilotFilesEdited.Add("a.txt")')
+            $seed.Invoke() | Out-Null
+            $seed.Dispose()
+
+            @(Get-DpEngineEditedFile -Runspace $runspace) | Should -Be @('a.txt', 'b/c.txt')
+            @(Get-DpEngineEditedFile -Runspace $runspace) | Should -HaveCount 0
+        }
+        finally { $runspace.Dispose() }
+    }
+}
+
+Describe 'Get-DpStreamFrame announces a targeted edit' {
+    It 'emits a file frame for replace_in_file' {
+        $record = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'replace_in_file'
+                Arguments = '{"path":"source/Private/Invoke-DpTurn.ps1","oldText":"a","newText":"b"}'
+            }
+        }
+        $frame = Get-DpStreamFrame -Record $record
+        $frame.event | Should -Be 'file'
+        $frame.data.path | Should -Be 'source/Private/Invoke-DpTurn.ps1'
+    }
+
+    It 'names the file being edited, not one quoted inside newText' {
+        # oldText and newText can contain anything, including the literal text
+        # "path": - which is why the arguments are parsed and never matched.
+        $record = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'replace_in_file'
+                Arguments = '{"path":"real.ps1","newText":"{\"path\":\"decoy.ps1\"}","oldText":"x"}'
+            }
+        }
+        (Get-DpStreamFrame -Record $record).data.path | Should -Be 'real.ps1'
+    }
+
+    It 'stays silent when the arguments carry no path' {
+        $record = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'replace_in_file'; Arguments = '{"oldText":"a"}' }
+        }
+        Get-DpStreamFrame -Record $record | Should -BeNullOrEmpty
     }
 }

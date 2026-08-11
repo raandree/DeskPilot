@@ -20,12 +20,13 @@ function Get-DpStreamFrame {
           normalised Task List (also exposed on the decision's Tasks member so the
           caller can remember the latest list). The list is an idempotent replace,
           not a delta.
-        - ShpProgress + Kind 'ToolCall' for 'write_file' -> a 'file' frame naming
-          the path, so the window can show an edit while it happens rather than
-          only in the Changes card after the Turn. The record is written BEFORE
-          the tool runs, so the frame states intent; the pending change set is
-          what makes it a fact. Read from the structured record rather than the
-          host trace, so the live list also works with Thinking switched off.
+        - ShpProgress + Kind 'ToolCall' for a file-writing tool ('write_file' or
+          DeskPilot's own 'replace_in_file') -> a 'file' frame naming the path, so
+          the window can show an edit while it happens rather than only in the
+          Changes card after the Turn. The record is written BEFORE the tool runs,
+          so the frame states intent; the pending change set is what makes it a
+          fact. Read from the structured record rather than the host trace, so the
+          live list also works with Thinking switched off.
         - ShpProgress + any other Kind or tool (future kinds included) -> no frame.
           The rest of the Activity is reconstructed from the result; tool traces
           are not echoed, and unknown kinds are ignored for forward-compatibility.
@@ -88,11 +89,12 @@ function Get-DpStreamFrame {
             $list = ConvertTo-DpTaskList -InputObject (Get-DpPropertyValue -InputObject $payload -Name @('TodoList') -Default @())
             return @{ event = 'tasks'; data = @{ tasks = $list }; Tasks = $list }
         }
-        if ($kind -eq 'ToolCall' -and [string](Get-DpPropertyValue -InputObject $payload -Name @('Name') -Default '') -eq 'write_file') {
+        if ($kind -eq 'ToolCall' -and [string](Get-DpPropertyValue -InputObject $payload -Name @('Name') -Default '') -in @('write_file', 'replace_in_file')) {
             # The arguments are the provider's raw JSON string and can be truncated
             # or malformed; a parse failure costs the drain loop one skipped frame
             # and nothing else. Parsed rather than pattern-matched because the
-            # written content sits in the same object and can contain anything.
+            # written content sits in the same object and can contain anything -
+            # replace_in_file's newText can hold the literal text '"path":'.
             $path = ''
             try {
                 $arguments = [string](Get-DpPropertyValue -InputObject $payload -Name @('Arguments') -Default '')

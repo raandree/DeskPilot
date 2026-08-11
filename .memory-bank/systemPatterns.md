@@ -77,6 +77,13 @@ source: repository evidence
   the Tool — its root, its result cap, its time budget — belongs out of band: a
   Runspace global set by the caller, or a literal. A cap the model can raise is
   not a cap, and a root the model can supply is an exfiltration path.
+- **A User Tool has to account for its own side effects.** ShellPilot fills
+  `result.FilesRead` and `result.FilesWritten` only from its own built-in tools,
+  so anything a DeskPilot Tool reads or writes is invisible to the Activity card,
+  the pending change set and Undo unless the Tool records it. `replace_in_file`
+  appends to a Runspace ledger that `Get-DpEngineEditedFile` drains into the
+  Turn's activity once the pipeline is complete — not on the streaming thread,
+  and reset at registration so one Turn's edits are never attributed to the next.
 - **Settings are a single object.** Model, Permissions, Projects + selected
   Project, Agents folder + selected Agent, Skill/Instruction/Prompt roots,
   reasoning effort — one settings object, read at the start of each Turn so

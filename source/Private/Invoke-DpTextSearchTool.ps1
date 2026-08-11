@@ -7,7 +7,7 @@
         search_text Tool, so its parameter names are the JSON argument names the
         model sends and its output is the JSON envelope the model reads. Like
         search_files it takes no root: the Workspace Folder arrives out of band
-        on the Runspace-global DeskPilotSearchRoot, and no Project means a
+        on the Runspace-global DeskPilotWorkspaceRoot, and no Project means a
         structured error rather than a search of the launcher's folder.
 
         A regex is the one place a model-supplied string becomes an expression,
@@ -86,7 +86,7 @@
     }
 
     $root = ''
-    $rootVariable = Get-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+    $rootVariable = Get-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
     if ($rootVariable) { $root = [string]$rootVariable.Value }
 
     $candidates = Get-DpSearchCandidate -Root $root -DeadlineUtc $deadline

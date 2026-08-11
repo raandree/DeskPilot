@@ -198,18 +198,19 @@ function Invoke-DpTurn {
         }
         $null = Set-DpQuestionnaireTool @questionnaireToolParams
 
-        # DeskPilot's own search Tools, carrying the Workspace Folder they are
-        # confined to. Tied to File Access because they read the user's files, and
-        # a registered User Tool is a separate Engine category that
-        # -DisableFileAccess does not reach - without this the Permission would
+        # DeskPilot's own search and edit Tools, carrying the Workspace Folder they
+        # are confined to. Tied to File Access because they read and write the
+        # user's files, and a registered User Tool is a separate Engine category
+        # that -DisableFileAccess does not reach - without this the Permission would
         # mean something in the UI and nothing in fact. Re-registered every Turn,
-        # like the Questionnaire, so a Project switch moves the search with it.
-        $searchToolParams = @{
+        # like the Questionnaire, so a Project switch moves them with it and the
+        # edited-file ledger starts empty.
+        $workspaceToolParams = @{
             Runspace = $script:DeskPilot.Engine.Runspace
             Enabled  = [bool]$settings.permissions.file
             Root     = [string]$settings.workspaceFolder
         }
-        $null = Set-DpSearchTool @searchToolParams
+        $null = Set-DpWorkspaceTool @workspaceToolParams
 
         $userMessage = @{
             id         = New-DpId -Prefix 'm'
@@ -512,6 +513,17 @@ function Invoke-DpTurn {
         }
 
         $mapped = ConvertFrom-DpEngineResult -Result $result
+
+        # A file changed through replace_in_file never reaches result.FilesWritten -
+        # ShellPilot fills that only from its own write_file - so it would be
+        # invisible to the Activity card, the pending change set and Undo. Merge the
+        # Runspace ledger in here, once, while the pipeline is complete and the
+        # runspace is idle again.
+        $editedFiles = @(Get-DpEngineEditedFile -Runspace $script:DeskPilot.Engine.Runspace)
+        if ($editedFiles.Count -gt 0) {
+            $alreadyWritten = @($mapped.activity.filesWritten)
+            $mapped.activity.filesWritten = @($alreadyWritten + @($editedFiles | Where-Object { $alreadyWritten -notcontains $_ }))
+        }
 
         $newHistory = @(Get-DpPropertyValue -InputObject $result -Name @('History') -Default @())
         if ($newHistory.Count -gt 0) {

@@ -8,7 +8,7 @@ function Invoke-DpFileSearchTool {
         model sends and its output is the JSON envelope the model reads.
 
         The root is never a parameter. It is read from the Runspace-global
-        DeskPilotSearchRoot that Set-DpSearchTool writes from the Workspace
+        DeskPilotWorkspaceRoot that Set-DpWorkspaceTool writes from the Workspace
         Folder, so no argument the model can produce moves the search - and with
         no Project selected the answer is a structured error, never the process
         working directory.
@@ -51,7 +51,7 @@ function Invoke-DpFileSearchTool {
     }
 
     $root = ''
-    $rootVariable = Get-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+    $rootVariable = Get-Variable -Name 'DeskPilotWorkspaceRoot' -Scope Global -ErrorAction SilentlyContinue
     if ($rootVariable) { $root = [string]$rootVariable.Value }
 
     $candidates = Get-DpSearchCandidate -Root $root -DeadlineUtc $deadline

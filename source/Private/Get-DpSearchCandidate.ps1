@@ -17,9 +17,10 @@ function Get-DpSearchCandidate {
           that sits inside a larger repository from listing its siblings.
         - .git, node_modules, output, bin and obj are dropped whether git tracks
           them or not.
-        - Every candidate is confined to the root twice: lexically, and again
-          through its final link target, so a symlink or junction that points
-          outside the Workspace Folder is not a way out of it.
+        - Every candidate goes through Resolve-DpWorkspacePath, so a symlink or
+          junction that points outside the Workspace Folder is not a way out of
+          it - and the search and edit Tools share one confinement test rather
+          than two that can drift.
 
         Never throws. An unusable root, an exhausted budget and an over-large
         tree are all reported on the result.
@@ -53,37 +54,19 @@ function Get-DpSearchCandidate {
     $noWorkspace = @{
         ok        = $false
         error     = 'no-workspace'
-        message   = 'No Project is selected, so there is nothing to search. Ask the user to select a Project (a Workspace Folder) in DeskPilot, then try again. Do not search any other folder.'
+        message   = ''
         root      = ''
         paths     = @()
         truncated = $false
         timedOut  = $false
     }
 
-    if ([string]::IsNullOrWhiteSpace($Root)) { return $noWorkspace }
-
-    # Resolve the root through its own link target first. A Workspace Folder that
-    # is itself a junction would otherwise make every confinement test below
-    # compare a resolved candidate against an unresolved prefix, and fail open.
-    $resolvedRoot = $null
-    try {
-        $rootItem = Get-Item -LiteralPath $Root -Force -ErrorAction Stop
-        if ($rootItem -isnot [System.IO.DirectoryInfo]) { return $noWorkspace }
-        $rootTarget = $rootItem.ResolveLinkTarget($true)
-        $resolvedRoot = [System.IO.Path]::GetFullPath($(if ($rootTarget) { $rootTarget.FullName } else { $rootItem.FullName }))
-    }
-    catch {
-        $rootError = $_
-        Write-Verbose "Could not resolve the workspace folder '$Root': $rootError"
+    $rootResolution = Resolve-DpWorkspaceRoot -Root $Root
+    if (-not $rootResolution.ok) {
+        $noWorkspace.message = [string]$rootResolution.message
         return $noWorkspace
     }
-
-    $separator = [System.IO.Path]::DirectorySeparatorChar
-    $rootPrefix = $resolvedRoot.TrimEnd('/', '\') + $separator
-    # A path comparison that ignores case is right on Windows and wrong on Linux,
-    # where two names differing only by case are two different files - and treating
-    # them as one is a way past the confinement test rather than a nicety.
-    $comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    $resolvedRoot = [string]$rootResolution.root
 
     $excluded = [System.Collections.Generic.HashSet[string]]::new(
         [string[]]@('.git', 'node_modules', 'output', 'bin', 'obj'),
@@ -91,35 +74,6 @@ function Get-DpSearchCandidate {
 
     $expired = { [datetime]::UtcNow -ge $DeadlineUtc }
 
-    # Confine one candidate to the root. Returns the resolved full path, or $null
-    # for anything that leaves it - including a link whose final target does.
-    $confine = {
-        param([string]$Relative)
-        $full = $null
-        try { $full = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($resolvedRoot, $Relative)) }
-        catch { return $null }
-        if (-not $full.StartsWith($rootPrefix, $comparison)) { return $null }
-        try {
-            $link = [System.IO.File]::ResolveLinkTarget($full, $true)
-            if ($link) {
-                $target = [System.IO.Path]::GetFullPath($link.FullName)
-                if (-not $target.StartsWith($rootPrefix, $comparison)) { return $null }
-            }
-        }
-        catch [System.IO.FileNotFoundException] {
-            # git listed a file that has since been deleted. It is lexically inside
-            # the root and it is not a link to anywhere, so it is kept and simply
-            # will not match anything that reads it.
-            $null = $_
-        }
-        catch [System.IO.DirectoryNotFoundException] { $null = $_ }
-        catch {
-            # A candidate whose link status cannot be established is a candidate
-            # that cannot be shown to be inside the root.
-            return $null
-        }
-        $full
-    }
 
     $timedOut = $false
     $truncated = $false
@@ -172,7 +126,7 @@ function Get-DpSearchCandidate {
                     # so the walk refuses to follow one that leaves it.
                     try {
                         $childLink = [System.IO.Directory]::ResolveLinkTarget($child, $true)
-                        if ($childLink -and -not ([System.IO.Path]::GetFullPath($childLink.FullName)).StartsWith($rootPrefix, $comparison)) { continue }
+                        if ($childLink -and -not (Resolve-DpWorkspacePath -Root $resolvedRoot -Path $childLink.FullName)) { continue }
                     }
                     catch { continue }
                     $pending.Push(@{ Dir = $child; Prefix = ($node.Prefix + $name + '/') })
@@ -206,7 +160,7 @@ function Get-DpSearchCandidate {
 
         $normalized = $segments -join '/'
         if (-not $seen.Add($normalized)) { continue }
-        if ($null -eq (& $confine $normalized)) { continue }
+        if (-not (Resolve-DpWorkspacePath -Root $resolvedRoot -Path $normalized)) { continue }
         $accepted.Add($normalized)
     }
 
