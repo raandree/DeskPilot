@@ -3258,10 +3258,11 @@ async function refreshIntercom() {
     syncSettingsFromIntercom();
 }
 
-// Intercom can change the Project and the Agent from the phone, so this window
-// is no longer the only writer of Settings. Without a re-read the composer would
-// keep naming a project and an agent the next Turn no longer uses - two surfaces
-// disagreeing about the same fact, which is worse than either being empty.
+// Intercom can change the Project, the Agent and the Model from the phone, so
+// this window is no longer the only writer of Settings. Without a re-read the
+// composer would keep naming a project, an agent and a model the next Turn no
+// longer uses - two surfaces disagreeing about the same fact, which is worse
+// than either being empty.
 // Only the selection matters here, so an unchanged read costs one cheap local
 // request and no re-render.
 async function syncSettingsFromIntercom() {
@@ -3271,12 +3272,21 @@ async function syncSettingsFromIntercom() {
     try { fresh = await api('GET', '/api/settings'); } catch { return; }
     const before = state.settings || {};
     const projectsChanged = JSON.stringify(before.projects || []) !== JSON.stringify(fresh.projects || []);
+    const modelChanged = before.model !== fresh.model;
     if (before.selectedProjectId === fresh.selectedProjectId
         && before.selectedAgent === fresh.selectedAgent
+        && !modelChanged
         && !projectsChanged) return;
     state.settings = fresh;
     populateProjectSelect();
     updateAgentChip();
+    // A remote model switch also re-pins the bound Conversation, and that pin is
+    // what the composer select shows - so the Conversation has to be re-read, not
+    // just repainted from Settings.
+    if (modelChanged) {
+        await refreshCurrentConversation();
+        setModelSelect((state.current && state.current.model) || fresh.model || state.defaultModel);
+    }
 }
 
 function wireIntercomAutoRefresh() {

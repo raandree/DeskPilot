@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pick the model from your phone.** Intercom could switch the conversation, the
+  agent and the project, but not the model, so choosing one still meant walking
+  back to the machine. `/models` lists the models your account is offered, marks
+  the one your next instruction would run on and gives you a button per model;
+  `/model 2` picks one and `/model default` goes back to the standard one.
+  `/status` now names the model too. A switch applies to your next instruction —
+  it never disturbs a job already running — and it changes both the default and
+  the conversation you are in, so the model you were told about is the model that
+  actually runs. While a job is running and the list has never been loaded,
+  `/models` says so and asks you to try again afterwards rather than freezing
+  DeskPilot to go and fetch it.
 - **Switch agent and project from your phone.** Intercom could switch
   conversations but not the two things that decide *how* and *where* the agent
   works. `/agents` lists the agents you have, marks the one in use and gives you

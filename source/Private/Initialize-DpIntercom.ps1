@@ -50,10 +50,12 @@ function Initialize-DpIntercom {
         # so /chat 3 selects what the operator saw even though the list reorders
         # itself by last activity.
         ChatIndex        = @()
-        # The same snapshot for /agents and /projects: a folder can gain or lose
-        # an agent file, and a Project can be added at the machine, between the
-        # listing and the tap.
+        # The same snapshot for /agents, /models and /projects: a folder can gain
+        # or lose an agent file, the account's model list is the provider's to
+        # change, and a Project can be added at the machine, between the listing
+        # and the tap.
         AgentIndex       = @()
+        ModelIndex       = @()
         ProjectIndex     = @()
         Offset           = 0
         # The first poll only learns the newest update id and discards the

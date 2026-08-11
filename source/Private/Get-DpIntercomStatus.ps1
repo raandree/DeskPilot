@@ -48,6 +48,11 @@ function Get-DpIntercomStatus {
     # agent file, and this runs on every heartbeat.
     $agentName = if ($settings.selectedAgent) { ([string]$settings.selectedAgent) -replace '\.agent\.md$', '' } else { 'default' }
     $lines.Add("Agent: $agentName")
+    # The resolved id, not the Settings field: a Conversation's own pin outranks
+    # it, so naming the Setting here would report a Model the next Turn will not
+    # run on.
+    $modelId = Get-DpIntercomModelId
+    $lines.Add("Model: $(if ($modelId) { $modelId } else { 'default' })")
 
     if ($state.TurnRunning) {
         $quiet = [int]([DateTime]::UtcNow - $intercom.LastActivityUtc).TotalMinutes

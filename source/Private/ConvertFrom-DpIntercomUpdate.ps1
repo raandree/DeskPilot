@@ -19,6 +19,8 @@ function ConvertFrom-DpIntercomUpdate {
           chat     - /chat <n>: switch to one of them
           agents   - /agents: list the agents that can be switched to
           agent    - /agent <n|none>: switch to one of them, or clear the selection
+          models   - /models: list the models this account is offered
+          model    - /model <n|default>: switch to one of them, or clear the choice
           projects - /projects: list the registered projects
           project  - /project <n|new <path>>: switch to one, or register a folder
           archive  - /archive <n>: hide one from the list
@@ -230,6 +232,11 @@ function ConvertFrom-DpIntercomUpdate {
         'agents' { $result.kind = 'agents' }
         'agent' {
             $result.kind = 'agent'
+            $result.text = $argument
+        }
+        'models' { $result.kind = 'models' }
+        'model' {
+            $result.kind = 'model'
             $result.text = $argument
         }
         'projects' { $result.kind = 'projects' }

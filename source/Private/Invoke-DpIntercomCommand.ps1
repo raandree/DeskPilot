@@ -104,6 +104,9 @@ function Invoke-DpIntercomCommand {
                 '/agents - list the agents you can pick from',
                 '/agent 2 - switch to agent 2',
                 '/agent none - go back to the default agent',
+                '/models - list the models you can pick from',
+                '/model 2 - switch to model 2',
+                '/model default - go back to the standard model',
                 '/projects - list your projects',
                 '/project 2 - switch to project 2',
                 '/project new C:\Git\Notes - add that folder as a project',
@@ -232,6 +235,63 @@ function Invoke-DpIntercomCommand {
                 return
             }
             Switch-DpIntercomAgent -AgentId $agentId
+        }
+
+        'models' {
+            $models = @(Get-DpIntercomModelList)
+            if ($models.Count -eq 0) {
+                # Two different causes, and the operator can only act on one of
+                # them: asking the single-threaded Engine Runspace mid-Turn would
+                # freeze the window, so the list is simply not available yet.
+                $reason = if ($state.TurnRunning) { 'A job is running, and I cannot ask the engine for the list while it works. Send /models again when it finishes.' }
+                else { 'The engine offered none. Check the GitHub Copilot sign-in at the machine.' }
+                $null = Send-DpIntercomMessage -Title 'I could not list the models.' -Line @($reason) -Kind 'models'
+                return
+            }
+            # Remember what each number pointed at, the same way /chats does: the
+            # list belongs to the account, not to DeskPilot.
+            $intercom.ModelIndex = @($models | ForEach-Object { $_.id })
+            $lines = @($models | ForEach-Object {
+                    '{0}. {1}{2}' -f $_.number, $_.id, $(if ($_.current) { '  <- current' } else { '' })
+                })
+            $listParams = @{
+                Title = 'Your models'
+                Line  = ($lines + @('', 'Tap one to switch, or send /model default for the standard one.'))
+                Kind  = 'models'
+            }
+            # A Model id is short today but it is the provider's string, not one
+            # DeskPilot bounds, so the button carries the number rather than risking
+            # the whole keyboard on the 64-byte callback_data cap.
+            $keyboard = Get-DpIntercomKeyboard -Choice @($models | ForEach-Object {
+                    @{ label = '{0}. {1}{2}' -f $_.number, $_.id, $(if ($_.current) { ' <- current' } else { '' }); data = "m|$($_.number)" }
+                })
+            if ($keyboard) { $listParams.Keyboard = $keyboard }
+            $null = Send-DpIntercomMessage @listParams
+        }
+
+        'model' {
+            $argument = ([string]$Command.text).Trim()
+            if ([string]::IsNullOrWhiteSpace($argument)) {
+                $null = Send-DpIntercomMessage -Title 'Which one?' -Line @('Send /models to see the list, then /model 2.') -Kind 'notice'
+                return
+            }
+            if ($argument.ToLowerInvariant() -in @('default', 'none', 'off')) {
+                Switch-DpIntercomModel -ModelId ''
+                return
+            }
+            $choice = 0
+            if (-not [int]::TryParse($argument, [ref]$choice)) {
+                $null = Send-DpIntercomMessage -Title 'That is not a number from the list.' -Line @('Send /models to see it again.') -Kind 'notice'
+                return
+            }
+            $index = @($intercom.ModelIndex)
+            $modelId = if ($choice -ge 1 -and $choice -le $index.Count) { [string]$index[$choice - 1] }
+            else { [string](@(Get-DpIntercomModelList) | Where-Object { $_.number -eq $choice } | Select-Object -First 1 -ExpandProperty id) }
+            if (-not $modelId) {
+                $null = Send-DpIntercomMessage -Title "There is no model $choice." -Line @('Send /models to see the list.') -Kind 'notice'
+                return
+            }
+            Switch-DpIntercomModel -ModelId $modelId
         }
 
         'projects' {

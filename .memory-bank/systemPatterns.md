@@ -486,6 +486,27 @@ source: repository evidence
   unless its own handler scrolls, and a turn you cannot see reads as a stalled
   one. Route those updates through one helper that renders and scrolls together.
 
+- **Write every place the value is read from, or the switch is decorative.**
+  `Invoke-DpTurn` resolves the Conversation's Model pin *before* the Settings
+  default, and `New-DpConversation` pins whatever the default was at creation. So
+  Intercom's `/model` writes both: the Setting alone would be a silent no-op for
+  exactly the Conversation the operator is talking to, while the reply confidently
+  named a Model the next instruction was never going to run on. Before changing a
+  setting, follow its full resolution order and write every layer that outranks
+  the one you were about to touch.
+- **The Engine Runspace is single-threaded, so asking it anything mid-Turn is a
+  frozen window.** `/models` reads the `/api/models` capability cache and only
+  refills it from `Get-ShpModel` while no Turn is running; mid-Turn with an empty
+  cache it says the list is unavailable and why. Same sentence as the Telegram
+  long-poll and `Invoke-DpGitCommand`: anything that can block belongs off the
+  accept thread, or behind a check that it cannot block right now.
+- **A cache with a contract is not a scratch pad.** `$script:DeskPilot.Models`
+  carries each Model's advertised reasoning efforts, which `Invoke-DpTurn` reads
+  by member access. A second writer that only needs ids must not fill it with
+  half-shaped entries: under strict mode the missing key is an exception, not a
+  `$null`. Read the cache from anywhere; write it only where its full shape is
+  produced.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

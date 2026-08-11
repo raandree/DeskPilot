@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-08-09
+last-verified: 2026-08-11
 source: repository evidence
 ---
 
@@ -10,8 +10,63 @@ source: repository evidence
 
 ## Current focus
 
+**Intercom can pick the Model (`main`, 2026-08-11).** Intercom could switch the
+Conversation, the Agent and the Project, but not the Model - so the one setting
+that decides *what* answers still needed a walk back to the machine. New
+`/models`, `/model <n>` and `/model default`, an inline keyboard per listing, and
+a `Model:` line in `/status`.
+
+Three decisions carried it:
+
+- **A Model switch writes two places, not one.** `Invoke-DpTurn` resolves the
+  Conversation's own pin before the Settings default, and `New-DpConversation`
+  pins whatever the default was when it was created. Writing only
+  `settings.model` would therefore be a silent no-op for exactly the Conversation
+  the operator is talking to, and the reply would name a Model the next
+  instruction was never going to run on. `Switch-DpIntercomModel` sets the
+  Setting *and* re-pins the bound Conversation; `/model default` clears both.
+- **`/models` must never ask the Engine mid-Turn.** The Engine Runspace is
+  single-threaded, so a second `[PowerShell]` on it would park the accept thread
+  - the freeze `Invoke-DpGitCommand` exists to prevent. The listing reads the
+  `/api/models` capability cache and only refills it from the Engine while no
+  Turn is running; mid-Turn with an empty cache it says the list is not available
+  and why. It also never *writes* that cache: the entries carry each Model's
+  advertised reasoning efforts, and a half-shaped entry would reach the Turn.
+- **One source for "which Model".** `Get-DpIntercomModelId` resolves the id for
+  both `/status` and the `<- current` marker, so the two cannot disagree about
+  the same fact. The button carries the listing's number against
+  `Intercom.ModelIndex`, the way the Agent button does - a Model id is the
+  provider's string, not one DeskPilot bounds, and one long id would cost the
+  whole keyboard at the 64-byte `callback_data` cap.
+
+The SPA follows: `syncSettingsFromIntercom` now watches `settings.model` too and,
+when it moved, re-reads the open Conversation before repainting the composer
+select - the select shows the *pin*, so a repaint from Settings alone would still
+name the previous Model.
+
+## Verification
+
+- `tests/Unit/IntercomModel.Tests.ps1` - **24/24** under `Set-StrictMode -Version
+  Latest`: parsing of all three verbs, numbering and the `current` marker with the
+  Conversation pin outranking the Settings default, the Engine fallback on an
+  empty cache, that the Engine is *not* asked while a Turn runs and that the
+  cache is left untouched, the item bound, the listing and its index snapshot,
+  switching by number and by tap, `/model default` clearing both writes, refusals
+  for a non-number, an out-of-range number, a bare `/model` and a tap the index no
+  longer backs, that no opted-in Project is required, the `/help` entries, and
+  `/status` naming the resolved id rather than the Setting.
+- `tests/Unit/WebAssets.Tests.ps1` - +1 guard that the settings re-read watches
+  `model` and re-reads the Conversation before repainting the select.
+- Full Sampler build **820/820**, 16 tasks, 0 errors, 0 warnings.
+- **Not live-smoked**: no real Bot API call has been made for `/models`, and the
+  Engine-fallback path has never run against a real sign-in. Restart the whole
+  DeskPilot process (not just the tab) - the SPA hot-reloads from `source/web`,
+  the module functions do not.
+
+## Previous focus - Claude Opus 5 is DeskPilot's default Model
+
 **Claude Opus 5 is DeskPilot's default Model (`main`, 2026-08-11).** DeskPilot
-had no default of its own — `Get-DpDefaultSettings` sets `model = $null` and
+had no default of its own - `Get-DpDefaultSettings` sets `model = $null` and
 `/api/models` handed back whatever `Get-ShpDefault` named, which is why the
 window's Model chip read `claude-opus-4.6`.
 

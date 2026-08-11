@@ -91,6 +91,18 @@ function Invoke-DpIntercomCallback {
             Switch-DpIntercomAgent -AgentId ([string]$index[$number - 1])
         }
 
+        'm' {
+            # A Model id is the provider's string rather than one DeskPilot bounds,
+            # so this button carries the number from the listing that produced it.
+            $index = @($intercom.ModelIndex)
+            $number = 0
+            if ($parts.Count -lt 2 -or -not [int]::TryParse($parts[1], [ref]$number) -or $number -lt 1 -or $number -gt $index.Count) {
+                $null = Send-DpIntercomMessage -Title 'That list has moved on.' -Line @('Send /models for the current one.') -Kind 'notice'
+                return
+            }
+            Switch-DpIntercomModel -ModelId ([string]$index[$number - 1])
+        }
+
         'p' {
             if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[1])) { return }
             Switch-DpIntercomProject -ProjectId ([string]$parts[1])

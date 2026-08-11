@@ -38,7 +38,7 @@ is a Skill.**
 | Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
 | Credential storage | The bot token lives in **`intercom.secret` in the data directory**, DPAPI-protected on Windows (`CurrentUser` scope) and mode-restricted elsewhere. It is never in `settings.json` (so a Settings backup cannot leak it), never returned by any route, and redacted from every log line and error message — the token is in the request URL, so an unredacted transport error would print it. |
 | Archived and deleted Conversations | A remote Turn is refused when the bound Conversation is archived or gone, through the same `Test-DpConversationWritable` the window's own routes use. Intercom used to fall back to "the most recent Conversation" when its binding had gone, which meant the work quietly happened somewhere the operator never chose. |
-| Selecting an Agent or a Project | Both are navigation, not work: they change which system prompt and which folder the *next* Turn uses and execute nothing, so neither needs an opted-in Project - the same split that keeps `/chats` usable when no Project is open. Because a switch can change whether the next instruction is allowed to run at all, the reply always states the remote-control status of the Project it moved to. |
+| Selecting an Agent, a Model or a Project | All three are navigation, not work: they change which system prompt, which Model and which folder the *next* Turn uses and execute nothing, so none of them needs an opted-in Project - the same split that keeps `/chats` usable when no Project is open. Because a Project switch can change whether the next instruction is allowed to run at all, the reply always states the remote-control status of the Project it moved to. A Model switch writes both the Settings default **and** the bound Conversation's pin, because `Invoke-DpTurn` prefers the pin - writing only Settings would be a silent no-op for exactly the Conversation the operator is talking to. |
 | Creating a Project remotely | `/project new <path>` writes to disk, so it requires the currently selected Project to have opted in - a phone that cannot run anything cannot create folders either. Only the **last** segment of the path is created, so a typo cannot build a tree. The new Project is **never** remote-enabled: if a remote message could opt a folder into remote control, the Project flag would be decorative, because anyone holding the phone could point DeskPilot at any folder and run there. The flag is set at the machine, and the reply says so. A path that is already registered switches to that Project instead of failing on a duplicate the operator cannot see from a phone. |
 | Correlation | Dissolved, not solved. DeskPilot runs **one Turn at a time on one Engine Runspace**, and Intercom binds to exactly **one Conversation** - the last active one, switchable with `/chats` and `/chat <n>` and rebindable with `/new`. A reply carries its nonce implicitly through Telegram's `reply_to_message`; a message with no reply is a new instruction. |
 | Edited messages | Fetched (`allowed_updates` includes `edited_message`) and **acknowledged, never executed**. Editing a typed command is natural on a phone, and silently discarding it produced a correction that vanished with no reply. Acting on one would be worse: Telegram delivers an edit as a fresh update, so a command that already ran could run again with different text, potentially hours later. The allow-list applies first, so an edit from another chat is still a silent rejection. |
@@ -114,13 +114,15 @@ no Project open, or the wrong one.
 | Message | Effect | Needs an opted-in Project |
 | --- | --- | --- |
 | A reply to a question message | Answers that question and releases the waiting Engine pipeline | Implicitly - the question only reaches the phone from an opted-in Project |
-| A tap on an inline-keyboard button | Answers a question, or switches Conversation from the `/chats` list | As above |
+| A tap on an inline-keyboard button | Answers a question, or switches Conversation, Agent, Model or Project from the matching listing | As above |
 | Any other plain text | Runs it as a prompt on the bound Conversation - or queues it when a Turn is running | Yes |
-| `/status` | Current state, Conversation, Project, elapsed time, and whether a question is pending | No |
+| `/status` | Current state, Conversation, Project, Agent, Model, elapsed time, and whether a question is pending | No |
 | `/chats` | Lists the ten most recently used Conversations, newest first, marking the bound one. `/chats all` includes archived ones, marked - they are the ones already finished with, so they stay out of the way until their numbers are needed | No |
 | `/chat <n>` | Binds Intercom to that Conversation | No |
 | `/agents` | Lists the Agents under the effective Agents folder, marking the selected one | No |
 | `/agent <n>` | Selects that Agent for the next Turn. `/agent none` clears the selection and returns to the Engine's own prompt | No |
+| `/models` | Lists the Models this account is offered, marking the one the next Turn would run on | No |
+| `/model <n>` | Selects that Model for the next Turn. `/model default` clears the choice and returns to DeskPilot's own default | No |
 | `/projects` | Lists the registered Projects, marking the open one and stating on every line whether it allows remote control | No |
 | `/project <n>` | Selects that Project | No |
 | `/project new <path>` | Registers a folder as a Project and selects it, creating the folder when only its last segment is missing | Yes |
@@ -140,6 +142,29 @@ two-step shape as `/delete`. The confirmation states the exact number of Message
 and files at stake, taken from a real `Restore-DpCheckpoint -Preview` rather than
 an estimate, so the operator is never asked to confirm a guess.
 
+### Selecting a Model
+
+`/models` reads the capability list the `/api/models` route caches on
+`$script:DeskPilot.Models`. A DeskPilot driven only from the phone may never have
+had a browser call that route, so an empty cache is refilled from the Engine -
+but **only while no Turn is running**. The Engine Runspace is single-threaded, so
+asking it a question mid-Turn would park the accept thread, which is the same
+sentence as "the whole window freezes". Mid-Turn with an empty cache, `/models`
+says the list is not available yet and why, rather than blocking. The cache
+itself is never written here: it carries each Model's advertised reasoning
+efforts, and a half-shaped entry written from Intercom would reach
+`Invoke-DpTurn`.
+
+`/model <n>` writes **two** places, because `Invoke-DpTurn` resolves the
+Conversation's own pin before the Settings default and `New-DpConversation` pins
+whatever the default was when it was created. Writing only Settings would be a
+silent no-op for exactly the Conversation the operator is talking to, and the
+reply would name a Model the next instruction was never going to run on. So
+`Switch-DpIntercomModel` sets `settings.model` **and** re-pins the bound
+Conversation; `/model default` clears both. `Get-DpIntercomModelId` is the single
+source for the resolved id, so `/status` and the `<- current` marker in `/models`
+cannot disagree.
+
 ## Inline keyboards
 
 Reading a numbered list and typing a number is the wrong interaction at a bus
@@ -150,9 +175,9 @@ Buttons are offered for an Ask-User question **only when it is a single question
 with options and is not multi-select**. A multi-select or multi-question
 Questionnaire cannot be expressed by one tap, so it keeps the written-reply flow
 and the message says so; a keyboard that could not express the answer would be a
-trap rather than a shortcut. The `/chats` listing also carries one button per
-Conversation. In every case the text form still works, so nothing depends on the
-buttons rendering.
+trap rather than a shortcut. The `/chats`, `/agents`, `/models` and `/projects`
+listings each carry one button per entry. In every case the text form still
+works, so nothing depends on the buttons rendering.
 
 Three constraints shape the design:
 
@@ -183,17 +208,20 @@ wording and the clearing of the pending question cannot drift apart.
 The numbering `/chats` produces is a **snapshot**, not a Conversation property:
 the list is ordered by last activity, so running a Turn reorders it. The ids are
 remembered in `Intercom.ChatIndex` and `/chat <n>` resolves against them, so the
-number the operator saw is the Conversation they get. `/agents` and `/projects`
-keep the same snapshot in `Intercom.AgentIndex` and `Intercom.ProjectIndex`, for
-the same reason: the Agents folder can gain or lose a file, and a Project can be
-added at the machine, between the listing and the tap.
+number the operator saw is the Conversation they get. `/agents`, `/models` and
+`/projects` keep the same snapshot in `Intercom.AgentIndex`,
+`Intercom.ModelIndex` and `Intercom.ProjectIndex`, for the same reason: the
+Agents folder can gain or lose a file, the advertised Model list belongs to the
+account rather than to DeskPilot, and a Project can be added at the machine,
+between the listing and the tap.
 
 A Project button carries the Project id, which is a short generated token. An
 Agent button cannot: an Agent's id is its `*.agent.md` file name, which has no
 length bound, and `Get-DpIntercomKeyboard` drops the *whole* keyboard when one
 button would exceed the 64-byte cap. It carries the listing's number instead, and
 a number the current index no longer backs is refused rather than resolved
-against whatever now sits at that position.
+against whatever now sits at that position. A Model button carries the number for
+the same reason: the id is the provider's string, not one DeskPilot bounds.
 
 Conversation titles are derived from prompts, so `/chats` sends that text to the
 Channel. It is metadata rather than content, and it goes only to the one

@@ -143,6 +143,16 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match '(?s)async function syncSettingsFromIntercom.{0,900}populateProjectSelect\(\);\s*updateAgentChip\(\);'
     }
 
+    It 'follows a model switched from the phone' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # A remote /model writes Settings and re-pins the bound Conversation, and
+        # the composer select reads the pin - so a repaint from Settings alone
+        # would leave the select naming the previous model.
+        $js | Should -Match '(?s)async function syncSettingsFromIntercom.{0,900}before\.model !== fresh\.model'
+        $js | Should -Match '(?s)if \(modelChanged\) \{\s*await refreshCurrentConversation\(\);\s*setModelSelect\('
+    }
+
     It 'shows the model that is actually the default when none is pinned' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

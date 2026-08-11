@@ -119,7 +119,7 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | What you send | What happens |
 | --- | --- |
 | **Reply** to a question message | Answers that question; the agent carries on |
-| **Tap a button** under a message | Picks that answer, or switches conversation from `/chats` |
+| **Tap a button** under a message | Picks that answer, or switches conversation, agent, model or project from the matching list |
 | Any other message | The agent treats it as a new instruction |
 | A file, with or without a caption | DeskPilot saves it into your project folder and the agent works on it; your caption is the instruction |
 | `/status` | What is happening right now |
@@ -129,6 +129,9 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | `/agents` | Lists the agents you can pick from, and marks the one in use |
 | `/agent 2` | Switches to agent 2 — it applies to your next instruction |
 | `/agent none` | Goes back to the default agent |
+| `/models` | Lists the models you can pick from, and marks the one in use |
+| `/model 2` | Switches to model 2 — it applies to your next instruction |
+| `/model default` | Goes back to the standard model |
 | `/projects` | Lists your projects, marks the one that is open, and flags the ones you cannot work in from your phone |
 | `/project 2` | Switches to project 2 |
 | `/project new C:\Git\Notes` | Adds that folder as a project and switches to it |
