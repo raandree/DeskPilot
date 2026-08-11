@@ -57,6 +57,15 @@ which ignores the prerelease label, and `Sort-Object` is unstable without
 installed, the two tie and the **prepended vendored copy wins** (5/5 observed).
 A published Engine is therefore not necessarily the Engine in the runspace.
 
+**Two constraints on any fix.** (1) An environment variable **cannot** be scoped
+to a runspace: an `InitialSessionState.EnvironmentVariables` entry was visible in
+the **host process** and in a grandchild process, so pinning `PSModulePath` is a
+deliberate process-wide change, not isolation. (2) `Restart-DpHost` relaunches
+with `Import-Module DeskPilot -Force` (`Restart-DpHost.ps1:41`) in a child that
+inherits the pinned value — in a source checkout DeskPilot is only resolvable
+because `build.ps1` put `output/module` on the path, so pinning breaks restart
+unless the launcher imports by resolved manifest path.
+
 ## `run_command` silently strips double quotes (2026-08-11)
 
 `Invoke-RunCommandTool` passes `@('-NoProfile', '-NonInteractive', '-Command',
