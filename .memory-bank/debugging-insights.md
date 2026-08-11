@@ -2,6 +2,63 @@
 
 Recurring issues and how they were resolved.
 
+## The agent's shell is the *launcher's* shell, not the user's (2026-08-11)
+
+**Symptom:** the agent and the user run the same command in the same folder and
+get different answers, with nothing in the UI saying the environments differ.
+Measured case: `Invoke-Pester` in `V:\Git\CopilotAtelier` reported 1 failure
+under DeskPilot and 4 under VS Code Copilot.
+
+**Root cause:** environment variables are **process**-global.
+`[runspacefactory]::CreateRunspace()` (`Initialize-DpEngine.ps1:28`) supplies no
+`InitialSessionState`, so the Engine Runspace simply reads the host process's
+variables; `Invoke-RunCommandTool` then spawns its child `pwsh` with
+`Start-Process` and no `-UseNewEnvironment`, so the child gets the same block
+again. `build.ps1` prepends `output/RequiredModules` (`:449`) and `output/module`
+(`:281`) to `$env:PSModulePath` **in the calling process**, and
+`Start-DeskPilot.ps1` invokes `build.ps1` with the call operator on first run —
+so DeskPilot's own pinned dependencies follow the agent into every repository.
+
+**Reproduction (one command, only the module path varied):**
+
+| `$env:PSModulePath` | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| target repo's own `output/RequiredModules` + `output/module` | 447 | 0 | 13 |
+| DeskPilot's `output/RequiredModules` + `output/module` | 446 | 1 | 13 |
+| Pester 6 imported by path, otherwise default | 443 | 4 | 13 |
+| fully default (no Sampler paths) | 0 | 112 | 0 |
+
+The 4 are the three `Changelog management` tests plus `Should import without
+errors`; the 1 is that import test alone, because DeskPilot happens to vendor
+`ChangelogManagement 3.1.0` too. A leaked `output/module` also **replaces** the
+built-module directory, so the repo under test cannot import itself.
+
+**Rule:** before trusting any module-resolving measurement the agent reports —
+`Invoke-Pester`, `Invoke-Build`, `Invoke-ScriptAnalyzer`, any `Import-Module` —
+have it print `$env:PSModulePath` and the resolved module path first. A bare
+`Invoke-Pester` from a Sampler repo root is never the right gate; it also
+recurses into `output/RequiredModules/Sampler/*/Templates` (measured 464/955/169).
+
+**What does *not* drift:** `run_command` runs in a child process, so its
+`$env:` writes and `Set-Location` never reach the runspace, the host, or the
+next Turn (verified). The runspace loads no profile at all (`$PROFILE` is
+`$null`, `$Host.Name` is `Default Host`), and `Set-DpEngineLocation` resets the
+location every Turn. What *does* persist is
+`[System.Environment]::CurrentDirectory`, which that helper sets process-wide.
+
+## `run_command` silently strips double quotes (2026-08-11)
+
+`Invoke-RunCommandTool` passes `@('-NoProfile', '-NonInteractive', '-Command',
+$Command)` to `Start-Process`, and the native argument parser eats unescaped `"`.
+Measured: a command assigning a double-quoted string reaches the child with the
+quotes gone (exit 0, the words of the string parsed as separate tokens, stderr
+"The term 'turn1' is not recognized"), and `git … --pretty=format:"%h %s"`
+reaches git as two arguments. Single quotes survive.
+
+**Rule:** the command in the transcript is not necessarily the command that ran.
+Prefer single quotes in any command the agent is asked to run, and treat a
+double-quoted command's output as unverified. The fix belongs in the Engine.
+
 ## "IDE token expired" mid-Turn is the *session* token, not the sign-in (2026-08-11)
 
 **Symptom:** a long Turn dies with `Copilot streaming request to

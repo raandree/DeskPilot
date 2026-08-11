@@ -74,9 +74,9 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
 
 ## Open, deliberately not done
 
-- **Prompt 03–05, 07–09 remain.** Workspace context, search tools, a targeted
-  edit tool, the runspace-environment diagnosis, the Turn transcript, and the
-  parity eval harness.
+- **Prompt 03–05, 08–09 remain.** Workspace context, search tools, a targeted
+  edit tool, the Turn transcript, and the parity eval harness. **07 is now
+  diagnosed** (below); its fix is unchosen and deliberately unwritten.
 - **Prompt 06's live iteration counter was cut.** Honest counting needs an
   iteration signal that does not exist with Thinking off — the Engine only writes
   `=== iteration N ===` under `-ShowThinking`, and tool-call count is an *upper*
@@ -88,12 +88,27 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   `$requestReasoning` requires `responses` mode — so a reasoning *summary* is
   never requested and only providers volunteering `reasoning_text` deltas show
   anything. Buying it costs live answer streaming. Not implemented.
-- **Prompt 07 is the highest-severity open item.** DeskPilot's agent measured
-  435/1 where GHCP measured 432/4 on the nominally identical command, so the
-  long-lived Engine Runspace's environment differs from a user's shell — most
-  likely DeskPilot's own Sampler `PSModulePath` leaking in while the agent works
-  in someone else's repository. A harness whose measurements the user cannot
-  reproduce is a worse defect than a slow one.
+- **Prompt 07 is diagnosed, reproduced, and unfixed by request.** The Engine
+  Runspace inherits the **launcher process's** `$env:PSModulePath` — environment
+  variables are process-global, `[runspacefactory]::CreateRunspace()` sets none,
+  and `Invoke-RunCommandTool` spawns its child `pwsh` without
+  `-UseNewEnvironment`. `build.ps1` prepends `output/RequiredModules` and
+  `output/module` to that variable *in the calling process*
+  (`build.ps1:281`, `:449`), and `Start-DeskPilot.ps1` calls `build.ps1` with the
+  call operator on first run, so DeskPilot's own Sampler dependencies follow the
+  agent into every repository it works in. Reproduced exactly against
+  `V:\Git\CopilotAtelier@d283c31` with one command, `Invoke-Pester -Path
+  ./tests`, and only the module path varied: the repo's own vendored modules give
+  **447/0/13**; DeskPilot's leaked in give **446/1/13**; Pester 6 with an
+  otherwise default path gives **443/4/13** (the three `Changelog management`
+  tests plus the module import) — the two harnesses' 1 and 4 failures, produced
+  on demand. A second, unrelated defect fell out: `Invoke-RunCommandTool` builds
+  its child argument list as a plain array, so **every double quote is stripped**
+  from the command before it runs (`git … --pretty=format:"%h %s"` reaches git as
+  two arguments) — the transcript records a command that never ran. No secret
+  leaks: an all-scope, names-only scan found no credential-bearing environment
+  variable, and the Engine's token lives in a file, not the environment. Options
+  and trade-offs were reported; nothing was changed.
 
 ## Previous focus — edits are visible while they happen
 
