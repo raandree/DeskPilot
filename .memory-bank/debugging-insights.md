@@ -46,6 +46,17 @@ next Turn (verified). The runspace loads no profile at all (`$PROFILE` is
 location every Turn. What *does* persist is
 `[System.Environment]::CurrentDirectory`, which that helper sets process-wide.
 
+**Installing the Engine properly does not fix this**, because the leaked modules
+are DeskPilot's own *build* dependencies. Measured with ShellPilot 0.4.0 resolved
+from `CurrentUser`: `ChangelogManagement`, `Pester` and `PSScriptAnalyzer` still
+came from `V:\Git\DeskPilot\output\RequiredModules`.
+
+**Which Engine actually runs.** `Resolve-DpEngineModule` sorts by `[Version]`,
+which ignores the prerelease label, and `Sort-Object` is unstable without
+`-Stable` — so once `RequiredModules.psd1` vendors the same version that is
+installed, the two tie and the **prepended vendored copy wins** (5/5 observed).
+A published Engine is therefore not necessarily the Engine in the runspace.
+
 ## `run_command` silently strips double quotes (2026-08-11)
 
 `Invoke-RunCommandTool` passes `@('-NoProfile', '-NonInteractive', '-Command',
@@ -57,7 +68,10 @@ reaches git as two arguments. Single quotes survive.
 
 **Rule:** the command in the transcript is not necessarily the command that ran.
 Prefer single quotes in any command the agent is asked to run, and treat a
-double-quoted command's output as unverified. The fix belongs in the Engine.
+double-quoted command's output as unverified. The fix belongs in the Engine —
+and the line is **unchanged** in the shipped 0.3.1, the installed 0.4.0, and
+`V:\Git\ShellPilot\source\Private\Invoke-RunCommandTool.ps1:81`, so publishing
+the current Engine ships the defect rather than fixing it.
 
 ## "IDE token expired" mid-Turn is the *session* token, not the sign-in (2026-08-11)
 
