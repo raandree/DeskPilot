@@ -540,6 +540,44 @@ function Invoke-DpTurn {
     }
     catch {
         $message = "$_"
+        # Running out of the tool-iteration budget is not a failure of the Turn, it
+        # is the Turn being cut off mid-task - and the Engine throws it away whole.
+        # Everything the model said on the way is still here, so persist it as a
+        # stopped Turn that explains itself instead of an error string that loses it.
+        if ($message -match 'Exceeded MaxToolIterations') {
+            try {
+                & $flush
+                & $sealNarration
+                $cap = if ($settings.maxToolIterations) { [int]$settings.maxToolIterations } else { 0 }
+                $exhaustedModel = if ($effectiveModelId) { $effectiveModelId } else { $settings.model }
+                $exhaustedMessage = @{
+                    id         = $assistantId
+                    role       = 'assistant'
+                    text       = ''
+                    stopped    = $true
+                    stopReason = "The job ran out of its $cap-step budget before it finished. Raise Max tool iterations in Settings, or send a narrower request."
+                    reasoning  = $(if ($turnState.reasoning.Length -gt 0) { $turnState.reasoning.ToString() } else { $null })
+                    narration  = $turnState.narration
+                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+                    usage      = $null
+                    tasks      = $turnState.tasks
+                    model      = $exhaustedModel
+                    durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
+                    createdUtc = [DateTime]::UtcNow.ToString('o')
+                }
+                $Conversation.messages.Add($exhaustedMessage)
+                $Conversation.updatedUtc = $exhaustedMessage.createdUtc
+                if ($script:DeskPilot.DataDir) {
+                    Save-DpConversationStore -Store $script:DeskPilot.Conversations -Directory $script:DeskPilot.DataDir
+                }
+                $writer.Write((ConvertTo-DpSseFrame -EventName 'stopped' -Data $exhaustedMessage))
+                return
+            }
+            catch {
+                $exhaustionError = $_
+                Write-Verbose "Could not persist the exhausted Turn: $exhaustionError"
+            }
+        }
         try { $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = $message })) } catch { $null = $_ }
     }
     finally {

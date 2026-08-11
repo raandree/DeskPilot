@@ -44,7 +44,10 @@ function Get-DpDefaultSettings {
         preferences       = $null
         referenceFiles    = @()
         costBudgetUSD     = 0.0
-        maxToolIterations = 25
+        # A serious agentic task - audit a repository, run a build, diagnose what it
+        # reports - routinely needs more than the Engine's own default of 25, and
+        # running out costs the whole Turn.
+        maxToolIterations = 50
         # Memory & context. When autoCompaction is on, a Conversation whose last
         # Turn filled its Model context window to at least compactionThreshold is
         # summarised automatically after the Turn (the same summarise-and-keep-tail

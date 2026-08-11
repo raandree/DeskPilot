@@ -91,6 +91,8 @@ function Merge-DpSettings {
             'maxToolIterations' {
                 $count = [int]$value
                 if ($count -lt 1) { throw 'maxToolIterations must be at least 1.' }
+                # An unbounded cap turns one typo into an expensive runaway Turn.
+                if ($count -gt 200) { throw 'maxToolIterations must be 200 or fewer.' }
                 $merged.maxToolIterations = $count
             }
             'autoCompaction' { $merged.autoCompaction = [bool]$value }

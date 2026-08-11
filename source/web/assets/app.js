@@ -5910,7 +5910,7 @@ function openSettings() {
       </div>
       <div class="field">
         <label>Max tool iterations</label>
-        <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
+        <input type="number" id="set-maxiter" min="1" max="200" value="${s.maxToolIterations || 50}" />
       </div>
       <div class="field">
         <label>Send a message with</label>
@@ -6217,7 +6217,7 @@ function openSettings() {
     $('set-memory-learning').onchange = (e) => save({ memoryLearning: e.target.checked });
     $('set-reffiles').onchange = (e) => save({ referenceFiles: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) });
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
-    $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 25 });
+    $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 50 });
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
     $('set-voicelang').onchange = (e) => {

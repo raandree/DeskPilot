@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A job that runs out of steps now tells you, and keeps its work.** The step
+  budget rose from 25 to 50 — 25 cut off real work such as auditing a repository
+  or running a build and diagnosing it — and is now capped at 200 so a typo
+  cannot start an expensive runaway. The agent is also told how many steps it
+  has, so it can spend them deliberately instead of being cut off mid-thought.
+  When a job does hit the limit it no longer disappears into an error: it ends
+  like a stopped job, explains that it ran out of budget, points at the setting,
+  and keeps everything it had already said and planned.
 - **Workspace-wide instructions now actually apply.** An instruction file that
   applies to everything was only ever *offered* to the agent, which had to decide
   to go and fetch it — and often did not, so rules you had written were quietly

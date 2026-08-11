@@ -145,6 +145,12 @@ $($AgentMemory.Trim())
         $systemParts.Add($AlwaysOnInstruction.Trim())
     }
 
+    # The model cannot ration what it cannot see: without this it works as if the
+    # budget were infinite and is then cut off mid-investigation.
+    if ($Settings.maxToolIterations) {
+        $systemParts.Add(('You have at most {0} tool-calling iterations for this task. Prefer decisive checks over exhaustive exploration, and if you are running short, report what you have established and what remains rather than stopping mid-investigation.' -f [int]$Settings.maxToolIterations))
+    }
+
     if ([bool]$perm.askUser -and [bool]$perm.userTools) {
         $systemParts.Add(@'
 When you need two or more related pieces of information, or one question with

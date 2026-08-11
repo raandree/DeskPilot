@@ -173,8 +173,8 @@ Describe 'Get-DpDefaultSettings' {
         $s.permissions.browsing | Should -BeTrue
         $s.permissions.file | Should -BeTrue
     }
-    It 'defaults the tool-iteration cap to 25' {
-        (Get-DpDefaultSettings).maxToolIterations | Should -Be 25
+    It 'defaults the tool-iteration cap to 50' {
+        (Get-DpDefaultSettings).maxToolIterations | Should -Be 50
     }
     It 'includes a promptRoots array alongside the other Copilot roots' {
         $s = Get-DpDefaultSettings
@@ -421,7 +421,7 @@ Describe 'New-DpTurnParameter' {
         $settings.permissions.askUser = $false
         $p = New-DpTurnParameter -Prompt 'hi' -Settings $settings
         $p.ContainsKey('DisableUserPrompts') | Should -BeTrue
-        $p.ContainsKey('SystemPrompt') | Should -BeFalse
+        [string]$p.SystemPrompt | Should -Not -Match 'ask_questions'
     }
     It 'still disables general User Tools when their Permission is off' {
         $settings = Get-DpDefaultSettings
@@ -429,7 +429,7 @@ Describe 'New-DpTurnParameter' {
 
         $p = New-DpTurnParameter -Prompt 'hi' -Settings $settings
         $p.DisableUserTools | Should -BeTrue
-        $p.ContainsKey('SystemPrompt') | Should -BeFalse
+        [string]$p.SystemPrompt | Should -Not -Match 'ask_questions'
     }
     It 'injects a SystemPrompt naming the Workspace Folder when one is set' {
         $s = Get-DpDefaultSettings
@@ -1017,6 +1017,33 @@ Describe 'Format-DpThinkingTrace' {
         @{ Text = '   ' }
     ) {
         Format-DpThinkingTrace -Text $Text | Should -Be $Text
+    }
+}
+
+Describe 'Tool-iteration budget' {
+    It 'rejects a cap below 1 or above 200' -ForEach @(
+        @{ Value = 0; Expected = '*at least 1*' }
+        @{ Value = -5; Expected = '*at least 1*' }
+        @{ Value = 201; Expected = '*200 or fewer*' }
+        @{ Value = 5000; Expected = '*200 or fewer*' }
+    ) {
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ maxToolIterations = $Value } } |
+            Should -Throw -ExpectedMessage $Expected
+    }
+    It 'accepts both bounds' -ForEach @(@{ Value = 1 }, @{ Value = 200 }) {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ maxToolIterations = $Value }).maxToolIterations | Should -Be $Value
+    }
+    It 'tells the model what its budget is' {
+        $s = Get-DpDefaultSettings
+        $s.maxToolIterations = 42
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s
+        $p.SystemPrompt | Should -Match 'at most 42 tool-calling iterations'
+        $p.MaxToolIterations | Should -Be 42
+    }
+    It 'says nothing about a budget when there is no cap' {
+        $s = Get-DpDefaultSettings
+        $s.maxToolIterations = 0
+        [string](New-DpTurnParameter -Prompt 'hi' -Settings $s).SystemPrompt | Should -Not -Match 'tool-calling iterations'
     }
 }
 
