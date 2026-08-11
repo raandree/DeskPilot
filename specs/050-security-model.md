@@ -66,6 +66,44 @@ Defaults (v1): Browsing **on**, File **on**, Terminal **off**, Ask-User **on**,
 User Tools **on**. Terminal defaults off because it is the highest-blast-radius
 Tool for a non-technical user; turning it on is a deliberate act.
 
+**DeskPilot's own User Tools are not covered by that 1:1 mapping.** A Tool
+registered with `Register-ShpTool` belongs to the User Tools category, so
+`-DisableFileAccess` does not reach it. DeskPilot therefore registers and
+unregisters its file-reading Tools by hand as the matching Permission changes:
+`Set-DpSearchTool` removes `search_files` and `search_text` when File is off and
+re-registers them when it is on, exactly as `Set-DpQuestionnaireTool` does for
+`ask_questions` and Ask-User. Without that, a Permission the UI reports as off
+would still be in force.
+
+## Search Tools (`search_files`, `search_text`)
+
+Unlike the Engine's File Tools, the search Tools **are** confined to the
+Workspace Folder, and deliberately so: a search Tool the model can aim at
+`C:\Users` is a data-exfiltration path wearing a search Tool's name.
+
+- **The root is never a Tool parameter.** `New-ShpToolSchema` turns every
+  parameter into a JSON-schema property the model may fill in, so the Workspace
+  Folder is passed out of band as a Runspace global that only DeskPilot writes.
+  The result cap, the per-match text bound and the wall-clock budget are literals
+  for the same reason.
+- **Two confinement guards.** A pattern that is absolute, drive-qualified, UNC,
+  `~`-relative or carries a `..` segment is refused by shape before the file
+  system sees it; and every resolved candidate is checked against the root
+  prefix and again through its final link target, so a symlink or junction
+  pointing outside the Workspace Folder is dropped and the directory walk will
+  not pass through one.
+- **No Project means no search.** Both Tools return a structured error asking the
+  user to select a Project. They never fall back to the process working
+  directory.
+- **Ignored and excluded content is never returned.** Inside a repository the
+  candidate list comes from `git ls-files --cached --others --exclude-standard`,
+  so `.gitignore` is honoured and an ignored secret is not offered to the model;
+  `.git`, `node_modules`, `output`, `bin` and `obj` are dropped whether tracked
+  or not; binary files are skipped.
+- **Bounded, and honest about it.** Results are capped, matched text is trimmed,
+  execution is time-boxed, and `truncated` is always reported — a silently short
+  result set teaches the model a false negative it cannot detect.
+
 ## Workspace Folder
 
 - Sets the Engine Runspace working directory so relative File/Terminal

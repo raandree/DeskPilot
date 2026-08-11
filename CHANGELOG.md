@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agent can search your project.** It had no search of any kind: to find a
+  file by name, or find where something is defined, it had to fall back to
+  running a shell command and reading the console output that came back. That is
+  slow and awkward enough that it mostly did not bother, and answered from less
+  evidence than it could have. Two new tools make looking things up cheap —
+  **search_files** finds files by name or pattern (`**/*.ps1`,
+  `source/Private/*.ps1`), and **search_text** finds a string or a regular
+  expression inside them and reports the file, the line number and the line. Both
+  are confined to your selected Project and cannot be pointed anywhere else: an
+  absolute path, a drive letter or a `..` is refused. Both skip whatever your
+  `.gitignore` skips, never look in `.git`, `node_modules`, `output`, `bin` or
+  `obj`, and skip binary files. Results are capped and time-boxed, and a capped
+  result always says so, so the agent is never quietly told that something does
+  not exist when it simply did not fit. The tools follow the **File access**
+  permission: with file access off they are not offered at all, and with no
+  Project selected they ask you to select one rather than searching anything
+  else.
 - **The agent is told what is in your project before it starts.** It used to be
   given the folder's *path* and nothing else, so it began every job blind: to
   learn which branch you are on, whether you have uncommitted work, or even which

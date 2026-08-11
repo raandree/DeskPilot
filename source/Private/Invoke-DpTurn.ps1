@@ -198,6 +198,19 @@ function Invoke-DpTurn {
         }
         $null = Set-DpQuestionnaireTool @questionnaireToolParams
 
+        # DeskPilot's own search Tools, carrying the Workspace Folder they are
+        # confined to. Tied to File Access because they read the user's files, and
+        # a registered User Tool is a separate Engine category that
+        # -DisableFileAccess does not reach - without this the Permission would
+        # mean something in the UI and nothing in fact. Re-registered every Turn,
+        # like the Questionnaire, so a Project switch moves the search with it.
+        $searchToolParams = @{
+            Runspace = $script:DeskPilot.Engine.Runspace
+            Enabled  = [bool]$settings.permissions.file
+            Root     = [string]$settings.workspaceFolder
+        }
+        $null = Set-DpSearchTool @searchToolParams
+
         $userMessage = @{
             id         = New-DpId -Prefix 'm'
             role       = 'user'

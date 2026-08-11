@@ -17,7 +17,7 @@ credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
 lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Four have shipped.
+00-README carries the evidence table). Five have shipped.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
@@ -70,32 +70,74 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   **no context** rather than a wrong one. Gathered once per Turn in
   `Invoke-DpTurn` while the Runspace is idle, so `New-DpTurnParameter` stays free
   of disk and git I/O. Setting `workspaceContext`, default on.
+- **There was no way to search, so it searched rarely.** The Engine's whole tool
+  set is `fetch_url`, `read_file`, `list_directory`, `write_file`,
+  `create_directory`, `run_command`, `ask_user`, `load_skill`,
+  `load_instruction`, `manage_todo_list` — every act of discovery cost a shell
+  round trip returning unstructured console text, which is expensive enough that
+  the model mostly did not pay it. `search_files` and `search_text` are
+  DeskPilot-owned User Tools registered into the Engine Runspace. The
+  implementation is not written twice: the backing commands are ordinary
+  unit-tested Private functions, and `Initialize-DpSearchTool` re-declares them
+  and their dependencies inside the runspace from `(Get-Command x).Definition`,
+  because that runspace has ShellPilot imported and DeskPilot not. **The root is
+  not a parameter** — every parameter becomes a schema field the model may fill
+  in, so it arrives out of band on `$global:DeskPilotSearchRoot`, and so do the
+  result cap and the time budget, which are literals for the same reason. Two
+  confinement guards: lexical (absolute, drive-qualified, UNC, `~` and `..` are
+  refused by shape) and link-resolved (a junction whose final target leaves the
+  root is dropped, as is a directory the walk would escape through). `.gitignore`
+  is honoured by listing through `git ls-files --cached --others
+  --exclude-standard`; `.git`, `node_modules`, `output`, `bin` and `obj` go
+  whether tracked or not; binary files are skipped on a NUL byte with a UTF-16/32
+  BOM exempted. `truncated` is always reported. Tied to the **File Access**
+  Permission through `Set-DpSearchTool`, mirroring `Set-DpQuestionnaireTool`,
+  because a registered User Tool is a separate Engine category that
+  `-DisableFileAccess` does not reach.
 
 ## Verification
 
 - `./build.ps1 -Tasks test` at each step: baseline **845/845**, then 860, 890,
-  898, and **931/931**, 0 failed, 9 tasks, 0 errors.
+  898, **931/931**, and **1011/1011**, 0 failed, 9 tasks, 0 errors.
 - `Invoke-ScriptAnalyzer` clean on every new file; the findings on
   `New-DpTurnParameter.ps1`, `Get-DpDefaultSettings.ps1` and `Merge-DpSettings.ps1`
   (`PSUseBOMForUnicodeEncodedFile`, `PSUseSingularNouns`,
   `PSUseShouldProcessForStateChangingFunctions`) are pre-existing name/encoding
-  rules on untouched declarations. `node --check` clean.
+  rules on untouched declarations. `Set-DpSearchTool` carries the same
+  `PSUseShouldProcessForStateChangingFunctions` warning as the
+  `Set-DpQuestionnaireTool` it was told to mirror. `node --check` clean.
 - Three pre-existing tests were corrected rather than worked around: the cap
   default moved 25 → 50, and two Questionnaire tests asserted
   `ContainsKey('SystemPrompt') -eq $false` as a proxy for "no protocol" — now
   false because the budget sentence always adds a part, so they assert the
   absence of `ask_questions` itself, which is what they meant.
-- **Not live-smoked — this is the gap that matters.** No real Turn has streamed
-  through any of it. The acceptance signal for the instruction work is concrete
-  and unmet: a real Turn's answer must open with the PRE-FLIGHT banner. Restart
-  the whole DeskPilot process, not just the tab — the SPA hot-reloads from
-  `source/web`, the module functions do not.
+- **The search tools ARE live-smoked, and passed first time.** A real Turn on the
+  Engine Runspace, prepared exactly as `Invoke-DpTurn` prepares it, asked "where
+  is `Get-DpStreamFrame` defined, and where is it called from?" with the terminal
+  left enabled so the model had a free choice. It called `search_text` **once**
+  (`{"query":"Get-DpStreamFrame"}` → 43 matches), ran **zero** shell commands, and
+  answered with the definition and every call site for 11,970 tokens / $0.052.
+  The description did its job; no tightening was needed.
+- **Nothing else here is live-smoked — that is still the gap that matters.** No
+  real Turn has streamed through the narration, instruction-push or
+  workspace-context work. The acceptance signal for the instruction work is
+  concrete and unmet: a real Turn's answer must open with the PRE-FLIGHT banner.
+  Restart the whole DeskPilot process, not just the tab — the SPA hot-reloads
+  from `source/web`, the module functions do not.
 
 ## Open, deliberately not done
 
-- **Prompt 04–05, 08–09 remain.** Search tools, a targeted edit tool, the Turn
-  transcript, and the parity eval harness. **07 is now diagnosed** (below); its
-  fix is unchosen and deliberately unwritten.
+- **Prompt 05, 08–09 remain.** A targeted edit tool, the Turn transcript, and the
+  parity eval harness. **07 is now diagnosed** (below); its fix is unchosen and
+  deliberately unwritten.
+- **A search call does not appear on the Activity card, and that is deferred.**
+  ShellPilot fills `result.FilesRead` only from its built-in `read_file`, so a
+  User Tool never lands in the card's `Read` group; it does reach
+  `activity.toolCalls`, which the SPA only renders as a bare count and only when
+  no file rows exist. Listing every file a grep *touched* under "Read" would be a
+  lie — the model received bounded snippets, not the files. The right fix is a
+  per-tool-call row, which is exactly what prompt 08's Turn transcript
+  introduces, so it waits for that rather than growing a special case here.
 - **Prompt 06's live iteration counter was cut.** Honest counting needs an
   iteration signal that does not exist with Thinking off — the Engine only writes
   `=== iteration N ===` under `-ShowThinking`, and tool-call count is an *upper*

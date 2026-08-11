@@ -57,7 +57,26 @@ source: repository evidence
   nothing to review, so a stopped Turn still says what it wrote.
 - **Permissions are explicit state.** Tool categories map 1:1 to Engine
   `-Disable*` switches. A Permission that is off means the corresponding switch
-  is passed; the UI reflects the exact set in force for the next Turn.
+  is passed; the UI reflects the exact set in force for the next Turn. A
+  DeskPilot-owned User Tool is **not** covered by that mapping — it is a separate
+  Engine category, so a Tool that reads files must be unregistered by hand when
+  File Access is off, or the Permission means something in the UI and nothing in
+  fact (`Set-DpSearchTool`, `Set-DpQuestionnaireTool`).
+- **A User Tool's implementation lives in `source/Private`, not in the injection
+  string.** The Engine Runspace has ShellPilot imported and DeskPilot not, so a
+  registered Tool's backing command has to exist there — but writing it inside an
+  `AddScript` here-string would put it beyond unit tests and ScriptAnalyzer.
+  Write it as an ordinary Private function and have the initializer re-declare it
+  and its dependencies from `(Get-Command x).Definition`. Everything the injected
+  set calls must be in the set; nothing in it may call a DeskPilot function that
+  is not.
+- **What the model must not choose is not a parameter.** `New-ShpToolSchema`
+  turns every non-common parameter into a JSON-schema property the model is free
+  to fill in and describes each one as "The pattern parameter of X", so the
+  argument contract belongs in the Tool *description*, and anything that bounds
+  the Tool — its root, its result cap, its time budget — belongs out of band: a
+  Runspace global set by the caller, or a literal. A cap the model can raise is
+  not a cap, and a root the model can supply is an exfiltration path.
 - **Settings are a single object.** Model, Permissions, Projects + selected
   Project, Agents folder + selected Agent, Skill/Instruction/Prompt roots,
   reasoning effort — one settings object, read at the start of each Turn so

@@ -5102,3 +5102,660 @@ Describe 'a stopped Turn keeps its Thinking trace' -Tag 'Unit' {
         $script:turnSource | Should -Match '(?m)^\s*reasoning\s*=\s*\$stoppedReasoning\s*$'
     }
 }
+
+
+Describe 'Get-DpSearchPatternError' {
+    It 'accepts a workspace-relative glob' -ForEach @(
+        @{ Pattern = '**/*.ps1' }
+        @{ Pattern = 'source/Private/*.ps1' }
+        @{ Pattern = 'README.md' }
+        @{ Pattern = 'source\Private\*.ps1' }
+    ) {
+        Get-DpSearchPatternError -Pattern $Pattern | Should -Be ''
+    }
+
+    It 'refuses a pattern that asks to leave the workspace folder' -ForEach @(
+        @{ Pattern = 'C:\Users\install\*' }
+        @{ Pattern = '/etc/passwd' }
+        @{ Pattern = '\\server\share\*' }
+        @{ Pattern = '//server/share/*' }
+        @{ Pattern = '../*.ps1' }
+        @{ Pattern = 'source/../../secrets/*' }
+        @{ Pattern = '..\..\*' }
+        @{ Pattern = '~/.copilot/*' }
+    ) {
+        # A search tool the model can aim outside the Project is an exfiltration
+        # path wearing a search tool's name, so the shape is refused before the
+        # file system ever sees it.
+        Get-DpSearchPatternError -Pattern $Pattern | Should -Not -Be ''
+    }
+
+    It 'names the parameter it is complaining about' {
+        Get-DpSearchPatternError -Pattern '' -Name 'includePattern' | Should -Match 'includePattern is required'
+        Get-DpSearchPatternError -Pattern '../x' -Name 'includePattern' | Should -Match 'includePattern'
+    }
+
+    It 'refuses an empty or whitespace pattern' -ForEach @(
+        @{ Pattern = '' }
+        @{ Pattern = $null }
+        @{ Pattern = '   ' }
+    ) {
+        Get-DpSearchPatternError -Pattern $Pattern | Should -Match 'required'
+    }
+}
+
+Describe 'ConvertTo-DpSearchRegex' {
+    It 'keeps * inside one path segment' {
+        $r = ConvertTo-DpSearchRegex -Glob '*.ps1'
+        $r.IsMatch('app.ps1') | Should -BeTrue
+        $r.IsMatch('src/app.ps1') | Should -BeFalse
+    }
+
+    It 'lets **/ cross segments and match none at all' {
+        # '**/*.ps1' missing a file at the root is the single most common way a
+        # recursive glob is written and the most confusing way to answer it.
+        $r = ConvertTo-DpSearchRegex -Glob '**/*.ps1'
+        $r.IsMatch('app.ps1') | Should -BeTrue
+        $r.IsMatch('a/b/c/app.ps1') | Should -BeTrue
+        $r.IsMatch('app.psm1') | Should -BeFalse
+    }
+
+    It 'matches exactly one character with ?' {
+        $r = ConvertTo-DpSearchRegex -Glob 'a?.txt'
+        $r.IsMatch('ab.txt') | Should -BeTrue
+        $r.IsMatch('abc.txt') | Should -BeFalse
+    }
+
+    It 'is anchored at both ends' {
+        $r = ConvertTo-DpSearchRegex -Glob 'app.ps1'
+        $r.IsMatch('app.ps1') | Should -BeTrue
+        $r.IsMatch('myapp.ps1') | Should -BeFalse
+        $r.IsMatch('app.ps1.bak') | Should -BeFalse
+    }
+
+    It 'ignores case' {
+        (ConvertTo-DpSearchRegex -Glob '*.PS1').IsMatch('app.ps1') | Should -BeTrue
+    }
+
+    It 'reads a backslash as a path separator' {
+        (ConvertTo-DpSearchRegex -Glob 'source\Private\*.ps1').IsMatch('source/Private/x.ps1') | Should -BeTrue
+    }
+
+    It 'escapes every metacharacter so a glob can never become an expression' {
+        $r = ConvertTo-DpSearchRegex -Glob 'a+b(c).txt'
+        $r.IsMatch('a+b(c).txt') | Should -BeTrue
+        $r.IsMatch('aab.txt') | Should -BeFalse
+    }
+}
+
+Describe 'Test-DpBinaryFile' {
+    BeforeAll {
+        function script:New-SampleFile {
+            param([byte[]]$Byte)
+            $path = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            [System.IO.File]::WriteAllBytes($path, $Byte)
+            $path
+        }
+    }
+
+    It 'calls a file with a NUL byte binary' {
+        Test-DpBinaryFile -Path (New-SampleFile -Byte ([byte[]]@(0x50, 0x4B, 0x03, 0x04, 0x00, 0x41))) | Should -BeTrue
+    }
+
+    It 'calls plain text text' {
+        Test-DpBinaryFile -Path (New-SampleFile -Byte ([System.Text.Encoding]::UTF8.GetBytes("hello`nworld"))) | Should -BeFalse
+    }
+
+    It 'still searches UTF-16 despite its NUL bytes' {
+        # Windows PowerShell wrote UTF-16 by default, and StreamReader decodes it
+        # from the BOM - skipping it would hide a whole class of script.
+        $bytes = [byte[]]@(0xFF, 0xFE) + [System.Text.Encoding]::Unicode.GetBytes('function Get-Thing {}')
+        Test-DpBinaryFile -Path (New-SampleFile -Byte $bytes) | Should -BeFalse
+    }
+
+    It 'calls a file it cannot open binary, because it cannot be searched either' {
+        Test-DpBinaryFile -Path (Join-Path $TestDrive 'does-not-exist.bin') | Should -BeTrue
+    }
+}
+
+Describe 'Get-DpSearchCandidate' {
+    BeforeAll {
+        function script:New-SearchFolder {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $dir
+        }
+        function script:New-SearchFile {
+            param([string]$Root, [string]$Relative, [string]$Content = 'x')
+            $full = Join-Path $Root ($Relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+            $parent = Split-Path -Parent $full
+            if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            Set-Content -LiteralPath $full -Value $Content -Encoding utf8
+            $full
+        }
+        $script:notARepo = { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+        $script:repoListing = {
+            $joined = $Arguments -join ' '
+            if ($joined -like 'rev-parse --is-inside-work-tree*') { return @{ Ok = $true; ExitCode = 0; StdOut = "true`n"; StdErr = ''; TimedOut = $false } }
+            if ($joined -like 'ls-files*') { return @{ Ok = $script:gitListOk; ExitCode = 0; StdOut = ($script:gitFiles -join "`0"); StdErr = ''; TimedOut = $false } }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = ''; TimedOut = $false }
+        }
+    }
+    BeforeEach {
+        $script:gitListOk = $true
+        $script:gitFiles = @()
+    }
+
+    It 'refuses to search without a workspace folder' -ForEach @(
+        @{ Folder = '' }
+        @{ Folder = $null }
+        @{ Folder = '   ' }
+        @{ Folder = 'X:\does\not\exist' }
+    ) {
+        # Falling back to the process working directory would point the model at
+        # the folder DeskPilot was launched from, which is the launcher's and not
+        # the user's.
+        $r = Get-DpSearchCandidate -Root $Folder
+        $r.ok | Should -BeFalse
+        $r.error | Should -Be 'no-workspace'
+        $r.message | Should -Match 'Project'
+    }
+
+    It 'refuses a workspace folder that is a file' {
+        $root = New-SearchFolder
+        $file = New-SearchFile -Root $root -Relative 'a.txt'
+        (Get-DpSearchCandidate -Root $file).error | Should -Be 'no-workspace'
+    }
+
+    It 'lists through git inside a repository so .gitignore is honoured' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $root = New-SearchFolder
+        foreach ($relative in @('src/app.ps1', 'README.md')) { New-SearchFile -Root $root -Relative $relative | Out-Null }
+        # The ignored file exists on disk and is absent from the git listing, which
+        # is the whole point: an ignored secret is never offered to the model.
+        New-SearchFile -Root $root -Relative 'secrets.env' | Out-Null
+        $script:gitFiles = @('src/app.ps1', 'README.md')
+        $r = Get-DpSearchCandidate -Root $root
+        $r.ok | Should -BeTrue
+        $r.paths | Should -Contain 'src/app.ps1'
+        $r.paths | Should -Not -Contain 'secrets.env'
+    }
+
+    It 'never lists an excluded folder, tracked or not' -ForEach @(
+        @{ Excluded = '.git' }
+        @{ Excluded = 'node_modules' }
+        @{ Excluded = 'output' }
+        @{ Excluded = 'bin' }
+        @{ Excluded = 'obj' }
+    ) {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $root = New-SearchFolder
+        $script:gitFiles = @("$Excluded/junk.txt", "src/$Excluded/deep.txt", 'src/app.js')
+        $r = Get-DpSearchCandidate -Root $root
+        $r.paths | Should -Be @('src/app.js')
+    }
+
+    It 'walks the folder itself when it is not a repository, with the same exclusions' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:notARepo
+        $root = New-SearchFolder
+        New-SearchFile -Root $root -Relative 'keep.txt' | Out-Null
+        New-SearchFile -Root $root -Relative 'src/app.js' | Out-Null
+        foreach ($name in @('node_modules', 'output', 'bin', 'obj', '.git')) {
+            New-SearchFile -Root $root -Relative "$name/junk.txt" | Out-Null
+        }
+        $r = Get-DpSearchCandidate -Root $root
+        $r.paths | Should -Be @('keep.txt', 'src/app.js')
+    }
+
+    It 'drops a listed path that climbs out of the root' -ForEach @(
+        @{ Listed = '../outside.txt' }
+        @{ Listed = 'a/../../outside.txt' }
+        @{ Listed = '..\outside.txt' }
+    ) {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $root = New-SearchFolder
+        $script:gitFiles = @($Listed, 'inside.txt')
+        (Get-DpSearchCandidate -Root $root).paths | Should -Be @('inside.txt')
+    }
+
+    It 'refuses to follow a junction that leaves the workspace folder' {
+        $root = New-SearchFolder
+        $outside = New-SearchFolder
+        New-SearchFile -Root $outside -Relative 'secret.txt' -Content 'token' | Out-Null
+        try { New-Item -ItemType Junction -Path (Join-Path $root 'escape') -Target $outside -ErrorAction Stop | Out-Null }
+        catch {
+            Set-ItResult -Skipped -Because 'this platform or account cannot create a junction'
+            return
+        }
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:notARepo
+        New-SearchFile -Root $root -Relative 'inside.txt' | Out-Null
+        $r = Get-DpSearchCandidate -Root $root
+        $r.paths | Should -Be @('inside.txt')
+    }
+
+    It 'says the search was cut short rather than reporting no files' {
+        # A failed ls-files inside a repository would otherwise read as "nothing
+        # matched", which is a false negative the model cannot detect.
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $script:gitListOk = $false
+        $r = Get-DpSearchCandidate -Root (New-SearchFolder)
+        $r.ok | Should -BeTrue
+        $r.timedOut | Should -BeTrue
+        $r.paths | Should -HaveCount 0
+    }
+
+    It 'reports a spent budget instead of running git with none left' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $r = Get-DpSearchCandidate -Root (New-SearchFolder) -DeadlineUtc ([datetime]::UtcNow.AddSeconds(-1))
+        $r.timedOut | Should -BeTrue
+        Should -Invoke -CommandName Invoke-DpGitCommand -Times 0 -Exactly
+    }
+
+    It 'reports truncated when there are more files than it may enumerate' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $script:gitFiles = @(1..20 | ForEach-Object { "file$_.txt" })
+        $r = Get-DpSearchCandidate -Root (New-SearchFolder) -MaxFiles 5
+        $r.paths | Should -HaveCount 5
+        $r.truncated | Should -BeTrue
+    }
+
+    It 'returns a stable, sorted result so a capped set means something' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoListing
+        $script:gitFiles = @('z.txt', 'a.txt', 'm/b.txt')
+        (Get-DpSearchCandidate -Root (New-SearchFolder)).paths | Should -Be @('a.txt', 'm/b.txt', 'z.txt')
+    }
+}
+
+
+Describe 'Invoke-DpFileSearchTool' {
+    BeforeAll {
+        function script:New-ToolRoot {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $dir
+        }
+        function script:Add-ToolFile {
+            param([string]$Root, [string]$Relative, [string]$Content = 'x')
+            $full = Join-Path $Root ($Relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+            $parent = Split-Path -Parent $full
+            if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            [System.IO.File]::WriteAllText($full, $Content)
+        }
+    }
+    BeforeEach {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+    }
+    AfterEach {
+        Remove-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It 'tells the model to ask for a Project when none is selected' {
+        # Not an exception and not an empty result: both would read as "there are
+        # no such files", which is the one answer that is certainly wrong.
+        $r = Invoke-DpFileSearchTool -pattern '**/*.ps1' | ConvertFrom-Json
+        $r.error | Should -Be 'no-workspace'
+        $r.message | Should -Match 'select a Project'
+    }
+
+    It 'refuses a pattern that leaves the workspace folder' -ForEach @(
+        @{ Pattern = 'C:\Users\install\*' }
+        @{ Pattern = '/etc/passwd' }
+        @{ Pattern = '../../*.ps1' }
+        @{ Pattern = '..\secrets\*' }
+        @{ Pattern = '~/.copilot/*' }
+        @{ Pattern = '' }
+    ) {
+        $root = New-ToolRoot
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpFileSearchTool -pattern $Pattern | ConvertFrom-Json
+        $r.error | Should -Be 'invalid-pattern'
+        $r.PSObject.Properties.Name | Should -Not -Contain 'paths'
+    }
+
+    It 'returns workspace-relative paths and the root it searched' {
+        $root = New-ToolRoot
+        Add-ToolFile -Root $root -Relative 'source/Private/Invoke-DpTurn.ps1'
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpFileSearchTool -pattern '**/*.ps1' | ConvertFrom-Json
+        $r.paths | Should -Be @('source/Private/Invoke-DpTurn.ps1')
+        $r.root | Should -Match ([regex]::Escape((Split-Path -Leaf $root)))
+        $r.totalMatches | Should -Be 1
+        $r.truncated | Should -BeFalse
+    }
+
+    It 'also matches on the file name alone when the pattern names no folder' {
+        # "*.psd1" is what a model writes when it means "anywhere", and answering
+        # "no such file" for a repository full of them is a false negative.
+        $root = New-ToolRoot
+        Add-ToolFile -Root $root -Relative 'source/DeskPilot.psd1'
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        (Invoke-DpFileSearchTool -pattern '*.psd1' | ConvertFrom-Json).paths | Should -Be @('source/DeskPilot.psd1')
+    }
+
+    It 'never returns an excluded folder' {
+        $root = New-ToolRoot
+        Add-ToolFile -Root $root -Relative 'keep.js'
+        foreach ($name in @('node_modules', 'output', 'bin', 'obj', '.git')) { Add-ToolFile -Root $root -Relative "$name/junk.js" }
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        (Invoke-DpFileSearchTool -pattern '**/*.js' | ConvertFrom-Json).paths | Should -Be @('keep.js')
+    }
+
+    It 'says truncated and states the true total when the cap bites' {
+        $root = New-ToolRoot
+        foreach ($i in 1..12) { Add-ToolFile -Root $root -Relative ('file{0:d2}.txt' -f $i) }
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpFileSearchTool -pattern '*.txt' -maxResults 5 | ConvertFrom-Json
+        $r.returned | Should -Be 5
+        $r.totalMatches | Should -Be 12
+        $r.truncated | Should -BeTrue
+    }
+
+    It 'clamps a maxResults the model raised above the tool cap' {
+        # Every parameter is a field the model may fill in, so the cap has to hold
+        # against the model as well as for it.
+        $root = New-ToolRoot
+        foreach ($i in 1..205) { Add-ToolFile -Root $root -Relative ('f{0:d3}.txt' -f $i) }
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpFileSearchTool -pattern '*.txt' -maxResults 5000 | ConvertFrom-Json
+        $r.returned | Should -Be 200
+        $r.totalMatches | Should -Be 205
+        $r.truncated | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-DpTextSearchTool' {
+    BeforeAll {
+        function script:New-TextRoot {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $dir
+        }
+        function script:Add-TextFile {
+            param([string]$Root, [string]$Relative, [string]$Content)
+            $full = Join-Path $Root ($Relative -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+            $parent = Split-Path -Parent $full
+            if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            [System.IO.File]::WriteAllText($full, $Content)
+        }
+    }
+    BeforeEach {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+    }
+    AfterEach {
+        Remove-Variable -Name 'DeskPilotSearchRoot' -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It 'tells the model to ask for a Project when none is selected' {
+        $r = Invoke-DpTextSearchTool -query 'anything' | ConvertFrom-Json
+        $r.error | Should -Be 'no-workspace'
+        $r.message | Should -Match 'select a Project'
+    }
+
+    It 'finds the same needle literally and by regex' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'src/app.ps1' -Content "# header`nfunction Get-Thing {}`n"
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+
+        $literal = Invoke-DpTextSearchTool -query 'Get-Thing' | ConvertFrom-Json
+        $literal.totalMatches | Should -Be 1
+        $literal.matches[0].path | Should -Be 'src/app.ps1'
+        $literal.matches[0].line | Should -Be 2
+        $literal.matches[0].text | Should -Be 'function Get-Thing {}'
+
+        $regex = Invoke-DpTextSearchTool -query 'function\s+Get-\w+' -isRegex $true | ConvertFrom-Json
+        $regex.totalMatches | Should -Be 1
+        $regex.matches[0].line | Should -Be 2
+    }
+
+    It 'treats a literal query as literal, not as an expression' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'a.txt' -Content "aab`na.b`n"
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query 'a.b' | ConvertFrom-Json
+        $r.totalMatches | Should -Be 1
+        $r.matches[0].text | Should -Be 'a.b'
+    }
+
+    It 'answers an invalid regex with a structured error instead of throwing' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'a.txt' -Content 'x'
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query '(unclosed' -isRegex $true | ConvertFrom-Json
+        $r.error | Should -Be 'invalid-regex'
+        $r.message | Should -Match 'isRegex'
+    }
+
+    It 'refuses an includePattern that leaves the workspace folder' -ForEach @(
+        @{ Include = 'C:\Users\install\*' }
+        @{ Include = '../*.ps1' }
+        @{ Include = '~/.copilot/*' }
+    ) {
+        $root = New-TextRoot
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        (Invoke-DpTextSearchTool -query 'x' -includePattern $Include | ConvertFrom-Json).error | Should -Be 'invalid-pattern'
+    }
+
+    It 'refuses an empty query' {
+        $root = New-TextRoot
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        (Invoke-DpTextSearchTool -query '' | ConvertFrom-Json).error | Should -Be 'invalid-query'
+    }
+
+    It 'limits the files it reads to includePattern' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'a.ps1' -Content 'needle'
+        Add-TextFile -Root $root -Relative 'b.txt' -Content 'needle'
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query 'needle' -includePattern '**/*.ps1' | ConvertFrom-Json
+        $r.totalMatches | Should -Be 1
+        $r.matches[0].path | Should -Be 'a.ps1'
+    }
+
+    It 'skips a binary file rather than returning the middle of it' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'good.txt' -Content 'needle here'
+        $binary = [System.Text.Encoding]::UTF8.GetBytes('needle') + [byte[]]@(0x00, 0x01, 0x02)
+        [System.IO.File]::WriteAllBytes((Join-Path $root 'blob.bin'), $binary)
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json
+        $r.totalMatches | Should -Be 1
+        $r.matches[0].path | Should -Be 'good.txt'
+    }
+
+    It 'never returns a match from an excluded folder' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'keep.txt' -Content 'needle'
+        foreach ($name in @('node_modules', 'output', 'bin', 'obj', '.git')) { Add-TextFile -Root $root -Relative "$name/junk.txt" -Content 'needle' }
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json
+        $r.totalMatches | Should -Be 1
+        $r.matches[0].path | Should -Be 'keep.txt'
+    }
+
+    It 'says truncated and states the true total when the cap bites' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'many.txt' -Content ((1..12 | ForEach-Object { "line $_ needle" }) -join "`n")
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $r = Invoke-DpTextSearchTool -query 'needle' -maxResults 4 | ConvertFrom-Json
+        $r.returned | Should -Be 4
+        $r.totalMatches | Should -Be 12
+        $r.truncated | Should -BeTrue
+    }
+
+    It 'bounds the text of a match so one long line cannot fill the context' {
+        $root = New-TextRoot
+        Add-TextFile -Root $root -Relative 'long.txt' -Content ('needle' + ('a' * 500))
+        Set-Variable -Name 'DeskPilotSearchRoot' -Scope Global -Value $root
+        $text = (Invoke-DpTextSearchTool -query 'needle' | ConvertFrom-Json).matches[0].text
+        $text.Length | Should -Be 200
+        $text | Should -BeLike '*…'
+    }
+}
+
+
+Describe 'Initialize-DpSearchTool' {
+    # No Invoke-DpGitCommand mock anywhere in here: Initialize-DpSearchTool
+    # re-declares the backing commands in the Engine Runspace from their own
+    # definitions, and a mocked command's definition is Pester's mock body.
+    BeforeAll {
+        $script:engineModule = Get-Module -ListAvailable ShellPilot |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+        function script:New-EngineRunspace {
+            $runspace = [runspacefactory]::CreateRunspace()
+            $runspace.Open()
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $script:engineModule.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.Dispose()
+            $runspace
+        }
+        function script:Get-RegisteredToolName {
+            param($Runspace)
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $Runspace
+            $null = $probeShell.AddCommand('Get-ShpTool')
+            $registered = @($probeShell.Invoke())
+            $probeShell.Dispose()
+            @($registered)
+        }
+    }
+
+    It 'has an Engine to register against' {
+        $script:engineModule | Should -Not -BeNullOrEmpty
+    }
+
+    It 'registers both search tools and steers the model away from run_command' {
+        $runspace = New-EngineRunspace
+        try {
+            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+
+            $registered = Get-RegisteredToolName -Runspace $runspace
+            @($registered.Name) | Should -Contain 'search_files'
+            @($registered.Name) | Should -Contain 'search_text'
+            # The description is the whole argument contract: ShellPilot derives the
+            # schema from parameter metadata and describes every property as "The
+            # pattern parameter of Invoke-DpFileSearchTool".
+            $fileTool = $registered | Where-Object { $_.Name -eq 'search_files' }
+            $fileTool.Description | Should -Match 'run_command'
+            $fileTool.Description | Should -Match 'pattern \(string, required\)'
+            $textTool = $registered | Where-Object { $_.Name -eq 'search_text' }
+            $textTool.Description | Should -Match 'grep'
+            $textTool.Description | Should -Match 'includePattern'
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'injects a working implementation, not just a registration' {
+        # The backing commands are re-declared in the runspace from their own
+        # definitions; if that mechanism breaks, the tool is registered and dead.
+        $runspace = New-EngineRunspace
+        try {
+            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            [System.IO.File]::WriteAllText((Join-Path $root 'notes.txt'), "first`nthe needle is here`n")
+            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+
+            $callShell = [powershell]::Create()
+            $callShell.Runspace = $runspace
+            $null = $callShell.AddCommand('Invoke-DpTextSearchTool').AddParameter('query', 'needle')
+            $textJson = @($callShell.Invoke())[-1]
+            $callShell.Dispose()
+            $text = [string]$textJson | ConvertFrom-Json
+            $text.totalMatches | Should -Be 1
+            $text.matches[0].path | Should -Be 'notes.txt'
+            $text.matches[0].line | Should -Be 2
+
+            $callShell = [powershell]::Create()
+            $callShell.Runspace = $runspace
+            $null = $callShell.AddCommand('Invoke-DpFileSearchTool').AddParameter('pattern', '*.txt')
+            $fileJson = @($callShell.Invoke())[-1]
+            $callShell.Dispose()
+            ([string]$fileJson | ConvertFrom-Json).paths | Should -Be @('notes.txt')
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'confines the injected tools to the workspace folder it was given' {
+        $runspace = New-EngineRunspace
+        try {
+            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            Initialize-DpSearchTool -Runspace $runspace -Root $root | Should -BeTrue
+
+            $callShell = [powershell]::Create()
+            $callShell.Runspace = $runspace
+            $null = $callShell.AddCommand('Invoke-DpFileSearchTool').AddParameter('pattern', 'C:\Users\*')
+            $json = @($callShell.Invoke())[-1]
+            $callShell.Dispose()
+            ([string]$json | ConvertFrom-Json).error | Should -Be 'invalid-pattern'
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'removes both tools when File Access is off and restores them when it is on' {
+        # A registered User Tool is a separate Engine category from the built-in
+        # file tools, so -DisableFileAccess does not reach it: without the removal
+        # the Permission would mean something in the UI and nothing in fact.
+        $runspace = New-EngineRunspace
+        try {
+            $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            Set-DpSearchTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
+            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 2
+
+            Set-DpSearchTool -Runspace $runspace -Enabled:$false -Root $root | Should -BeFalse
+            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 0
+
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $runspace
+            $null = $probeShell.AddScript('[string]$global:DeskPilotSearchRoot')
+            $storedRoot = [string]@($probeShell.Invoke())[-1]
+            $probeShell.Dispose()
+            $storedRoot | Should -Be ''
+
+            Set-DpSearchTool -Runspace $runspace -Enabled:$true -Root $root | Should -BeTrue
+            @(Get-RegisteredToolName -Runspace $runspace).Count | Should -Be 2
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'removes cleanly from a runspace that never had the tools' {
+        $runspace = New-EngineRunspace
+        try {
+            Set-DpSearchTool -Runspace $runspace -Enabled:$false -Root '' | Should -BeFalse
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+}
+
+Describe 'the Turn offers the search tools' -Tag 'Unit' {
+    BeforeAll {
+        $script:searchTurnSource = Get-Content -LiteralPath (
+            Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+    }
+
+    It 'registers them once per Turn, beside the Questionnaire tool' {
+        # Registration is runspace-scoped and survives a Turn, so it belongs where
+        # the runspace is prepared - not inside the streaming loop.
+        $script:searchTurnSource | Should -Match 'Set-DpSearchTool @searchToolParams'
+    }
+
+    It 'ties availability to File Access and the search to the Workspace Folder' {
+        $script:searchTurnSource | Should -Match 'Enabled\s*=\s*\[bool\]\$settings\.permissions\.file'
+        $script:searchTurnSource | Should -Match 'Root\s*=\s*\[string\]\$settings\.workspaceFolder'
+    }
+}
