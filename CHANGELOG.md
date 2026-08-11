@@ -54,8 +54,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   puts back the files it changed, and sends your prompt back so you can reword it
   and try again. It refuses while a job is running, so send `/stop` first.
 
+### Changed
+
+- **New conversations start on Claude Opus 5.** DeskPilot used to inherit
+  whatever model the engine happened to name as its default, which trails the
+  newest one by months. It now asks for Opus 5 whenever your account is offered
+  it, and falls back to the engine's own choice when it is not — so nothing
+  breaks if it is unavailable to you. Picking a model yourself, in Settings or on
+  a single conversation, still wins.
+
 ### Fixed
 
+- **Intercom now tells you where the phone-control switch actually is.** When a
+  project was not cleared for phone control, Intercom said "Remote control is
+  switched off … turn it on under Settings > Intercom" — a tab that holds no such
+  switch, and which the message was printed on while it plainly read
+  "On — connected". It now names the checkbox you are looking for and the tab
+  that carries it: tick **allow phone control** on the project under
+  **Settings → Projects**. The same correction applies when you switch to a
+  project from your phone, when you add one with `/project new`, and in the
+  getting-started guide.
 - **Read aloud no longer sounds like a robot from ten years ago.** It used the
   first voice the system happened to list for the language, which on Windows is
   the oldest one installed — the flat, clipped "Desktop" set. It now prefers a

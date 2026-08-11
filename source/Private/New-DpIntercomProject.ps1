@@ -133,7 +133,7 @@ function New-DpIntercomProject {
     $null = Send-DpIntercomMessage -Title $(if ($created) { 'Folder created and added as a project.' } else { 'Project added.' }) -Line @(
         "Project: $($project.name)",
         $project.path,
-        'Remote control is off for it, so I cannot run anything in it from here yet.',
-        'Turn it on at the machine, in DeskPilot under Settings > Intercom.'
+        "It does not have 'allow phone control' ticked, so I cannot run anything in it from here yet.",
+        'Tick it at the machine, in DeskPilot under Settings > Projects.'
     ) -Kind 'project'
 }

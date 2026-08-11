@@ -2763,7 +2763,7 @@ function renderProjectsManager() {
         // boundary that decides whether a message from a phone may act at all.
         const remote = document.createElement('label');
         remote.className = 'project-remote tiny';
-        remote.title = 'Allow this project to be controlled from your phone (Settings → Intercom)';
+        remote.title = 'Let Intercom run instructions in this project from your phone';
         const remoteBox = document.createElement('input');
         remoteBox.type = 'checkbox';
         remoteBox.checked = p.intercom === true;
@@ -5716,8 +5716,8 @@ function openSettings() {
     <section class="settings-tab active" id="spane-general" data-tab="general" role="tabpanel" aria-labelledby="stab-general">
       <div class="field">
         <label>Default model</label>
-        <select id="set-model">${(state.models.length ? state.models.map((m) => m.id) : [s.model].filter(Boolean))
-            .map((id) => `<option value="${id}" ${id === s.model ? 'selected' : ''}>${id}</option>`).join('')}</select>
+        <select id="set-model">${(state.models.length ? state.models.map((m) => m.id) : [s.model || state.defaultModel].filter(Boolean))
+            .map((id) => `<option value="${id}" ${id === (s.model || state.defaultModel) ? 'selected' : ''}>${id}</option>`).join('')}</select>
         <p class="hint">Used for new conversations.</p>
       </div>
       <div class="field">

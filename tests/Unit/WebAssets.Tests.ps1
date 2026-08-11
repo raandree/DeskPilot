@@ -143,6 +143,15 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match '(?s)async function syncSettingsFromIntercom.{0,900}populateProjectSelect\(\);\s*updateAgentChip\(\);'
     }
 
+    It 'shows the model that is actually the default when none is pinned' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # With no Settings model the browser preselects the first option, which is
+        # whatever the Engine listed first - a "Default model" field contradicting
+        # the model the Turn will actually run on.
+        $js | Should -Match ([regex]::Escape('id === (s.model || state.defaultModel)'))
+    }
+
     It 'parses a unified diff into rows with old and new line numbers' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

@@ -180,11 +180,14 @@ function Invoke-DpTurn {
         $agentMemory = if ($script:DeskPilot.Memory) { [string]$script:DeskPilot.Memory.text } else { '' }
 
         # Resolve the effective Model (Conversation-pinned, else the Settings
-        # default, else the Engine default) and its advertised reasoning efforts
-        # from the capability cache the /api/models route fills. New-DpTurnParameter
-        # forwards the global reasoning-effort Setting only when this Model lists
-        # it, so a Model that supports none (for example claude-haiku-4.5) never
-        # receives reasoning_effort and cannot fail the Turn with an HTTP 400.
+        # default, else DeskPilot's default) and its advertised reasoning efforts
+        # from the capability cache the /api/models route fills. The resolved id is
+        # what the Turn runs on, so a Conversation that pins nothing runs on the
+        # Model DeskPilot reports as the default rather than on the Engine's own.
+        # New-DpTurnParameter forwards the global reasoning-effort Setting only when
+        # this Model lists it, so a Model that supports none (for example
+        # claude-haiku-4.5) never receives reasoning_effort and cannot fail the Turn
+        # with an HTTP 400.
         $effectiveModelId = if ($Conversation.model) { $Conversation.model } elseif ($settings.model) { $settings.model } else { $script:DeskPilot.DefaultModel }
         $modelEfforts = @()
         if ($effectiveModelId) {
@@ -192,7 +195,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $Conversation.model -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result

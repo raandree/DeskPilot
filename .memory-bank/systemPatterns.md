@@ -49,6 +49,13 @@ source: repository evidence
   Project, Agents folder + selected Agent, Skill/Instruction/Prompt roots,
   reasoning effort — one settings object, read at the start of each Turn so
   changes take effect on the next prompt.
+- **DeskPilot names its own default Model, then confirms it against the Engine.**
+  `$script:DeskPilot.PreferredModel` is DeskPilot's choice; the `/api/models`
+  route keeps it as `DefaultModel` only while `Get-ShpModel` advertises it and
+  otherwise adopts `Get-ShpDefault`, so a hard-coded id this account cannot use
+  never reaches a Turn. `Invoke-DpTurn` passes the *resolved* id to
+  `New-DpTurnParameter` rather than the Conversation-pinned one, or the window
+  would report one default while the Engine silently ran another.
 - **Derive, don't duplicate.** `workspaceFolder` is derived from the selected
   Project on every `Merge-DpSettings`, so Turn/Upload/explorer code reads one
   field while the registry stays the source of truth. A legacy direct
@@ -212,6 +219,14 @@ source: repository evidence
   may only act on a Project that opted in; inside such a Project it has exactly the
   Permissions a local Turn has. One boundary the user can see and reason about
   beats a parallel permission model they have to keep in sync.
+- **A refusal names the control the user will look for, not the concept behind
+  it.** `Test-DpIntercomProject` said "Remote control is switched off … turn it on
+  under Settings > Intercom" — a tab that holds no per-Project switch, and the tab
+  the same sentence is rendered on, directly under "On — connected". The flag is
+  `intercom` in code and **allow phone control** on screen, under **Settings >
+  Projects**; the refusal quotes the on-screen label and the tab that carries it.
+  A refusal that names an internal concept and the wrong route is worse than no
+  refusal text: it sends the operator to a switch that is already on.
 - **Never answer a caller you just rejected.** Replying to a non-allow-listed chat
   confirms the bot exists and turns it into a free oracle for anyone probing it.
   The rejection is counted and logged loudly instead - a rejection is a possible

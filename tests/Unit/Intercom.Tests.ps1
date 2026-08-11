@@ -957,6 +957,10 @@ Describe 'Test-DpIntercomProject' -Tag 'Unit' {
 
         $decision.allowed | Should -BeFalse
         $decision.reason | Should -Match 'Accounts'
+        # The refusal has to name the checkbox and the tab that carries it, or it
+        # sends the operator to the Intercom tab that is already switched on.
+        $decision.reason | Should -Match "'allow phone control'"
+        $decision.reason | Should -Match 'Settings > Projects'
     }
 
     It 'allows a Project that has opted in' {

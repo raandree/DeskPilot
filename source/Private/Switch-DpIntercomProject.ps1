@@ -54,8 +54,8 @@ function Switch-DpIntercomProject {
         $lines.Add('Send an instruction whenever you are ready.')
     }
     else {
-        $lines.Add('Remote control is off for this project, so I cannot run anything in it from here.')
-        $lines.Add('Turn it on at the machine, in DeskPilot under Settings > Intercom.')
+        $lines.Add("This project does not have 'allow phone control' ticked, so I cannot run anything in it from here.")
+        $lines.Add('Tick it at the machine, in DeskPilot under Settings > Projects.')
     }
     $null = Send-DpIntercomMessage -Title 'Switched project.' -Line @($lines.ToArray()) -Kind 'project'
 }

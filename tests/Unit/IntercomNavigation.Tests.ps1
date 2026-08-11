@@ -247,7 +247,9 @@ Describe 'Intercom project navigation' -Tag 'Unit' {
     It 'states that the project it switched to cannot be worked in from the phone' {
         Invoke-DpIntercomCommand -Command @{ kind = 'project'; text = '2'; reason = '' }
 
-        Get-TestOutboundText | Should -Match 'Remote control is off for this project'
+        # Naming the checkbox the operator will actually look for, not a concept.
+        Get-TestOutboundText | Should -Match "does not have 'allow phone control' ticked"
+        Get-TestOutboundText | Should -Match 'Settings > Projects'
     }
 
     It 'refuses a number that is not on the list' {
@@ -315,7 +317,8 @@ Describe 'Intercom project creation' -Tag 'Unit' {
         $added = @($script:DeskPilot.Settings.projects) | Where-Object { $_.path -eq $target }
         $added.intercom | Should -BeFalse
         (Test-DpIntercomProject -Settings $script:DeskPilot.Settings).allowed | Should -BeFalse
-        Get-TestOutboundText | Should -Match 'Remote control is off for it'
+        Get-TestOutboundText | Should -Match "does not have 'allow phone control' ticked"
+        Get-TestOutboundText | Should -Match 'Settings > Projects'
     }
 
     It 'creates the last folder of the path when its parent exists' {

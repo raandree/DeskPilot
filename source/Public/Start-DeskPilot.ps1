@@ -137,7 +137,14 @@ function Start-DeskPilot {
         # Model that advertises support, so a global reasoning-effort Setting never
         # reaches a Model that rejects it (HTTP 400 invalid_reasoning_effort).
         Models          = @()
-        DefaultModel    = $null
+        # The Model a Turn runs on when neither the Conversation nor Settings pins
+        # one. PreferredModel is DeskPilot's own choice; the /api/models route keeps
+        # it as DefaultModel while the Engine advertises it and adopts the Engine's
+        # default when it does not, so an id this account cannot use never reaches a
+        # Turn. DefaultModel is seeded with the preference so an Intercom Turn that
+        # runs before the SPA ever calls that route already gets it.
+        PreferredModel  = 'claude-opus-5'
+        DefaultModel    = 'claude-opus-5'
         # Update state. The Host Server polls the Gallery for a newer DeskPilot in a
         # background job (Update-DpUpdateCheckState) and caches the result here for
         # GET /api/update; the SPA surfaces it and drives the consent-gated install

@@ -51,7 +51,7 @@ function Test-DpIntercomProject {
     if (-not $enabled) {
         return @{
             allowed = $false
-            reason  = "Remote control is switched off for the project '$($project.name)'. Turn it on in DeskPilot under Settings > Intercom."
+            reason  = "The project '$($project.name)' does not have 'allow phone control' ticked, so I cannot work in it from here. Tick it in DeskPilot under Settings > Projects."
             project = $project
         }
     }

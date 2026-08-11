@@ -71,6 +71,11 @@ function Invoke-DpRouteHandler {
                     }
                 }
                 $defaultId = if ($default -is [string]) { $default } else { [string](Get-DpPropertyValue -InputObject $default -Name @('Id', 'Model', 'Name') -Default $state.Settings.model) }
+                # DeskPilot's own preference wins whenever the Engine advertises it;
+                # the Engine's default is the fallback, so an id this account cannot
+                # use is never handed back as the default.
+                $modelIds = @($list | ForEach-Object { $_.id })
+                if ($state.PreferredModel -and $modelIds -contains $state.PreferredModel) { $defaultId = $state.PreferredModel }
                 # Cache the capability list so a Turn can send -ReasoningEffort only
                 # to a Model that advertises support (see Get-DpModelReasoningEfforts).
                 $state.Models = @($list)

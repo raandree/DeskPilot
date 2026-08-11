@@ -171,7 +171,7 @@ Three things worth knowing:
   yet.** `/project new` registers the folder and switches to it, but leaves
   remote control switched off. Anyone holding your phone would otherwise be able
   to point DeskPilot at any folder on the machine and set it to work there. Tick
-  the project under **Settings → Intercom** at the machine when you want it.
+  the project under **Settings → Projects** at the machine when you want it.
 - **Editing a message does not resend it — and you can edit one by accident.** In
   Telegram Desktop and Web, pressing the **up arrow** in an empty message box
   reopens your *last* message for editing. If you have shell habits and press ↑ to
