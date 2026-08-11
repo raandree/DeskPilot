@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A job can now keep a record of what it actually did.** Until now nothing
+  joined up a job's history: the live progress vanished as it scrolled, the tool
+  calls arrived as an unordered set, and the thinking pane was one long string —
+  so when a job went wrong there was no way to see the order things happened in.
+  A new **Turn transcript** writes one file per job listing every step in
+  sequence: each tool call with its timestamp and which round of the job it
+  belonged to, when the agent was talking, when it updated its task list, and how
+  the job ended. It is deliberately a *summary*, never a copy: a tool call records
+  the command it ran or the file it touched and nothing else — never a file's
+  contents, never a command's output, and never the agent's own words, which are
+  already kept with the message. Each entry says how many characters there were,
+  so nothing is silently hidden. Transcripts live in your DeskPilot data folder,
+  are pruned automatically once they get old or bulky, and can be fetched back
+  through the local API. It is a diagnostic and it writes files, so it is **off**
+  by default (`turnTranscript`).
 - **The agent can change three lines without rewriting the file.** Until now its
   only way to edit anything was to write the file out whole — so changing a
   couple of lines in a 900-line file meant reproducing the other 898 from memory,

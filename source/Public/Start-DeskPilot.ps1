@@ -178,6 +178,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/models'; Name = 'models' }
             @{ Method = 'GET'; Pattern = '/api/settings'; Name = 'getSettings' }
             @{ Method = 'PUT'; Pattern = '/api/settings'; Name = 'putSettings' }
+            @{ Method = 'GET'; Pattern = '/api/transcript'; Name = 'getTranscript' }
             @{ Method = 'GET'; Pattern = '/api/settings/export'; Name = 'exportSettings' }
             @{ Method = 'POST'; Pattern = '/api/settings/import'; Name = 'importSettings' }
             @{ Method = 'GET'; Pattern = '/api/agents'; Name = 'agents' }

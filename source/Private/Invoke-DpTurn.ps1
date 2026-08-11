@@ -57,13 +57,82 @@ function Invoke-DpTurn {
     # the whole Thinking trace this Turn streamed, which a Stop has nothing else to
     # fall back on.
     $turnState = @{
-        tasks           = @()
-        emitted         = 0
-        pendingEvent    = $null
-        pendingText     = [System.Text.StringBuilder]::new()
-        reasoning       = [System.Text.StringBuilder]::new()
-        narration       = @()
-        narrationBuffer = [System.Text.StringBuilder]::new()
+        tasks              = @()
+        emitted            = 0
+        pendingEvent       = $null
+        pendingText        = [System.Text.StringBuilder]::new()
+        reasoning          = [System.Text.StringBuilder]::new()
+        narration          = @()
+        narrationBuffer    = [System.Text.StringBuilder]::new()
+        transcript         = [System.Collections.Generic.List[object]]::new()
+        transcriptSeq      = 0
+        transcriptDropped  = 0
+        iteration          = 0
+    }
+
+    # The Turn transcript is a diagnostic that writes files, so it is off unless
+    # asked for. The iteration source is decided once, here: the Engine only writes
+    # '=== iteration N ===' under -ShowThinking, so with Thinking off the only
+    # honest signal is a tool-call count - which the opening meta record says.
+    $transcriptOn = [bool]$settings.turnTranscript -and [bool]$script:DeskPilot.DataDir
+    $iterationSource = if ($settings.showThinking) { 'trace' } else { 'tool-calls' }
+    $transcriptCap = 5000
+
+    # Buffer one record. Never writes to disk - a per-record write would land on
+    # the single thread holding the SSE stream open, which is the freeze
+    # Invoke-DpGitCommand exists to prevent.
+    $addRecord = {
+        param([hashtable]$Parameter)
+        if (-not $transcriptOn) { return }
+        if ($turnState.transcript.Count -ge $transcriptCap) {
+            $turnState.transcriptDropped = [int]$turnState.transcriptDropped + 1
+            return
+        }
+        $turnState.transcriptSeq = [int]$turnState.transcriptSeq + 1
+        $Parameter.Seq = $turnState.transcriptSeq
+        if (-not $Parameter.ContainsKey('Iteration')) { $Parameter.Iteration = [int]$turnState.iteration }
+        if (-not $Parameter.ContainsKey('Timestamp')) { $Parameter.Timestamp = [datetime]::UtcNow }
+        try { $turnState.transcript.Add((New-DpTranscriptRecord @Parameter)) }
+        catch {
+            $recordError = $_
+            Write-Verbose "Could not build a transcript record: $recordError"
+        }
+    }
+
+    # Flush once, at whichever exit the Turn takes. Idempotent: the buffer is
+    # cleared, so a stopped Turn that later falls into the catch cannot write
+    # twice. A disk problem must never turn a Turn that produced an answer into a
+    # failed one, so nothing here throws.
+    $writeTranscript = {
+        param([string]$Outcome)
+        if (-not $transcriptOn -or $turnState.transcript.Count -eq 0) { return }
+        & $addRecord @{
+            Kind   = 'meta'
+            Detail = @{
+                event      = 'end'
+                outcome    = $Outcome
+                iterations = [int]$turnState.iteration
+                dropped    = [int]$turnState.transcriptDropped
+                durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
+            }
+        }
+        $records = @($turnState.transcript)
+        $turnState.transcript.Clear()
+        try {
+            $transcriptParams = @{
+                Directory      = $script:DeskPilot.DataDir
+                ConversationId = [string]$Conversation.id
+                MessageId      = [string]$assistantId
+                Record         = $records
+                Confirm        = $false
+            }
+            $written = Write-DpTranscript @transcriptParams
+            if (-not $written.ok) { Write-Verbose "Could not write the Turn transcript: $($written.error)" }
+        }
+        catch {
+            $transcriptError = $_
+            Write-Verbose "Could not write the Turn transcript: $transcriptError"
+        }
     }
 
     # Seal whatever answer text has been buffered since the last tool call as one
@@ -72,7 +141,9 @@ function Invoke-DpTurn {
     # final answer and already lives on the Message text.
     $sealNarration = {
         if ($turnState.narrationBuffer.Length -eq 0) { return }
-        $turnState.narration = Add-DpNarrationBlock -Block $turnState.narration -Text $turnState.narrationBuffer.ToString()
+        $block = $turnState.narrationBuffer.ToString()
+        $turnState.narration = Add-DpNarrationBlock -Block $turnState.narration -Text $block
+        & $addRecord @{ Kind = 'narration'; Text = $block }
         [void]$turnState.narrationBuffer.Clear()
     }
 
@@ -83,7 +154,17 @@ function Invoke-DpTurn {
         if ($turnState.pendingEvent -and $turnState.pendingText.Length -gt 0) {
             $pending = $turnState.pendingText.ToString()
             $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $pending }))
-            if ($turnState.pendingEvent -eq 'reasoning') { [void]$turnState.reasoning.Append($pending) }
+            if ($turnState.pendingEvent -eq 'reasoning') {
+                [void]$turnState.reasoning.Append($pending)
+                # The trace is the only place an iteration number exists, and it only
+                # exists under -ShowThinking. Reasoning is summarised like any tool
+                # argument, because Format-DpThinkingTrace lays a write_file call out
+                # into it - file body included.
+                if ($iterationSource -eq 'trace' -and $pending -match '===\s*iteration\s+(\d+)') {
+                    $turnState.iteration = [int]$Matches[1]
+                }
+                & $addRecord @{ Kind = 'reasoning'; Text = $pending }
+            }
             # Answer text is also the raw material for a narration block, which is
             # only decided later - at the next tool call, or at the end of the Turn.
             else { [void]$turnState.narrationBuffer.Append($pending) }
@@ -159,9 +240,21 @@ function Invoke-DpTurn {
         $recordTags = Get-DpPropertyValue -InputObject $Record -Name @('Tags') -Default @()
         if (@($recordTags) -contains 'ShpProgress') {
             $recordPayload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
-            if ([string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Kind') -Default '') -eq 'ToolCall') {
+            $recordKind = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Kind') -Default '')
+            if ($recordKind -eq 'ToolCall') {
                 & $flush
                 & $sealNarration
+                # Every tool call reaches the transcript, including the ones
+                # Get-DpStreamFrame consumes silently - an ordered record of a Turn
+                # that omits most of its tool calls is not one.
+                if ($iterationSource -eq 'tool-calls') { $turnState.iteration = [int]$turnState.iteration + 1 }
+                $written = Get-DpPropertyValue -InputObject $Record -Name @('TimeGenerated') -Default $null
+                & $addRecord @{
+                    Kind      = 'tool_call'
+                    Tool      = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Name') -Default '')
+                    Arguments = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Arguments') -Default '')
+                    Timestamp = $(if ($written -is [datetime]) { $written } else { [datetime]::UtcNow })
+                }
             }
         }
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
@@ -173,6 +266,7 @@ function Invoke-DpTurn {
         if ($decision.event -eq 'tasks') {
             & $flush
             $turnState.tasks = $decision.Tasks
+            & $addRecord @{ Kind = 'tasks'; Text = ('{0} task(s)' -f @($decision.Tasks).Count) }
             $writer.Write((ConvertTo-DpSseFrame -EventName 'tasks' -Data $decision.data))
             return
         }
@@ -227,6 +321,29 @@ function Invoke-DpTurn {
         }
 
         $writer.Write((ConvertTo-DpSseFrame -EventName 'start' -Data @{ messageId = $assistantId; userMessageId = $userMessage.id }))
+
+        # The opening record states what cannot be inferred from the rest, and in
+        # particular where the iteration numbers come from: with Thinking off the
+        # Engine writes no iteration banner, so they are a tool-call count and must
+        # not be read as anything more. No absolute path and no prompt text: this
+        # file must not become a second copy of the user's data.
+        & $addRecord @{
+            Kind   = 'meta'
+            Detail = @{
+                event           = 'start'
+                schema          = 1
+                deskPilot       = [string]$script:DeskPilot.Version
+                conversationId  = [string]$Conversation.id
+                messageId       = [string]$assistantId
+                iterationSource = $iterationSource
+                showThinking    = [bool]$settings.showThinking
+                maxIterations   = [int]$settings.maxToolIterations
+                promptChars     = [int]$Prompt.Length
+                attachments     = [int]@($Image).Count
+                hasProject      = [bool]$settings.workspaceFolder
+                toolResults     = 'not-observable'
+            }
+        }
 
         $agentPrompt = $null
         if ($settings.selectedAgent -and $settings.agentsRoot) {
@@ -475,6 +592,7 @@ function Invoke-DpTurn {
                 $Conversation.messages.Add($stoppedMessage)
                 $Conversation.updatedUtc = $stoppedMessage.createdUtc
                 Update-DpUsage -Usage $stoppedUsage -Model $usedModel
+                & $writeTranscript 'stopped'
                 if ($script:DeskPilot.DataDir) {
                     $saveParams = @{
                         Store     = $script:DeskPilot.Conversations
@@ -572,6 +690,23 @@ function Invoke-DpTurn {
 
         Update-DpUsage -Usage $mapped.usage -Model $usedModel
 
+        & $addRecord @{ Kind = 'answer'; Text = [string]$mapped.content }
+        & $addRecord @{
+            Kind   = 'meta'
+            Detail = @{
+                event            = 'usage'
+                model            = [string]$usedModel
+                promptTokens     = [int]$mapped.usage.promptTokens
+                completionTokens = [int]$mapped.usage.completionTokens
+                totalTokens      = [int]$mapped.usage.totalTokens
+                costUSD          = [double]$mapped.usage.costUSD
+                credits          = [double]$mapped.usage.credits
+                toolCalls        = @($mapped.activity.toolCalls).Count
+                filesWritten     = @($mapped.activity.filesWritten).Count
+            }
+        }
+        & $writeTranscript 'completed'
+
         if ($script:DeskPilot.DataDir) {
             Save-DpConversationStore -Store $script:DeskPilot.Conversations -Directory $script:DeskPilot.DataDir
         }
@@ -607,6 +742,8 @@ function Invoke-DpTurn {
                 }
                 $Conversation.messages.Add($exhaustedMessage)
                 $Conversation.updatedUtc = $exhaustedMessage.createdUtc
+                & $addRecord @{ Kind = 'error'; Text = $message }
+                & $writeTranscript 'budget-exhausted'
                 if ($script:DeskPilot.DataDir) {
                     Save-DpConversationStore -Store $script:DeskPilot.Conversations -Directory $script:DeskPilot.DataDir
                 }
@@ -619,6 +756,8 @@ function Invoke-DpTurn {
             }
         }
         try { $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = $message })) } catch { $null = $_ }
+        & $addRecord @{ Kind = 'error'; Text = $message }
+        & $writeTranscript 'failed'
     }
     finally {
         if ($userPromptBridge) { $userPromptBridge.EndTurn() }

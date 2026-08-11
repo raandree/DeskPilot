@@ -59,9 +59,16 @@ source: repository evidence
   `-Disable*` switches. A Permission that is off means the corresponding switch
   is passed; the UI reflects the exact set in force for the next Turn. A
   DeskPilot-owned User Tool is **not** covered by that mapping — it is a separate
-  Engine category, so a Tool that reads files must be unregistered by hand when
-  File Access is off, or the Permission means something in the UI and nothing in
-  fact (`Set-DpSearchTool`, `Set-DpQuestionnaireTool`).
+  Engine category, so a Tool that reads or writes files must be unregistered by
+  hand when File Access is off, or the Permission means something in the UI and
+  nothing in fact (`Set-DpWorkspaceTool`, `Set-DpQuestionnaireTool`).
+- **A User Tool has to account for its own side effects.** ShellPilot fills
+  `result.FilesRead` and `result.FilesWritten` only from its own built-in tools,
+  so anything a DeskPilot Tool reads or writes is invisible to the Activity card,
+  the pending change set and Undo unless the Tool records it. `replace_in_file`
+  appends to a Runspace ledger that `Get-DpEngineEditedFile` drains into the
+  Turn's activity once the pipeline is complete — not on the streaming thread,
+  and reset at registration so one Turn's edits are never attributed to the next.
 - **A User Tool's implementation lives in `source/Private`, not in the injection
   string.** The Engine Runspace has ShellPilot imported and DeskPilot not, so a
   registered Tool's backing command has to exist there — but writing it inside an
@@ -77,13 +84,17 @@ source: repository evidence
   the Tool — its root, its result cap, its time budget — belongs out of band: a
   Runspace global set by the caller, or a literal. A cap the model can raise is
   not a cap, and a root the model can supply is an exfiltration path.
-- **A User Tool has to account for its own side effects.** ShellPilot fills
-  `result.FilesRead` and `result.FilesWritten` only from its own built-in tools,
-  so anything a DeskPilot Tool reads or writes is invisible to the Activity card,
-  the pending change set and Undo unless the Tool records it. `replace_in_file`
-  appends to a Runspace ledger that `Get-DpEngineEditedFile` drains into the
-  Turn's activity once the pipeline is complete — not on the streaming thread,
-  and reset at registration so one Turn's edits are never attributed to the next.
+- **A diagnostic writes once, at the end, and prunes itself.** The Host Server
+  accepts on one thread, so anything written per record would land on the thread
+  holding the SSE stream open. The Turn transcript buffers in memory and flushes
+  at whichever exit the Turn takes; retention runs on the same call, because a
+  diagnostic that only grows is a disk leak.
+- **A record of user activity stores a length, not a copy.** Redaction is by
+  construction: a whitelist maps a tool name to the one argument field worth
+  summarising, and anything unknown contributes bytes only. Model prose is not
+  exempt — a live smoke caught the model quoting a secret it had just written into
+  its own answer — so `answer`, `narration` and `reasoning` carry a length and
+  nothing else, since the Message already holds them verbatim.
 - **Settings are a single object.** Model, Permissions, Projects + selected
   Project, Agents folder + selected Agent, Skill/Instruction/Prompt roots,
   reasoning effort — one settings object, read at the start of each Turn so

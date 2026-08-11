@@ -98,6 +98,31 @@ function Invoke-DpRouteHandler {
         'getSettings' {
             Write-DpResponse -Stream $Stream -Json $state.Settings
         }
+        'getTranscript' {
+            # No new access path: this is an /api/ route like every other, so it is
+            # loopback-bound and session-token gated by Invoke-DpRequest before it
+            # is reached.
+            $conversationId = [string]$Request.Query['conversationId']
+            $messageId = [string]$Request.Query['messageId']
+            if (-not $conversationId -or -not $messageId) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_request'; message = 'conversationId and messageId are required.' } }
+                return
+            }
+            if (-not $state.DataDir) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'no_data_dir'; message = 'No data directory is configured, so no transcript was recorded.' } }
+                return
+            }
+            $transcript = Read-DpTranscript -Directory $state.DataDir -ConversationId $conversationId -MessageId $messageId
+            if (-not $transcript.ok) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'no_transcript'; message = $transcript.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{
+                path       = $transcript.path
+                records    = @($transcript.records)
+                unreadable = $transcript.unreadable
+            }
+        }
         'putSettings' {
             if ($null -eq $Body) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'A Settings body is required.' } }

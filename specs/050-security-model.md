@@ -48,6 +48,35 @@ flowchart LR
 | T13 | The **self-update** installs modules from the PowerShell Gallery with the user's privileges, reloads the Engine, and can relaunch the host. | The module names are **fixed and first-party** (`DeskPilot`, `ShellPilot`) — never user-supplied — so there is no injection/typosquat surface, and installs go to the **CurrentUser** scope (no elevation). It is strictly **consent-gated**: the background check only *reports* availability; nothing installs until the user clicks **Update now**, and nothing relaunches until the user clicks **Restart DeskPilot**. Previews are installed only when the user opted in (`updateIncludePrereleases`). The Engine reload re-imports ShellPilot in the Engine Runspace only (which runs no DeskPilot code; the token stays on disk); the DeskPilot host is never re-imported in-process (that would repoint route handlers to an uninitialised module scope), so it is applied by a clean relaunch. The relaunch spawns the **current** PowerShell executable running a fixed command (`Import-Module DeskPilot -Force; Start-DeskPilot`) — no user input in the command line. Both `install` and `restart` refuse mid-Turn (`409 busy`) and are loopback + session-token gated like all `/api/*`; `409 already_installing` guards concurrent installs. |
 | T14 | A crafted Message request supplies an arbitrary local path as a native Vision image, bypassing File Permission. | `POST /api/uploads` records each successfully written file's normalized path and MIME type in a per-launch Attachment registry. `images` accepts only absolute, existing paths in that registry whose recorded type starts with `image/`; `Resolve-DpAttachmentPath` rejects unregistered, relative, missing, and non-image inputs before `Invoke-Shp -Image` receives them (`400 invalid_attachment`). Because eligibility is tied to the upload event rather than the currently selected Project, a legitimate pending Attachment survives a Project switch without widening access to other local files. The endpoint remains loopback, origin, and session-token gated. |
 
+## Turn transcript (`turnTranscript`, off by default)
+
+A per-Turn ordered JSONL record of what happened, written once at the end of a
+Turn into `<DataDir>/transcripts/`. It is a diagnostic that writes files, so it
+is off unless asked for, and it is bounded on every axis that could turn it into
+an uncontrolled second copy of the user's data:
+
+- **Redaction is by construction, never by pattern.** A tool's arguments are
+  never stored: the tool name selects one whitelisted field to summarise — the
+  command for `run_command`, the path for a file tool, the URL for `fetch_url` —
+  and a tool the map does not know contributes a length and nothing else. A
+  blacklist would have to be right about every future tool.
+- **Model prose is a length, not a copy.** `answer`, `narration` and `reasoning`
+  records carry `bytes` only. A live smoke proved why: asked to write a file
+  containing a secret, the model quoted that secret back in its own answer. All
+  three are already persisted verbatim on the Message, so a bounded copy here
+  would add no diagnostic value while being the one way arbitrary user data could
+  reach the file. `error` keeps its summary, because a failed Turn has no Message
+  to hold it.
+- **No absolute paths and no prompt text.** The opening `meta` record states the
+  prompt's *length*, whether a Project is selected, and the iteration source —
+  never the prompt, never the Workspace Folder.
+- **Retention is mandatory.** Every write prunes the folder to a size and an age
+  bound, oldest first.
+- **The read path is the existing one.** `GET /api/transcript` is an `/api/`
+  route like any other, so it is loopback-bound and session-token gated; the file
+  name is built from sanitised ids, so a crafted id cannot address a file
+  elsewhere on disk.
+
 ## Permissions model
 
 Five Tool categories map 1:1 to Engine switches. A Permission **off** passes the

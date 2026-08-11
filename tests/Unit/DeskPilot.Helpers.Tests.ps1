@@ -6104,3 +6104,279 @@ Describe 'Get-DpStreamFrame announces a targeted edit' {
         Get-DpStreamFrame -Record $record | Should -BeNullOrEmpty
     }
 }
+
+
+Describe 'New-DpTranscriptRecord' {
+    BeforeAll {
+        $script:stamp = [datetime]::new(2026, 8, 11, 14, 12, 3, [System.DateTimeKind]::Utc)
+    }
+
+    It 'carries the sequence, the record''s own timestamp, the iteration and the kind' {
+        $r = New-DpTranscriptRecord -Seq 12 -Kind 'tool_call' -Timestamp $script:stamp -Iteration 3 -Tool 'run_command' -Arguments '{"command":"git status"}'
+        $r.seq | Should -Be 12
+        $r.ts | Should -Be $script:stamp.ToString('o')
+        $r.iteration | Should -Be 3
+        $r.kind | Should -Be 'tool_call'
+        $r.tool | Should -Be 'run_command'
+    }
+
+    It 'summarises exactly one whitelisted argument per tool' -ForEach @(
+        @{ Tool = 'run_command'; Payload = '{"command":"git status --short","workingDirectory":"x"}'; Expected = 'git status --short' }
+        @{ Tool = 'fetch_url'; Payload = '{"url":"https://example.com/a"}'; Expected = 'https://example.com/a' }
+        @{ Tool = 'read_file'; Payload = '{"path":"src/app.ps1","offset":1}'; Expected = 'src/app.ps1' }
+        @{ Tool = 'write_file'; Payload = '{"path":"src/app.ps1","content":"whole file body"}'; Expected = 'src/app.ps1' }
+        @{ Tool = 'replace_in_file'; Payload = '{"path":"src/app.ps1","oldText":"a","newText":"b"}'; Expected = 'src/app.ps1' }
+        @{ Tool = 'search_files'; Payload = '{"pattern":"**/*.ps1"}'; Expected = '**/*.ps1' }
+        @{ Tool = 'search_text'; Payload = '{"query":"Get-Thing"}'; Expected = 'Get-Thing' }
+        @{ Tool = 'load_instruction'; Payload = '{"name":"preflight"}'; Expected = 'preflight' }
+    ) {
+        (New-DpTranscriptRecord -Seq 1 -Kind 'tool_call' -Timestamp $script:stamp -Tool $Tool -Arguments $Payload).summary | Should -Be $Expected
+    }
+
+    It 'never stores a file body, an edit payload or a command result' -ForEach @(
+        @{ Tool = 'write_file'; Payload = '{"path":"a.ps1","content":"SECRET-abc123"}' }
+        @{ Tool = 'replace_in_file'; Payload = '{"path":"a.ps1","oldText":"SECRET-abc123","newText":"SECRET-def456"}' }
+    ) {
+        # Redaction is by construction: the tool name selects one field, and no
+        # other part of the argument string is ever read.
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'tool_call' -Timestamp $script:stamp -Tool $Tool -Arguments $Payload
+        ($r | ConvertTo-Json -Compress -Depth 6) | Should -Not -Match 'SECRET'
+        $r.bytes | Should -Be $Payload.Length
+    }
+
+    It 'gives a tool it does not know a byte count and nothing else' {
+        # A blacklist would have to be right about every future tool; a whitelist
+        # is only ever wrong in the safe direction.
+        $payload = '{"secret":"SECRET-abc123"}'
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'tool_call' -Timestamp $script:stamp -Tool 'some_future_tool' -Arguments $payload
+        $r.summary | Should -Be ''
+        $r.bytes | Should -Be $payload.Length
+        ($r | ConvertTo-Json -Compress -Depth 6) | Should -Not -Match 'SECRET'
+    }
+
+    It 'drops the summary rather than the redaction when the JSON will not parse' {
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'tool_call' -Timestamp $script:stamp -Tool 'write_file' -Arguments '{"path":"a.ps1","content":"trunc'
+        $r.summary | Should -Be ''
+        $r.bytes | Should -BeGreaterThan 0
+    }
+
+    It 'bounds free text and still reports its true length' {
+        $long = 'x' * 900
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'error' -Timestamp $script:stamp -Text $long
+        $r.summary.Length | Should -Be 200
+        $r.summary | Should -BeLike '*…'
+        $r.bytes | Should -Be 900
+    }
+
+    It 'stores no prose at all for the kinds the Message already holds' -ForEach @(
+        @{ Kind = 'answer' }
+        @{ Kind = 'narration' }
+        @{ Kind = 'reasoning' }
+    ) {
+        # A live smoke proved the need: asked to write a file containing a secret,
+        # the model quoted that secret back in its own answer. All three kinds are
+        # already persisted verbatim on the Message, so a bounded copy here would
+        # add nothing while being the one way arbitrary user data reaches the file.
+        $r = New-DpTranscriptRecord -Seq 1 -Kind $Kind -Timestamp $script:stamp -Text 'apiKey=SECRET-abc123 and more prose'
+        $r.summary | Should -Be ''
+        $r.bytes | Should -Be 35
+        ($r | ConvertTo-Json -Compress -Depth 6) | Should -Not -Match 'SECRET'
+    }
+
+    It 'flattens line breaks so one record is one line' {
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'error' -Timestamp $script:stamp -Text "first`nsecond`r`nthird"
+        $r.summary | Should -Be 'first second third'
+        ($r | ConvertTo-Json -Compress -Depth 6) | Should -Not -Match "`n"
+    }
+
+    It 'keeps meta detail scalars intact and bounds meta strings' {
+        $r = New-DpTranscriptRecord -Seq 1 -Kind 'meta' -Timestamp $script:stamp -Detail @{ iterations = 7; showThinking = $true; note = ('y' * 400) }
+        $r.iterations | Should -Be 7
+        $r.showThinking | Should -BeTrue
+        $r.note.Length | Should -Be 200
+    }
+
+    It 'refuses a kind it does not model' {
+        { New-DpTranscriptRecord -Seq 1 -Kind 'whatever' -Timestamp $script:stamp } | Should -Throw
+    }
+}
+
+Describe 'Get-DpTranscriptPath' {
+    It 'names one file per Turn under a transcripts folder' {
+        $t = Get-DpTranscriptPath -Directory 'C:\data' -ConversationId 'c_1' -MessageId 'm_2'
+        $t.directory | Should -Be (Join-Path 'C:\data' 'transcripts')
+        $t.path | Should -Be (Join-Path (Join-Path 'C:\data' 'transcripts') 'c_1-m_2.jsonl')
+    }
+
+    It 'refuses to let an id address a file anywhere else' -ForEach @(
+        @{ Conversation = '../../etc'; Message = 'm_1' }
+        @{ Conversation = 'c_1'; Message = '..\..\passwd' }
+        @{ Conversation = 'c/1'; Message = 'm:2' }
+    ) {
+        $t = Get-DpTranscriptPath -Directory 'C:\data' -ConversationId $Conversation -MessageId $Message
+        (Split-Path -Parent $t.path) | Should -Be (Join-Path 'C:\data' 'transcripts')
+        (Split-Path -Leaf $t.path) | Should -Not -Match '[/\\:]'
+    }
+
+    It 'still produces a name for empty ids' {
+        (Split-Path -Leaf (Get-DpTranscriptPath -Directory 'C:\data' -ConversationId '' -MessageId '').path) | Should -Be 'unknown-unknown.jsonl'
+    }
+}
+
+Describe 'Write-DpTranscript and Read-DpTranscript' {
+    BeforeEach {
+        $script:dataDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:dataDir | Out-Null
+        $script:sample = @(
+            New-DpTranscriptRecord -Seq 1 -Kind 'meta' -Timestamp ([datetime]::UtcNow) -Detail @{ event = 'start' }
+            New-DpTranscriptRecord -Seq 2 -Kind 'tool_call' -Timestamp ([datetime]::UtcNow) -Iteration 1 -Tool 'run_command' -Arguments '{"command":"git status"}'
+            New-DpTranscriptRecord -Seq 3 -Kind 'answer' -Timestamp ([datetime]::UtcNow) -Text 'done'
+        )
+    }
+
+    It 'writes one JSONL file whose every line parses, in sequence order' {
+        $w = Write-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1' -Record $script:sample -Confirm:$false
+        $w.ok | Should -BeTrue
+        $w.records | Should -Be 3
+        $lines = @(Get-Content -LiteralPath $w.path)
+        $lines.Count | Should -Be 3
+        $parsed = @($lines | ForEach-Object { $_ | ConvertFrom-Json })
+        @($parsed.seq) | Should -Be @(1, 2, 3)
+    }
+
+    It 'reads the same records back' {
+        Write-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1' -Record $script:sample -Confirm:$false | Out-Null
+        $r = Read-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1'
+        $r.ok | Should -BeTrue
+        @($r.records).Count | Should -Be 3
+        $r.records[1].tool | Should -Be 'run_command'
+        $r.records[1].summary | Should -Be 'git status'
+        $r.records[2].kind | Should -Be 'answer'
+        $r.records[2].summary | Should -Be ''
+    }
+
+    It 'says so rather than throwing when there is no transcript' {
+        $r = Read-DpTranscript -Directory $script:dataDir -ConversationId 'c_none' -MessageId 'm_none'
+        $r.ok | Should -BeFalse
+        $r.error | Should -Match 'No transcript'
+    }
+
+    It 'skips and counts a line it cannot parse instead of failing the read' {
+        $w = Write-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1' -Record $script:sample -Confirm:$false
+        Add-Content -LiteralPath $w.path -Value '{not json'
+        $r = Read-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1'
+        $r.ok | Should -BeTrue
+        @($r.records).Count | Should -Be 3
+        $r.unreadable | Should -Be 1
+    }
+
+    It 'writes nothing at all when there are no records' {
+        $w = Write-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1' -Record @() -Confirm:$false
+        $w.ok | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $script:dataDir 'transcripts') | Should -BeFalse
+    }
+
+    It 'leaves no temp file behind' {
+        $w = Write-DpTranscript -Directory $script:dataDir -ConversationId 'c_1' -MessageId 'm_1' -Record $script:sample -Confirm:$false
+        @(Get-ChildItem -LiteralPath (Split-Path -Parent $w.path) -Filter '*.tmp') | Should -HaveCount 0
+    }
+}
+
+Describe 'Remove-DpTranscriptOverflow' {
+    BeforeEach {
+        $script:pruneDir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:pruneDir | Out-Null
+    }
+
+    It 'does nothing for a folder that does not exist' {
+        Remove-DpTranscriptOverflow -Directory (Join-Path $TestDrive 'nope') -Confirm:$false | Should -Be 0
+    }
+
+    It 'removes anything past the age bound' {
+        foreach ($n in 1..3) {
+            $f = Join-Path $script:pruneDir "old$n.jsonl"
+            [System.IO.File]::WriteAllText($f, 'x')
+            (Get-Item -LiteralPath $f).LastWriteTimeUtc = [datetime]::UtcNow.AddDays(-40)
+        }
+        [System.IO.File]::WriteAllText((Join-Path $script:pruneDir 'fresh.jsonl'), 'x')
+        Remove-DpTranscriptOverflow -Directory $script:pruneDir -MaxAgeDays 30 -Confirm:$false | Should -Be 3
+        @(Get-ChildItem -LiteralPath $script:pruneDir -Filter '*.jsonl').Name | Should -Be @('fresh.jsonl')
+    }
+
+    It 'removes oldest first until the folder is under the size bound' {
+        # The transcript that matters is the one from the Turn being investigated,
+        # which is the newest, so age decides what goes.
+        foreach ($n in 1..5) {
+            $f = Join-Path $script:pruneDir ("f{0}.jsonl" -f $n)
+            [System.IO.File]::WriteAllText($f, ('x' * 1000))
+            (Get-Item -LiteralPath $f).LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(-100 + $n)
+        }
+        Remove-DpTranscriptOverflow -Directory $script:pruneDir -MaxTotalBytes 2500 -Confirm:$false | Should -Be 3
+        @(Get-ChildItem -LiteralPath $script:pruneDir -Filter '*.jsonl' | Sort-Object Name).Name | Should -Be @('f4.jsonl', 'f5.jsonl')
+    }
+
+    It 'leaves a folder that is already within both bounds alone' {
+        [System.IO.File]::WriteAllText((Join-Path $script:pruneDir 'a.jsonl'), 'x')
+        Remove-DpTranscriptOverflow -Directory $script:pruneDir -Confirm:$false | Should -Be 0
+        @(Get-ChildItem -LiteralPath $script:pruneDir -Filter '*.jsonl') | Should -HaveCount 1
+    }
+
+    It 'never touches a file that is not a transcript' {
+        [System.IO.File]::WriteAllText((Join-Path $script:pruneDir 'keep.json'), ('x' * 5000))
+        Remove-DpTranscriptOverflow -Directory $script:pruneDir -MaxTotalBytes 1024 -Confirm:$false | Should -Be 0
+        Test-Path -LiteralPath (Join-Path $script:pruneDir 'keep.json') | Should -BeTrue
+    }
+}
+
+Describe 'the Turn records a transcript' -Tag 'Unit' {
+    BeforeAll {
+        $script:transcriptTurnSource = Get-Content -LiteralPath (
+            Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+    }
+
+    It 'is off unless the Setting asks for it, and needs somewhere to write' {
+        $script:transcriptTurnSource | Should -Match '\$transcriptOn\s*=\s*\[bool\]\$settings\.turnTranscript\s*-and\s*\[bool\]\$script:DeskPilot\.DataDir'
+        (Get-DpDefaultSettings).turnTranscript | Should -BeFalse
+    }
+
+    It 'accepts the Setting through the API' {
+        $merged = Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ turnTranscript = $true })
+        $merged.turnTranscript | Should -BeTrue
+    }
+
+    It 'buffers in memory and writes once, never on the streaming thread' {
+        # A per-record file write would land on the single thread holding the SSE
+        # stream open, which is the freeze Invoke-DpGitCommand exists to prevent.
+        $script:transcriptTurnSource | Should -Match 'transcript\s*=\s*\[System\.Collections\.Generic\.List\[object\]\]::new\(\)'
+        ([regex]::Matches($script:transcriptTurnSource, 'Write-DpTranscript @transcriptParams')).Count | Should -Be 1
+        $script:transcriptTurnSource | Should -Not -Match '(?m)^\s*Write-DpTranscript\b.*\$flush'
+    }
+
+    It 'records every tool call, not only the ones that become a frame' {
+        $script:transcriptTurnSource | Should -Match "Kind\s*=\s*'tool_call'"
+        $script:transcriptTurnSource | Should -Match "Tool\s*=\s*\[string\]\(Get-DpPropertyValue -InputObject \`$recordPayload -Name @\('Name'\)"
+    }
+
+    It 'stamps a tool call with the record''s own TimeGenerated' {
+        $script:transcriptTurnSource | Should -Match "Timestamp\s*=\s*\`$\(if \(\`$written -is \[datetime\]\) \{ \`$written \}"
+    }
+
+    It 'takes the iteration from the trace only when the trace exists' {
+        $script:transcriptTurnSource | Should -Match "\`$iterationSource = if \(\`$settings\.showThinking\) \{ 'trace' \} else \{ 'tool-calls' \}"
+        $script:transcriptTurnSource | Should -Match "iterationSource = \`$iterationSource"
+    }
+
+    It 'flushes at every exit, including a stopped and a failed Turn' {
+        $script:transcriptTurnSource | Should -Match "& \`$writeTranscript 'completed'"
+        $script:transcriptTurnSource | Should -Match "& \`$writeTranscript 'stopped'"
+        $script:transcriptTurnSource | Should -Match "& \`$writeTranscript 'failed'"
+        $script:transcriptTurnSource | Should -Match "& \`$writeTranscript 'budget-exhausted'"
+    }
+
+    It 'keeps the prompt text and the workspace path out of the opening record' {
+        # The transcript must not become a second, unmanaged copy of the user''s data.
+        $script:transcriptTurnSource | Should -Match 'promptChars\s*=\s*\[int\]\$Prompt\.Length'
+        $script:transcriptTurnSource | Should -Not -Match 'Detail\s*=\s*@\{[^}]*prompt\s*=\s*\$Prompt'
+        $script:transcriptTurnSource | Should -Match 'hasProject\s*=\s*\[bool\]\$settings\.workspaceFolder'
+    }
+}

@@ -17,7 +17,7 @@ credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
 lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Six have shipped.
+00-README carries the evidence table). Seven have shipped.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
@@ -116,11 +116,35 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   pipeline is complete. `Get-DpStreamFrame` also emits the live `file` frame for
   it, parsed rather than pattern-matched because `newText` can contain the literal
   text `"path":`.
+- **There was no ordered record of a Turn at all.** What happened lived in four
+  places nothing could join: live SSE frames that vanish, `ShpProgress` records
+  consumed and dropped, `result.ToolCalls`/`FilesRead`/`CommandsRun` as unordered
+  sets, and a Thinking pane that is a formatted string. `turnTranscript` (Setting,
+  **off** by default) writes one ordered JSONL file per Turn under
+  `<DataDir>/transcripts/`. **Redaction is by construction:** the tool name selects
+  one whitelisted argument field (`command`, `path`, `url`, `pattern`, `query`,
+  `name`) and a tool the map does not know contributes a length only — a blacklist
+  would have to be right about every future tool. **Model prose is a length, not a
+  copy:** `answer`, `narration` and `reasoning` carry `bytes` only, which the live
+  smoke proved necessary — asked to write a file containing a secret, the model
+  quoted that secret back in its own answer, and the first smoke found it in the
+  transcript. All three are already on the Message, so nothing is lost. Buffered in
+  memory and flushed **once** at whichever exit the Turn takes (completed, stopped,
+  budget-exhausted, failed); a per-record write would land on the thread holding
+  the SSE stream open. Retention prunes by age then size on every write. Read back
+  through `GET /api/transcript`, which is an ordinary token-gated `/api/` route.
+  **`tool_result` records are never emitted and that is a finding, not an
+  omission:** ShellPilot consumes tool results internally and exposes only a
+  200-character `ResultPreview` that would itself carry file content, so the
+  opening `meta` says `toolResults: not-observable`.
 
 ## Verification
 
 - `./build.ps1 -Tasks test` at each step: baseline **845/845**, then 860, 890,
-  898, **931/931**, **1011/1011**, and **1054/1054**, 0 failed, 9 tasks, 0 errors.
+  898, **931/931**, **1011/1011**, **1054/1054**, and **1095/1095**, 0 failed,
+  9 tasks, 0 errors. **`-Tasks test` does not rebuild the module** — run
+  `./build.ps1 -Tasks build` before any live smoke that imports
+  `output/module/DeskPilot`, or it runs the previous build.
 - `Invoke-ScriptAnalyzer` clean on every new file; the findings on
   `New-DpTurnParameter.ps1`, `Get-DpDefaultSettings.ps1` and `Merge-DpSettings.ps1`
   (`PSUseBOMForUnicodeEncodedFile`, `PSUseSingularNouns`,

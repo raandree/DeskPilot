@@ -75,6 +75,7 @@ function Merge-DpSettings {
             'taskTracking' { $merged.taskTracking = [bool]$value }
             'pushInstructions' { $merged.pushInstructions = [bool]$value }
             'workspaceContext' { $merged.workspaceContext = [bool]$value }
+            'turnTranscript' { $merged.turnTranscript = [bool]$value }
             'preferences' {
                 $text = if ($null -eq $value) { $null } else { ([string]$value).Trim() }
                 if ([string]::IsNullOrWhiteSpace($text)) { $merged.preferences = $null }

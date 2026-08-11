@@ -46,6 +46,12 @@ function Get-DpDefaultSettings {
         # state and the file tree back with discovery tool calls - and often does
         # not bother. Off trades the tree's prompt tokens back on a huge monorepo.
         workspaceContext  = $true
+        # A per-Turn ordered JSONL record of what actually happened - tool calls,
+        # narration and task updates in sequence - for debugging a Turn that went
+        # wrong and for measuring one against another. Off because it is a
+        # diagnostic and it writes files; retention prunes the folder on every
+        # write, so it cannot grow without bound once it is on.
+        turnTranscript    = $false
         preferences       = $null
         referenceFiles    = @()
         costBudgetUSD     = 0.0
