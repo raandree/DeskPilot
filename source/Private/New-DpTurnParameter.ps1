@@ -25,6 +25,11 @@ function New-DpTurnParameter {
         The composed bodies of instruction files whose applyTo is unconditional,
         from Get-DpAlwaysOnInstruction. Passed in rather than read here so this
         function stays free of disk I/O and the read happens once per Turn.
+    .PARAMETER WorkspaceContext
+        The composed description of the Workspace Folder - branch, working-tree
+        state and a bounded file tree - from Get-DpWorkspaceContext. Passed in for
+        the same reason as AlwaysOnInstruction: the disk and git reads happen once
+        per Turn, in Invoke-DpTurn, while the Engine Runspace is idle.
     .PARAMETER ModelReasoningEfforts
         The reasoning efforts the effective Model advertises support for. The
         reasoning-effort Setting is only forwarded as -ReasoningEffort when the
@@ -56,6 +61,8 @@ function New-DpTurnParameter {
         [string]$AgentMemory,
 
         [string]$AlwaysOnInstruction,
+
+        [string]$WorkspaceContext,
 
         [string[]]$ModelReasoningEfforts = @()
     )
@@ -197,6 +204,14 @@ files here, resolve every relative path against it, and run commands here. Do no
 put new files anywhere else, and when you report a path, report it inside this
 folder.
 "@)
+    }
+
+    # What is actually in that folder. Naming the path tells the model where it is
+    # standing but nothing about what is there, so the branch, the working-tree
+    # state and a bounded file tree are stated up front rather than left to be
+    # bought back one discovery tool call at a time.
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceContext)) {
+        $systemParts.Add($WorkspaceContext.Trim())
     }
 
     # Reference files: a small set of project files the user has marked as always

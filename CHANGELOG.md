@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The agent is told what is in your project before it starts.** It used to be
+  given the folder's *path* and nothing else, so it began every job blind: to
+  learn which branch you are on, whether you have uncommitted work, or even which
+  files exist, it had to go and look — and often it simply did not bother and
+  answered from the path alone. Each job now opens with a short description of
+  the project: the current branch and what it tracks, whether the working tree
+  has uncommitted changes, and a listing of the files. The listing is
+  deliberately bounded — it skips anything your `.gitignore` skips, never shows
+  `.git`, `node_modules`, `output`, `bin` or `obj`, and where a folder is too
+  deep or too large it is summarised as `name/ (12 files)` rather than cut off,
+  so the agent knows there is more and can look inside. Gathering it is capped at
+  two seconds: a very large or slow folder simply contributes nothing rather than
+  delaying the job. A new **Describe the project folder to the agent** setting
+  turns it off on a very large repository.
 - **A job that runs out of steps now tells you, and keeps its work.** The step
   budget rose from 25 to 50 — 25 cut off real work such as auditing a repository
   or running a build and diagnosing it — and is now capped at 200 so a typo

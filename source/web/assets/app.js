@@ -5909,6 +5909,10 @@ function openSettings() {
         <p class="hint">Puts instruction files that apply to everything straight into the agent&rsquo;s brief, instead of leaving it to fetch them. Turn off to save context on a small model.</p>
       </div>
       <div class="field">
+        <label><input type="checkbox" id="set-workspacecontext" ${s.workspaceContext !== false ? 'checked' : ''} /> Describe the project folder to the agent</label>
+        <p class="hint">Puts the current branch, whether anything is uncommitted, and a bounded file listing into the agent&rsquo;s brief, so it does not spend its first steps looking them up. Turn off on a very large repository.</p>
+      </div>
+      <div class="field">
         <label>Max tool iterations</label>
         <input type="number" id="set-maxiter" min="1" max="200" value="${s.maxToolIterations || 50}" />
       </div>
@@ -6169,6 +6173,7 @@ function openSettings() {
     $('set-thinking').onchange = (e) => save({ showThinking: e.target.checked });
     $('set-tasktracking').onchange = (e) => save({ taskTracking: e.target.checked });
     $('set-pushinstructions').onchange = (e) => save({ pushInstructions: e.target.checked });
+    $('set-workspacecontext').onchange = (e) => save({ workspaceContext: e.target.checked });
     $('set-autocompact').onchange = (e) => save({ autoCompaction: e.target.checked });
     $('set-compact-threshold').onchange = (e) => {
         const pct = Math.min(95, Math.max(50, parseInt(e.target.value, 10) || 80));

@@ -17,7 +17,7 @@ credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
 lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Three have shipped.
+00-README carries the evidence table). Four have shipped.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
@@ -51,11 +51,30 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   that lost the whole Turn; it is now persisted as a stopped Turn that names the
   budget, points at the Setting, and keeps the narration and Task List — which
   only works *because* the narration is now accumulated.
+- **The model started every Turn blind.** The Engine's system prompt is
+  `'You are a research and coding assistant.'` plus one sentence per tool
+  category, and DeskPilot added only the Workspace Folder *path* — so which
+  branch, whether anything is uncommitted, and what files exist all had to be
+  bought back with discovery tool calls the model measurably often did not make.
+  `Get-DpWorkspaceContext` states them up front. Inside a repository the listing
+  comes from `git ls-files --cached --others --exclude-standard -z -- .`: faster
+  than walking, `.gitignore` honoured for free, Project-relative because `-C`
+  chdirs, and `-- .` keeps a Project inside a bigger repository from listing its
+  siblings. Over the entry cap the tree is re-rendered one level shallower until
+  it fits — deep folders become `name/ (25 files)` — because a truncated tree
+  teaches the model that the repository ends where the budget did, and the prose
+  states the bound and points at `list_directory`. One 2 s wall-clock budget
+  covers everything, and no git call is made with none of it left, since
+  `Invoke-DpGitCommand` reads 0 as *wait forever* and this runs on the single
+  accept thread. A timeout, or an `ls-files` failure inside a repository, yields
+  **no context** rather than a wrong one. Gathered once per Turn in
+  `Invoke-DpTurn` while the Runspace is idle, so `New-DpTurnParameter` stays free
+  of disk and git I/O. Setting `workspaceContext`, default on.
 
 ## Verification
 
 - `./build.ps1 -Tasks test` at each step: baseline **845/845**, then 860, 890,
-  and **898/898**, 0 failed, 9 tasks, 0 errors.
+  898, and **931/931**, 0 failed, 9 tasks, 0 errors.
 - `Invoke-ScriptAnalyzer` clean on every new file; the findings on
   `New-DpTurnParameter.ps1`, `Get-DpDefaultSettings.ps1` and `Merge-DpSettings.ps1`
   (`PSUseBOMForUnicodeEncodedFile`, `PSUseSingularNouns`,
@@ -74,9 +93,9 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
 
 ## Open, deliberately not done
 
-- **Prompt 03–05, 08–09 remain.** Workspace context, search tools, a targeted
-  edit tool, the Turn transcript, and the parity eval harness. **07 is now
-  diagnosed** (below); its fix is unchosen and deliberately unwritten.
+- **Prompt 04–05, 08–09 remain.** Search tools, a targeted edit tool, the Turn
+  transcript, and the parity eval harness. **07 is now diagnosed** (below); its
+  fix is unchosen and deliberately unwritten.
 - **Prompt 06's live iteration counter was cut.** Honest counting needs an
   iteration signal that does not exist with Thinking off — the Engine only writes
   `=== iteration N ===` under `-ShowThinking`, and tool-call count is an *upper*

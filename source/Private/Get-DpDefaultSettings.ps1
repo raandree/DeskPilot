@@ -41,6 +41,11 @@ function Get-DpDefaultSettings {
         # unconditional instructions are pushed into the system prompt instead. Off
         # buys back the prompt tokens on a tight context window.
         pushInstructions  = $true
+        # The Engine's system prompt names the Workspace Folder and says nothing
+        # about what is in it, so the model has to buy the branch, the working-tree
+        # state and the file tree back with discovery tool calls - and often does
+        # not bother. Off trades the tree's prompt tokens back on a huge monorepo.
+        workspaceContext  = $true
         preferences       = $null
         referenceFiles    = @()
         costBudgetUSD     = 0.0

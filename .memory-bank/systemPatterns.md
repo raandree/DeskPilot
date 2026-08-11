@@ -81,6 +81,26 @@ source: repository evidence
   parameter for (Projects, Agents) are surfaced by composing `-SystemPrompt`
   rather than changing the Engine: the selected Agent's `*.agent.md` body plus a
   note naming the Project folder.
+- **Say where the folder is, then say what is in it.** Naming the Workspace
+  Folder tells the model where it is standing and nothing about what is there, so
+  it spends its first steps rediscovering the branch, the working-tree state and
+  the file list - or, measurably often, does not and answers from the path alone.
+  Ambient context is stated up front instead. Inside a repository `git ls-files`
+  supplies the listing: faster than walking, `.gitignore` honoured for free, and
+  Project-relative because `-C` chdirs.
+- **Collapse a bounded listing, never truncate it.** A truncated tree teaches the
+  model that the repository ends where the budget did. Over the cap the tree is
+  re-rendered one folder level shallower until it fits, deep folders becoming
+  `name/ (25 files)`, and the prose states the bound and points at the tool that
+  goes deeper - so a partial listing is legible *as* partial.
+- **Ambient context is gathered before the stream, on its own clock.** Anything
+  read per Turn to shape the system prompt runs in `Invoke-DpTurn` while the
+  Engine Runspace is idle - the window the pre-Turn Usage snapshot already uses -
+  never inside `New-DpTurnParameter`, which stays a pure parameter assembly. It
+  carries a wall-clock budget and never calls git with none of it left, because
+  `Invoke-DpGitCommand` reads a 0 timeout as *wait forever* and this runs on the
+  single accept thread. Over budget it contributes nothing; a slow folder costs
+  the context, never the Turn.
 - **Filesystem endpoints are directory-only.** The folder picker and explorer
   enumerate/create directories (never file contents); `mkdir` is single-segment
   (no separators/`..`); the explorer tree is confined to the selected Project.

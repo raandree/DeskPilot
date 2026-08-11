@@ -1189,6 +1189,245 @@ Describe 'Get-DpAlwaysOnInstruction' {
     }
 }
 
+Describe 'Merge-DpSettings workspaceContext' {
+    It 'defaults to on' {
+        (Get-DpDefaultSettings).workspaceContext | Should -BeTrue
+    }
+    It 'can be switched off and back on' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ workspaceContext = $false }).workspaceContext | Should -BeFalse
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ workspaceContext = $true }).workspaceContext | Should -BeTrue
+    }
+}
+
+Describe 'New-DpTurnParameter workspace context' {
+    It 'injects the composed context into the system prompt' {
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings) -WorkspaceContext 'TREE-MARKER'
+        $p.SystemPrompt | Should -Match 'TREE-MARKER'
+    }
+    It 'adds nothing when there is no context' -ForEach @(
+        @{ Value = '' }
+        @{ Value = $null }
+        @{ Value = '   ' }
+    ) {
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings) -WorkspaceContext $Value
+        [string]$p.SystemPrompt | Should -Not -Match 'Workspace context'
+    }
+    It 'states where the folder is before saying what is in it' {
+        $s = Get-DpDefaultSettings
+        $s.workspaceFolder = 'C:\work\proj'
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -WorkspaceContext 'TREE-MARKER'
+        $p.SystemPrompt.IndexOf('C:\work\proj') | Should -BeLessThan $p.SystemPrompt.IndexOf('TREE-MARKER')
+    }
+    It 'does no disk or git I/O of its own' {
+        # The gather happens once per Turn in Invoke-DpTurn. Doing it here would run
+        # git on the accept thread for every call, so a real folder must still
+        # produce nothing when the text is not passed in.
+        $s = Get-DpDefaultSettings
+        $s.workspaceFolder = $TestDrive
+        [string](New-DpTurnParameter -Prompt 'hi' -Settings $s).SystemPrompt | Should -Not -Match 'Workspace context'
+    }
+}
+
+Describe 'Get-DpWorkspaceContext' {
+    BeforeAll {
+        # Each test states only the git answer it is about; the rest stay plausible.
+        $script:repoMock = {
+            $joined = $Arguments -join ' '
+            switch -Wildcard ($joined) {
+                'rev-parse --is-inside-work-tree' { return @{ Ok = $script:gitIsRepo; ExitCode = 0; StdOut = "true`n"; StdErr = ''; TimedOut = $false } }
+                'branch --show-current' { return @{ Ok = $true; ExitCode = 0; StdOut = "$script:gitBranch`n"; StdErr = ''; TimedOut = $false } }
+                'rev-parse --short HEAD' { return @{ Ok = $true; ExitCode = 0; StdOut = "a1b2c3d`n"; StdErr = ''; TimedOut = $false } }
+                'rev-parse --abbrev-ref*' { return @{ Ok = [bool]$script:gitUpstream; ExitCode = 0; StdOut = "$script:gitUpstream`n"; StdErr = ''; TimedOut = $false } }
+                'status --porcelain*' { return @{ Ok = $true; ExitCode = 0; StdOut = $script:gitStatus; StdErr = ''; TimedOut = $false } }
+                'ls-files*' { return @{ Ok = $script:gitListOk; ExitCode = 0; StdOut = ($script:gitFiles -join "`0"); StdErr = ''; TimedOut = $false } }
+                default { return @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = ''; TimedOut = $false } }
+            }
+        }
+        function script:New-WorkFolder {
+            $dir = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $dir
+        }
+    }
+    BeforeEach {
+        $script:gitIsRepo = $true
+        $script:gitBranch = 'main'
+        $script:gitUpstream = 'origin/main'
+        $script:gitStatus = ''
+        $script:gitListOk = $true
+        $script:gitFiles = @('README.md')
+    }
+
+    It 'adds nothing without a usable folder' -ForEach @(
+        @{ Folder = '' }
+        @{ Folder = $null }
+        @{ Folder = '   ' }
+        @{ Folder = 'X:\does\not\exist' }
+    ) {
+        $r = Get-DpWorkspaceContext -Path $Folder
+        $r.text | Should -Be ''
+        $r.entryCount | Should -Be 0
+    }
+
+    It 'states the branch, the upstream and an unclean working tree' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitStatus = " M README.md`n"
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.isRepo | Should -BeTrue
+        $r.branch | Should -Be 'main'
+        $r.text | Should -Match 'on branch main'
+        $r.text | Should -Match 'tracking origin/main'
+        $r.text | Should -Match 'uncommitted changes'
+        $r.text | Should -Match 'README\.md'
+    }
+
+    It 'says so when the working tree is clean' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        (Get-DpWorkspaceContext -Path (New-WorkFolder)).text | Should -Match 'the working tree is clean'
+    }
+
+    It 'reports a detached HEAD as a commit rather than a branch' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitBranch = ''
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.branch | Should -Be 'a1b2c3d'
+        $r.text | Should -Match 'detached at commit a1b2c3d'
+    }
+
+    It 'omits the upstream when the branch tracks nothing' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitUpstream = ''
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.text | Should -Match 'on branch main;'
+        $r.text | Should -Not -Match 'tracking'
+    }
+
+    It 'states that the listing is bounded and how to go deeper' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.text | Should -Match 'bounded to 400 entries'
+        $r.text | Should -Match 'list_directory'
+    }
+
+    It 'never lists an excluded folder' -ForEach @(
+        @{ Excluded = '.git' }
+        @{ Excluded = 'node_modules' }
+        @{ Excluded = 'output' }
+        @{ Excluded = 'bin' }
+        @{ Excluded = 'obj' }
+    ) {
+        # git already hides an ignored path, but these are commonly TRACKED - a
+        # vendored bin/, a committed output/ - and are noise in every one of them.
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @("$Excluded/junk.txt", "src/$Excluded/deep.txt", 'src/app.js')
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        # The prose above the tree names the exclusions, so only the tree is asserted.
+        $tree = ($r.text -split "`n`n")[-1]
+        $tree | Should -Not -Match ([regex]::Escape($Excluded))
+        $tree | Should -Match 'app\.js'
+        $r.entryCount | Should -Be 2
+    }
+
+    It 'bounds the depth and collapses what sits below it' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @('a/b/c/d/e/f.txt')
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder) -MaxDepth 4
+        $r.text | Should -Match ([regex]::Escape('d/ (1 file)'))
+        $r.text | Should -Not -Match 'f\.txt'
+        $r.collapsed | Should -BeTrue
+    }
+
+    It 'collapses over the entry cap instead of truncating' {
+        # A truncated tree teaches the model that the repository ends where the
+        # budget did; a collapsed one says how much it is not being shown.
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @(
+            foreach ($top in 1..5) { foreach ($mid in 1..5) { foreach ($leaf in 1..5) { "top$top/mid$mid/file$leaf.txt" } } }
+        )
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder) -MaxEntries 20
+        $r.entryCount | Should -BeLessOrEqual 20
+        $r.collapsed | Should -BeTrue
+        $r.truncated | Should -BeFalse
+        $r.text | Should -Match ([regex]::Escape('(25 files)'))
+        $r.text | Should -Match 'was not expanded'
+    }
+
+    It 'says how many entries did not fit when there is nothing left to collapse' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @(1..30 | ForEach-Object { "file$_.txt" })
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder) -MaxEntries 10
+        $r.entryCount | Should -Be 10
+        $r.truncated | Should -BeTrue
+        $r.text | Should -Match '20 further entries did not fit'
+    }
+
+    It 'keeps one line per entry when a name carries a line break' {
+        # A newline is a legal character in a file name on Linux, and git -z hands
+        # it over verbatim - straight into a block that is parsed line by line.
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @("we`nird/file.txt", 'plain.txt')
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.entryCount | Should -Be 3
+        $r.text | Should -Match 'we ird/'
+    }
+
+    It 'still describes a folder that is not a repository, with no repository line' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+        $dir = New-WorkFolder
+        Set-Content -LiteralPath (Join-Path $dir 'notes.txt') -Value 'x' -Encoding utf8
+        New-Item -ItemType Directory -Path (Join-Path $dir 'src') | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'src' 'app.js') -Value 'x' -Encoding utf8
+        $r = Get-DpWorkspaceContext -Path $dir
+        $r.isRepo | Should -BeFalse
+        $r.text | Should -Not -Match 'Git repository'
+        $r.text | Should -Match 'notes\.txt'
+        $r.text | Should -Match 'app\.js'
+    }
+
+    It 'applies the same exclusions when it has to walk the folder itself' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+        $dir = New-WorkFolder
+        foreach ($name in @('node_modules', 'output', 'bin', 'obj')) {
+            New-Item -ItemType Directory -Path (Join-Path $dir $name) | Out-Null
+            Set-Content -LiteralPath (Join-Path $dir $name 'junk.txt') -Value 'x' -Encoding utf8
+        }
+        Set-Content -LiteralPath (Join-Path $dir 'keep.txt') -Value 'x' -Encoding utf8
+        $r = Get-DpWorkspaceContext -Path $dir
+        $r.entryCount | Should -Be 1
+        $r.text | Should -Match 'keep\.txt'
+    }
+
+    It 'says an empty folder is empty rather than saying nothing' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitFiles = @()
+        $r = Get-DpWorkspaceContext -Path (New-WorkFolder)
+        $r.entryCount | Should -Be 0
+        $r.text | Should -Match 'contains no files'
+    }
+
+    It 'adds no context when git times out' {
+        # A slow folder must cost the context, never the Turn.
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = -2; StdOut = ''; StdErr = 'stopped'; TimedOut = $true } }
+        (Get-DpWorkspaceContext -Path (New-WorkFolder)).text | Should -Be ''
+    }
+
+    It 'adds no context when the repository listing fails' {
+        # Inside a repository ls-files IS the answer; a partial one would be wrong
+        # rather than short, so nothing is stated at all.
+        Mock -CommandName Invoke-DpGitCommand -MockWith $script:repoMock
+        $script:gitListOk = $false
+        (Get-DpWorkspaceContext -Path (New-WorkFolder)).text | Should -Be ''
+    }
+
+    It 'never lets a slow folder delay the Turn past its budget' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith { @{ Ok = $false; ExitCode = 128; StdOut = ''; StdErr = 'fatal'; TimedOut = $false } }
+        $dir = New-WorkFolder
+        1..50 | ForEach-Object { Set-Content -LiteralPath (Join-Path $dir "f$_.txt") -Value 'x' -Encoding utf8 }
+        $elapsed = Measure-Command { Get-DpWorkspaceContext -Path $dir -TimeoutSeconds 2 }
+        $elapsed.TotalSeconds | Should -BeLessThan 10
+    }
+}
+
 Describe 'Add-DpNarrationBlock' {
     It 'seals buffered text as one block' {
         $b = Add-DpNarrationBlock -Text 'Let me check the branch first.'

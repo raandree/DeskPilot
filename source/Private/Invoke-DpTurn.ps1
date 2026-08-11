@@ -236,6 +236,21 @@ function Invoke-DpTurn {
             }
         }
 
+        # What the Workspace Folder actually contains: the branch, whether the tree
+        # is dirty, and a bounded file listing. Gathered here, before the streaming
+        # loop starts and while the Engine Runspace is idle - the same window the
+        # pre-Turn Usage snapshot uses - because it runs git on the single accept
+        # thread. Get-DpWorkspaceContext carries its own wall-clock budget, so a
+        # slow or enormous folder costs the context rather than the Turn.
+        $workspaceContext = ''
+        if ($settings.workspaceFolder -and ((-not $settings.ContainsKey('workspaceContext')) -or $settings.workspaceContext)) {
+            try { $workspaceContext = [string](Get-DpWorkspaceContext -Path $settings.workspaceFolder).text }
+            catch {
+                $workspaceContextError = $_
+                Write-Verbose "Could not gather workspace context: $workspaceContextError"
+            }
+        }
+
         # Resolve the effective Model (Conversation-pinned, else the Settings
         # default, else DeskPilot's default) and its advertised reasoning efforts
         # from the capability cache the /api/models route fills. The resolved id is
@@ -252,7 +267,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result
