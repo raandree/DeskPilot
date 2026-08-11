@@ -521,6 +521,13 @@ source: repository evidence
   `$null`. Read the cache from anywhere; write it only where its full shape is
   produced.
 
+- **An ellipsis in a Thinking trace is the provider's, not ours.** Claude returns
+  *summarised* extended thinking, and the summariser regularly ends a block
+  mid-sentence with `…`; the full chain of thought exists only as the encrypted
+  `reasoning_opaque` signature. Before hunting a truncation bug, check the stored
+  text: varying block lengths with no cap, and blocks that end without `…`, prove
+  no code did it. Neither DeskPilot nor ShellPilot appends `…` to reasoning.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the

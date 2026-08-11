@@ -42,6 +42,25 @@ The persisted Message is unaffected: `Invoke-DpTurn` stores the Engine result's
 `.Reasoning` (prose only, no tool trace), so this changes the live pane and
 nothing on disk.
 
+### Follow-up report: "the past Thinking box is truncated with `…`"
+
+Diagnosed 2026-08-11, no code changed yet. The `…` is **not** ours and nothing
+is hidden behind it - it is inside the reasoning text the provider delivers.
+Evidence from the live store (`%LOCALAPPDATA%\DeskPilot\conversations.json`,
+8 Messages carrying `reasoning`, 17 blocks): block lengths run 40-637 characters
+with no cap, and 3 of the 17 blocks do **not** end in `…`, so no fixed-size
+truncation is at work. Neither DeskPilot nor ShellPilot 0.3.1 appends `…` on any
+reasoning path (grepped both). Claude returns *summarised* extended thinking; the
+summariser ends a block mid-sentence, and the full chain of thought only exists
+as the encrypted `reasoning_opaque` signature ShellPilot deliberately drops.
+
+The one real defect next door: the past box is **poorer than the live one**. The
+live pane carries iteration dividers and laid-out tool calls; `finalizeAssistant`
+overwrites it with `m.reasoning` on `done`, and only that prose is persisted.
+Fixing it means persisting the streamed trace, which carries whole written-file
+bodies into `conversations.json` - a store-size decision, not a bug fix. Awaiting
+the user's call.
+
 ## Verification
 
 - `tests/Unit/DeskPilot.Helpers.Tests.ps1` - +9 `Format-DpThinkingTrace` cases
