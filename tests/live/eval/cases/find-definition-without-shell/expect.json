@@ -1,0 +1,25 @@
+{
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "search_text",
+      "min": 1,
+      "id": "used-the-search-tool"
+    },
+    {
+      "type": "tool_used",
+      "tool": "run_command",
+      "id": "did-not-fall-back-to-the-shell",
+      "max": 0
+    },
+    {
+      "type": "answer_contains",
+      "pattern": "Get-DpStreamFrame\\.ps1",
+      "id": "named-the-definition"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    }
+  ]
+}

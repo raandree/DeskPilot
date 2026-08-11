@@ -17,7 +17,8 @@ credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
 lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Seven have shipped.
+00-README carries the evidence table). Eight have shipped — the series is
+complete except for prompt 07's fix, which the user chose to leave unwritten.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
@@ -137,6 +138,24 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   omission:** ShellPilot consumes tool results internally and exposes only a
   200-character `ResultPreview` that would itself carry file content, so the
   opening `meta` says `toolResults: not-observable`.
+- **Nothing measured whether any of it worked.** `tests/live/eval/` is the parity
+  eval harness: a 10-case corpus (`prompt.md` + `case.json` + `expect.json` per
+  folder), a runner, deterministic graders, and comparison mode. **Fixture
+  discipline is the part that decides whether the numbers mean anything:** the
+  target repository is **cloned** to a throwaway folder and checked out at its
+  pinned SHA, never checked out in place — a harness that restores a developer's
+  working tree to make its own numbers reproducible has traded one kind of wrong
+  for a worse one — and the runner asserts the SHA before it starts. Fresh Host
+  Server, and therefore a fresh Engine Runspace, per case; prompt 07's
+  environment-inheritance finding is recorded as a caveat on **every** result.
+  Seven deterministic graders (`command_ran`, `tool_used`, `answer_contains`,
+  `files_written`, `no_files_written`, `git_clean`, `instruction_followed`), each
+  unit-tested **both ways** against committed fixture transcripts, because a
+  grader that has never been seen to fail is not a grader; `llm_judge` is accepted
+  and always advisory. The answer is read from the **Message**, not the
+  transcript, which stores a length for prose. Efficiency is recorded, never
+  graded. `build.yaml` lists only `tests/QA` and `tests/Unit`, so none of it runs
+  in the gate.
 
 ## Verification
 
@@ -172,6 +191,19 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
   file, and `git diff --numstat` reported **`3  0`** — three lines added, none
   removed. 27,922 tokens / $0.062. That diff is the acceptance signal prompt 05
   named.
+- **The transcript is live-smoked end to end, through the real Host Server.** A
+  throwaway server on a free port and a throwaway git workspace; one multi-tool
+  Turn told to write a file containing `SMOKE-SECRET-…`, read it back and run
+  `git status --short`. Result: 8 records, `seq` 1-8 monotonic, timestamps
+  non-decreasing, **all three** tool calls recorded (including `read_file` and
+  `run_command`, which `Get-DpStreamFrame` drops), the secret present in the file
+  on disk and **absent from the transcript** — as is the string `apiKey` and the
+  absolute workspace path — and a second Turn with the Setting off wrote no file
+  at all.
+- **The eval harness is live-validated on one case, not on the corpus.** A real
+  run of `find-definition-without-shell` against a cloned, SHA-pinned DeskPilot
+  fixture passed all four graders in 15.3 s for $0.111, and the output files
+  carry no token and no absolute user path.
 - **Prompts 01-03 and 06 are still not live-smoked — that is the gap that
   matters.** No real Turn has streamed through the narration, instruction-push or
   workspace-context work. The acceptance signal for the instruction work is
@@ -181,8 +213,15 @@ lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
 
 ## Open, deliberately not done
 
-- **Prompts 08–09 remain.** The Turn transcript and the parity eval harness.
-  **07 is now diagnosed** (below); its fix is unchosen and deliberately unwritten.
+- **The parity number itself.** The corpus exists and the harness works, but
+  nobody has run it over the whole corpus at HEAD, nor against the pre-series
+  commit. That delta is the number the entire series exists to produce, and it
+  costs real credits twice over — the spend is the user's to authorise. One
+  command plus a worktree build; see `tests/live/eval/README.md`.
+- **No Settings toggle for `turnTranscript`.** Prompt 08 put the SPA out of
+  scope, so the Setting is reachable through `PUT /api/settings` and
+  `settings.json` only. A toggle is a deliberate follow-up, not an oversight.
+- **07 is diagnosed** (below); its fix is unchosen and deliberately unwritten.
 - **A search call does not appear on the Activity card, and that is deferred.**
   ShellPilot fills `result.FilesRead` only from its built-in `read_file`, so a
   User Tool never lands in the card's `Read` group; it does reach

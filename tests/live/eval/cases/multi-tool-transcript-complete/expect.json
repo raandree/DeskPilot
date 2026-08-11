@@ -1,0 +1,25 @@
+{
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "search_files",
+      "min": 1,
+      "id": "search-recorded"
+    },
+    {
+      "type": "tool_used",
+      "tool": "read_file",
+      "min": 1,
+      "id": "read-recorded"
+    },
+    {
+      "type": "command_ran",
+      "pattern": "git\\s+status",
+      "id": "command-recorded"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    }
+  ]
+}

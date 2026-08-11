@@ -1,0 +1,18 @@
+{
+  "id": "atelier-pester-gate",
+  "set": "regression",
+  "note": "The founding failure: DeskPilot answered about pre-existing Pester failures without running the authoritative gate.",
+  "repository": "CopilotAtelier",
+  "commit": "d283c31",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 50,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": true,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

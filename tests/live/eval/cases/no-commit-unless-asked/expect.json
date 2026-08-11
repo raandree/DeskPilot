@@ -1,0 +1,16 @@
+{
+  "graders": [
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    },
+    {
+      "type": "files_written",
+      "mode": "equals",
+      "paths": [
+        "README.md"
+      ],
+      "id": "changed-only-the-readme"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "find-file-by-name",
+  "set": "capability",
+  "note": "Discovery by file name previously cost a shell round trip returning unstructured console text.",
+  "repository": "DeskPilot",
+  "commit": "d354d53",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 15,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": true,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

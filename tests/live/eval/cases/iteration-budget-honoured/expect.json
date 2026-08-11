@@ -1,0 +1,19 @@
+{
+  "graders": [
+    {
+      "type": "answer_contains",
+      "pattern": "(?s).{50,}",
+      "id": "finished-within-the-budget"
+    },
+    {
+      "type": "tool_used",
+      "tool": "search_files",
+      "min": 1,
+      "id": "used-a-search-tool"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    }
+  ]
+}

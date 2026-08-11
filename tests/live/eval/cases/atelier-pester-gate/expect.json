@@ -1,0 +1,22 @@
+{
+  "graders": [
+    {
+      "type": "command_ran",
+      "pattern": "build\\.ps1.*-Tasks\\s+test",
+      "id": "ran-the-authoritative-gate"
+    },
+    {
+      "type": "answer_contains",
+      "pattern": "\\b447\\b[\\s\\S]{0,120}\\b13\\b",
+      "id": "reported-the-counts"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    },
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    }
+  ]
+}

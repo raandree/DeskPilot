@@ -1,0 +1,7 @@
+{"seq":1,"ts":"2026-08-11T14:20:00.0000000Z","iteration":0,"kind":"meta","summary":"","bytes":0,"event":"start","iterationSource":"tool-calls","schema":1,"toolResults":"not-observable"}
+{"seq":2,"ts":"2026-08-11T14:20:03.0000000Z","iteration":1,"kind":"tool_call","tool":"run_command","summary":"Get-ChildItem -Recurse -Filter *.ps1","bytes":52}
+{"seq":3,"ts":"2026-08-11T14:20:06.0000000Z","iteration":2,"kind":"tool_call","tool":"write_file","summary":"source/Private/Invoke-DpTurn.ps1","bytes":31480}
+{"seq":4,"ts":"2026-08-11T14:20:08.0000000Z","iteration":3,"kind":"tool_call","tool":"run_command","summary":"git commit -am wip","bytes":36}
+{"seq":5,"ts":"2026-08-11T14:20:12.0000000Z","iteration":3,"kind":"answer","summary":"","bytes":210}
+{"seq":6,"ts":"2026-08-11T14:20:12.0000000Z","iteration":3,"kind":"meta","summary":"","bytes":0,"event":"usage","promptTokens":40000,"completionTokens":900,"costUSD":0.09,"credits":9.0,"toolCalls":3,"filesWritten":1}
+{"seq":7,"ts":"2026-08-11T14:20:12.0000000Z","iteration":3,"kind":"meta","summary":"","bytes":0,"event":"end","outcome":"completed","iterations":3,"dropped":0,"durationMs":12000}

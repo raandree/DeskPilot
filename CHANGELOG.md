@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A way to measure whether any of this actually helped.** Everything above
+  claims to close a gap against VS Code Copilot; none of it proved anything. A
+  new parity eval harness under `tests/live/eval/` runs a corpus of tasks that
+  were genuinely attempted — starting with the two failures that began this work
+  — against a pinned copy of a real repository, and grades the result against
+  facts rather than impressions: did it run the authoritative test gate, did it
+  use the search tool instead of the shell, did it leave the working tree alone
+  when told to, did it commit when it was not asked to. Speed, tokens and cost
+  are reported beside the result but never graded — a cheaper answer that is
+  wrong is not better. Two runs can be compared, and a task that used to pass and
+  now fails is reported as a regression and fails the run. It costs real credits,
+  so it never runs as part of the normal test suite; the grading logic itself is
+  unit-tested against recorded examples and makes no calls at all.
 - **A job can now keep a record of what it actually did.** Until now nothing
   joined up a job's history: the live progress vanished as it scrolled, the tool
   calls arrived as an unordered set, and the thinking pane was one long string —

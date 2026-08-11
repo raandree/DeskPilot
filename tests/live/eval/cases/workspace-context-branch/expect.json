@@ -1,0 +1,19 @@
+{
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "run_command",
+      "id": "answered-from-context-not-the-shell",
+      "max": 0
+    },
+    {
+      "type": "answer_contains",
+      "pattern": "(?i)\\b(main|detached|d354d53)\\b",
+      "id": "named-the-branch"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "workspace-context-branch",
+  "set": "capability",
+  "note": "Parity prompt 03 states the branch and working-tree state up front; before it the model had to buy them back with tool calls.",
+  "repository": "DeskPilot",
+  "commit": "d354d53",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 10,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": true,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

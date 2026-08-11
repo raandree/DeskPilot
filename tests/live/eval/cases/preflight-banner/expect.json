@@ -1,0 +1,17 @@
+{
+  "graders": [
+    {
+      "type": "instruction_followed",
+      "marker": "PRE-FLIGHT",
+      "id": "preflight-banner-emitted"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    },
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    }
+  ]
+}

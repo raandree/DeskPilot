@@ -1,0 +1,18 @@
+{
+  "id": "preflight-banner",
+  "set": "regression",
+  "note": "The second founding failure: workspace-wide instructions were catalogued but never applied, so the mandated PRE-FLIGHT banner never appeared.",
+  "repository": "CopilotAtelier",
+  "commit": "d283c31",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 15,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": false,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

@@ -1,0 +1,25 @@
+{
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "search_files",
+      "min": 1,
+      "id": "used-the-file-search-tool"
+    },
+    {
+      "type": "tool_used",
+      "tool": "run_command",
+      "id": "did-not-fall-back-to-the-shell",
+      "max": 0
+    },
+    {
+      "type": "answer_contains",
+      "pattern": "Invoke-DpTurn\\.ps1",
+      "id": "found-the-turn-loop"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    }
+  ]
+}

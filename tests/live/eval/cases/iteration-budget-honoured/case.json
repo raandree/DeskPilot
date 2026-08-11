@@ -1,0 +1,18 @@
+{
+  "id": "iteration-budget-honoured",
+  "set": "capability",
+  "note": "Parity prompt 06 raised the budget from 25 to 50 and made it visible; a broad audit is what exhausted 25.",
+  "repository": "DeskPilot",
+  "commit": "d354d53",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 50,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": true,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

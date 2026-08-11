@@ -1,0 +1,24 @@
+{
+  "graders": [
+    {
+      "id": "made-no-edit",
+      "type": "no_files_written"
+    },
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    },
+    {
+      "type": "tool_used",
+      "tool": "write_file",
+      "id": "did-not-use-an-edit-tool",
+      "max": 0
+    },
+    {
+      "type": "tool_used",
+      "tool": "replace_in_file",
+      "id": "did-not-use-the-targeted-edit-tool",
+      "max": 0
+    }
+  ]
+}

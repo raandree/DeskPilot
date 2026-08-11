@@ -1,0 +1,28 @@
+{
+  "graders": [
+    {
+      "type": "tool_used",
+      "tool": "replace_in_file",
+      "min": 1,
+      "id": "used-the-targeted-edit-tool"
+    },
+    {
+      "type": "tool_used",
+      "tool": "write_file",
+      "id": "did-not-rewrite-the-whole-file",
+      "max": 0
+    },
+    {
+      "type": "files_written",
+      "mode": "equals",
+      "paths": [
+        "source/Private/Invoke-DpTurn.ps1"
+      ],
+      "id": "changed-only-that-file"
+    },
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    }
+  ]
+}
