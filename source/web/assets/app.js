@@ -5905,6 +5905,10 @@ function openSettings() {
         <p class="hint">Lets the agent keep a live checklist of sub-tasks while it works through a turn.</p>
       </div>
       <div class="field">
+        <label><input type="checkbox" id="set-pushinstructions" ${s.pushInstructions !== false ? 'checked' : ''} /> Always apply workspace-wide instructions</label>
+        <p class="hint">Puts instruction files that apply to everything straight into the agent&rsquo;s brief, instead of leaving it to fetch them. Turn off to save context on a small model.</p>
+      </div>
+      <div class="field">
         <label>Max tool iterations</label>
         <input type="number" id="set-maxiter" min="1" value="${s.maxToolIterations || 25}" />
       </div>
@@ -6164,6 +6168,7 @@ function openSettings() {
     $('set-effort').onchange = (e) => save({ reasoningEffort: e.target.value || null });
     $('set-thinking').onchange = (e) => save({ showThinking: e.target.checked });
     $('set-tasktracking').onchange = (e) => save({ taskTracking: e.target.checked });
+    $('set-pushinstructions').onchange = (e) => save({ pushInstructions: e.target.checked });
     $('set-autocompact').onchange = (e) => save({ autoCompaction: e.target.checked });
     $('set-compact-threshold').onchange = (e) => {
         const pct = Math.min(95, Math.max(50, parseInt(e.target.value, 10) || 80));

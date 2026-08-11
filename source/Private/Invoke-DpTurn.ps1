@@ -223,6 +223,19 @@ function Invoke-DpTurn {
         # injected into every Turn's system prompt so past learning carries forward.
         $agentMemory = if ($script:DeskPilot.Memory) { [string]$script:DeskPilot.Memory.text } else { '' }
 
+        # Instruction files that apply to everything. The Engine only catalogues them
+        # and waits for a load_instruction call the model often never makes, so a
+        # mandatory instruction quietly stops being in force. Read once per Turn,
+        # here, so New-DpTurnParameter stays free of disk I/O.
+        $alwaysOnInstruction = ''
+        if ((-not $settings.ContainsKey('pushInstructions')) -or $settings.pushInstructions) {
+            try { $alwaysOnInstruction = [string](Get-DpAlwaysOnInstruction -Root @($settings.instructionRoots)).text }
+            catch {
+                $instructionError = $_
+                Write-Verbose "Could not read always-on instructions: $instructionError"
+            }
+        }
+
         # Resolve the effective Model (Conversation-pinned, else the Settings
         # default, else DeskPilot's default) and its advertised reasoning efforts
         # from the capability cache the /api/models route fills. The resolved id is
@@ -239,7 +252,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -ModelReasoningEfforts $modelEfforts
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result

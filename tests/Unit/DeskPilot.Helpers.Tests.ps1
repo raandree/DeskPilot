@@ -1020,6 +1020,148 @@ Describe 'Format-DpThinkingTrace' {
     }
 }
 
+Describe 'New-DpTurnParameter always-on instructions' {
+    It 'injects the composed instruction text into the system prompt' {
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings) -AlwaysOnInstruction 'GOVERNING-RULES-MARKER'
+        $p.SystemPrompt | Should -Match 'GOVERNING-RULES-MARKER'
+    }
+    It 'adds nothing when there is no always-on instruction' -ForEach @(
+        @{ Value = '' }
+        @{ Value = $null }
+        @{ Value = '   ' }
+    ) {
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings (Get-DpDefaultSettings) -AlwaysOnInstruction $Value
+        [string]$p.SystemPrompt | Should -Not -Match 'apply to every task'
+    }
+    It 'places the rules after the Agent persona but before the workspace note' {
+        # An explicit Agent still shapes the role; the repository still binds the work.
+        $s = Get-DpDefaultSettings
+        $s.workspaceFolder = 'C:\work\proj'
+        $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -AgentSystemPrompt 'PERSONA-MARKER' -AlwaysOnInstruction 'RULES-MARKER'
+        $p.SystemPrompt.IndexOf('PERSONA-MARKER') | Should -BeLessThan $p.SystemPrompt.IndexOf('RULES-MARKER')
+        $p.SystemPrompt.IndexOf('RULES-MARKER') | Should -BeLessThan $p.SystemPrompt.IndexOf('C:\work\proj')
+    }
+    It 'does no disk I/O of its own' {
+        # The read happens once per Turn in Invoke-DpTurn. Reading here would hit the
+        # instruction roots on every call, so a root full of always-on instructions
+        # must still produce nothing when the text is not passed in.
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $root | Out-Null
+        Set-Content -LiteralPath (Join-Path $root 'x.instructions.md') -Value "---`napplyTo: `"**`"`n---`nDISK-READ-MARKER" -Encoding utf8
+        $s = Get-DpDefaultSettings
+        $s.instructionRoots = @($root)
+        [string](New-DpTurnParameter -Prompt 'hi' -Settings $s).SystemPrompt | Should -Not -Match 'DISK-READ-MARKER'
+    }
+}
+
+Describe 'Merge-DpSettings pushInstructions' {
+    It 'defaults to on' {
+        (Get-DpDefaultSettings).pushInstructions | Should -BeTrue
+    }
+    It 'can be switched off and back on' {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ pushInstructions = $false }).pushInstructions | Should -BeFalse
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ pushInstructions = $true }).pushInstructions | Should -BeTrue
+    }
+}
+
+Describe 'Get-DpAlwaysOnInstruction' {
+    BeforeAll {
+        $script:instrRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-instr-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:instrRoot -Force | Out-Null
+
+        function script:New-InstructionFile {
+            param([string]$Name, [string]$ApplyTo, [string]$Body, [string]$Root = $script:instrRoot)
+            $front = if ($null -eq $ApplyTo) { "description: none`n" } else { "applyTo: `"$ApplyTo`"`ndescription: test`n" }
+            Set-Content -LiteralPath (Join-Path $Root "$Name.instructions.md") -Value "---`n$front---`n`n$Body`n" -Encoding utf8
+        }
+    }
+    AfterAll {
+        Remove-Item -LiteralPath $script:instrRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    BeforeEach {
+        Get-ChildItem -LiteralPath $script:instrRoot -File -ErrorAction SilentlyContinue | Remove-Item -Force
+    }
+
+    It 'pushes the body of an unconditional instruction' -ForEach @(
+        @{ Glob = '**' }
+        @{ Glob = '**/*' }
+        @{ Glob = '*' }
+    ) {
+        New-InstructionFile -Name 'always' -ApplyTo $Glob -Body 'ALWAYS-BODY-MARKER'
+        $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot)
+        $r.text | Should -Match 'ALWAYS-BODY-MARKER'
+        $r.included | Should -Contain 'always'
+    }
+    It 'leaves a scoped instruction to the catalog' -ForEach @(
+        @{ Glob = '**/*.ps1' }
+        @{ Glob = '**/*.ps1,**/*.psm1' }
+        @{ Glob = 'src/**' }
+    ) {
+        # Pushing these would put the whole instruction library in every prompt.
+        New-InstructionFile -Name 'scoped' -ApplyTo $Glob -Body 'SCOPED-BODY-MARKER'
+        $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot)
+        $r.text | Should -Be ''
+        $r.included | Should -BeNullOrEmpty
+    }
+    It 'does not push an instruction that never says when it applies' {
+        New-InstructionFile -Name 'silent' -ApplyTo $null -Body 'SILENT-BODY-MARKER'
+        (Get-DpAlwaysOnInstruction -Root @($script:instrRoot)).text | Should -Be ''
+    }
+    It 'frames the bodies as governing instructions and points at load_instruction' {
+        New-InstructionFile -Name 'always' -ApplyTo '**' -Body 'BODY'
+        $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot)
+        $r.text | Should -Match 'apply to every task in this workspace'
+        $r.text | Should -Match 'load_instruction'
+        $r.text | Should -Match '--- always ---'
+    }
+    It 'names what did not fit instead of dropping it silently' {
+        New-InstructionFile -Name 'aaa' -ApplyTo '**' -Body ('a' * 900)
+        New-InstructionFile -Name 'zzz' -ApplyTo '**' -Body ('z' * 900)
+        $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot) -MaxLength 1024
+        # Alphabetical order makes the selection deterministic.
+        $r.included | Should -Be @('aaa')
+        $r.omitted | Should -Be @('zzz')
+        $r.text | Should -Match 'load them with load_instruction'
+        $r.text | Should -Match 'zzz'
+    }
+    It 'never truncates a body mid-file' {
+        New-InstructionFile -Name 'big' -ApplyTo '**' -Body ('b' * 4000)
+        $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot) -MaxLength 1024
+        $r.included | Should -BeNullOrEmpty
+        $r.text | Should -Be ''
+    }
+    It 'returns nothing for no root, a missing root, or an empty one' -ForEach @(
+        @{ Roots = @() }
+        @{ Roots = $null }
+        @{ Roots = @('X:\does\not\exist') }
+        @{ Roots = @('') }
+    ) {
+        $r = Get-DpAlwaysOnInstruction -Root $Roots
+        $r.text | Should -Be ''
+        $r.included | Should -BeNullOrEmpty
+    }
+    It 'takes the first root when two roots carry the same name' {
+        $second = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-instr2-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $second -Force | Out-Null
+        try {
+            New-InstructionFile -Name 'dup' -ApplyTo '**' -Body 'FIRST-ROOT'
+            New-InstructionFile -Name 'dup' -ApplyTo '**' -Body 'SECOND-ROOT' -Root $second
+            $r = Get-DpAlwaysOnInstruction -Root @($script:instrRoot, $second)
+            $r.text | Should -Match 'FIRST-ROOT'
+            $r.text | Should -Not -Match 'SECOND-ROOT'
+        }
+        finally { Remove-Item -LiteralPath $second -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    It 'ignores a file with a body but no frontmatter at all' {
+        Set-Content -LiteralPath (Join-Path $script:instrRoot 'bare.instructions.md') -Value 'NO-FRONTMATTER' -Encoding utf8
+        (Get-DpAlwaysOnInstruction -Root @($script:instrRoot)).text | Should -Be ''
+    }
+    It 'skips an unconditional instruction whose body is empty' {
+        New-InstructionFile -Name 'hollow' -ApplyTo '**' -Body ''
+        (Get-DpAlwaysOnInstruction -Root @($script:instrRoot)).text | Should -Be ''
+    }
+}
+
 Describe 'Add-DpNarrationBlock' {
     It 'seals buffered text as one block' {
         $b = Add-DpNarrationBlock -Text 'Let me check the branch first.'
@@ -2241,6 +2383,22 @@ Describe 'Read-DpAgentFile' {
         $m = Read-DpAgentFile -Path $f
         $m.name | Should -BeNullOrEmpty
         $m.body | Should -Be 'Just a persona, no frontmatter.'
+    }
+
+    It 'parses applyTo, unquoted or quoted' -ForEach @(
+        @{ Raw = 'applyTo: **'; Expected = '**' }
+        @{ Raw = 'applyTo: "**"'; Expected = '**' }
+        @{ Raw = "applyTo: '**/*.ps1,**/*.psm1'"; Expected = '**/*.ps1,**/*.psm1' }
+    ) {
+        $f = Join-Path $TestDrive ([guid]::NewGuid().ToString('N') + '.instructions.md')
+        Set-Content -LiteralPath $f -Value "---`n$Raw`ndescription: d`n---`nRules." -Encoding utf8
+        (Read-DpAgentFile -Path $f).applyTo | Should -Be $Expected
+    }
+
+    It 'leaves applyTo null when the file does not declare one' {
+        $f = Join-Path $TestDrive 'noapply.agent.md'
+        Set-Content -LiteralPath $f -Value "---`nname: x`ndescription: d`n---`nBody." -Encoding utf8
+        (Read-DpAgentFile -Path $f).applyTo | Should -BeNullOrEmpty
     }
 }
 

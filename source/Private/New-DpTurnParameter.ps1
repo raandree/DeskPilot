@@ -18,6 +18,13 @@ function New-DpTurnParameter {
         The current Settings hashtable.
     .PARAMETER Model
         Optional Conversation-pinned Model id that overrides Settings.model.
+    .PARAMETER AgentMemory
+        Durable notes the agent has curated across past conversations, injected as
+        fenced reference background rather than as fresh instructions.
+    .PARAMETER AlwaysOnInstruction
+        The composed bodies of instruction files whose applyTo is unconditional,
+        from Get-DpAlwaysOnInstruction. Passed in rather than read here so this
+        function stays free of disk I/O and the read happens once per Turn.
     .PARAMETER ModelReasoningEfforts
         The reasoning efforts the effective Model advertises support for. The
         reasoning-effort Setting is only forwarded as -ReasoningEffort when the
@@ -47,6 +54,8 @@ function New-DpTurnParameter {
         [string]$AgentSystemPrompt,
 
         [string]$AgentMemory,
+
+        [string]$AlwaysOnInstruction,
 
         [string[]]$ModelReasoningEfforts = @()
     )
@@ -124,6 +133,16 @@ instructions:
 
 $($AgentMemory.Trim())
 "@)
+    }
+
+    # Instruction files whose applyTo is unconditional. The Engine offers every
+    # instruction as a catalog entry plus a load_instruction tool, which works for
+    # an instruction that only sometimes applies and fails for one that always
+    # does: the model has to choose to fetch the body, and measurably often does
+    # not, so a mandatory instruction silently stops being in force. Pushing the
+    # body is what puts it back in force. Scoped instructions stay in the catalog.
+    if (-not [string]::IsNullOrWhiteSpace($AlwaysOnInstruction)) {
+        $systemParts.Add($AlwaysOnInstruction.Trim())
     }
 
     if ([bool]$perm.askUser -and [bool]$perm.userTools) {

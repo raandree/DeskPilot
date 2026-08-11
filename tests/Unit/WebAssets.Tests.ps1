@@ -197,6 +197,16 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match '(?s)\.changes-live \.changes-row \{[^}]*cursor: default'
     }
 
+    It 'lets workspace-wide instructions be switched off' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # A handler bound to an id nothing renders fails silently, so both halves.
+        $js | Should -Match 'id="set-pushinstructions"'
+        $js | Should -Match ([regex]::Escape('$(''set-pushinstructions'').onchange'))
+        # Default-on has to survive a settings object that predates the key.
+        $js | Should -Match ([regex]::Escape('s.pushInstructions !== false'))
+    }
+
     It 'keeps what the model said between its tool calls' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw

@@ -35,6 +35,12 @@ function Get-DpDefaultSettings {
         reasoningEffort   = $null
         showThinking      = $false
         taskTracking      = $true
+        # The Engine offers instruction files as a catalog and expects the model to
+        # fetch a body with load_instruction. For an instruction that applies to
+        # everything that is a coin flip the model often loses, so the bodies of
+        # unconditional instructions are pushed into the system prompt instead. Off
+        # buys back the prompt tokens on a tight context window.
+        pushInstructions  = $true
         preferences       = $null
         referenceFiles    = @()
         costBudgetUSD     = 0.0

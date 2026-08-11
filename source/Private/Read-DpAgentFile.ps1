@@ -4,15 +4,18 @@ function Read-DpAgentFile {
         Reads an .agent.md file into its name, description and body.
     .DESCRIPTION
         Parses the optional YAML frontmatter (the leading '---' block) for the
-        'name' and 'description' keys (a folded/literal '>' or '|' description is
-        joined into one line) and returns the Markdown body after the
+        'name', 'description' and 'applyTo' keys (a folded/literal '>' or '|'
+        description is joined into one line) and returns the Markdown body after the
         frontmatter. The body is the Agent's persona/system prompt. Frontmatter
         parsing is deliberately minimal (no full YAML engine) and tolerant: a
         file with no frontmatter returns the whole content as the body.
+
+        applyTo is only meaningful for an instruction file, where it is the glob
+        deciding which files the instruction governs; it is $null everywhere else.
     .PARAMETER Path
         The .agent.md file to read.
     .OUTPUTS
-        System.Collections.Hashtable with name, description and body.
+        System.Collections.Hashtable with name, description, applyTo and body.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -26,6 +29,7 @@ function Read-DpAgentFile {
 
     $name = $null
     $description = $null
+    $applyTo = $null
     $body = $raw
 
     if ($raw -match '(?s)^\uFEFF?---\r?\n(.*?)\r?\n---\r?\n?(.*)$') {
@@ -36,6 +40,9 @@ function Read-DpAgentFile {
             $line = $lines[$i]
             if ($line -match '^\s*name\s*:\s*(.+?)\s*$') {
                 $name = $Matches[1].Trim().Trim('"', "'")
+            }
+            elseif ($line -match '^\s*applyTo\s*:\s*(.+?)\s*$') {
+                $applyTo = $Matches[1].Trim().Trim('"', "'")
             }
             elseif ($line -match '^\s*description\s*:\s*(.*)$') {
                 $val = $Matches[1].Trim()
@@ -55,5 +62,5 @@ function Read-DpAgentFile {
         }
     }
 
-    @{ name = $name; description = $description; body = ([string]$body).Trim() }
+    @{ name = $name; description = $description; applyTo = $applyTo; body = ([string]$body).Trim() }
 }

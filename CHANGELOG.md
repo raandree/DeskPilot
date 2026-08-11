@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Workspace-wide instructions now actually apply.** An instruction file that
+  applies to everything was only ever *offered* to the agent, which had to decide
+  to go and fetch it — and often did not, so rules you had written were quietly
+  not in force. Instruction files whose `applyTo` is `**` are now put straight
+  into the agent's brief at the start of every job. Instructions scoped to
+  particular files are unchanged: the agent still fetches those when they become
+  relevant. A new **Always apply workspace-wide instructions** setting turns this
+  off if you would rather save the context on a small model.
 - **See what the agent said while it worked.** A job that used several tools
   narrated its way through them — "let me check the branch first", "the counts
   differ, so I will find out why" — and every word of it was thrown away the
