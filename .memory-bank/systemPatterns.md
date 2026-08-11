@@ -499,6 +499,23 @@ source: repository evidence
   makes it many times taller, and capping it would hide exactly the file content
   the agent is about to write. The pane got a `max-height` and its own scroll
   instead, so readability cost nothing the user might have needed to see.
+- **A live surface that scrolls away needs a mirror outside the scroller.** The
+  Thinking pane sits above the answer inside its Message, so a long answer puts
+  it out of the viewport and leaves only a spinner — which cannot distinguish
+  "working" from "hung". Mirroring its newest line into the composer's activity
+  hint, a footer element outside the thread, makes progress unpushable; make the
+  mirror the way back to the surface it summarises, and derive it from a bounded
+  tail so the per-frame cost does not grow with the trace.
+- **Direction, not distance, decides whether the reader scrolled away.**
+  `.thread` sets `scroll-behavior: smooth`, so during an in-flight programmatic
+  scroll `scrollTop` reports the animated position: a "near the bottom?" test
+  reads that lag as the user having scrolled away and kills auto-follow for the
+  rest of the Turn — which is why the guard was rejected once. Every programmatic
+  scroll here targets the bottom, so an *upward* move is necessarily the reader's.
+  Track that as intent on the `scroll` event, and let the deliberate jumps (turn
+  start, thread rebuild, a question) keep scrolling unconditionally. Anything
+  that scrolls the reader somewhere on purpose must clear the flag itself, or the
+  next streamed frame wins the race back to the bottom.
 
 - **Write every place the value is read from, or the switch is decorative.**
   `Invoke-DpTurn` resolves the Conversation's Model pin *before* the Settings

@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   markers became plain dividers, and the panel keeps its own height and scrolls
   by itself, so a long think no longer pushes the answer off the screen.
 
+- **You can watch the agent think while it writes.** The Thinking panel sits
+  above the answer, so as soon as the answer filled a screen the panel scrolled
+  out of sight and all that was left was the spinner — which looks exactly the
+  same whether the agent is busy or stuck. The newest line of the thinking now
+  runs beside that spinner just above the box you type in, where a long answer
+  cannot push it away, and clicking it takes you back to the full panel. The
+  conversation also follows new output only while you are already at the bottom,
+  so scrolling up to read along is no longer undone by the next word.
+
 - **New conversations start on Claude Opus 5.** DeskPilot used to inherit
   whatever model the engine happened to name as its default, which trails the
   newest one by months. It now asks for Opus 5 whenever your account is offered

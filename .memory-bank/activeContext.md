@@ -10,6 +10,57 @@ source: repository evidence
 
 ## Current focus
 
+**The live Thinking survives a long answer (`main`, 2026-08-11).** Reported from
+two screenshots: the trace and its tool calls stream into the Thinking pane, but
+that pane sits *above* the answer inside its Message, so once the answer filled a
+screen the pane was gone and the only thing still moving was the "Working…"
+donut — which looks identical whether the agent is busy or hung.
+
+Two halves, and the second is what makes the first usable:
+
+- **Mirror the newest trace line where the answer cannot reach it.**
+  `renderThinking` also feeds `setActivityStatus(lastTraceLine(text))`, which
+  writes into `#activity-hint` above the composer — a footer element outside the
+  scrolling thread, so no amount of answer can push it away. It is a `<button>`
+  wired to `revealThinking`, so the line is also the way back to the pane it came
+  from. `lastTraceLine` scans only the last 600 characters: it runs once per
+  streamed reasoning frame and a laid-out trace runs to thousands of lines. The
+  mirror inherits **Show the model's thinking** for free — with the Setting off
+  `Get-DpStreamFrame` emits no `reasoning` frame at all, so the button stays
+  `disabled` on its "Working…" text.
+- **Stop fighting the reader's scroll.** Reading the pane mid-Turn was
+  impossible anyway: every delta called `scrollThread()`, so scrolling up was
+  undone by the next token. The 2026-08-09 note rejected a fix for a real reason
+  — `.thread` sets `scroll-behavior: smooth`, so during an in-flight programmatic
+  scroll `scrollTop` lags behind the newest token and *any distance test* reads
+  that lag as "the reader scrolled away", killing auto-follow for the rest of the
+  Turn. Direction is the signal distance cannot be: every programmatic scroll
+  here moves **down**, so an upward move is the reader's. `wireThreadFollow`
+  watches the thread's `scroll` event and flips `threadFollow` off on an upward
+  move away from the bottom, back on at the bottom; `followThread` replaces
+  `scrollThread` on the streaming paths only (`renderLive` ×2, `done`/`stopped`
+  ×2, `renderRemoteLive`). Turn start, thread rebuild and an Ask-User card keep
+  their unconditional scroll — those are deliberate jumps to something new.
+  `revealThinking` clears `threadFollow` itself before scrolling, or the next
+  streamed frame wins the race and pulls the thread straight back down.
+
+Nothing server-side changed, and nothing new is persisted.
+
+## Verification
+
+- `tests/Unit/WebAssets.Tests.ps1` — +1 test (the mirrored line, its click
+  target, the bounded tail scan, the one-line CSS, the direction test, the
+  listener actually being wired in `wireGlobal`, `revealThinking` clearing the
+  flag, and both `renderLive` bodies having left `scrollThread` behind); the
+  existing Thinking guard now pins `followThread` in `renderThinking`.
+- Unit suite **824/824**, `node --check` clean on `app.js`.
+- **Not live-smoked**: no real Turn has streamed through it, so the mirrored line
+  and the scroll hand-off have not been watched against a running agent. Restart
+  the whole DeskPilot process (not just the tab) — the SPA hot-reloads from
+  `source/web`, the module functions do not.
+
+## Previous focus — the Thinking pane is readable
+
 **The Thinking pane is readable (`main`, 2026-08-11).** Reported from a
 screenshot: with **Show the model's thinking** on, the pane was a wall of text in
 which a written file's line breaks appeared as literal `\n` and every Windows

@@ -121,7 +121,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match ([regex]::Escape('thinking.open = !!(state.settings && state.settings.showThinking)'))
         # The box only appears after the turn-start scroll, so it has to scroll for
         # itself or it unfolds below the fold and the turn reads as stalled.
-        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,400}?scrollThread\(\);\s*\}'
+        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,600}?followThread\(\);\s*\}'
         # Every live reasoning frame goes through that helper; an inline update
         # would silently lose the scroll again.
         $reasoning = [regex]::Matches($js, 'reasoning: \(d\) =>')
@@ -134,6 +134,42 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match '(?s)\.thinking \.disclosure-body \{[^}]*max-height:'
         $css | Should -Match '(?s)\.thinking \.disclosure-body \{[^}]*overflow: auto'
         $js | Should -Match ([regex]::Escape('body.scrollTop = body.scrollHeight'))
+    }
+
+    It 'keeps the live thinking readable once the answer has scrolled it away' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # The Thinking box sits above the answer, so a long answer pushes it out of
+        # the viewport and only the spinner is left - which cannot tell "still
+        # working" from "hung". The newest trace line is mirrored beside it.
+        $js | Should -Match ([regex]::Escape('setActivityStatus(lastTraceLine(text))'))
+        $js | Should -Match ([regex]::Escape('id="activity-status"'))
+        $js | Should -Match ([regex]::Escape('$(''activity-status'').onclick = revealThinking'))
+        $js | Should -Match '(?s)function revealThinking\(\).{0,400}?scrollIntoView'
+        # Scanning the whole trace once per streamed frame would cost more than the
+        # repaint it decorates.
+        $js | Should -Match ([regex]::Escape('text.slice(-600)'))
+        # One line, ellipsised: this row sits above the composer and must not grow
+        # the footer while a Turn streams.
+        $css | Should -Match '(?s)\.activity-status \{[^}]*white-space: nowrap'
+        $css | Should -Match '(?s)\.activity-status \{[^}]*text-overflow: ellipsis'
+
+        # And reading it has to be possible: pinning the thread on every token used
+        # to drag the reader back to the bottom mid-line. `.thread` scrolls
+        # smoothly, so a distance test would misread the in-flight programmatic
+        # scroll as "the reader scrolled away" - the direction of the move is what
+        # decides, and a listener that is never wired would silently restore the
+        # old behaviour.
+        $js | Should -Match '(?s)function followThread\(\) \{\s*if \(threadFollow\) scrollThread\(\);\s*\}'
+        $js | Should -Match ([regex]::Escape('if (top < threadLastTop - 1) threadFollow = atBottom;'))
+        $js | Should -Match '(?s)function wireGlobal\(\).{0,4000}?wireThreadFollow\(\);'
+        # Clicking the status line means "let me read this", so it stops following
+        # outright - the scroll it starts is smooth, and the next streamed frame
+        # would otherwise win the race back to the bottom.
+        $js | Should -Match '(?s)function revealThinking\(\).{0,400}?threadFollow = false;'
+        [regex]::Matches($js, 'renderMarkdown\(raw\);\s*followThread\(\);').Count | Should -Be 2
+        $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
     }
 
     It 'follows a project or agent switched from the phone' {

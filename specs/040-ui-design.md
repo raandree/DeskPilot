@@ -122,7 +122,10 @@ accent fills so the bright dark-mode accent stays legible.
   the iteration banner becomes a divider. The model's own reasoning prose streams
   token by token and is never rewritten. A completed Message replays the Engine
   result's `.Reasoning` (prose only); a **stopped** Message has no such result, so
-  it replays the trace that streamed before the Stop.
+  it replays the trace that streamed before the Stop. The block sits above the
+  answer, so a long answer scrolls it out of view: while a Turn streams its newest
+  line is mirrored in the Activity hint above the composer, and clicking that line
+  opens the block and brings it back into view.
 - **Usage** footer per assistant Message: tokens · $cost · credits · duration.
 - Hover actions: copy, regenerate.
 
@@ -349,7 +352,7 @@ step at a time; the footer has previous/next controls and `current / total`.
 | State | Cue |
 | --- | --- |
 | Idle | composer focused, Send enabled. |
-| Streaming | Stop button, blinking caret, live Activity hints. |
+| Streaming | Stop button, blinking caret, and an Activity hint above the composer carrying the spinner plus the newest line of the Thinking trace. The thread follows new output only while it is already at the bottom, so scrolling up to read mid-Turn survives the next token. |
 | Stopping | **Stopping…** disabled immediately; caret and Activity spinner hidden; buffered stream updates ignored. |
 | Tool running | "Working… (using tools)" pill under the streaming Message. |
 | Error | red inline card with the message + Retry. |

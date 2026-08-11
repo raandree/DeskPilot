@@ -2043,6 +2043,40 @@ button.tree-row {
     gap: 8px;
 }
 
+/* The newest line of the trace, mirrored beside the spinner. It is one line and
+   never wraps: this row sits above the composer and must not grow the footer or
+   push the thread around while a Turn streams. */
+.activity-status {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+    font: inherit;
+    font-family: var(--font-read);
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: default;
+}
+
+.activity-hint.has-trace .activity-status {
+    cursor: pointer;
+}
+
+.activity-hint.has-trace .activity-status:hover,
+.activity-hint.has-trace .activity-status:focus-visible {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+/* A long trace line must never squash the donut. */
+.activity-hint .spinner {
+    flex: 0 0 auto;
+}
+
 .spinner {
     width: 14px;
     height: 14px;

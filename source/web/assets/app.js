@@ -1999,9 +1999,39 @@ function hydrateCopies(container) {
 
 const asArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
 
+// Follow the newest output only while the reader has not scrolled away from the
+// bottom - scrolling up mid-Turn is how the Thinking box gets read, and pinning
+// the thread on every token drags the reader back down mid-line. Distance alone
+// cannot decide this: `.thread` scrolls smoothly, so during an in-flight
+// programmatic scroll `scrollTop` lags behind the newest token and a distance
+// test would read that lag as "the reader scrolled away" and kill auto-follow
+// for the rest of the Turn. Every programmatic scroll here moves *down*, so an
+// upward move is the reader's: that is what stops the following, and arriving
+// back at the bottom is what resumes it.
+const THREAD_STICK_PX = 120;
+let threadFollow = true;
+let threadLastTop = 0;
+
+function wireThreadFollow() {
+    const t = $('thread');
+    if (!t) return;
+    t.addEventListener('scroll', () => {
+        const top = t.scrollTop;
+        const atBottom = t.scrollHeight - top - t.clientHeight <= THREAD_STICK_PX;
+        if (top < threadLastTop - 1) threadFollow = atBottom;
+        else if (atBottom) threadFollow = true;
+        threadLastTop = top;
+    }, { passive: true });
+}
+
 function scrollThread() {
     const t = $('thread');
     t.scrollTop = t.scrollHeight;
+    threadFollow = true;
+}
+
+function followThread() {
+    if (threadFollow) scrollThread();
 }
 
 // Put a reasoning delta in a message's Thinking box and follow it down. The box
@@ -2015,7 +2045,50 @@ function renderThinking(wrap, text) {
     const body = box.querySelector('.disclosure-body');
     body.textContent = text;
     body.scrollTop = body.scrollHeight;
-    scrollThread();
+    setActivityStatus(lastTraceLine(text));
+    followThread();
+}
+
+// The Thinking box sits above the answer inside its message, so a long answer
+// pushes it out of the viewport and the only thing still moving is the spinner —
+// which cannot tell "still working" from "hung". Mirror the newest trace line
+// next to that spinner, where the composer keeps it visible whatever the thread
+// does, and let a click jump back to the box it came from.
+function setActivityStatus(line) {
+    const hint = $('activity-hint');
+    const status = $('activity-status');
+    if (!hint || !status || !line || hint.classList.contains('hidden')) return;
+    status.textContent = line;
+    status.title = line;
+    status.disabled = false;
+    hint.classList.add('has-trace');
+}
+
+// Only the tail can hold the newest line, and a laid-out trace runs to thousands
+// of lines, so never scan the whole thing once per streamed frame.
+function lastTraceLine(text) {
+    if (!text) return '';
+    const tail = text.length > 600 ? text.slice(-600) : text;
+    const lines = tail.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (line) return line;
+    }
+    return '';
+}
+
+// Jump from the status line to the box it mirrors, unfolding it if the user (or
+// the "Show the model's thinking" setting) left it closed. Clicking it means
+// "let me read this", so it also stops the following outright: the scroll below
+// is smooth, and the next streamed frame would otherwise win the race and pull
+// the thread straight back to the bottom.
+function revealThinking() {
+    const boxes = $('thread').querySelectorAll('.msg-assistant .thinking:not(.hidden)');
+    const box = boxes[boxes.length - 1];
+    if (!box) return;
+    threadFollow = false;
+    box.open = true;
+    box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 // ===== Sending a Turn =====
@@ -2097,7 +2170,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
         renderScheduled = false;
         if (state.stopRequested || turnStopped) return;
         wrap._refs.content.innerHTML = renderMarkdown(raw);
-        scrollThread();
+        followThread();
     };
 
     try {
@@ -2132,14 +2205,14 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
                 wrap._refs.content.classList.remove('stream-caret');
                 finalizeAssistant(wrap, m, { isLast: true });
                 markLastAssistant();
-                scrollThread();
+                followThread();
             },
             done: (m) => {
                 turnCompleted = true;
                 wrap._refs.content.classList.remove('stream-caret');
                 finalizeAssistant(wrap, m, { isLast: true });
                 markLastAssistant();
-                scrollThread();
+                followThread();
             },
             error: (d) => {
                 wrap._refs.content.classList.remove('stream-caret');
@@ -2320,7 +2393,10 @@ function setStreamingUI(on) {
     const hint = $('activity-hint');
     if (on) {
         hint.classList.remove('hidden');
-        hint.innerHTML = '<span class="spinner"></span> Working…';
+        hint.classList.remove('has-trace');
+        hint.innerHTML = '<span class="spinner"></span>' +
+            '<button type="button" id="activity-status" class="activity-status" disabled>Working…</button>';
+        $('activity-status').onclick = revealThinking;
     } else {
         hint.classList.add('hidden');
     }
@@ -3397,13 +3473,14 @@ function renderRemoteLive() {
         thread.appendChild(node);
         const emptyState = thread.querySelector('.empty-state');
         if (emptyState) emptyState.remove();
+        scrollThread();
     }
 
     const refs = node._refs;
     refs.content.innerHTML = renderMarkdown(data.text || '') ||
         '<span class="muted tiny">Working…</span>';
     if (data.reasoning) renderThinking(node, data.reasoning);
-    scrollThread();
+    followThread();
 }
 
 // Start or stop the pairing window. Without this the setup is impossible to
@@ -6573,7 +6650,7 @@ async function _streamRerun({ endpoint, body }) {
         renderScheduled = false;
         if (state.stopRequested || turnStopped) return;
         wrap._refs.content.innerHTML = renderMarkdown(raw);
-        scrollThread();
+        followThread();
     };
     try {
         await streamPost('/api/conversations/' + conversationId + endpoint, body, {
@@ -6583,8 +6660,8 @@ async function _streamRerun({ endpoint, body }) {
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
-            stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); scrollThread(); },
-            done: (m) => { wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); scrollThread(); },
+            stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
+            done: (m) => { wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
             error: (d) => { wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Something went wrong.'); },
         });
     } catch (e) {
@@ -7162,6 +7239,7 @@ function wireGlobal() {
     $('explorer-refresh').onclick = () => refreshExplorer();
     wireExplorerAutoRefresh();
     wireExplorerResize();
+    wireThreadFollow();
     $('btn-attach').onclick = () => $('file-input').click();
     $('file-input').addEventListener('change', (e) => {
         const files = Array.from(e.target.files || []);
