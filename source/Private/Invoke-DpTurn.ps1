@@ -53,21 +53,31 @@ function Invoke-DpTurn {
     # from ShpProgress records and is only a fallback: the authoritative final list
     # comes from result.TodoList (see below). pendingEvent/pendingText buffer a run of
     # same-kind text frames so a fast token stream is coalesced into one socket write
-    # per drain instead of one write per token (see $emit / $flush).
-    $turnState = @{ tasks = @(); emitted = 0; pendingEvent = $null; pendingText = [System.Text.StringBuilder]::new() }
+    # per drain instead of one write per token (see $emit / $flush). reasoning keeps
+    # the whole Thinking trace this Turn streamed, which a Stop has nothing else to
+    # fall back on.
+    $turnState = @{
+        tasks        = @()
+        emitted      = 0
+        pendingEvent = $null
+        pendingText  = [System.Text.StringBuilder]::new()
+        reasoning    = [System.Text.StringBuilder]::new()
+    }
 
     # Flush the buffered text frame (a coalesced run of same-kind 'delta'/'reasoning'
     # records) to the client. Idempotent: a no-op when nothing is buffered. Called
     # after every stream drain and whenever the frame kind changes.
     $flush = {
         if ($turnState.pendingEvent -and $turnState.pendingText.Length -gt 0) {
-            $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $turnState.pendingText.ToString() }))
+            $pending = $turnState.pendingText.ToString()
+            $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $pending }))
+            if ($turnState.pendingEvent -eq 'reasoning') { [void]$turnState.reasoning.Append($pending) }
             # A Turn started from the phone has no browser request to stream over,
             # so the same text is also buffered for the SPA to poll (spec 110).
             $remote = if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.RemoteTurn } else { $null }
             if ($remote -and $remote.active) {
-                if ($turnState.pendingEvent -eq 'reasoning') { $remote.reasoning += $turnState.pendingText.ToString() }
-                else { $remote.text += $turnState.pendingText.ToString() }
+                if ($turnState.pendingEvent -eq 'reasoning') { $remote.reasoning += $pending }
+                else { $remote.text += $pending }
             }
         }
         $turnState.pendingEvent = $null
@@ -363,13 +373,18 @@ function Invoke-DpTurn {
                 }
                 $stoppedUsage = Get-DpStoppedTurnUsage @stoppedUsageParams
                 $usedModel = if ($effectiveModelId) { $effectiveModelId } else { $settings.model }
+                # A hard Stop discards the Engine result, so result.Reasoning never
+                # arrives. What already streamed into the Thinking pane is the only
+                # surviving record of what the Turn was thinking, and without this a
+                # stopped Turn reloads with an empty pane.
+                $stoppedReasoning = if ($turnState.reasoning.Length -gt 0) { $turnState.reasoning.ToString() } else { $null }
                 $stoppedMessage = @{
                     id         = $assistantId
                     role       = 'assistant'
                     text       = ''
                     stopped    = $true
                     stopReason = 'Turn stopped.'
-                    reasoning  = $null
+                    reasoning  = $stoppedReasoning
                     activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
                     usage      = $stoppedUsage
                     tasks      = $turnState.tasks

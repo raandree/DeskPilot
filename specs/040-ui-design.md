@@ -120,7 +120,9 @@ accent fills so the bright dark-mode accent stays legible.
   is streamed (`Format-DpThinkingTrace`): a tool call becomes its name plus one
   indented entry per argument, with the argument's escaped newlines restored, and
   the iteration banner becomes a divider. The model's own reasoning prose streams
-  token by token and is never rewritten.
+  token by token and is never rewritten. A completed Message replays the Engine
+  result's `.Reasoning` (prose only); a **stopped** Message has no such result, so
+  it replays the trace that streamed before the Stop.
 - **Usage** footer per assistant Message: tokens · $cost · credits · duration.
 - Hover actions: copy, regenerate.
 

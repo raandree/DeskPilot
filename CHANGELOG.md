@@ -85,6 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stopping a job no longer throws away its thinking.** With **Show the model's
+  thinking** on, the pane filled up while the job ran — and pressing **Stop**
+  blanked it on the next reload, because the trace was only ever held in the
+  browser and the stopped message was saved with nothing in it. The thinking you
+  watched is now saved with the message, so a stopped job still explains itself
+  afterwards.
 - **Intercom now tells you where the phone-control switch actually is.** When a
   project was not cleared for phone control, Intercom said "Remote control is
   switched off … turn it on under Settings > Intercom" — a tab that holds no such

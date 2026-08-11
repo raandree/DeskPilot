@@ -527,6 +527,11 @@ source: repository evidence
   `reasoning_opaque` signature. Before hunting a truncation bug, check the stored
   text: varying block lengths with no cap, and blocks that end without `…`, prove
   no code did it. Neither DeskPilot nor ShellPilot appends `…` to reasoning.
+- **What a Stop discards, only the stream still holds.** A hard
+  `BeginStop`/`EndStop` throws the Engine result away, so anything read off
+  `$result` - Usage, Reasoning, the Task List - has no value on the stopped path.
+  Whatever already streamed is the only record left, so accumulate it as it is
+  flushed rather than reaching for a result that will never arrive.
 
 ## Anti-patterns to avoid
 

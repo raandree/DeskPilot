@@ -57,9 +57,14 @@ as the encrypted `reasoning_opaque` signature ShellPilot deliberately drops.
 The one real defect next door: the past box is **poorer than the live one**. The
 live pane carries iteration dividers and laid-out tool calls; `finalizeAssistant`
 overwrites it with `m.reasoning` on `done`, and only that prose is persisted.
-Fixing it means persisting the streamed trace, which carries whole written-file
-bodies into `conversations.json` - a store-size decision, not a bug fix. Awaiting
-the user's call.
+The user chose the narrow half of that: a **completed** Turn keeps today's
+prose-only behaviour (persisting the streamed trace would carry whole
+written-file bodies into `conversations.json`), while a **stopped** Turn no
+longer loses its trace at all. `$turnState.reasoning` now accumulates every
+`reasoning` frame in `$flush`, and the stopped Message carries it instead of
+`$null` - a hard Stop discards the Engine result, so `result.Reasoning` never
+arrives and the streamed frames are the only record left. No SPA change was
+needed: `finalizeAssistant` already writes `m.reasoning` for a stopped Message.
 
 ## Verification
 

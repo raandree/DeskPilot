@@ -4517,3 +4517,22 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
         }
     }
 }
+
+Describe 'a stopped Turn keeps its Thinking trace' -Tag 'Unit' {
+    BeforeAll {
+        $script:turnSource = Get-Content -LiteralPath (
+            Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+    }
+
+    It 'accumulates the streamed reasoning text for the whole Turn' {
+        # A hard stop discards the Engine result, so the frames already flushed to
+        # the browser are the only surviving record of what the model was thinking.
+        $script:turnSource | Should -Match 'reasoning\s*=\s*\[System\.Text\.StringBuilder\]::new\(\)'
+        $script:turnSource | Should -Match '\$turnState\.reasoning\.Append'
+    }
+
+    It 'persists that trace on the stopped Message instead of a bare null' {
+        $script:turnSource | Should -Not -Match '(?m)^\s*reasoning\s*=\s*\$null\s*$'
+        $script:turnSource | Should -Match '(?m)^\s*reasoning\s*=\s*\$stoppedReasoning\s*$'
+    }
+}
