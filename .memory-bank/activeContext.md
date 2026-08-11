@@ -10,6 +10,93 @@ source: repository evidence
 
 ## Current focus
 
+**Closing the measured gap to VS Code Copilot (`ai/parity-01-narration`,
+2026-08-11).** Asked for from screenshots of both harnesses running the *same*
+handoff prompt, same Model, same Agent: DeskPilot answered defensibly for 30.13
+credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
+skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
+PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
+lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
+00-README carries the evidence table). Three have shipped.
+
+- **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
+  assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
+  only the last iteration's content and `finalizeAssistant` replaces the whole
+  message body with it on `done`. Every word the model said while working was
+  destroyed at the moment the Turn completed — the single largest reason a
+  finished Turn showed far less than it did. `Add-DpNarrationBlock` seals the
+  buffered answer text at each **tool-call boundary** (the Engine writes content
+  deltas before it dispatches that iteration's tool calls, so the boundary is
+  exact; subtracting the final answer instead would fail on a retry, on a
+  coalesced frame, and on any answer that repeats itself). Bounded at 32 KB,
+  oldest blocks replaced by a marker that states how many are missing. Rendered
+  as a collapsed **Steps** disclosure, deliberately **not** gated on the Thinking
+  Setting — this is answer text the model chose to emit, and hiding it behind a
+  debugging toggle is what let it go unnoticed.
+- **Workspace-wide instructions were never in force.** The Engine injects
+  instructions as a *catalog* and waits for a `load_instruction` call the model
+  measurably often does not make, so `applyTo: **` files — pre-flight,
+  post-flight — were simply not applied. `Get-DpAlwaysOnInstruction` pushes the
+  bodies of unconditional instructions (`**`, `**/*`, `*` — nothing scoped, and
+  nothing that declines to say when it applies) into the system prompt, bounded
+  at 24 KB, **naming** whatever did not fit rather than dropping it silently. The
+  read happens once per Turn in `Invoke-DpTurn`, not inside
+  `New-DpTurnParameter`, which stays free of disk I/O like its
+  `AgentSystemPrompt` and `AgentMemory` siblings. Setting `pushInstructions`,
+  default on.
+- **The iteration budget was low, invisible, and fatal.** Default 25 → **50**,
+  now bounded at 200 so a typo cannot start a runaway. The system prompt states
+  the cap, because a model that cannot see its budget spends it as if infinite.
+  Exhaustion (`Exceeded MaxToolIterations`) was rendered as a bare error string
+  that lost the whole Turn; it is now persisted as a stopped Turn that names the
+  budget, points at the Setting, and keeps the narration and Task List — which
+  only works *because* the narration is now accumulated.
+
+## Verification
+
+- `./build.ps1 -Tasks test` at each step: baseline **845/845**, then 860, 890,
+  and **898/898**, 0 failed, 9 tasks, 0 errors.
+- `Invoke-ScriptAnalyzer` clean on every new file; the findings on
+  `New-DpTurnParameter.ps1`, `Get-DpDefaultSettings.ps1` and `Merge-DpSettings.ps1`
+  (`PSUseBOMForUnicodeEncodedFile`, `PSUseSingularNouns`,
+  `PSUseShouldProcessForStateChangingFunctions`) are pre-existing name/encoding
+  rules on untouched declarations. `node --check` clean.
+- Three pre-existing tests were corrected rather than worked around: the cap
+  default moved 25 → 50, and two Questionnaire tests asserted
+  `ContainsKey('SystemPrompt') -eq $false` as a proxy for "no protocol" — now
+  false because the budget sentence always adds a part, so they assert the
+  absence of `ask_questions` itself, which is what they meant.
+- **Not live-smoked — this is the gap that matters.** No real Turn has streamed
+  through any of it. The acceptance signal for the instruction work is concrete
+  and unmet: a real Turn's answer must open with the PRE-FLIGHT banner. Restart
+  the whole DeskPilot process, not just the tab — the SPA hot-reloads from
+  `source/web`, the module functions do not.
+
+## Open, deliberately not done
+
+- **Prompt 03–05, 07–09 remain.** Workspace context, search tools, a targeted
+  edit tool, the runspace-environment diagnosis, the Turn transcript, and the
+  parity eval harness.
+- **Prompt 06's live iteration counter was cut.** Honest counting needs an
+  iteration signal that does not exist with Thinking off — the Engine only writes
+  `=== iteration N ===` under `-ShowThinking`, and tool-call count is an *upper*
+  bound on iterations, not the lower bound the prompt assumed. It needs the
+  structured per-tool-call frame that prompt 08 introduces; shipping a mislabelled
+  counter would have been worse than none.
+- **F8, the reasoning summary, is a trade the user owns.** `$mode` is always
+  `chat` because DeskPilot never passes `-DisableStreaming`, and
+  `$requestReasoning` requires `responses` mode — so a reasoning *summary* is
+  never requested and only providers volunteering `reasoning_text` deltas show
+  anything. Buying it costs live answer streaming. Not implemented.
+- **Prompt 07 is the highest-severity open item.** DeskPilot's agent measured
+  435/1 where GHCP measured 432/4 on the nominally identical command, so the
+  long-lived Engine Runspace's environment differs from a user's shell — most
+  likely DeskPilot's own Sampler `PSModulePath` leaking in while the agent works
+  in someone else's repository. A harness whose measurements the user cannot
+  reproduce is a worse defect than a slow one.
+
+## Previous focus — edits are visible while they happen
+
 **Edits are visible while they happen (`main`, 2026-08-11).** Asked for as "can
 we have a file edit info and summary like in ghcp?", against a screenshot of VS
 Code Copilot's per-edit lines and its `15 files changed +348 −88` bar. The
