@@ -2,6 +2,40 @@
 
 Recurring issues and how they were resolved.
 
+## "IDE token expired" mid-Turn is the *session* token, not the sign-in (2026-08-11)
+
+**Symptom:** a long Turn dies with `Copilot streaming request to
+'https://api.enterprise.githubcopilot.com/chat/completions' failed with status
+401: IDE token expired: unauthorized: token expired`, surfaced through
+`EndInvoke`. The GitHub sign-in is plainly still valid, and resending the prompt
+restarts from iteration 1 with no memory of the work already done.
+
+**Root cause (Engine, ShellPilot 0.3.1):** two different tokens share the word.
+The OAuth token in the token file is long-lived; `Get-ShpSessionToken` exchanges
+it at `https://api.github.com/copilot_internal/v2/token` for a **short-lived
+session token** carrying its own `expires_at` — that is the "IDE token" the API
+is refusing. `Invoke-Shp` fetches it **once** per Turn and builds `$apiHeaders`
+**once**, then reuses that one header hashtable for every tool iteration. A Turn
+that outlives its own session token therefore fails on whichever iteration
+crosses the expiry. `maxToolIterations` above the default 25 makes this routine.
+
+**Why nothing recovers.** `Invoke-ShpStreamRequest` is the one request path *not*
+wrapped in `Invoke-ShpWithRetry`, and it throws a bare `HttpRequestException`;
+`Invoke-Shp`'s catch has fallbacks for `store`, `unsupported_api_for_model` and a
+rejected reasoning summary but none for 401. On the DeskPilot side
+`Test-DpTransientEngineError` excludes 401 by design, and `Invoke-DpTurn`'s retry
+is gated on `$turnState.emitted -eq 0`, so a failure after text has streamed can
+never be retried without duplicating the answer.
+
+**Second trigger, easier to miss:** `$script:SessionTokenSafetyMarginSec = 60`.
+A Turn that starts with 61 seconds left on the cached token is handed a token
+that dies almost immediately — so this is not only about half-hour Turns.
+
+**Rule:** an auth failure *during* a Turn is a refresh problem, not a sign-in
+problem. Do not send the user to re-authenticate. The fix belongs in the Engine:
+re-resolve the token per iteration, force a refresh on a 401 and retry the same
+iteration, and keep the safety margin larger than one iteration's worst case.
+
 ## An empty Thinking pane is usually the Model, not DeskPilot (2026-08-11)
 
 **Symptom:** with **Show the model's thinking** on, the pane shows only iteration

@@ -50,6 +50,24 @@ explanation is destroyed at the moment it arrives. Buying the thinking back mean
 `-DisableStreaming`, which costs live answer streaming; that trade is the user's
 to make, so nothing was changed.
 
+### Diagnosis, no code: the mid-Turn `IDE token expired` 401
+
+The refused "IDE token" is **not** the GitHub sign-in. `Get-ShpSessionToken`
+exchanges the long-lived OAuth token for a short-lived session token carrying its
+own `expires_at`; `Invoke-Shp` fetches it **once** per Turn, builds `$apiHeaders`
+**once**, and reuses that hashtable for every tool iteration — so a Turn that
+outlives its own token dies on whichever iteration crosses the expiry (the report
+failed at **iteration 41**, well past the default 25). Nothing recovers:
+`Invoke-ShpStreamRequest` is the one path not wrapped in `Invoke-ShpWithRetry`,
+`Invoke-Shp`'s catch has no 401 branch, `Test-DpTransientEngineError` excludes 401
+by design, and `Invoke-DpTurn`'s retry is gated on `emitted -eq 0` — so once text
+has streamed the Turn cannot be retried without duplicating the answer.
+
+The fix belongs in the **Engine** (re-resolve the token per iteration, force a
+refresh on a 401 and retry that iteration, raise the 60 s safety margin), and
+ShellPilot currently has uncommitted work in exactly those files, so neither
+repository was changed. Details in `debugging-insights.md`.
+
 ## Verification
 
 - `tests/Unit/DeskPilot.Helpers.Tests.ps1` — +4: the stamped divider, no-argument
