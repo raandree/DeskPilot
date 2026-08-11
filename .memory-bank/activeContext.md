@@ -10,6 +10,51 @@ source: repository evidence
 
 ## Current focus
 
+**Claude Opus 5 is DeskPilot's default Model (`main`, 2026-08-11).** DeskPilot
+had no default of its own — `Get-DpDefaultSettings` sets `model = $null` and
+`/api/models` handed back whatever `Get-ShpDefault` named, which is why the
+window's Model chip read `claude-opus-4.6`.
+
+Changing `Get-DpDefaultSettings` would not have worked. The persisted
+`settings.json` carries `model: null`, and `Merge-DpSettings` assigns
+`$merged.model = $null` for a key that is *present but null*, so the persisted
+null beats any new default (checked against the live
+`%LOCALAPPDATA%\DeskPilot\settings.json`). The default therefore belongs where
+"default" is actually decided:
+
+- **`$script:DeskPilot.PreferredModel = 'claude-opus-5'`**, and the
+  `/api/models` route promotes it to `DefaultModel` **only while `Get-ShpModel`
+  advertises it**. Otherwise the Engine's own default stands, so a hard-coded id
+  this account cannot use never reaches a Turn. `DefaultModel` is seeded with the
+  preference so an Intercom Turn that runs before the SPA ever calls the route
+  already gets it.
+- **`Invoke-DpTurn` now passes the resolved id.** It computed `$effectiveModelId`
+  and then handed `New-DpTurnParameter` `-Model $Conversation.model`, so a
+  Conversation pinning nothing ran on the *Engine's* default while DeskPilot
+  reported its own.
+- **The Settings "Default model" select tells the truth.** It marked an option
+  `selected` only on `s.model`, so with nothing pinned the browser preselected
+  whatever the Engine listed first — a field contradicting the Model the Turn
+  would run on. It now falls back to `state.defaultModel`.
+
+Picking a Model — in Settings or on one Conversation — still wins over all of
+this.
+
+## Verification
+
+- `tests/Unit/ModelsRoute.Tests.ps1` — **5/5**: the preference reported as the
+  default when advertised, the Engine's default when it is not, an empty Model
+  list still answering 200, and source guards on the seed and on the resolved id
+  reaching the Turn.
+- `tests/Unit/WebAssets.Tests.ps1` — +1 guard on the Settings select fallback.
+- Full Sampler build **795/795**, 16 tasks, 0 errors, 0 warnings, EXIT 0.
+- **Not live-smoked**: the Engine's advertised list has not been read against a
+  real sign-in, so whether this account is offered `claude-opus-5` is unproven.
+  Restart the whole DeskPilot process (not just the tab) — the SPA hot-reloads
+  from `source/web`, the module functions do not.
+
+## Previous focus — Intercom can switch the agent and the project
+
 **Intercom can switch the agent and the project, not just the conversation
 (`ai/installer-decisions`, 2026-08-10).** `/chats` and `/chat <n>` shipped with
 the original Intercom, which left the two settings that decide *how* and *where*
