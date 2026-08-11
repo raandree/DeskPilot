@@ -67,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The model's thinking is now readable.** Every time the agent used a tool, the
+  Thinking panel showed the raw instruction it sent — one endless line in which
+  each line break of a file it was writing appeared as a literal `\n` and every
+  Windows path came out doubled, like `C:\\Users\\you`. It now reads as what it
+  is: the tool's name, then each of its inputs on its own line, with the text laid
+  out the way it will actually be written. The `=== iteration 4 (chat) ===`
+  markers became plain dividers, and the panel keeps its own height and scrolls
+  by itself, so a long think no longer pushes the answer off the screen.
+
 - **New conversations start on Claude Opus 5.** DeskPilot used to inherit
   whatever model the engine happened to name as its default, which trails the
   newest one by months. It now asks for Opus 5 whenever your account is offered

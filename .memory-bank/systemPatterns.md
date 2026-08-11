@@ -485,6 +485,20 @@ source: repository evidence
   stream adds later — the Thinking box, tasks, a question — grows below the fold
   unless its own handler scrolls, and a turn you cannot see reads as a stalled
   one. Route those updates through one helper that renders and scrolls together.
+  A box that then stops growing — because it gained its own `max-height` — needs
+  the *inner* scroll pinned too, or the thread scroll follows a box whose newest
+  line is out of sight.
+- **Reformat the record the transport delivers whole, never the token stream.**
+  The Engine writes a tool call as one `Write-Host` carrying the provider's raw
+  JSON, and reasoning prose as a run of `-NoNewline` tokens. The first is a
+  complete statement and can be laid out; the second is only a whole thought once
+  many records are concatenated, so rewriting one token would corrupt it. The
+  `NoNewLine` flag is the line between the two, and it is the same flag that
+  already decides whether the newline is re-attached.
+- **Bound the surface rather than truncate the evidence.** Laying the trace out
+  makes it many times taller, and capping it would hide exactly the file content
+  the agent is about to write. The pane got a `max-height` and its own scroll
+  instead, so readability cost nothing the user might have needed to see.
 
 - **Write every place the value is read from, or the switch is decorative.**
   `Invoke-DpTurn` resolves the Conversation's Model pin *before* the Settings

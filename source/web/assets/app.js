@@ -2006,11 +2006,15 @@ function scrollThread() {
 
 // Put a reasoning delta in a message's Thinking box and follow it down. The box
 // only appears after the turn-start scroll, so without this it unfolds below the
-// fold and a long think looks like a stalled turn.
+// fold and a long think looks like a stalled turn. The box is height-bounded and
+// scrolls itself, so the thread scroll alone would still leave the newest line
+// out of sight.
 function renderThinking(wrap, text) {
     const box = wrap.querySelector('.thinking');
     box.classList.remove('hidden');
-    box.querySelector('.disclosure-body').textContent = text;
+    const body = box.querySelector('.disclosure-body');
+    body.textContent = text;
+    body.scrollTop = body.scrollHeight;
     scrollThread();
 }
 

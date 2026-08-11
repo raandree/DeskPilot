@@ -115,7 +115,12 @@ accent fills so the bright dark-mode accent stays legible.
   `in-progress`. Hidden when the list is empty or `taskTracking` is off.
   Persisted on the Message and replayed on reload.
 - **Thinking** block (when reasoning present / showThinking on): collapsible,
-  dim, above the answer.
+  dim, above the answer. Height-bounded with its own scroll and pinned to the
+  newest line while it streams. Each complete trace line is laid out before it
+  is streamed (`Format-DpThinkingTrace`): a tool call becomes its name plus one
+  indented entry per argument, with the argument's escaped newlines restored, and
+  the iteration banner becomes a divider. The model's own reasoning prose streams
+  token by token and is never rewritten.
 - **Usage** footer per assistant Message: tokens · $cost · credits · duration.
 - Hover actions: copy, regenerate.
 

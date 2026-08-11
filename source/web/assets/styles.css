@@ -1169,6 +1169,11 @@ button.tree-row {
     font-family: var(--font-read);
     color: var(--muted);
     white-space: pre-wrap;
+    /* A trace runs to thousands of lines once tool arguments are laid out, so it
+       scrolls itself rather than burying the answer it belongs to. */
+    max-height: min(46vh, 420px);
+    overflow: auto;
+    overflow-wrap: anywhere;
 }
 
 .activity-list {

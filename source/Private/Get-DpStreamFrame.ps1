@@ -38,6 +38,11 @@ function Get-DpStreamFrame {
         together into one unreadable run. Only an explicit NoNewLine of $false gets
         a newline back - a $true token and an unspecified ($null) write are left to
         concatenate as the Engine intended.
+
+        Readability: a complete-line trace also goes through Format-DpThinkingTrace,
+        which lays out the tool call the Engine writes as one line of raw provider
+        JSON. A streamed reasoning token is never rewritten - it is prose, and only
+        the concatenation of many tokens is a whole thought.
     .PARAMETER Record
         One Information record from the Engine Runspace stream.
     .PARAMETER ShowThinking
@@ -123,10 +128,14 @@ function Get-DpStreamFrame {
     # side concatenation preserves line breaks (the Thinking pane is white-space:
     # pre-wrap; the answer delta is Markdown-rendered). The JSON-encoded SSE payload
     # carries the newline as an escaped sequence, so it survives the frame flatten.
-    $emitText = if ($completeLine) { $clean + "`n" } else { $clean }
     if ($isTrace) {
-        if ($ShowThinking) { return @{ event = 'reasoning'; data = @{ text = $emitText } } }
-        return
+        if (-not $ShowThinking) { return }
+        # A tool call and an iteration banner each arrive as one complete host line,
+        # so both can be laid out here. A streamed reasoning token (NoNewLine) is
+        # left exactly as it arrived - it is prose the client concatenates.
+        $traceText = if ($completeLine) { (Format-DpThinkingTrace -Text $clean) + "`n" } else { $clean }
+        return @{ event = 'reasoning'; data = @{ text = $traceText } }
     }
+    $emitText = if ($completeLine) { $clean + "`n" } else { $clean }
     @{ event = 'delta'; data = @{ text = $emitText } }
 }

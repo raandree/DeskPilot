@@ -965,6 +965,48 @@ Describe 'ConvertTo-DpTaskList' {
     }
 }
 
+Describe 'Format-DpThinkingTrace' {
+    It 'gives every tool argument its own line and puts real line breaks back' {
+        $line = '-> write_file({"content": "# Title\n\n- one\n- two", "path": "C:\\tmp\\notes.md"})'
+        Format-DpThinkingTrace -Text $line |
+            Should -Be "→ write_file`n  content:`n    # Title`n`n    - one`n    - two`n  path: C:\tmp\notes.md"
+    }
+    It 'keeps a short scalar inline and blocks a long one' {
+        $long = 'x' * 120
+        Format-DpThinkingTrace -Text "-> run_command({`"command`": `"$long`"})" |
+            Should -Be "→ run_command`n  command:`n    $long"
+    }
+    It 're-serialises a nested value as indented JSON' {
+        $out = Format-DpThinkingTrace -Text '-> manage_todo_list({"todoList":[{"id":1,"title":"Plan"}]})'
+        $out | Should -Match '(?m)^→ manage_todo_list$'
+        $out | Should -Match '(?m)^  todoList:$'
+        $out | Should -Match '(?m)^\s+"title": "Plan"$'
+    }
+    It 'turns the iteration banner into a divider and keeps the blank line before it' {
+        Format-DpThinkingTrace -Text "`n=== iteration 12 (chat) ===" | Should -Be "`n── Iteration 12 (chat) ──"
+    }
+    It 'names a tool that was called with no arguments' {
+        Format-DpThinkingTrace -Text '-> get_time({})' | Should -Be '→ get_time'
+        Format-DpThinkingTrace -Text '-> get_time()' | Should -Be '→ get_time'
+    }
+    It 'returns reasoning prose untouched' {
+        # The model's own text is not a trace line and must never be rewritten.
+        foreach ($text in 'I will read the file first.', 'thinking:', '(model does not support a reasoning summary)') {
+            Format-DpThinkingTrace -Text $text | Should -Be $text
+        }
+    }
+    It 'still decodes the escapes when the arguments are not valid JSON' {
+        Format-DpThinkingTrace -Text '-> run_command({"command": "a\nb", oops)' |
+            Should -Be "→ run_command`n  {`"command`": `"a`n  b`", oops"
+    }
+    It 'passes an empty or whitespace line straight through' -ForEach @(
+        @{ Text = '' }
+        @{ Text = '   ' }
+    ) {
+        Format-DpThinkingTrace -Text $Text | Should -Be $Text
+    }
+}
+
 Describe 'Get-DpStreamFrame' {
     It 'emits a tasks frame (and no delta) for a ShpProgress TodoList record' {
         $rec = [pscustomobject]@{
@@ -1016,7 +1058,31 @@ Describe 'Get-DpStreamFrame' {
         }
         $d = Get-DpStreamFrame -Record $rec -ShowThinking
         $d.event | Should -Be 'reasoning'
-        $d.data.text | Should -Be "=== iteration 1 (chat) ===`n"
+        $d.data.text | Should -Be "── Iteration 1 (chat) ──`n"
+    }
+    It 'lays out a tool call so its arguments are readable instead of one line of JSON' {
+        # The Engine writes '-> name({json})' as a single host line, so a written
+        # file arrives with every newline as a literal backslash-n.
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{
+                Message         = '-> write_file({"content": "alpha\nbeta", "path": "C:\\tmp\\a.md"})'
+                ForegroundColor = [System.ConsoleColor]::Cyan
+                NoNewLine       = $false
+            }
+        }
+        $d = Get-DpStreamFrame -Record $rec -ShowThinking
+        $d.event | Should -Be 'reasoning'
+        $d.data.text | Should -Be "→ write_file`n  content:`n    alpha`n    beta`n  path: C:\tmp\a.md`n"
+    }
+    It 'never rewrites a streamed reasoning token' {
+        # Reasoning arrives token by token with -NoNewline; only the concatenation
+        # is a whole thought, so no single record may be reformatted.
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = '-> so I will '; ForegroundColor = [System.ConsoleColor]::DarkGray; NoNewLine = $true }
+        }
+        (Get-DpStreamFrame -Record $rec -ShowThinking).data.text | Should -Be '-> so I will '
     }
     It 'does not add a newline to a -NoNewline streamed token (concatenates as the Engine intended)' {
         $rec = [pscustomobject]@{

@@ -10,6 +10,57 @@ source: repository evidence
 
 ## Current focus
 
+**The Thinking pane is readable (`main`, 2026-08-11).** Reported from a
+screenshot: with **Show the model's thinking** on, the pane was a wall of text in
+which a written file's line breaks appeared as literal `\n` and every Windows
+path came out doubled. The cause is upstream and structural - ShellPilot writes a
+tool call as `Write-Host ("-> {0}({1})" -f $tc.Name, $tc.Arguments)`, so the
+provider's raw JSON argument string arrives on **one** host line.
+
+Three decisions carried it:
+
+- **Format on the server, not in the browser.** The tool call arrives as one
+  atomic `Write-Host` record, so `Get-DpStreamFrame` is the only place that sees
+  it whole and cheaply. The SPA appends `think += d.text` and repaints on every
+  frame; re-parsing a growing trace client-side would pay that cost per frame.
+  Formatting here also reaches Intercom's remote-Turn poll, which streams the same
+  `reasoning` text to the window.
+- **Only a complete line may be rewritten.** Reasoning prose streams token by
+  token with `-NoNewline`; only the concatenation of many records is a whole
+  thought, so a single token must pass through untouched. The rewrite is gated on
+  the same `NoNewLine -eq $false` flag that already decides whether to re-attach a
+  newline. `Format-DpThinkingTrace` also returns anything it does not recognise
+  unchanged, so the gate is belt and braces.
+- **Bound the pane instead of truncating the trace.** Laying a tool call out
+  makes it many lines longer, and dropping the tail would hide exactly what the
+  agent is about to write. `.thinking .disclosure-body` now carries
+  `max-height: min(46vh, 420px)` with its own scroll, and `renderThinking` pins
+  that scroll to the bottom - the thread scroll alone would leave the newest line
+  out of sight now that the box no longer grows.
+
+The persisted Message is unaffected: `Invoke-DpTurn` stores the Engine result's
+`.Reasoning` (prose only, no tool trace), so this changes the live pane and
+nothing on disk.
+
+## Verification
+
+- `tests/Unit/DeskPilot.Helpers.Tests.ps1` - +9 `Format-DpThinkingTrace` cases
+  (argument-per-line layout with real line breaks restored, short scalar inline
+  vs long value blocked, a nested value re-serialised as indented JSON, the
+  iteration divider keeping its leading blank line, a no-argument call, prose
+  returned untouched, escapes still decoded when the JSON will not parse, and an
+  empty or whitespace line passing straight through) and +2 `Get-DpStreamFrame`
+  cases (a tool call laid out end to end; a streamed `-NoNewline` token never
+  rewritten).
+- `tests/Unit/WebAssets.Tests.ps1` - the Thinking guard now also pins the
+  `max-height`, the `overflow: auto` and the inner scroll pin.
+- Full Sampler build **831/831**, 9 tasks, 0 errors, 0 warnings, EXIT 0.
+- **Not live-smoked**: no real Turn has streamed through the new layout. Restart
+  the whole DeskPilot process (not just the tab) - the SPA hot-reloads from
+  `source/web`, the module functions do not.
+
+## Previous focus - Intercom can pick the Model
+
 **Intercom can pick the Model (`main`, 2026-08-11).** Intercom could switch the
 Conversation, the Agent and the Project, but not the Model - so the one setting
 that decides *what* answers still needed a walk back to the machine. New
