@@ -10,6 +10,63 @@ source: repository evidence
 
 ## Current focus
 
+**Edits are visible while they happen (`main`, 2026-08-11).** Asked for as "can
+we have a file edit info and summary like in ghcp?", against a screenshot of VS
+Code Copilot's per-edit lines and its `15 files changed +348 −88` bar. The
+summary half already existed — the Changes card (FR-T10) has shipped counts,
+**Keep** and **Undo** since the Git Workbench. What did not exist was the *live*
+half: until `done`, the only thing that named the file being written was the
+Thinking trace, so with **Show the model's thinking** off nothing named it at
+all.
+
+Three decisions carried it:
+
+- **Drive it from the structured record, not the host trace.** ShellPilot emits
+  a `ShpProgress` `ToolCall` record (`Name` + raw `Arguments`) before it runs the
+  tool, and `Get-DpStreamFrame` was dropping it. A `write_file` call now becomes
+  a `file` frame carrying the path. Reading the structured record is what makes
+  the list independent of the Thinking Setting; parsing the arguments as JSON
+  rather than pattern-matching them is what keeps a written file whose *content*
+  contains `"path":` from naming the wrong file. A truncated or malformed
+  argument string costs the drain loop one skipped frame.
+- **Intent, not record — so no counts.** The announcement precedes the write, so
+  there is nothing to measure and nothing to diff. Measuring anyway would mean a
+  Git read per write on the very thread that keeps the SSE stream alive, which is
+  the freeze `Invoke-DpGitCommand` exists to prevent. The rows carry a neutral
+  ✎ glyph, no `+`/`−`, and no click target.
+- **One element, two states.** The live rows and the reviewed card share
+  `_refs.changes`, so the card *supersedes* the rows instead of appearing beside
+  them. `renderChanges` therefore stopped clearing the element eagerly: it now
+  seals the live rows (re-headed `N files edited`) whenever it cannot paint a
+  card — no Project, no Git repository, or files already put back. That also
+  makes a **stopped** Turn say what it wrote, which it never did before: a hard
+  Stop persists an empty `activity`, and `Add-DpChangeEntry` only runs on the
+  success path.
+
+Nothing new is persisted, and the pending change set is untouched.
+
+## Verification
+
+- `tests/Unit/DeskPilot.Helpers.Tests.ps1` — +6 `Get-DpStreamFrame` cases (the
+  path lifted out of a real `write_file` argument string; the frame emitted with
+  and without `-ShowThinking`; and four silent cases — an empty path, a missing
+  one, truncated JSON, and empty arguments). The existing "no frame for a
+  ToolCall" case now says *which* tool calls stay silent.
+- `tests/Unit/WebAssets.Tests.ps1` — +1 guard: both streaming paths carry the
+  frame (send and regenerate/edit), one row per file rather than one per write,
+  the card removing the live class, both seal branches, that `renderChanges` no
+  longer wipes the element on entry, and the CSS that stops a live row looking
+  clickable.
+- Unit suite **835/835**; `node --check` clean; `Invoke-ScriptAnalyzer` reports
+  nothing on `Get-DpStreamFrame.ps1`, and the only new findings anywhere are two
+  more of the `PSAvoidUsingPositionalParameters` Information notices
+  `WebAssets.Tests.ps1` already carries 37 of.
+- **Not live-smoked**: no real Turn has streamed a `file` frame. Restart the
+  whole DeskPilot process (not just the tab) — the SPA hot-reloads from
+  `source/web`, the module functions do not.
+
+## Previous focus — the Thinking pane is timed
+
 **The Thinking pane is timed (`main`, 2026-08-11).** Reported as "there is a huge
 delay between the iterations" — with no way to tell whether the wait was the
 provider, a tool, or DeskPilot. `Format-DpThinkingTrace` now takes an optional

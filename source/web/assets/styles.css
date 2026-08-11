@@ -4246,6 +4246,16 @@ button.tree-row {
     background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+/* A live edit row is a statement of what the agent is writing, not something to
+   click: the diff it would open does not exist until the Turn ends. */
+.changes-live .changes-row {
+    cursor: default;
+}
+
+.changes-live .changes-row:hover {
+    background: transparent;
+}
+
 .changes-name {
     overflow: hidden;
     text-overflow: ellipsis;

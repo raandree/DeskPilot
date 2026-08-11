@@ -1435,13 +1435,12 @@ function renderActivity(node, activity) {
 // Painted after the Turn finalizes because it needs a Git read per Turn, and
 // only for the newest Turn: an older card would describe a working tree that
 // has since moved on, and would cost one Git read per message on every render.
+// While the Turn runs the same element carries the live edit rows below, which
+// this card supersedes as soon as the change set can be measured.
 async function renderChanges(node, m) {
     if (!node) return;
-    node.classList.add('hidden');
-    node.innerHTML = '';
     const written = asArray(m && m.activity && m.activity.filesWritten).map(String);
-    if (!written.length) return;
-    if (!(state.settings && state.settings.workspaceFolder)) return;
+    if (!written.length || !(state.settings && state.settings.workspaceFolder)) { sealLiveEdits(node); return; }
 
     // Driven by the pending set, not by Git: the card is the review of what this
     // Turn changed, and it disappears once the user keeps or undoes those files —
@@ -1449,22 +1448,80 @@ async function renderChanges(node, m) {
     await loadAiChanges(false);
     const wanted = new Set(written.map((p) => turnRelPath(p)).filter(Boolean));
     const files = aiChanges.list.filter((f) => f && f.status !== 'unchanged' && wanted.has(String(f.rel).toLowerCase()));
-    if (!files.length) return;
+    if (!files.length) { sealLiveEdits(node); return; }
 
     paintChangesCard(node, files);
 }
 
-// A Turn reports absolute or Project-relative paths; the pending set is keyed by
-// lowercased Project-relative paths.
-function turnRelPath(p) {
+// ===== Live edits (the files a Turn is writing, while it writes them) =====
+// The Engine announces a write before it performs it, so a row here states the
+// agent's intent and carries no counts — measuring one would mean a Git read per
+// write on the thread that keeps the stream alive. The Changes card replaces the
+// whole thing at the end of the Turn, when the pending change set can be
+// compared with the pre-Turn snapshot.
+function noteFileEdit(wrap, path) {
+    const node = wrap && wrap._refs && wrap._refs.changes;
+    if (!node || !path) return;
+    const key = turnRelPath(path);
+    if (!key) return;
+    const edits = node._liveEdits || (node._liveEdits = new Map());
+    if (edits.has(key)) return;
+    edits.set(key, turnDisplayPath(path));
+    paintLiveEdits(node, edits, true);
+}
+
+function paintLiveEdits(node, edits, editing) {
+    node.classList.remove('hidden');
+    node.classList.add('changes-live');
+    node.innerHTML = '';
+    const n = edits.size;
+    const head = el('changes-head');
+    head.innerHTML = `<span class="changes-count">${editing ? 'Editing ' : ''}${n} file${n === 1 ? '' : 's'}${editing ? '\u2026' : ' edited'}</span>`;
+    node.appendChild(head);
+    const list = el('changes-list');
+    for (const rel of edits.values()) {
+        const parts = splitRelPath(rel);
+        const row = el('changes-row changes-row-live');
+        row.title = rel;
+        // A neutral glyph, not a status letter: whether this ends up a new file or
+        // an edit is not known until the write has happened.
+        row.innerHTML =
+            '<span class="changes-badge">\u270E</span>' +
+            `<span class="changes-name">${escapeHtml(parts.name)}</span>` +
+            `<span class="changes-dir muted tiny">${escapeHtml(parts.dir)}</span>`;
+        list.appendChild(row);
+    }
+    node.appendChild(list);
+}
+
+// A Turn can end with nothing reviewable — no Project, no Git repository, or
+// files the user has already put back — and that must not erase the record of
+// what it wrote. Keep the live rows in that case, without the "still going"
+// wording; a message rebuilt from history has none, so it clears as before.
+function sealLiveEdits(node) {
+    const edits = node._liveEdits;
+    if (edits && edits.size) { paintLiveEdits(node, edits, false); return; }
+    node.classList.add('hidden');
+    node.innerHTML = '';
+}
+
+// A Turn reports absolute or Project-relative paths; show them the way the
+// Changes list does, relative to the Project.
+function turnDisplayPath(p) {
     const rel = projectRelPath(p);
-    if (rel != null) return rel.toLowerCase();
-    return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+    if (rel != null) return rel;
+    return String(p || '').replace(/\\/g, '/').replace(/^\.\//, '');
+}
+
+// The pending set is keyed by lowercased Project-relative paths.
+function turnRelPath(p) {
+    return turnDisplayPath(p).toLowerCase();
 }
 
 function paintChangesCard(node, files) {
     const totals = files.reduce((acc, f) => ({ a: acc.a + Number(f.added || 0), d: acc.d + Number(f.deleted || 0) }), { a: 0, d: 0 });
     node.classList.remove('hidden');
+    node.classList.remove('changes-live');
     node.innerHTML = '';
 
     const head = el('changes-head');
@@ -2192,6 +2249,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
                 renderThinking(wrap, think);
             },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            file: (d) => { if (!state.stopRequested && d) noteFileEdit(wrap, d.path); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => {
                 turnStopped = true;
@@ -6658,6 +6716,7 @@ async function _streamRerun({ endpoint, body }) {
             delta: (d) => { if (!state.stopRequested) { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
             reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; renderThinking(wrap, think); } },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
+            file: (d) => { if (!state.stopRequested && d) noteFileEdit(wrap, d.path); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
             stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },

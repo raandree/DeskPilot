@@ -107,6 +107,14 @@ accent fills so the bright dark-mode accent stays legible.
   were before the Turn; files the agent created are deleted). The card disappears
   once those files are reviewed. See
   [090-git-workbench](090-git-workbench.md).
+- **Live edits** in that same card while the Turn runs: one row per file the
+  moment the agent starts writing it, under an `Editing N files…` header, with no
+  counts and no click target — the write has not happened yet, so there is
+  nothing to measure or diff. Independent of the Project being a Git repository
+  and of **Show the model's thinking**. The Changes card replaces the rows on
+  `done`; when there is nothing to review (no Project, no repository, or files
+  already put back) the rows stay, re-headed `N files edited`, rather than
+  vanishing with the record of what the Turn wrote.
 - **Tasks** block per assistant Message: a compact panel showing the agent's
   in-Turn Task List as the agent works, with a header `Tasks — {completed}/{total}`
   and one row per Task. Each row carries a status glyph (`not-started` ○,

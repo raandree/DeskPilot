@@ -729,7 +729,7 @@ parameter. An unregistered, relative, missing, or non-image path returns
 | --- | --- | --- |
 | `start` | `{ "messageId": "m_3" }` | Turn accepted; assistant Message id allocated. |
 | `delta` | `{ "text": "partial answer…" }` | each streamed answer chunk. |
-| `activity` | `{ "kind": "tool", "name": "read_file", "detail": "./notes.md" }` | best-effort live Tool signal (optional in v1). |
+| `file` | `{ "path": "docs/notes.md" }` | the agent is writing this file. Emitted from the Engine's structured tool-call record **before** the write happens, so it states intent and carries no counts; the client lists it under the Message and the Changes card supersedes the list on `done`. One frame per `write_file` call; a call whose arguments carry no usable path emits nothing. |
 | `tasks` | `{ "tasks": [ { "id": 1, "title": "…", "status": "in-progress" } ] }` | Task List update during the Turn; the **full** list is sent each time (idempotent replace, not a delta). At most one Task is `in-progress`. Status is one of `not-started`, `in-progress`, `completed`. |
 | `question` | `{ "id": "…", "structured": true, "title": "Profile", "questions": [{ "header": "Location", "question": "Where?", "options": [{ "label": "Munich", "description": "Within 30 km" }], "multiSelect": false, "allowFreeformInput": true }] }` | Ask-User is waiting. The client renders a Questionnaire wizard. Plain Engine text is normalized to one free-text step with `structured: false`. |
 | `stopping` | `{ "message": "Turn stopped." }` | Stop was accepted; the client immediately freezes the live Message while the Engine pipeline unwinds. |

@@ -119,9 +119,10 @@ function Invoke-DpTurn {
 
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
-    # Turn-local list), tool-call / unknown progress records are consumed silently,
-    # and ordinary host echo becomes a 'delta' (answer) or, under -ShowThinking, a
-    # 'reasoning' frame. All of that classification lives in Get-DpStreamFrame.
+    # Turn-local list), a 'write_file' tool call becomes a live 'file' frame, other
+    # tool-call / unknown progress records are consumed silently, and ordinary host
+    # echo becomes a 'delta' (answer) or, under -ShowThinking, a 'reasoning' frame.
+    # All of that classification lives in Get-DpStreamFrame.
     #
     # To keep a fast token stream smooth without a JSON-encode + socket write per
     # token, consecutive same-kind text frames are coalesced: $emit appends to a
@@ -147,6 +148,13 @@ function Invoke-DpTurn {
             & $flush
             $turnState.tasks = $decision.Tasks
             $writer.Write((ConvertTo-DpSseFrame -EventName 'tasks' -Data $decision.data))
+            return
+        }
+        # A file the agent is about to write. Flushed ahead of the buffered text so
+        # the edit lands where it happened in the trace rather than after it.
+        if ($decision.event -eq 'file') {
+            & $flush
+            $writer.Write((ConvertTo-DpSseFrame -EventName 'file' -Data $decision.data))
             return
         }
         # A 'delta' or 'reasoning' text frame: flush first if the kind changed, then

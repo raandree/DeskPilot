@@ -172,6 +172,31 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
     }
 
+    It 'shows the files a Turn edits while it is still editing them' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # Until the Turn ends, "which files is it touching?" was only answerable
+        # from the Thinking trace - so not at all with Thinking switched off. Every
+        # streaming path has to carry the frame, or the answer depends on how the
+        # Turn was started (send, regenerate, edit).
+        $fileFrames = [regex]::Matches($js, 'file: \(d\) =>')
+        $fileFrames.Count | Should -Be 2
+        [regex]::Matches($js, 'noteFileEdit\(wrap, d\.path\)').Count | Should -Be $fileFrames.Count
+        # One row per file, not one per write: an agent that rewrites the same file
+        # five times is still editing one file.
+        $js | Should -Match '(?s)function noteFileEdit\(wrap, path\) \{.{0,600}?if \(edits\.has\(key\)\) return;'
+        # The live rows and the reviewed card share one element, so the card
+        # supersedes them rather than appearing beside them.
+        $js | Should -Match '(?s)function paintChangesCard\(node, files\) \{.{0,300}?classList\.remove\(''changes-live''\)'
+        # A Turn that ends with nothing reviewable (no Project, no Git, or files
+        # already put back) must not erase the record of what it wrote.
+        [regex]::Matches($js, 'sealLiveEdits\(node\); return;').Count | Should -Be 2
+        $js | Should -Not -Match '(?s)async function renderChanges\(node, m\) \{\s*if \(!node\) return;\s*node\.classList\.add\(''hidden''\);'
+        # Clicking a live row would open a diff that does not exist yet.
+        $css | Should -Match '(?s)\.changes-live \.changes-row \{[^}]*cursor: default'
+    }
+
     It 'follows a project or agent switched from the phone' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

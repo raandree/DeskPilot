@@ -42,6 +42,19 @@ source: repository evidence
 - **Surface, don't hide.** Tool use becomes Activity; cost becomes Usage;
   errors become a visible Message. The UI never silently swallows agent
   behaviour.
+- **The structured progress record is the live signal; the host trace is
+  decoration.** ShellPilot writes a `ShpProgress` `ToolCall` record before it
+  runs a tool, so anything the window must show *during* a Turn is built from
+  that record in `Get-DpStreamFrame` — never by scraping the `-ShowThinking` host
+  echo, which does not exist when the Setting is off and is prose the client
+  concatenates. Parse the provider's argument string as JSON rather than
+  pattern-matching it: a written file's own content sits in the same object.
+- **A live surface states intent; the reviewed one states the record.** The
+  announcement precedes the write, so a live row carries no counts and no diff
+  target — producing either would mean a Git read per write on the thread holding
+  the SSE stream open. The two share one element so the reviewed card supersedes
+  the live rows, and the live rows are *sealed* rather than cleared when there is
+  nothing to review, so a stopped Turn still says what it wrote.
 - **Permissions are explicit state.** Tool categories map 1:1 to Engine
   `-Disable*` switches. A Permission that is off means the corresponding switch
   is passed; the UI reflects the exact set in force for the next Turn.

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Watch the files being edited, while they are edited.** Until a job finished,
+  the only place that named the file the agent was writing was the thinking
+  trace — so with **Show the model's thinking** switched off, nothing named it at
+  all. A card now appears under the answer as the job runs and lists each file
+  the moment the agent starts writing it. When the job ends, the reviewed card
+  you already know — with the `+`/`−` counts, **Keep** and **Undo** — takes its
+  place. A job you stop, or one in a folder that is not a repository, keeps the
+  list instead of clearing it, so you can still see what was written.
 - **Pick the model from your phone.** Intercom could switch the conversation, the
   agent and the project, but not the model, so choosing one still meant walking
   back to the machine. `/models` lists the models your account is offered, marks

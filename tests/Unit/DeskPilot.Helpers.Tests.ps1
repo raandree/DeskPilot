@@ -1031,10 +1031,47 @@ Describe 'Get-DpStreamFrame' {
         @($d.data.tasks).Count | Should -Be 1
         $d.data.tasks[0].status | Should -Be 'in-progress'
     }
-    It 'produces no frame for a ShpProgress ToolCall record' {
+    It 'produces no frame for a ToolCall that writes no file' {
         $rec = [pscustomobject]@{
             Tags        = @('ShpProgress')
             MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'read_file'; Arguments = '{}' }
+        }
+        Get-DpStreamFrame -Record $rec | Should -BeNullOrEmpty
+    }
+    It 'announces a file write as a file frame so the edit is visible while it happens' {
+        # The record is structured, so the path is read from the arguments rather
+        # than scraped out of the -ShowThinking host trace: the live list has to
+        # work with the Thinking pane switched off.
+        $rec = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{
+                Kind      = 'ToolCall'
+                Name      = 'write_file'
+                Arguments = '{"path": "docs\\notes.md", "content": "alpha\nbeta"}'
+            }
+        }
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'file'
+        $d.data.path | Should -Be 'docs\notes.md'
+    }
+    It 'emits the file frame whether or not the thinking trace is shown' {
+        $rec = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'write_file'; Arguments = '{"path":"a.md","content":"x"}' }
+        }
+        (Get-DpStreamFrame -Record $rec -ShowThinking).data.path | Should -Be 'a.md'
+    }
+    It 'stays silent for a write whose arguments name no usable path' -ForEach @(
+        @{ Arguments = '{"path": "", "content": "x"}' }
+        @{ Arguments = '{"content": "x"}' }
+        @{ Arguments = '{"path": "a.md", "content": "trunc' }
+        @{ Arguments = '' }
+    ) {
+        # A malformed or truncated argument string is the provider's, not ours; it
+        # must cost the drain loop nothing more than a skipped frame.
+        $rec = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'write_file'; Arguments = $Arguments }
         }
         Get-DpStreamFrame -Record $rec | Should -BeNullOrEmpty
     }
