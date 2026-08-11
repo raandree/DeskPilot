@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Thinking panel now tells you the time.** When a job takes minutes, the
+  panel gave you no way to tell whether the wait was the model thinking, a tool
+  running, or DeskPilot stuck. Every divider and every tool call now starts with
+  the clock, so the pause between two steps is there to read: `14:07:09` on one
+  divider and `14:07:31` on the next is twenty-two seconds you can now account
+  for. The time is the moment the agent actually did it, not the moment your
+  browser drew it, so a busy screen cannot flatter the numbers.
+
 - **The model's thinking is now readable.** Every time the agent used a tool, the
   Thinking panel showed the raw instruction it sent — one endless line in which
   each line break of a file it was writing appeared as a literal `\n` and every

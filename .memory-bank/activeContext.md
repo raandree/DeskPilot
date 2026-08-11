@@ -10,6 +10,61 @@ source: repository evidence
 
 ## Current focus
 
+**The Thinking pane is timed (`main`, 2026-08-11).** Reported as "there is a huge
+delay between the iterations" — with no way to tell whether the wait was the
+provider, a tool, or DeskPilot. `Format-DpThinkingTrace` now takes an optional
+`-Timestamp` and prefixes `HH:mm:ss` to the two lines that *start* a section: the
+iteration divider and the tool-call name. Prose is never stamped — a stamp per
+streamed token is noise, not a measurement — and the stamp lands in a fixed
+leading column, so the gap between two dividers reads straight off the pane.
+
+The stamp comes from the record's own `TimeGenerated`, not `Get-Date`. The Turn
+loop drains `Streams.Information` in 10 ms polled batches, so "now" would report
+the drain rather than the write and would flatten exactly the gap the stamp
+exists to expose. It also makes the measurement decide the open question: a
+server-side stamp separates a slow Engine from a slow browser, and the browser is
+a live suspect (`renderThinking` re-assigns `body.textContent` for the *whole*
+accumulated trace on every `reasoning` frame, and a trace carrying written-file
+bodies runs to hundreds of KB). `Format-DpThinkingTrace` stays pure: the
+parameter is read through `$PSBoundParameters.ContainsKey`, so an unbound call is
+still deterministic and the un-stamped shape is still tested.
+
+### Diagnosis, no code: "I am missing the thinking output, we only see tool usage"
+
+The screenshot runs **gpt-5-mini**, and there is no thinking to show. Evidence in
+ShellPilot 0.3.1: `$requestReasoning = [bool]$ShowThinking -and ($mode -eq
+'responses')`, and `$mode` only becomes `responses` when `-ShowThinking -and -not
+$streamingEnabled`. DeskPilot never passes `-DisableStreaming`, so a text Turn is
+always `chat` and a reasoning **summary is never requested**. On the chat stream
+`Read-ShpChatStream` echoes reasoning only if the provider volunteers
+`reasoning_text` / `reasoning_content` / `reasoning` deltas — Claude does, which
+is why this looked fine until the Model changed; the gpt-5 family exposes its
+reasoning through `/responses` only. Not a DeskPilot defect and not a leak
+either: every echoed delta is wrapped in `` `e[3;90m ``, which `Get-DpStreamFrame`
+matches, so reasoning can never arrive as answer text.
+
+ShellPilot says so itself — Yellow, `(-ShowThinking: model '{0}' exposed no
+reasoning trace on this backend…)` — but only **after** the loop ends, and
+`finalizeAssistant` overwrites the pane with `m.reasoning` on `done`, so the one
+explanation is destroyed at the moment it arrives. Buying the thinking back means
+`-DisableStreaming`, which costs live answer streaming; that trade is the user's
+to make, so nothing was changed.
+
+## Verification
+
+- `tests/Unit/DeskPilot.Helpers.Tests.ps1` — +4: the stamped divider, no-argument
+  and single-argument tool call; prose left unstamped; the stream frame preferring
+  `TimeGenerated` over the clock; the clock fallback when a record carries none.
+  Two existing `Get-DpStreamFrame` cases now pin the stamped shape.
+- Unit suite **828/828**; `Invoke-ScriptAnalyzer` clean on both changed files
+  (the `PSUseBOMForUnicodeEncodedFile` warning is pre-existing — HEAD and the
+  working copy start with the same bytes).
+- **Not live-smoked**: no real Turn has streamed through the stamps. Restart the
+  whole DeskPilot process (not just the tab) — the SPA hot-reloads from
+  `source/web`, the module functions do not.
+
+## Previous focus — the live Thinking survives a long answer
+
 **The live Thinking survives a long answer (`main`, 2026-08-11).** Reported from
 two screenshots: the trace and its tool calls stream into the Thinking pane, but
 that pane sits *above* the answer inside its Message, so once the answer filled a

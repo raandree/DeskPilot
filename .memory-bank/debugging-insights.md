@@ -2,6 +2,32 @@
 
 Recurring issues and how they were resolved.
 
+## An empty Thinking pane is usually the Model, not DeskPilot (2026-08-11)
+
+**Symptom:** with **Show the model's thinking** on, the pane shows only iteration
+dividers and tool calls — no reasoning prose. Looks like a broken switch.
+
+**Root cause:** ShellPilot 0.3.1 requests a reasoning summary only on the
+`/responses` shape (`$requestReasoning = [bool]$ShowThinking -and ($mode -eq
+'responses')`), and only reaches that shape when `-ShowThinking -and -not
+$streamingEnabled`. DeskPilot never passes `-DisableStreaming`, so a text Turn is
+always `chat` and the summary is never asked for. On the chat stream reasoning
+appears only where the provider *volunteers* `reasoning_text` /
+`reasoning_content` / `reasoning` deltas: Claude does, the gpt-5 family does not.
+
+**Rule:** before suspecting DeskPilot, check which Model the Turn ran on. The
+answer is a ShellPilot trade-off (reasoning summary *or* live answer streaming),
+not a DeskPilot defect, and it cannot be fixed here without giving up streaming.
+
+**Not a leak:** every echoed reasoning delta is wrapped in `` `e[3;90m ``, which
+`Get-DpStreamFrame`'s `$isTrace` test matches, so reasoning can never be
+misclassified as answer text — including the second and later deltas.
+
+**Diagnostics:** section lines in the pane carry `HH:mm:ss` taken from the
+Information record's `TimeGenerated`. Because that is the Engine's write time and
+not the drain time, a gap in the stamps is the provider or a tool; a pane that
+*renders* slower than its own stamps is the browser.
+
 ## The first voice for a language is the worst one installed (2026-08-09)
 
 **Symptom:** read-aloud "sounds like from the last decade", flat and unemphasised,

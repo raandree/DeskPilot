@@ -21,9 +21,18 @@ function Format-DpThinkingTrace {
         reasoning prose - which already carries real newlines and streams token by
         token - is never rewritten. It never truncates: the pane bounds its own
         height, so no part of the trace is lost.
+
+        Both of those lines start a section, and with -Timestamp each carries the
+        clock in a fixed leading column. A Turn's wall time is spent almost entirely
+        between two section lines - the provider round-trip, then the tool run - so
+        the two stamps are what turn "this feels slow" into a measured gap.
     .PARAMETER Text
         One trace line as the Engine wrote it, ANSI already stripped. Leading
         whitespace (the blank line the Engine puts before a banner) is preserved.
+    .PARAMETER Timestamp
+        When bound, the time this line was written, prefixed as HH:mm:ss to the
+        iteration divider and the tool-call name. Prose is never stamped; a stamp
+        per streamed token would be noise, not a measurement.
     .OUTPUTS
         System.String
     #>
@@ -33,17 +42,21 @@ function Format-DpThinkingTrace {
         [Parameter(Mandatory)]
         [AllowEmptyString()]
         [AllowNull()]
-        [string]$Text
+        [string]$Text,
+
+        [Parameter()]
+        [datetime]$Timestamp
     )
 
     if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
 
     $lead = [regex]::Match($Text, '^\s*').Value
     $core = $Text.Trim()
+    $stamp = if ($PSBoundParameters.ContainsKey('Timestamp')) { $Timestamp.ToString('HH:mm:ss') + ' ' } else { '' }
 
     $banner = [regex]::Match($core, '^===\s*iteration\s+(?<n>\S+)\s*\((?<mode>[^)]*)\)\s*===$')
     if ($banner.Success) {
-        return '{0}── Iteration {1} ({2}) ──' -f $lead, $banner.Groups['n'].Value, $banner.Groups['mode'].Value
+        return '{0}{1}── Iteration {2} ({3}) ──' -f $lead, $stamp, $banner.Groups['n'].Value, $banner.Groups['mode'].Value
     }
 
     $call = [regex]::Match($core, '(?s)^->\s*(?<name>[^\s(]+)\((?<args>.*)\)$')
@@ -51,10 +64,10 @@ function Format-DpThinkingTrace {
 
     $name = $call.Groups['name'].Value
     $arguments = $call.Groups['args'].Value.Trim()
-    if ($arguments.Length -eq 0 -or $arguments -eq '{}') { return "$lead→ $name" }
+    if ($arguments.Length -eq 0 -or $arguments -eq '{}') { return "$lead$stamp→ $name" }
 
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("$lead→ $name")
+    $lines.Add("$lead$stamp→ $name")
 
     $parsed = $null
     try { $parsed = $arguments | ConvertFrom-Json -ErrorAction Stop } catch { $parsed = $null }

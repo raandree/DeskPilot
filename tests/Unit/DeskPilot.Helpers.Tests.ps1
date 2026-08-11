@@ -985,6 +985,19 @@ Describe 'Format-DpThinkingTrace' {
     It 'turns the iteration banner into a divider and keeps the blank line before it' {
         Format-DpThinkingTrace -Text "`n=== iteration 12 (chat) ===" | Should -Be "`n── Iteration 12 (chat) ──"
     }
+    It 'stamps a section line with the clock so the gap between iterations is measurable' {
+        $at = [datetime]'2026-08-11T14:07:09'
+        Format-DpThinkingTrace -Text "`n=== iteration 12 (chat) ===" -Timestamp $at |
+            Should -Be "`n14:07:09 ── Iteration 12 (chat) ──"
+        Format-DpThinkingTrace -Text '-> get_time({})' -Timestamp $at | Should -Be '14:07:09 → get_time'
+        Format-DpThinkingTrace -Text '-> read_file({"path": "a.md"})' -Timestamp $at |
+            Should -Be "14:07:09 → read_file`n  path: a.md"
+    }
+    It 'never stamps prose, only the lines that start a section' {
+        $at = [datetime]'2026-08-11T14:07:09'
+        Format-DpThinkingTrace -Text 'I will read the file first.' -Timestamp $at |
+            Should -Be 'I will read the file first.'
+    }
     It 'names a tool that was called with no arguments' {
         Format-DpThinkingTrace -Text '-> get_time({})' | Should -Be '→ get_time'
         Format-DpThinkingTrace -Text '-> get_time()' | Should -Be '→ get_time'
@@ -1053,19 +1066,38 @@ Describe 'Get-DpStreamFrame' {
     }
     It 're-attaches a newline to a complete-line reasoning trace so lines do not glue' {
         $rec = [pscustomobject]@{
-            Tags        = @('PSHOST')
-            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = '=== iteration 1 (chat) ==='; ForegroundColor = [System.ConsoleColor]::DarkCyan; NoNewLine = $false }
+            Tags          = @('PSHOST')
+            TimeGenerated = [datetime]'2026-08-11T14:07:09'
+            MessageData   = [System.Management.Automation.HostInformationMessage]@{ Message = '=== iteration 1 (chat) ==='; ForegroundColor = [System.ConsoleColor]::DarkCyan; NoNewLine = $false }
         }
         $d = Get-DpStreamFrame -Record $rec -ShowThinking
         $d.event | Should -Be 'reasoning'
-        $d.data.text | Should -Be "── Iteration 1 (chat) ──`n"
+        $d.data.text | Should -Be "14:07:09 ── Iteration 1 (chat) ──`n"
+    }
+    It 'stamps a section line from the record, not the clock, so a batched drain still reports the event' {
+        # The Turn loop drains the Information stream in polled batches; timing the
+        # drain instead of the write would hide the very gap the stamp exposes.
+        $rec = [pscustomobject]@{
+            Tags          = @('PSHOST')
+            TimeGenerated = [datetime]'2026-08-11T09:00:01'
+            MessageData   = [System.Management.Automation.HostInformationMessage]@{ Message = '-> get_time({})'; ForegroundColor = [System.ConsoleColor]::Cyan; NoNewLine = $false }
+        }
+        (Get-DpStreamFrame -Record $rec -ShowThinking).data.text | Should -Be "09:00:01 → get_time`n"
+    }
+    It 'falls back to the clock when the record carries no write time' {
+        $rec = [pscustomobject]@{
+            Tags        = @('PSHOST')
+            MessageData = [System.Management.Automation.HostInformationMessage]@{ Message = '-> get_time({})'; ForegroundColor = [System.ConsoleColor]::Cyan; NoNewLine = $false }
+        }
+        (Get-DpStreamFrame -Record $rec -ShowThinking).data.text | Should -Match "^\d{2}:\d{2}:\d{2} → get_time`n$"
     }
     It 'lays out a tool call so its arguments are readable instead of one line of JSON' {
         # The Engine writes '-> name({json})' as a single host line, so a written
         # file arrives with every newline as a literal backslash-n.
         $rec = [pscustomobject]@{
-            Tags        = @('PSHOST')
-            MessageData = [System.Management.Automation.HostInformationMessage]@{
+            Tags          = @('PSHOST')
+            TimeGenerated = [datetime]'2026-08-11T14:07:09'
+            MessageData   = [System.Management.Automation.HostInformationMessage]@{
                 Message         = '-> write_file({"content": "alpha\nbeta", "path": "C:\\tmp\\a.md"})'
                 ForegroundColor = [System.ConsoleColor]::Cyan
                 NoNewLine       = $false
@@ -1073,7 +1105,7 @@ Describe 'Get-DpStreamFrame' {
         }
         $d = Get-DpStreamFrame -Record $rec -ShowThinking
         $d.event | Should -Be 'reasoning'
-        $d.data.text | Should -Be "→ write_file`n  content:`n    alpha`n    beta`n  path: C:\tmp\a.md`n"
+        $d.data.text | Should -Be "14:07:09 → write_file`n  content:`n    alpha`n    beta`n  path: C:\tmp\a.md`n"
     }
     It 'never rewrites a streamed reasoning token' {
         # Reasoning arrives token by token with -NoNewline; only the concatenation

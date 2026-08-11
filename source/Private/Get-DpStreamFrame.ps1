@@ -41,8 +41,12 @@ function Get-DpStreamFrame {
 
         Readability: a complete-line trace also goes through Format-DpThinkingTrace,
         which lays out the tool call the Engine writes as one line of raw provider
-        JSON. A streamed reasoning token is never rewritten - it is prose, and only
-        the concatenation of many tokens is a whole thought.
+        JSON and stamps each section line with the time the Engine wrote it. That
+        stamp comes from the record's own TimeGenerated, not the clock: the Turn
+        loop drains the stream in batches, so "now" would report the poll instead of
+        the event and flatten exactly the gap the stamp exists to expose. A streamed
+        reasoning token is never rewritten - it is prose, and only the concatenation
+        of many tokens is a whole thought.
     .PARAMETER Record
         One Information record from the Engine Runspace stream.
     .PARAMETER ShowThinking
@@ -133,7 +137,15 @@ function Get-DpStreamFrame {
         # A tool call and an iteration banner each arrive as one complete host line,
         # so both can be laid out here. A streamed reasoning token (NoNewLine) is
         # left exactly as it arrived - it is prose the client concatenates.
-        $traceText = if ($completeLine) { (Format-DpThinkingTrace -Text $clean) + "`n" } else { $clean }
+        $traceText = if ($completeLine) {
+            $written = Get-DpPropertyValue -InputObject $Record -Name @('TimeGenerated') -Default $null
+            $formatParams = @{
+                Text      = $clean
+                Timestamp = $(if ($written -is [datetime]) { $written } else { Get-Date })
+            }
+            (Format-DpThinkingTrace @formatParams) + "`n"
+        }
+        else { $clean }
         return @{ event = 'reasoning'; data = @{ text = $traceText } }
     }
     $emitText = if ($completeLine) { $clean + "`n" } else { $clean }
