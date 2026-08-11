@@ -1020,6 +1020,79 @@ Describe 'Format-DpThinkingTrace' {
     }
 }
 
+Describe 'Add-DpNarrationBlock' {
+    It 'seals buffered text as one block' {
+        $b = Add-DpNarrationBlock -Text 'Let me check the branch first.'
+        @($b).Count | Should -Be 1
+        $b[0].text | Should -Be 'Let me check the branch first.'
+        $b[0].index | Should -Be 0
+    }
+    It 'returns an array even for a single block' {
+        # Without the unary comma this unrolls to a bare hashtable and the caller's
+        # next append starts from an empty list.
+        , (Add-DpNarrationBlock -Text 'one') | Should -BeOfType [System.Object[]]
+    }
+    It 'discards blank text, because that is one tool call straight after another' -ForEach @(
+        @{ Value = '' }
+        @{ Value = $null }
+        @{ Value = "  `n`t " }
+    ) {
+        Add-DpNarrationBlock -Text $Value | Should -BeNullOrEmpty
+    }
+    It 'appends in order with a monotonic index' {
+        $b = Add-DpNarrationBlock -Text 'first'
+        $b = Add-DpNarrationBlock -Block $b -Text 'second'
+        $b = Add-DpNarrationBlock -Block $b -Text 'third'
+        @($b).Count | Should -Be 3
+        $b[0].text | Should -Be 'first'
+        $b[2].text | Should -Be 'third'
+        $b.index | Should -Be @(0, 1, 2)
+    }
+    It 'trims surrounding whitespace but keeps the text intact' {
+        (Add-DpNarrationBlock -Text "  keep`n  this  ")[0].text | Should -Be "keep`n  this"
+    }
+    It 'tolerates an empty or null starting list' -ForEach @(
+        @{ Start = @() }
+        @{ Start = $null }
+    ) {
+        $b = Add-DpNarrationBlock -Block $Start -Text 'x'
+        @($b).Count | Should -Be 1
+    }
+    It 'elides the oldest blocks over the bound and says how many' {
+        $b = @()
+        foreach ($n in 1..4) { $b = Add-DpNarrationBlock -Block $b -Text ('x' * 200 + " $n") -MaxLength 500 }
+        # A marker plus as many newest blocks as fit.
+        $b[0].elided | Should -BeGreaterThan 0
+        $b[0].text | Should -Match 'earlier steps? elided'
+        # The newest block always survives.
+        $b[-1].text | Should -Match '4$'
+    }
+    It 'reports one cumulative total when the list is trimmed repeatedly' {
+        $b = @()
+        foreach ($n in 1..6) { $b = Add-DpNarrationBlock -Block $b -Text ('y' * 200) -MaxLength 400 }
+        @($b | Where-Object { $_.ContainsKey('elided') }).Count | Should -Be 1
+        $b[0].elided | Should -Be 4
+    }
+    It 'says "step" for a single elided block' {
+        $b = @()
+        foreach ($n in 1..2) { $b = Add-DpNarrationBlock -Block $b -Text ('z' * 300) -MaxLength 400 }
+        $b[0].elided | Should -Be 1
+        $b[0].text | Should -Be '(1 earlier step elided.)'
+    }
+    It 'keeps the newest block even when it alone exceeds the bound' {
+        # Dropping it would leave a marker and nothing to read.
+        $b = Add-DpNarrationBlock -Text ('q' * 5000) -MaxLength 256
+        @($b).Count | Should -Be 1
+        $b[0].text.Length | Should -Be 5000
+    }
+    It 'keeps the index monotonic across an elision' {
+        $b = @()
+        foreach ($n in 1..5) { $b = Add-DpNarrationBlock -Block $b -Text ('w' * 200) -MaxLength 400 }
+        $kept = @($b | Where-Object { -not $_.ContainsKey('elided') })
+        $kept[-1].index | Should -Be 4
+    }
+}
+
 Describe 'Get-DpStreamFrame' {
     It 'emits a tasks frame (and no delta) for a ShpProgress TodoList record' {
         $rec = [pscustomobject]@{

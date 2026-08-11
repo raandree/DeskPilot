@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **See what the agent said while it worked.** A job that used several tools
+  narrated its way through them — "let me check the branch first", "the counts
+  differ, so I will find out why" — and every word of it was thrown away the
+  moment the job finished, leaving only the final answer. Those notes are now
+  kept in a **Steps** section above the answer, one entry per tool the agent
+  reached for. It is collapsed by default, it survives a reload, and a job you
+  stop keeps whatever it had already said — which is often the only record of
+  what it was doing.
 - **Watch the files being edited, while they are edited.** Until a job finished,
   the only place that named the file the agent was writing was the thinking
   trace — so with **Show the model's thinking** switched off, nothing named it at

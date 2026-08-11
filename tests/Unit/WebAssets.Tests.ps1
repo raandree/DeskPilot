@@ -197,6 +197,29 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match '(?s)\.changes-live \.changes-row \{[^}]*cursor: default'
     }
 
+    It 'keeps what the model said between its tool calls' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # The narration streams into the answer body live and finalizeAssistant then
+        # replaces that body with the final answer, so without a home of its own the
+        # whole account of how the Turn was worked is destroyed the moment it ends.
+        $js | Should -Match '(?s)function buildAssistantEl.{0,1200}const steps = el\(''disclosure steps hidden'', ''details''\)'
+        $js | Should -Match ([regex]::Escape('wrap._refs = { content, thinking, steps,'))
+        # Rendered from the persisted Message, so it survives done, stopped, and a
+        # rebuild of the thread from storage.
+        $js | Should -Match '(?s)function finalizeAssistant.{0,600}?renderSteps\(r\.steps, m\.narration\)'
+        $js | Should -Match 'function renderSteps\(node, narration\)'
+        # Absent rather than empty when the Turn had no intermediate narration.
+        $js | Should -Match '(?s)function renderSteps.{0,300}?if \(!blocks\.length\) \{ node\.classList\.add\(''hidden''\); return; \}'
+        # It is answer text the model chose to emit, not a reasoning trace, so
+        # gating it behind the thinking toggle is what hid this in the first place.
+        $js | Should -Not -Match '(?s)function renderSteps.{0,600}?showThinking'
+        # Collapsed by default: the default view stays calm.
+        $js | Should -Not -Match '(?s)function renderSteps.{0,600}?\.open = true'
+        $css | Should -Match ([regex]::Escape('.steps .step-block+.step-block'))
+    }
+
     It 'follows a project or agent switched from the phone' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

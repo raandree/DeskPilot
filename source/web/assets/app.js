@@ -1362,6 +1362,10 @@ function buildAssistantEl(m) {
     thinking.innerHTML = '<summary>Thinking</summary><div class="disclosure-body"></div>';
     // Asking to see the model's thinking means seeing it, not finding a box to open.
     thinking.open = !!(state.settings && state.settings.showThinking);
+    // What the model said between its tool calls. Deliberately NOT gated on the
+    // thinking setting: this is answer text the model chose to emit, not a trace.
+    const steps = el('disclosure steps hidden', 'details');
+    steps.innerHTML = '<summary>Steps</summary><div class="disclosure-body"></div>';
     const content = el('content');
     const tasks = el('tasks-panel hidden');
     const userPrompts = el('user-prompts hidden');
@@ -1369,8 +1373,8 @@ function buildAssistantEl(m) {
     const changes = el('changes-card hidden');
     const activity = el('disclosure activity hidden', 'details');
     const usage = el('usage-foot hidden');
-    wrap.append(role, thinking, content, tasks, userPrompts, changes, activity, usage);
-    wrap._refs = { content, thinking, tasks, userPrompts, changes, activity, usage, actions };
+    wrap.append(role, thinking, steps, content, tasks, userPrompts, changes, activity, usage);
+    wrap._refs = { content, thinking, steps, tasks, userPrompts, changes, activity, usage, actions };
     return wrap;
 }
 
@@ -1388,11 +1392,30 @@ function finalizeAssistant(wrap, m, opts) {
         wrap.querySelector('.thinking').classList.remove('hidden');
         wrap.querySelector('.thinking .disclosure-body').textContent = m.reasoning;
     }
+    renderSteps(r.steps, m.narration);
     renderTasks(r.tasks, m.tasks);
     renderActivity(r.activity, m.activity);
     renderChanges(r.changes, m);
     renderUsage(r.usage, m);
     return wrap;
+}
+
+// What the model said between its tool calls. It streams into the answer body
+// live, and finalizeAssistant then replaces that body with the final answer -
+// so without this the whole account of how the Turn was worked is destroyed at
+// the moment it completes.
+function renderSteps(node, narration) {
+    if (!node) return;
+    const blocks = asArray(narration).filter((b) => b && b.text);
+    if (!blocks.length) { node.classList.add('hidden'); return; }
+    node.classList.remove('hidden');
+    const summary = node.querySelector('summary');
+    if (summary) summary.textContent = blocks.length === 1 ? '1 step' : `${blocks.length} steps`;
+    const body = node.querySelector('.disclosure-body');
+    body.innerHTML = blocks
+        .map((b) => `<div class="step-block">${renderMarkdown(String(b.text))}</div>`)
+        .join('');
+    hydrateCopies(body);
 }
 
 function renderActivity(node, activity) {

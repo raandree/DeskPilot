@@ -1176,6 +1176,20 @@ button.tree-row {
     overflow-wrap: anywhere;
 }
 
+.steps .disclosure-body {
+    color: var(--muted);
+    max-height: min(46vh, 420px);
+    overflow: auto;
+}
+
+/* One rule per step so consecutive blocks read as separate moments in the Turn
+   rather than as one run-on paragraph. */
+.steps .step-block+.step-block {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
 .activity-list {
     display: flex;
     flex-direction: column;

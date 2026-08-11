@@ -57,11 +57,23 @@ function Invoke-DpTurn {
     # the whole Thinking trace this Turn streamed, which a Stop has nothing else to
     # fall back on.
     $turnState = @{
-        tasks        = @()
-        emitted      = 0
-        pendingEvent = $null
-        pendingText  = [System.Text.StringBuilder]::new()
-        reasoning    = [System.Text.StringBuilder]::new()
+        tasks           = @()
+        emitted         = 0
+        pendingEvent    = $null
+        pendingText     = [System.Text.StringBuilder]::new()
+        reasoning       = [System.Text.StringBuilder]::new()
+        narration       = @()
+        narrationBuffer = [System.Text.StringBuilder]::new()
+    }
+
+    # Seal whatever answer text has been buffered since the last tool call as one
+    # narration block. Called on a tool-call boundary and once more if a Stop ends
+    # the Turn; NOT called on the success path, where the trailing buffer is the
+    # final answer and already lives on the Message text.
+    $sealNarration = {
+        if ($turnState.narrationBuffer.Length -eq 0) { return }
+        $turnState.narration = Add-DpNarrationBlock -Block $turnState.narration -Text $turnState.narrationBuffer.ToString()
+        [void]$turnState.narrationBuffer.Clear()
     }
 
     # Flush the buffered text frame (a coalesced run of same-kind 'delta'/'reasoning'
@@ -72,6 +84,9 @@ function Invoke-DpTurn {
             $pending = $turnState.pendingText.ToString()
             $writer.Write((ConvertTo-DpSseFrame -EventName $turnState.pendingEvent -Data @{ text = $pending }))
             if ($turnState.pendingEvent -eq 'reasoning') { [void]$turnState.reasoning.Append($pending) }
+            # Answer text is also the raw material for a narration block, which is
+            # only decided later - at the next tool call, or at the end of the Turn.
+            else { [void]$turnState.narrationBuffer.Append($pending) }
             # A Turn started from the phone has no browser request to stream over,
             # so the same text is also buffered for the SPA to poll (spec 110).
             $remote = if ($script:DeskPilot.Intercom) { $script:DeskPilot.Intercom.RemoteTurn } else { $null }
@@ -137,6 +152,17 @@ function Invoke-DpTurn {
         if ($userPromptBridge) {
             $questionText = Get-DpUserPromptText -Record $Record
             if ($questionText) { $userPromptBridge.CaptureQuestion($questionText) }
+        }
+        # A tool call ends whatever the model was saying, so flush the buffered text
+        # and seal it as one narration block. Checked here rather than on the frame
+        # decision because Get-DpStreamFrame consumes most tool-call records silently.
+        $recordTags = Get-DpPropertyValue -InputObject $Record -Name @('Tags') -Default @()
+        if (@($recordTags) -contains 'ShpProgress') {
+            $recordPayload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
+            if ([string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Kind') -Default '') -eq 'ToolCall') {
+                & $flush
+                & $sealNarration
+            }
         }
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
         if ($null -eq $decision) { return }
@@ -386,6 +412,9 @@ function Invoke-DpTurn {
                 # surviving record of what the Turn was thinking, and without this a
                 # stopped Turn reloads with an empty pane.
                 $stoppedReasoning = if ($turnState.reasoning.Length -gt 0) { $turnState.reasoning.ToString() } else { $null }
+                # A Stop has no final answer, so the trailing buffer is narration too -
+                # and on a stopped Turn it is the only account of what was done.
+                & $sealNarration
                 $stoppedMessage = @{
                     id         = $assistantId
                     role       = 'assistant'
@@ -393,6 +422,7 @@ function Invoke-DpTurn {
                     stopped    = $true
                     stopReason = 'Turn stopped.'
                     reasoning  = $stoppedReasoning
+                    narration  = $turnState.narration
                     activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
                     usage      = $stoppedUsage
                     tasks      = $turnState.tasks
@@ -464,6 +494,9 @@ function Invoke-DpTurn {
             role       = 'assistant'
             text       = $mapped.content
             reasoning  = $mapped.reasoning
+            # Not sealed here: the buffer still holding text on the success path is
+            # the final answer, which is already on text.
+            narration  = $turnState.narration
             activity   = $mapped.activity
             usage      = $mapped.usage
             tasks      = $finalTasks
