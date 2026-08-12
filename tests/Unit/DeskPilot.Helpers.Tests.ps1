@@ -890,6 +890,83 @@ Describe 'ConvertFrom-DpEngineResult' {
         @((ConvertFrom-DpEngineResult -Result ([pscustomobject]@{ Content = 'hi'; TodoList = @() })).tasks).Count | Should -Be 0
         @((ConvertFrom-DpEngineResult -Result $null).tasks).Count | Should -Be 0
     }
+    It 'recovers a fetched page as its URL, not as the raw tool arguments' {
+        # The Engine tracks no fetched URL at all, so they come back off the tool
+        # calls. Reporting '{"url":"…"}' as the page fetched is what used to happen.
+        $result = [pscustomobject]@{
+            Content   = 'done'
+            ToolCalls = @([pscustomobject]@{ Name = 'fetch_url'; Arguments = '{"url":"https://example.com/a"}' })
+        }
+        (ConvertFrom-DpEngineResult -Result $result).activity.pagesFetched | Should -Be @('https://example.com/a')
+    }
+    It 'keeps a malformed fetch argument rather than losing the fetch' {
+        $result = [pscustomobject]@{
+            Content   = 'done'
+            ToolCalls = @([pscustomobject]@{ Name = 'fetch_url'; Arguments = '{"url":"https://exam' })
+        }
+        (ConvertFrom-DpEngineResult -Result $result).activity.pagesFetched | Should -Be @('{"url":"https://exam')
+    }
+}
+
+Describe 'ConvertTo-DpActivityAction' {
+    It 'classifies <Tool> as <Kind> and names the <Field>' -ForEach @(
+        @{ Tool = 'read_file'; Arguments = '{"path":"a.md"}'; Kind = 'read'; Field = 'path'; Detail = 'a.md' }
+        @{ Tool = 'list_directory'; Arguments = '{"path":"src"}'; Kind = 'list'; Field = 'path'; Detail = 'src' }
+        @{ Tool = 'write_file'; Arguments = '{"path":"a.md","content":"x"}'; Kind = 'write'; Field = 'path'; Detail = 'a.md' }
+        @{ Tool = 'replace_in_file'; Arguments = '{"path":"a.ps1","oldText":"x"}'; Kind = 'write'; Field = 'path'; Detail = 'a.ps1' }
+        @{ Tool = 'create_directory'; Arguments = '{"path":"out"}'; Kind = 'create'; Field = 'path'; Detail = 'out' }
+        @{ Tool = 'run_command'; Arguments = '{"command":"git status"}'; Kind = 'run'; Field = 'command'; Detail = 'git status' }
+        @{ Tool = 'fetch_url'; Arguments = '{"url":"https://example.com"}'; Kind = 'fetch'; Field = 'url'; Detail = 'https://example.com' }
+        @{ Tool = 'search_files'; Arguments = '{"pattern":"*.md"}'; Kind = 'search'; Field = 'pattern'; Detail = '*.md' }
+        @{ Tool = 'search_text'; Arguments = '{"query":"TODO"}'; Kind = 'search'; Field = 'query'; Detail = 'TODO' }
+        @{ Tool = 'ask_user'; Arguments = '{"question":"Which one?"}'; Kind = 'ask'; Field = 'question'; Detail = 'Which one?' }
+        @{ Tool = 'load_skill'; Arguments = '{"name":"pester-patterns"}'; Kind = 'load'; Field = 'name'; Detail = 'pester-patterns' }
+        @{ Tool = 'load_instruction'; Arguments = '{"name":"preflight"}'; Kind = 'load'; Field = 'name'; Detail = 'preflight' }
+    ) {
+        $action = ConvertTo-DpActivityAction -Tool $Tool -Arguments $Arguments
+        $action.tool | Should -Be $Tool
+        $action.kind | Should -Be $Kind
+        $action.detail | Should -Be $Detail
+    }
+    It 'reports an unknown tool by name and takes no detail from its arguments' {
+        # A tool that does not exist yet must not be able to publish its arguments
+        # here: the whitelist is wrong only in the safe direction.
+        $action = ConvertTo-DpActivityAction -Tool 'brand_new_tool' -Arguments '{"secret":"hunter2"}'
+        $action.tool | Should -Be 'brand_new_tool'
+        $action.kind | Should -Be 'other'
+        $action.detail | Should -Be ''
+    }
+    It 'takes no detail from a nested Questionnaire, which the wizard card already shows' {
+        (ConvertTo-DpActivityAction -Tool 'ask_questions' -Arguments '{"Questionnaire":"{\"title\":\"Profile\"}"}').detail | Should -Be ''
+    }
+    It 'yields nothing for a Task List update or a nameless tool' -ForEach @(
+        @{ Tool = 'manage_todo_list' }
+        @{ Tool = '' }
+        @{ Tool = $null }
+        @{ Tool = '   ' }
+    ) {
+        ConvertTo-DpActivityAction -Tool $Tool -Arguments '{}' | Should -BeNullOrEmpty
+    }
+    It 'loses the detail, never the action, when the arguments are malformed' -ForEach @(
+        @{ Arguments = '{"path":"a.md"' }
+        @{ Arguments = 'not json' }
+        @{ Arguments = '' }
+        @{ Arguments = $null }
+    ) {
+        $action = ConvertTo-DpActivityAction -Tool 'read_file' -Arguments $Arguments
+        $action.kind | Should -Be 'read'
+        $action.detail | Should -Be ''
+    }
+    It 'flattens a multi-line command to the one line the row shows' {
+        (ConvertTo-DpActivityAction -Tool 'run_command' -Arguments '{"command":"git add .\n git commit"}').detail |
+            Should -Be 'git add . git commit'
+    }
+    It 'bounds a long detail' {
+        $long = 'https://example.com/' + ('x' * 500)
+        $detail = (ConvertTo-DpActivityAction -Tool 'fetch_url' -Arguments (@{ url = $long } | ConvertTo-Json -Compress) -MaxDetail 64).detail
+        $detail.Length | Should -Be 64
+        $detail | Should -BeLike '*…'
+    }
 }
 
 Describe 'ConvertTo-DpTaskList' {
@@ -1517,14 +1594,36 @@ Describe 'Get-DpStreamFrame' {
         @($d.data.tasks).Count | Should -Be 1
         $d.data.tasks[0].status | Should -Be 'in-progress'
     }
-    It 'produces no frame for a ToolCall that writes no file' {
+    It 'emits an activity frame for every tool call, not just a write' {
         $rec = [pscustomobject]@{
             Tags        = @('ShpProgress')
-            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'read_file'; Arguments = '{}' }
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'read_file'; Arguments = '{"path":"notes.md"}' }
+        }
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'activity'
+        $d.data.kind | Should -Be 'read'
+        $d.data.detail | Should -Be 'notes.md'
+        # The caller keeps the ordered list, so the decision carries the action too.
+        $d.Action.tool | Should -Be 'read_file'
+    }
+    It 'names the URL a fetch is about to retrieve' {
+        $rec = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'fetch_url'; Arguments = '{"url":"https://example.com/spec"}' }
+        }
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'activity'
+        $d.data.kind | Should -Be 'fetch'
+        $d.data.detail | Should -Be 'https://example.com/spec'
+    }
+    It 'emits no frame for a Task List update, which has its own live panel' {
+        $rec = [pscustomobject]@{
+            Tags        = @('ShpProgress')
+            MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'manage_todo_list'; Arguments = '{}' }
         }
         Get-DpStreamFrame -Record $rec | Should -BeNullOrEmpty
     }
-    It 'announces a file write as a file frame so the edit is visible while it happens' {
+    It 'announces a file write as an activity frame so the edit is visible while it happens' {
         # The record is structured, so the path is read from the arguments rather
         # than scraped out of the -ShowThinking host trace: the live list has to
         # work with the Thinking pane switched off.
@@ -1537,29 +1636,33 @@ Describe 'Get-DpStreamFrame' {
             }
         }
         $d = Get-DpStreamFrame -Record $rec
-        $d.event | Should -Be 'file'
-        $d.data.path | Should -Be 'docs\notes.md'
+        $d.event | Should -Be 'activity'
+        $d.data.kind | Should -Be 'write'
+        $d.data.detail | Should -Be 'docs\notes.md'
     }
-    It 'emits the file frame whether or not the thinking trace is shown' {
+    It 'emits the activity frame whether or not the thinking trace is shown' {
         $rec = [pscustomobject]@{
             Tags        = @('ShpProgress')
             MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'write_file'; Arguments = '{"path":"a.md","content":"x"}' }
         }
-        (Get-DpStreamFrame -Record $rec -ShowThinking).data.path | Should -Be 'a.md'
+        (Get-DpStreamFrame -Record $rec -ShowThinking).data.detail | Should -Be 'a.md'
     }
-    It 'stays silent for a write whose arguments name no usable path' -ForEach @(
+    It 'still reports a write whose arguments name no usable path' -ForEach @(
         @{ Arguments = '{"path": "", "content": "x"}' }
         @{ Arguments = '{"content": "x"}' }
         @{ Arguments = '{"path": "a.md", "content": "trunc' }
         @{ Arguments = '' }
     ) {
-        # A malformed or truncated argument string is the provider's, not ours; it
-        # must cost the drain loop nothing more than a skipped frame.
+        # A malformed or truncated argument string is the provider's, not ours. It
+        # costs the action its detail - never the fact that the agent wrote a file.
         $rec = [pscustomobject]@{
             Tags        = @('ShpProgress')
             MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'write_file'; Arguments = $Arguments }
         }
-        Get-DpStreamFrame -Record $rec | Should -BeNullOrEmpty
+        $d = Get-DpStreamFrame -Record $rec
+        $d.event | Should -Be 'activity'
+        $d.data.kind | Should -Be 'write'
+        $d.data.detail | Should -Be ''
     }
     It 'ignores an unknown ShpProgress Kind for forward-compatibility' {
         $rec = [pscustomobject]@{ Tags = @('ShpProgress'); MessageData = [pscustomobject]@{ Kind = 'SomethingNew' } }
@@ -6079,7 +6182,7 @@ Describe 'Get-DpEngineEditedFile' {
 }
 
 Describe 'Get-DpStreamFrame announces a targeted edit' {
-    It 'emits a file frame for replace_in_file' {
+    It 'emits an activity frame for replace_in_file' {
         $record = [pscustomobject]@{
             Tags        = @('ShpProgress')
             MessageData = [pscustomobject]@{
@@ -6089,8 +6192,9 @@ Describe 'Get-DpStreamFrame announces a targeted edit' {
             }
         }
         $frame = Get-DpStreamFrame -Record $record
-        $frame.event | Should -Be 'file'
-        $frame.data.path | Should -Be 'source/Private/Invoke-DpTurn.ps1'
+        $frame.event | Should -Be 'activity'
+        $frame.data.kind | Should -Be 'write'
+        $frame.data.detail | Should -Be 'source/Private/Invoke-DpTurn.ps1'
     }
 
     It 'names the file being edited, not one quoted inside newText' {
@@ -6104,15 +6208,15 @@ Describe 'Get-DpStreamFrame announces a targeted edit' {
                 Arguments = '{"path":"real.ps1","newText":"{\"path\":\"decoy.ps1\"}","oldText":"x"}'
             }
         }
-        (Get-DpStreamFrame -Record $record).data.path | Should -Be 'real.ps1'
+        (Get-DpStreamFrame -Record $record).data.detail | Should -Be 'real.ps1'
     }
 
-    It 'stays silent when the arguments carry no path' {
+    It 'reports the edit even when the arguments carry no path' {
         $record = [pscustomobject]@{
             Tags        = @('ShpProgress')
             MessageData = [pscustomobject]@{ Kind = 'ToolCall'; Name = 'replace_in_file'; Arguments = '{"oldText":"a"}' }
         }
-        Get-DpStreamFrame -Record $record | Should -BeNullOrEmpty
+        (Get-DpStreamFrame -Record $record).data.detail | Should -Be ''
     }
 }
 

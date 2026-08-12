@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **You can now watch the agent work.** The Activity panel only ever appeared
+  once a job had finished, as an unordered list of what it had touched — so while
+  the agent was working, the window said nothing beyond a spinner unless *Show
+  the model's thinking* was on, and the only files it named live were the ones it
+  wrote. Every tool the agent uses now appears in the panel the moment it is used,
+  in order: the files it reads and writes, the folders it lists, the commands it
+  runs, the **pages it fetches**, the searches it makes. A run of the same kind of
+  action folds into one line — *Read 6 files*, *Fetched 2 pages* — which is open
+  while the job runs and closed when it ends, leaving the whole panel as a single
+  line the reader can open again. The account is kept with the message, so it
+  survives a reload, and a job that was stopped or ran out of its step budget now
+  keeps it too — those never receive a result, so until now they showed no
+  activity at all. A fetched page is also finally named by its address rather than
+  by the raw instruction that requested it.
+
 - **One way to throw away a whole review.** Reviewing a set of changed files
   offered exactly one decision — *Undo this file* — so putting a whole change set
   back meant walking every file and undoing each one. The review footer now

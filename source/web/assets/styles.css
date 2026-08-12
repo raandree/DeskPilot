@@ -1203,7 +1203,8 @@ button.tree-row {
     font-size: 13px;
 }
 
-.activity-item .ico {
+.activity-item .ico,
+.activity-group>summary .ico {
     width: 18px;
     text-align: center;
 }
@@ -1213,6 +1214,45 @@ button.tree-row {
     font-size: 12px;
     color: var(--text);
     word-break: break-all;
+}
+
+/* A run of same-kind actions folds into one line ("Read 6 files"); open while the
+   Turn runs, closed once it ends. */
+.activity-group>summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.activity-group>summary::-webkit-details-marker {
+    display: none;
+}
+
+.activity-group>summary::after {
+    content: '⌄';
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+.activity-group[open]>summary::after {
+    content: '⌃';
+}
+
+.activity-group>summary:hover {
+    color: var(--text);
+}
+
+.activity-sub {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 6px 0 2px 18px;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
 }
 
 /* in-Turn Task List panel */

@@ -172,17 +172,19 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
     }
 
-    It 'shows the files a Turn edits while it is still editing them' {
+    It 'shows what a Turn is touching while it is still touching it' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # Until the Turn ends, "which files is it touching?" was only answerable
-        # from the Thinking trace - so not at all with Thinking switched off. Every
-        # streaming path has to carry the frame, or the answer depends on how the
-        # Turn was started (send, regenerate, edit).
-        $fileFrames = [regex]::Matches($js, 'file: \(d\) =>')
-        $fileFrames.Count | Should -Be 2
-        [regex]::Matches($js, 'noteFileEdit\(wrap, d\.path\)').Count | Should -Be $fileFrames.Count
+        # Until the Turn ends, "what is it doing?" was only answerable from the
+        # Thinking trace - so not at all with Thinking switched off. Every streaming
+        # path has to carry the frame, or the answer depends on how the Turn was
+        # started (send, regenerate, edit).
+        $activityFrames = [regex]::Matches($js, 'activity: \(d\) =>')
+        $activityFrames.Count | Should -Be 2
+        [regex]::Matches($js, 'noteActivity\(wrap, d\)').Count | Should -Be $activityFrames.Count
+        # A write is also a change to review, so it still feeds the live edit rows.
+        $js | Should -Match ([regex]::Escape("if (action.kind === 'write' && action.detail) noteFileEdit(wrap, action.detail);"))
         # One row per file, not one per write: an agent that rewrites the same file
         # five times is still editing one file.
         $js | Should -Match '(?s)function noteFileEdit\(wrap, path\) \{.{0,600}?if \(edits\.has\(key\)\) return;'
@@ -195,6 +197,24 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Not -Match '(?s)async function renderChanges\(node, m\) \{\s*if \(!node\) return;\s*node\.classList\.add\(''hidden''\);'
         # Clicking a live row would open a diff that does not exist yet.
         $css | Should -Match '(?s)\.changes-live \.changes-row \{[^}]*cursor: default'
+    }
+
+    It 'folds the Activity into the one line the reader can open again' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # Six reads in a row are one moment of the Turn; six reads spread across it
+        # are six. Grouping by kind alone would lose that.
+        $js | Should -Match '(?s)function groupActivity\(actions\).{0,400}?last\.kind === a\.kind'
+        # Open while it runs, closed when it ends: the collapsed panel IS the
+        # summary line, and re-opening it is the whole point.
+        $js | Should -Match ([regex]::Escape('if (!live) node.open = false;'))
+        $js | Should -Match ([regex]::Escape("live ? 'Working' : 'Activity'"))
+        # A stopped or budget-exhausted Turn never receives an Engine result, so
+        # what streamed live is the only account it has.
+        $js | Should -Match '(?s)function renderActivity\(node, activity\).{0,800}?ordered\.length \? ordered : live'
+        $css | Should -Match '(?s)\.activity-group>summary \{'
+        $css | Should -Match ([regex]::Escape('.activity-sub {'))
     }
 
     It 'lets workspace-wide instructions be switched off' {

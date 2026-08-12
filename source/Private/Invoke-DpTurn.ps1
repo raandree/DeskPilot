@@ -64,11 +64,19 @@ function Invoke-DpTurn {
         reasoning          = [System.Text.StringBuilder]::new()
         narration          = @()
         narrationBuffer    = [System.Text.StringBuilder]::new()
+        actions            = [System.Collections.Generic.List[object]]::new()
+        actionsDropped     = 0
         transcript         = [System.Collections.Generic.List[object]]::new()
         transcriptSeq      = 0
         transcriptDropped  = 0
         iteration          = 0
     }
+
+    # The ordered Activity is persisted on the Message, so it is capped: a runaway
+    # Turn must not be able to grow the Conversation store without bound. Every
+    # action still streams live; only the record kept afterwards is bounded, and
+    # the overflow is named rather than dropped in silence.
+    $actionCap = 300
 
     # The Turn transcript is a diagnostic that writes files, so it is off unless
     # asked for. The iteration source is decided once, here: the Engine only writes
@@ -133,6 +141,17 @@ function Invoke-DpTurn {
             $transcriptError = $_
             Write-Verbose "Could not write the Turn transcript: $transcriptError"
         }
+    }
+
+    # The ordered account of what the Turn touched, as it goes on the Message. It is
+    # the only Activity a stopped or budget-exhausted Turn has, because those exits
+    # never receive an Engine result to read the unordered sets from.
+    $finalActions = {
+        $list = @($turnState.actions)
+        if ([int]$turnState.actionsDropped -gt 0) {
+            $list += @{ tool = ''; kind = 'dropped'; detail = ('{0} more action(s) not shown' -f [int]$turnState.actionsDropped) }
+        }
+        , $list
     }
 
     # Seal whatever answer text has been buffered since the last tool call as one
@@ -215,10 +234,10 @@ function Invoke-DpTurn {
 
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
-    # Turn-local list), a 'write_file' tool call becomes a live 'file' frame, other
-    # tool-call / unknown progress records are consumed silently, and ordinary host
-    # echo becomes a 'delta' (answer) or, under -ShowThinking, a 'reasoning' frame.
-    # All of that classification lives in Get-DpStreamFrame.
+    # Turn-local list), every tool call becomes a live 'activity' frame (and joins
+    # the Turn's ordered Activity), unknown progress records are consumed silently,
+    # and ordinary host echo becomes a 'delta' (answer) or, under -ShowThinking, a
+    # 'reasoning' frame. All of that classification lives in Get-DpStreamFrame.
     #
     # To keep a fast token stream smooth without a JSON-encode + socket write per
     # token, consecutive same-kind text frames are coalesced: $emit appends to a
@@ -270,11 +289,13 @@ function Invoke-DpTurn {
             $writer.Write((ConvertTo-DpSseFrame -EventName 'tasks' -Data $decision.data))
             return
         }
-        # A file the agent is about to write. Flushed ahead of the buffered text so
-        # the edit lands where it happened in the trace rather than after it.
-        if ($decision.event -eq 'file') {
+        # One ordered action per tool call. Flushed ahead of the buffered text so the
+        # action lands where it happened in the trace rather than after it.
+        if ($decision.event -eq 'activity') {
             & $flush
-            $writer.Write((ConvertTo-DpSseFrame -EventName 'file' -Data $decision.data))
+            if ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($decision.Action) }
+            else { $turnState.actionsDropped = [int]$turnState.actionsDropped + 1 }
+            $writer.Write((ConvertTo-DpSseFrame -EventName 'activity' -Data $decision.data))
             return
         }
         # A 'delta' or 'reasoning' text frame: flush first if the kind changed, then
@@ -582,7 +603,7 @@ function Invoke-DpTurn {
                     stopReason = 'Turn stopped.'
                     reasoning  = $stoppedReasoning
                     narration  = $turnState.narration
-                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @(); actions = (& $finalActions) }
                     usage      = $stoppedUsage
                     tasks      = $turnState.tasks
                     model      = $usedModel
@@ -642,6 +663,11 @@ function Invoke-DpTurn {
             $alreadyWritten = @($mapped.activity.filesWritten)
             $mapped.activity.filesWritten = @($alreadyWritten + @($editedFiles | Where-Object { $alreadyWritten -notcontains $_ }))
         }
+
+        # The Engine reports its Activity as unordered sets, which cannot say what
+        # happened in which order or repeat one file the agent read twice. The
+        # ordered account comes from the progress stream this Turn already watched.
+        $mapped.activity.actions = & $finalActions
 
         $newHistory = @(Get-DpPropertyValue -InputObject $result -Name @('History') -Default @())
         if ($newHistory.Count -gt 0) {
@@ -733,7 +759,7 @@ function Invoke-DpTurn {
                     stopReason = "The job ran out of its $cap-step budget before it finished. Raise Max tool iterations in Settings, or send a narrower request."
                     reasoning  = $(if ($turnState.reasoning.Length -gt 0) { $turnState.reasoning.ToString() } else { $null })
                     narration  = $turnState.narration
-                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+                    activity   = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @(); actions = (& $finalActions) }
                     usage      = $null
                     tasks      = $turnState.tasks
                     model      = $exhaustedModel

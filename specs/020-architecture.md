@@ -296,8 +296,10 @@ marker-string parsing:
 3. **Stream classification.** `Get-DpStreamFrame` inspects every Information
    record before the existing trace/delta path. ShpProgress records are
    diverted: `TodoList` → `tasks` SSE frame after `ConvertTo-DpTaskList`
-   re-normalises the payload at the DeskPilot boundary; `ToolCall` is
-   absorbed silently (the live Activity is already populated from the result).
+   re-normalises the payload at the DeskPilot boundary; `ToolCall` →
+   `activity` SSE frame after `ConvertTo-DpActivityAction` classifies it into
+   `{ tool, kind, detail }`, which also builds the Turn's ordered Activity
+   (`manage_todo_list` is suppressed — it has the `tasks` frame).
    Unknown ShpProgress `Kind`s are ignored for forward-compatibility. Records
    without the `ShpProgress` tag fall through to the existing trace/delta
    path unchanged.

@@ -669,7 +669,8 @@ Conversation summary.
     { "id": "m_2", "role": "assistant", "text": "…",
       "reasoning": "… or null",
       "activity": { "filesRead": [], "filesWritten": [], "commandsRun": [],
-                    "pagesFetched": [], "questionsAsked": [], "toolCalls": [] },
+                    "pagesFetched": [], "questionsAsked": [], "toolCalls": [],
+                    "actions": [ { "tool": "read_file", "kind": "read", "detail": "notes.md" } ] },
       "tasks": [
         { "id": 1, "title": "Read the Q2 notes", "status": "completed" },
         { "id": 2, "title": "Summarise key risks", "status": "in-progress" }
@@ -685,6 +686,16 @@ Conversation summary.
 price table is keyed by exact Model id, so a Model newer than the table yields
 `null` cost and credits. DeskPilot stores those as `0.0` but keeps the flag, so
 the UI can say "cost unknown" instead of a confident `$0.0000`.
+
+`activity.actions` is the **ordered** account of the Turn — one entry per tool
+call, in the order the agent made them, in the same shape as the `activity` SSE
+event. The sibling arrays are the Engine's unordered sets and stay as they were.
+The list is capped at 300 entries; the overflow is named in a final
+`{ "kind": "dropped" }` entry rather than omitted. A Message written before this
+existed has no `actions`, and a stopped or budget-exhausted Turn has only
+`actions` (the Engine result never arrives, so the sets are empty).
+`pagesFetched` is recovered from the `fetch_url` calls, because the Engine
+records no fetched URL of its own.
 
 ### `DELETE /api/conversations/{id}`
 
@@ -729,7 +740,7 @@ parameter. An unregistered, relative, missing, or non-image path returns
 | --- | --- | --- |
 | `start` | `{ "messageId": "m_3" }` | Turn accepted; assistant Message id allocated. |
 | `delta` | `{ "text": "partial answer…" }` | each streamed answer chunk. |
-| `file` | `{ "path": "docs/notes.md" }` | the agent is writing this file. Emitted from the Engine's structured tool-call record **before** the write happens, so it states intent and carries no counts; the client lists it under the Message and the Changes card supersedes the list on `done`. One frame per `write_file` call; a call whose arguments carry no usable path emits nothing. |
+| `activity` | `{ "tool": "fetch_url", "kind": "fetch", "detail": "https://example.com/spec" }` | the agent is about to use a tool. Emitted from the Engine's structured tool-call record **before** the tool runs, so it states intent and carries no result; the client lists it under the Message in order, folding consecutive actions of one kind into one line. `kind` is one of `read`, `list`, `write`, `create`, `run`, `fetch`, `search`, `ask`, `load`, `other`. `detail` is the tool's one whitelisted argument — the path, URL, command, pattern, query or name — and is empty for a tool the whitelist does not know or arguments that could not be parsed. `manage_todo_list` emits nothing; it has the `tasks` event. A `write` action is also what drives the live edit list that the Changes card supersedes on `done`. |
 | `tasks` | `{ "tasks": [ { "id": 1, "title": "…", "status": "in-progress" } ] }` | Task List update during the Turn; the **full** list is sent each time (idempotent replace, not a delta). At most one Task is `in-progress`. Status is one of `not-started`, `in-progress`, `completed`. |
 | `question` | `{ "id": "…", "structured": true, "title": "Profile", "questions": [{ "header": "Location", "question": "Where?", "options": [{ "label": "Munich", "description": "Within 30 km" }], "multiSelect": false, "allowFreeformInput": true }] }` | Ask-User is waiting. The client renders a Questionnaire wizard. Plain Engine text is normalized to one free-text step with `structured: false`. |
 | `stopping` | `{ "message": "Turn stopped." }` | Stop was accepted; the client immediately freezes the live Message while the Engine pipeline unwinds. |

@@ -95,9 +95,17 @@ accent fills so the bright dark-mode accent stays legible.
 - Assistant Messages: left-aligned, full width, Markdown-rendered (headings,
   lists, tables, code with copy buttons).
 - **Streaming**: tokens fade in; a caret blinks at the tail until `done`.
-- **Activity** block per assistant Message: a collapsible "Used N tools" strip
-  listing files read/written, commands run, pages fetched, questions asked —
-  each with an icon. Collapsed by default once complete.
+- **Activity** block per assistant Message: one row per tool call — files read
+  and written, folders listed, commands run, pages fetched, searches made,
+  questions asked — each with an icon, **in the order the agent made them**.
+  Rows appear the moment the Engine announces the call, so the block is the live
+  account of what the agent is touching; consecutive rows of one kind fold into
+  one line (`Read 6 files`), open while the Turn runs and closed once it ends.
+  The whole block is headed `Working — N actions` while streaming and
+  `Activity — N actions` afterwards, and is collapsed once complete — one line
+  the reader can open again. Independent of **Show the model's thinking**.
+  Persisted on the Message and replayed on reload; a Message from before the
+  ordered account existed replays the Engine's unordered sets instead.
 - **Changes** card per assistant Message (Git Projects only): a header reading
   `N files changed  +A  −D`, then one row per file with a status badge
   (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and its own `+`/`−`
@@ -362,7 +370,7 @@ step at a time; the footer has previous/next controls and `current / total`.
 | State | Cue |
 | --- | --- |
 | Idle | composer focused, Send enabled. |
-| Streaming | Stop button, blinking caret, and an Activity hint above the composer carrying the spinner plus the newest line of the Thinking trace. The thread follows new output only while it is already at the bottom, so scrolling up to read mid-Turn survives the next token. |
+| Streaming | Stop button, blinking caret, and an Activity hint above the composer carrying the spinner plus the newest line of the Thinking trace, or — with Thinking off — the newest Activity action. The thread follows new output only while it is already at the bottom, so scrolling up to read mid-Turn survives the next token. |
 | Stopping | **Stopping…** disabled immediately; caret and Activity spinner hidden; buffered stream updates ignored. |
 | Tool running | "Working… (using tools)" pill under the streaming Message. |
 | Error | red inline card with the message + Retry. |

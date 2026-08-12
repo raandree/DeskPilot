@@ -10,6 +10,39 @@ source: repository evidence
 
 ## Current focus
 
+**The Activity panel now runs live, in order, and folds into one line
+(`ai/live-activity-feed`, 2026-08-12).** Asked for from three GHCP screenshots —
+you can see the files it touches as it touches them, then the whole run collapses
+to a clickable line — with a follow-up: "the same feature would be nice for
+fetching urls". The panel existed but only ever appeared at `done`, built from
+the Engine's **unordered sets**, and the only thing named live was a file being
+written (the `file` frame, and only for `write_file`/`replace_in_file`). Every
+tool call now streams. `Get-DpStreamFrame` sends the whole `ToolCall` record
+through a new pure `ConvertTo-DpActivityAction` and emits an `activity` frame
+`{ tool, kind, detail }`; the `file` frame is gone, and the client derives the
+live edit rows from a `write` action instead. Five decisions worth keeping.
+**(1) The order is kept on the Message.** `Invoke-DpTurn` accumulates the actions
+it streams and writes them to `activity.actions`, capped at 300 with the overflow
+named in a final `dropped` entry — a set cannot say what happened when, or that
+one file was read twice, and a **stopped or budget-exhausted** Turn has no Engine
+result at all, so until now it reported no activity whatsoever. **(2) The
+detail is whitelisted, not copied** — the same map `New-DpTranscriptRecord` uses
+(`path`, `url`, `command`, `pattern`, `query`, `name`), because the arguments
+carry the written file body; an unknown tool contributes its name only, and
+malformed provider JSON costs the detail, never the action. **(3) Consecutive
+same-kind actions fold**, not all actions of a kind: six reads in a row are one
+moment of the Turn. Groups are open while it runs and closed when it ends, which
+*is* the "collapse afterwards" behaviour asked for. **(4) `create_directory` is
+its own kind**, not a write — a folder has no diff and is never a pending
+change, so treating it as one would put a dead review row on the Turn.
+**(5) `manage_todo_list` emits nothing**, because the Task List has its own live
+panel. Second half of the request fixed on the way: `pagesFetched` was filled
+with the raw tool arguments, so the Activity panel reported `{"url":"…"}` as the
+page fetched — the URL is now parsed out. Sampler `build, test` **1156/1156**, 0
+errors, 0 warnings.
+
+## Previous focus
+
 **A whole review can now be discarded in one confirmed act
 (`ai/discard-all-changes`, 2026-08-12).** The diff viewer — the surface the Git
 panel's **Review** button opens over every uncommitted file — offered exactly one

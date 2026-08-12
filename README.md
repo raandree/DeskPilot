@@ -41,8 +41,10 @@ work without driving the tool stack themselves.
 - **Visible permissions.** Five tool categories — Browsing, Files, Terminal,
   Ask-you, Your tools — each a switch you control, with plain-language risk
   notes. Terminal is **off** by default.
-- **Show the work.** Each answer carries an Activity panel: what was read,
-  written, run, fetched, or asked.
+- **Show the work, as it happens.** Each answer carries an Activity panel: what
+  was read, written, run, fetched, searched, or asked — listed in order the
+  moment the agent does it. A run of the same kind of action folds into one line
+  (*Read 6 files*), and the whole panel folds away when the answer is done.
 - **Review every change.** When the agent edits files in a Git project, the
   answer carries a **Changes** card — `N files changed  +A  −D`, one row per
   file. Click a file for a real diff with line numbers; then **Keep** it (accept
@@ -195,8 +197,8 @@ first run.
 
 ## Roadmap
 
-Live Activity, structured-output surfaces, a user-tool manager, and a WebView2
-single-window shell. See [specs/060-roadmap.md](specs/060-roadmap.md).
+Structured-output surfaces, a user-tool manager, and a WebView2 single-window
+shell. See [specs/060-roadmap.md](specs/060-roadmap.md).
 
 ## License
 

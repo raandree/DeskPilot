@@ -20,7 +20,10 @@ task, see Activity and Usage — all from the window.
   asynchronously and persists a stopped Message with partial Usage. When a hard
   stop prevents exact provider totals, the credits are labelled as an input-only
   estimate (`POST /api/conversations/{id}/stop`; FR-C6).
-- Live Activity events during a Turn (not just at `done`).
+- ~~Live Activity events during a Turn (not just at `done`).~~ **Done** — every
+  tool call is announced before it runs as an `activity` SSE frame, so the
+  Activity panel lists what the agent is reading, writing, running, fetching and
+  searching as it happens, and keeps that ordered account on the Message.
 - ~~Ask-User Tool routed into the thread (FR-T4).~~ **Done** — a structured
   Engine Tool event opens an in-thread answer card; the correlated response
   resumes the same Turn without an interactive console.

@@ -23,7 +23,7 @@ function ConvertFrom-DpEngineResult {
         return @{
             content   = ''
             reasoning = $null
-            activity  = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @() }
+            activity  = @{ filesRead = @(); filesWritten = @(); commandsRun = @(); pagesFetched = @(); questionsAsked = @(); toolCalls = @(); actions = @() }
             usage     = @{ promptTokens = 0; completionTokens = 0; totalTokens = 0; costUSD = 0.0; credits = 0.0; priced = $true; iterations = 0 }
             tasks     = @()
         }
@@ -69,7 +69,18 @@ function ConvertFrom-DpEngineResult {
     }
     $pagesFetched = @(Get-DpPropertyValue -InputObject $Result -Name @('PagesFetched', 'UrlsFetched') -Default @() | ForEach-Object { [string]$_ })
     if ($pagesFetched.Count -eq 0 -and $toolCalls.Count -gt 0) {
-        $pagesFetched = @($toolCalls | Where-Object { $_.name -match 'fetch|url|browse' } | ForEach-Object { $_.arguments })
+        # The Engine records no fetched URL, so they are recovered from the tool
+        # calls - by parsing the argument, not by showing it: '{"url":"…"}' is not
+        # a page. A malformed argument string keeps its raw form, because a fetch
+        # nobody can name still happened.
+        $pagesFetched = @(
+            foreach ($toolCall in @($toolCalls | Where-Object { $_.name -match 'fetch|url|browse' })) {
+                $url = ''
+                try { $url = [string](Get-DpPropertyValue -InputObject (([string]$toolCall.arguments) | ConvertFrom-Json -ErrorAction Stop) -Name @('url') -Default '') }
+                catch { $url = '' }
+                if ([string]::IsNullOrWhiteSpace($url)) { [string]$toolCall.arguments } else { $url }
+            }
+        )
     }
 
     $usageObj = Get-DpPropertyValue -InputObject $Result -Name @('Usage') -Default $null
@@ -111,6 +122,9 @@ function ConvertFrom-DpEngineResult {
             pagesFetched   = @($pagesFetched)
             questionsAsked = @($questionsAsked)
             toolCalls      = @($toolCalls)
+            # The ordered account of the Turn. Filled by the caller from the progress
+            # stream: the result carries sets, and a set has no order.
+            actions        = @()
         }
         usage     = @{
             promptTokens     = $promptTokens

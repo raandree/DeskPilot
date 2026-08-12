@@ -1418,8 +1418,127 @@ function renderSteps(node, narration) {
     hydrateCopies(body);
 }
 
+// ===== Activity (what the Turn touched, while it happens and afterwards) =====
+// One row per tool call, in the order the agent made them. Consecutive rows of
+// one kind fold into a group ("Read 6 files"), which is open while the Turn runs
+// — the point is to see the files go by — and closed once it ends, leaving the
+// whole panel as the single line the reader can open again.
+const ACTIVITY_KINDS = {
+    read: { ico: '📄', label: 'Read', noun: 'files' },
+    list: { ico: '📁', label: 'Listed', noun: 'folders' },
+    write: { ico: '✏️', label: 'Wrote', noun: 'files' },
+    create: { ico: '📂', label: 'Created', noun: 'folders' },
+    run: { ico: '⌘', label: 'Ran', noun: 'commands' },
+    fetch: { ico: '🌐', label: 'Fetched', noun: 'pages' },
+    search: { ico: '🔎', label: 'Searched', noun: 'searches' },
+    ask: { ico: '❓', label: 'Asked', noun: 'questions' },
+    load: { ico: '📘', label: 'Loaded', noun: 'files' },
+    other: { ico: '•', label: 'Used', noun: 'tools' },
+    dropped: { ico: '…', label: '', noun: '' },
+};
+
+const activityKind = (kind) => ACTIVITY_KINDS[kind] || ACTIVITY_KINDS.other;
+
+// What an action says on one line. An unknown tool is named, because "Used" on
+// its own says nothing; a known one that could not be read keeps its verb.
+function activityLine(action) {
+    if (!action) return '';
+    const kind = activityKind(action.kind);
+    const detail = String(action.detail || '');
+    if (action.kind === 'dropped') return detail;
+    if (detail) return `${kind.label} ${detail}`;
+    if (action.kind === 'other' && action.tool) return `${kind.label} ${action.tool}`;
+    return kind.label;
+}
+
+// Consecutive runs of one kind, the way the reader experienced them: six reads in
+// a row are one moment of the Turn, and six reads spread across it are six.
+function groupActivity(actions) {
+    const groups = [];
+    for (const a of actions) {
+        const last = groups[groups.length - 1];
+        if (last && last.kind === a.kind && a.kind !== 'dropped') last.items.push(a);
+        else groups.push({ kind: a.kind, items: [a] });
+    }
+    return groups;
+}
+
+function activityRowHtml(action, showDiff) {
+    const kind = activityKind(action.kind);
+    const detail = String(action.detail || '');
+    if (action.kind === 'dropped') {
+        return `<div class="activity-item muted tiny"><span class="ico">${kind.ico}</span><span>${escapeHtml(detail)}</span></div>`;
+    }
+    const diffBtn = (showDiff && action.kind === 'write' && detail)
+        ? `<button class="git-diff-btn" data-path="${escapeHtml(detail)}" title="Show what changed (Git diff)">diff</button>`
+        : '';
+    const body = detail
+        ? `${escapeHtml(kind.label)} <span class="path">${escapeHtml(detail)}</span>`
+        : escapeHtml(activityLine(action));
+    return `<div class="activity-item"><span class="ico">${kind.ico}</span><span>${body}</span>${diffBtn}</div>`;
+}
+
+function paintActivity(node, actions, opts) {
+    const live = !!(opts && opts.live);
+    const gitOn = !!(state.settings && state.settings.workspaceFolder);
+    const groups = groupActivity(actions);
+    const body = groups.map((g) => {
+        const kind = activityKind(g.kind);
+        if (g.items.length === 1) return activityRowHtml(g.items[0], gitOn);
+        return `<details class="activity-group"${live ? ' open' : ''}>` +
+            `<summary><span class="ico">${kind.ico}</span>${escapeHtml(kind.label)} ${g.items.length} ${escapeHtml(kind.noun)}</summary>` +
+            `<div class="activity-sub">${g.items.map((a) => activityRowHtml(a, gitOn)).join('')}</div>` +
+            '</details>';
+    }).join('');
+    node.classList.remove('hidden');
+    // Open it when the first action arrives, and leave it alone after that: a
+    // reader who folds it away mid-Turn should not have to keep folding it. The
+    // end of the Turn is what closes it again.
+    if (!live) node.open = false;
+    else if (actions.length <= 1) node.open = true;
+    const n = actions.filter((a) => a.kind !== 'dropped').length;
+    node.innerHTML =
+        `<summary>${live ? 'Working' : 'Activity'} — ${n} action${n === 1 ? '' : 's'}</summary>` +
+        `<div class="disclosure-body"><div class="activity-list">${body}</div></div>`;
+    wireActivityDiffButtons(node);
+}
+
+function wireActivityDiffButtons(node) {
+    const paths = [...new Set([...node.querySelectorAll('.git-diff-btn')].map((b) => b.dataset.path))];
+    node.querySelectorAll('.git-diff-btn').forEach((btn) => {
+        btn.onclick = (e) => { e.preventDefault(); openDiffViewer(paths.map((p) => ({ rel: p })), btn.dataset.path); };
+    });
+}
+
+// One tool call, announced before the Engine runs it. This is the whole point of
+// the panel: with the Thinking pane off, it was the only thing that ever said
+// which files the agent was touching, and it said nothing until the Turn ended.
+function noteActivity(wrap, action) {
+    const node = wrap && wrap._refs && wrap._refs.activity;
+    if (!node || !action || !action.kind) return;
+    const live = node._liveActions || (node._liveActions = []);
+    live.push(action);
+    paintActivity(node, live, { live: true });
+    // A write is also a change to review, which the Changes card takes over at the
+    // end of the Turn.
+    if (action.kind === 'write' && action.detail) noteFileEdit(wrap, action.detail);
+    setActivityStatus(activityLine(action));
+    followThread();
+}
+
 function renderActivity(node, activity) {
+    if (!node) return;
+    const ordered = asArray(activity && activity.actions).filter((a) => a && a.kind);
+    // A stopped or budget-exhausted Turn never receives an Engine result, so what
+    // streamed live is the only account there is; it must not be blanked.
+    const live = node._liveActions || [];
+    if (ordered.length || live.length) {
+        paintActivity(node, ordered.length ? ordered : live, { live: false });
+        return;
+    }
     if (!activity) { node.classList.add('hidden'); return; }
+    // Messages written before the Turn kept an ordered account: the Engine's
+    // unordered sets are all they have.
     const groups = [
         ['filesRead', '📄', 'Read'],
         ['filesWritten', '✏️', 'Wrote'],
@@ -2203,10 +2322,13 @@ function lastTraceLine(text) {
 // the "Show the model's thinking" setting) left it closed. Clicking it means
 // "let me read this", so it also stops the following outright: the scroll below
 // is smooth, and the next streamed frame would otherwise win the race and pull
-// the thread straight back to the bottom.
+// the thread straight back to the bottom. With Thinking off there is no such box
+// and the line is mirroring the Activity panel, so open that instead.
 function revealThinking() {
-    const boxes = $('thread').querySelectorAll('.msg-assistant .thinking:not(.hidden)');
-    const box = boxes[boxes.length - 1];
+    const thread = $('thread');
+    const thinking = thread.querySelectorAll('.msg-assistant .thinking:not(.hidden)');
+    const activity = thread.querySelectorAll('.msg-assistant .activity:not(.hidden)');
+    const box = thinking[thinking.length - 1] || activity[activity.length - 1];
     if (!box) return;
     threadFollow = false;
     box.open = true;
@@ -2314,7 +2436,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
                 renderThinking(wrap, think);
             },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
-            file: (d) => { if (!state.stopRequested && d) noteFileEdit(wrap, d.path); },
+            activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => {
                 turnStopped = true;
@@ -6814,7 +6936,7 @@ async function _streamRerun({ endpoint, body }) {
             delta: (d) => { if (!state.stopRequested) { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
             reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; renderThinking(wrap, think); } },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
-            file: (d) => { if (!state.stopRequested && d) noteFileEdit(wrap, d.path); },
+            activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
             stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },

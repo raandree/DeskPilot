@@ -20,16 +20,18 @@ function Get-DpStreamFrame {
           normalised Task List (also exposed on the decision's Tasks member so the
           caller can remember the latest list). The list is an idempotent replace,
           not a delta.
-        - ShpProgress + Kind 'ToolCall' for a file-writing tool ('write_file' or
-          DeskPilot's own 'replace_in_file') -> a 'file' frame naming the path, so
-          the window can show an edit while it happens rather than only in the
-          Changes card after the Turn. The record is written BEFORE the tool runs,
-          so the frame states intent; the pending change set is what makes it a
-          fact. Read from the structured record rather than the host trace, so the
-          live list also works with Thinking switched off.
-        - ShpProgress + any other Kind or tool (future kinds included) -> no frame.
-          The rest of the Activity is reconstructed from the result; tool traces
-          are not echoed, and unknown kinds are ignored for forward-compatibility.
+        - ShpProgress + Kind 'ToolCall' -> an 'activity' frame carrying one
+          classified action (also exposed on the decision's Action member so the
+          caller can keep the ordered list), so the window can show what the agent
+          is reading, writing, running and fetching WHILE it happens rather than
+          only as unordered sets after the Turn. The record is written BEFORE the
+          tool runs, so the frame states intent; for a write, the pending change
+          set is what makes it a fact. Read from the structured record rather than
+          the host trace, so the live account also works with Thinking switched
+          off. ConvertTo-DpActivityAction decides the shape, and suppresses
+          manage_todo_list, which has its own live panel.
+        - ShpProgress + any other Kind (future kinds included) -> no frame, for
+          forward-compatibility.
         - A non-ShpProgress trace line (model reasoning, '=== iteration', '-> tool',
           or a DarkGray/DarkCyan/Cyan/Yellow host colour) -> a 'reasoning' frame
           when ShowThinking is on, otherwise no frame.
@@ -62,8 +64,8 @@ function Get-DpStreamFrame {
     .OUTPUTS
         System.Collections.Hashtable
 
-        A frame decision { event; data } (plus Tasks for a 'tasks' decision), or
-        nothing when the record yields no frame.
+        A frame decision { event; data } (plus Tasks for a 'tasks' decision, or
+        Action for an 'activity' one), or nothing when the record yields no frame.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
@@ -89,24 +91,22 @@ function Get-DpStreamFrame {
             $list = ConvertTo-DpTaskList -InputObject (Get-DpPropertyValue -InputObject $payload -Name @('TodoList') -Default @())
             return @{ event = 'tasks'; data = @{ tasks = $list }; Tasks = $list }
         }
-        if ($kind -eq 'ToolCall' -and [string](Get-DpPropertyValue -InputObject $payload -Name @('Name') -Default '') -in @('write_file', 'replace_in_file')) {
+        if ($kind -eq 'ToolCall') {
             # The arguments are the provider's raw JSON string and can be truncated
-            # or malformed; a parse failure costs the drain loop one skipped frame
-            # and nothing else. Parsed rather than pattern-matched because the
-            # written content sits in the same object and can contain anything -
-            # replace_in_file's newText can hold the literal text '"path":'.
-            $path = ''
-            try {
-                $arguments = [string](Get-DpPropertyValue -InputObject $payload -Name @('Arguments') -Default '')
-                if (-not [string]::IsNullOrWhiteSpace($arguments)) {
-                    $path = [string](Get-DpPropertyValue -InputObject ($arguments | ConvertFrom-Json -ErrorAction Stop) -Name @('path') -Default '')
-                }
+            # or malformed; that costs the action its detail and nothing else - an
+            # action whose detail could not be read still happened. Parsed rather
+            # than pattern-matched because the tool's payload sits in the same
+            # object and can contain anything - replace_in_file's newText can hold
+            # the literal text '"path":'.
+            $actionParams = @{
+                Tool      = [string](Get-DpPropertyValue -InputObject $payload -Name @('Name') -Default '')
+                Arguments = [string](Get-DpPropertyValue -InputObject $payload -Name @('Arguments') -Default '')
             }
-            catch { $path = '' }
-            if ([string]::IsNullOrWhiteSpace($path)) { return }
-            return @{ event = 'file'; data = @{ path = $path } }
+            $action = ConvertTo-DpActivityAction @actionParams
+            if ($null -eq $action) { return }
+            return @{ event = 'activity'; data = $action; Action = $action }
         }
-        # Every other tool and any future Kind are consumed silently (no answer leak).
+        # Any future Kind is consumed silently (no answer leak).
         return
     }
 

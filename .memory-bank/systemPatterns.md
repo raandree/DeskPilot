@@ -63,6 +63,24 @@ source: repository evidence
   the SSE stream open. The two share one element so the reviewed card supersedes
   the live rows, and the live rows are *sealed* rather than cleared when there is
   nothing to review, so a stopped Turn still says what it wrote.
+- **Show it as it happens, then fold it into one line.** A panel that only
+  appears at `done` cannot answer "what is it doing?", and a panel that stays
+  open buries the answer it belongs to. The Activity panel is the same element in
+  two states: rows appended per tool call while the Turn runs (headed `Working`,
+  groups open), then re-rendered collapsed at the end (headed `Activity`). It
+  opens itself when the first action arrives and is not re-opened after that, so
+  a reader who folds it away mid-Turn is not fought. Consecutive actions of one
+  kind fold into one line, because six reads in a row are one moment of the Turn
+  and six reads spread across it are six — which is why the order is kept on the
+  Message and the Engine's unordered sets are only the fallback for a Message
+  written before it was.
+- **One whitelist decides what a tool call may say about itself.** The tool name
+  selects exactly one argument field — `path`, `url`, `command`, `pattern`,
+  `query`, `name` — and an unknown tool contributes its name and nothing else.
+  The arguments hold the written file body and whatever a future tool invents, so
+  a blacklist would have to be right about every one of them. `New-DpTranscriptRecord`
+  and `ConvertTo-DpActivityAction` each apply it at their own boundary; malformed
+  provider JSON costs the detail, never the fact that the call happened.
 - **Permissions are explicit state.** Tool categories map 1:1 to Engine
   `-Disable*` switches. A Permission that is off means the corresponding switch
   is passed; the UI reflects the exact set in force for the next Turn. A
