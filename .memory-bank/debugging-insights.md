@@ -2,6 +2,35 @@
 
 Recurring issues and how they were resolved.
 
+## "timestamp pending" is a missing clock, not a rendering bug (2026-08-12)
+
+**Symptom:** the same pre-flight instruction produces `[2026-08-12 08:14 UTC]`
+in VS Code Copilot Chat and `[2026-06-19 — timestamp pending]` in DeskPilot.
+
+**Root cause:** DeskPilot never tells the model what time it is. The system
+prompt is assembled in `New-DpTurnParameter.ps1` from the Agent persona, user
+preferences, Agent Memory, always-on instructions, the iteration budget, the
+`ask_questions` guidance, the Workspace Folder, the Workspace Context and the
+reference-file list — no date and no time. `Get-DpWorkspaceContext.ps1` reports
+branch, dirty flag and file tree, never a clock, and the Engine adds none either
+(`[DateTime]::UtcNow` there only stamps its own result metadata). Copilot Chat,
+by contrast, ships `The current date is …` in its context block and a session
+hook line carrying the wall-clock time, so the model reads the stamp off its
+prompt rather than knowing it.
+
+The asymmetry is self-inflicted: `Get-DpAlwaysOnInstruction.ps1` pushes any
+instruction whose `applyTo` is `**` into the system prompt, which includes the
+pre-flight rule "open the reply with a UTC timestamp". DeskPilot therefore
+**demands** the stamp and **withholds** the clock. The model complies as far as
+it can: the date is a prior-based guess and the time is honestly flagged as
+pending. A model has no clock — an unstamped Turn cannot be stamped by trying
+harder.
+
+**Rule:** anything time-dependent in an instruction, Skill or Agent needs the
+time injected per Turn. The fix is one `$systemParts` entry in
+`New-DpTurnParameter.ps1` carrying `[DateTime]::UtcNow`; until then, treat every
+model-authored date in DeskPilot as unreliable.
+
 ## The agent's shell is the *launcher's* shell, not the user's (2026-08-11)
 
 **Symptom:** the agent and the user run the same command in the same folder and
