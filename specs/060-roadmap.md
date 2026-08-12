@@ -134,8 +134,6 @@ The Hermes memory idea researched after the compaction batch: an agent that
 - **Scheduled / recurring prompts.** Powerful for ops, but needs an idle
   scheduler and conflicts with the single-active-Turn rule. Spec it before
   building.
-- **MCP server support.** The Engine owns Tool wiring; surface MCP servers only
-  once ShellPilot exposes them (see the "Engine is sacrosanct" pattern).
 - **Multi-Model side-by-side compare.** Conflicts with the single-Turn runspace
   model; lower priority for this audience.
 - **Mermaid / charting artifacts.** Rendering needs a JS library or a CDN,

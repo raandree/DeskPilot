@@ -24,7 +24,7 @@ function Merge-DpSettings {
     )
 
     $validEfforts = @('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
-    $permissionKeys = @('browsing', 'file', 'terminal', 'askUser', 'userTools')
+    $permissionKeys = @('browsing', 'file', 'terminal', 'askUser', 'userTools', 'mcp')
     # Bounded numeric Intercom keys: name -> minimum, maximum.
     $intercomRanges = @{
         heartbeatMinutes       = @(1, 1440)
@@ -45,6 +45,11 @@ function Merge-DpSettings {
         foreach ($key in $Current.intercom.Keys) { $merged.intercom[$key] = $Current.intercom[$key] }
     }
     $merged.projects = @(foreach ($project in @($Current.projects)) { $clone = ConvertTo-DpProject -InputObject $project; if ($clone) { $clone } })
+    # Current is always DeskPilot-produced and has already passed the patch branch
+    # below, so a row that will not normalise here cannot have come from the API.
+    $merged.mcpServers = @(foreach ($server in @($Current.mcpServers)) {
+            try { ConvertTo-DpMcpServer -InputObject $server } catch { $null = $_ }
+        })
 
     # Normalise the patch into a name -> value map.
     $patchMap = @{}
@@ -136,6 +141,24 @@ function Merge-DpSettings {
                     if ($permissionKeys -notcontains $permKey) { throw "Unknown permission '$permKey'." }
                     $merged.permissions[$permKey] = [bool]$permMap[$permKey]
                 }
+            }
+            'mcpServers' {
+                # A bad row throws rather than being dropped: attaching a server runs
+                # a command line, and a silently discarded entry would report success
+                # and start nothing.
+                $named = @{}
+                $servers = @(foreach ($entry in @($value)) {
+                        $server = ConvertTo-DpMcpServer -InputObject $entry
+                        if ($server.name) {
+                            if ($named.ContainsKey($server.name)) {
+                                throw "Duplicate MCP server name '$($server.name)'."
+                            }
+                            $named[$server.name] = $true
+                        }
+                        $server
+                    })
+                if ($servers.Count -gt 20) { throw 'At most 20 MCP servers can be configured.' }
+                $merged.mcpServers = $servers
             }
             'intercom' {
                 $intercomMap = @{}

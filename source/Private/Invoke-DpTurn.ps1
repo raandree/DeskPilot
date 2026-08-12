@@ -419,7 +419,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported)
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result

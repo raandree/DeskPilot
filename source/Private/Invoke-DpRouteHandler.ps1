@@ -1575,6 +1575,64 @@ function Invoke-DpRouteHandler {
                 message    = $r.Message
             }
         }
+        'getMcp' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpMcpState -Settings $state.Settings)
+        }
+        'putMcp' {
+            # Saving the list and attaching the servers are one act. Persisting
+            # without reconciling would leave the Engine running the previous set
+            # while the panel showed the new one; reconciling without persisting
+            # would lose it all on restart.
+            if ($null -eq $Body) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'An MCP server list is required.' } }
+                return
+            }
+            $incoming = if ($Body.PSObject.Properties['servers']) { @($Body.servers) } else { @($Body) }
+            try {
+                $merged = Merge-DpSettings -Current $state.Settings -Patch @{ mcpServers = $incoming }
+            }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_mcp_server'; message = "$_" } }
+                return
+            }
+
+            if (-not $state.Engine.McpSupported) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'mcp_unsupported'; message = 'This Engine does not support MCP servers. Update ShellPilot to 0.4.0-preview0007 or later.' } }
+                return
+            }
+
+            # Persist first. A server that fails to start is reported per row and the
+            # user keeps what they typed; discarding the list because a command line
+            # was wrong would make the panel unusable exactly when it is needed.
+            $state.Settings = $merged
+            if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }
+
+            $results = @()
+            try { $results = @(Sync-DpMcpServer -Server @($merged.mcpServers)) }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'mcp_sync_failed'; message = "$_" } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpMcpState -Settings $state.Settings -SyncResult $results)
+        }
+        'refreshMcp' {
+            # The Engine lists a server's tools once, at registration, and offers
+            # that frozen list for the life of the attachment - which is what stops
+            # a server changing its tools after the user approved them. Refreshing
+            # is therefore an explicit act, and it is also how a crashed server is
+            # restarted.
+            if (-not $state.Engine.McpSupported) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'mcp_unsupported'; message = 'This Engine does not support MCP servers. Update ShellPilot to 0.4.0-preview0007 or later.' } }
+                return
+            }
+            $results = @()
+            try { $results = @(Sync-DpMcpServer -Server @($state.Settings.mcpServers) -Force) }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'mcp_sync_failed'; message = "$_" } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpMcpState -Settings $state.Settings -SyncResult $results)
+        }
         'getIntercom' {
             Write-DpResponse -Stream $Stream -Json (Get-DpIntercomPayload)
         }

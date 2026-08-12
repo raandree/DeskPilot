@@ -37,6 +37,11 @@ function New-DpTurnParameter {
         (an empty list) or an unknown Model has the Setting suppressed, so the
         Engine never sends reasoning_effort to a Model that rejects it with an
         HTTP 400 (invalid_reasoning_effort).
+    .PARAMETER McpSupported
+        Whether the resolved Engine understands MCP at all. -DisableMcp arrived in
+        ShellPilot 0.4.0-preview0007 and DeskPilot runs against whichever Engine
+        the machine has, so the switch is only ever sent to an Engine that has it -
+        an unknown parameter name would fail the whole Turn.
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -64,7 +69,9 @@ function New-DpTurnParameter {
 
         [string]$WorkspaceContext,
 
-        [string[]]$ModelReasoningEfforts = @()
+        [string[]]$ModelReasoningEfforts = @(),
+
+        [switch]$McpSupported
     )
 
     $params = @{ Prompt = $Prompt }
@@ -81,6 +88,11 @@ function New-DpTurnParameter {
     if (-not $perm.terminal) { $params.DisableTerminal = $true }
     if (-not $perm.askUser) { $params.DisableUserPrompts = $true }
     if (-not $perm.userTools) { $params.DisableUserTools = $true }
+    # Attached MCP servers stay attached; -DisableMcp withholds their tools for this
+    # one Turn. Suppressing the Permission is deliberately not the same as detaching
+    # the server: the process the user started keeps running and the panel keeps
+    # reporting it, which is what the Permission switches are for everywhere else.
+    if ($McpSupported -and $Settings.permissions.ContainsKey('mcp') -and -not $perm.mcp) { $params.DisableMcp = $true }
 
     if ($Settings.skillRoots -and $Settings.skillRoots.Count -gt 0) { $params.SkillPath = $Settings.skillRoots }
     if ($Settings.instructionRoots -and $Settings.instructionRoots.Count -gt 0) { $params.InstructionRoot = $Settings.instructionRoots }

@@ -93,6 +93,27 @@ function Initialize-DpEngine {
             else { $currentTokenName }
     }
 
+    # MCP arrived in ShellPilot 0.4.0-preview0007, and DeskPilot resolves whatever
+    # Engine the machine already has. Ask the imported Engine what it can do rather
+    # than comparing version strings: a capability probe stays true across a rename
+    # or a backport, and it is the same question the MCP routes have to answer
+    # anyway. An older Engine keeps working with the MCP panel reporting why it is
+    # inert, instead of every registration failing with 'command not found'.
+    $mcpSupported = $false
+    if ($imported) {
+        $mcpShell = [powershell]::Create()
+        $mcpShell.Runspace = $runspace
+        try {
+            $null = $mcpShell.AddScript('[bool](Get-Command -Name Register-ShpMcpServer -ErrorAction SilentlyContinue)')
+            $probedMcp = $mcpShell.Invoke()
+            if (-not $mcpShell.HadErrors -and $probedMcp.Count -gt 0) {
+                $mcpSupported = [bool]($probedMcp | Select-Object -First 1)
+            }
+        }
+        catch { $null = $_ }
+        finally { $mcpShell.Dispose() }
+    }
+
     @{
         Runspace         = $runspace
         Imported         = $imported
@@ -101,5 +122,6 @@ function Initialize-DpEngine {
         ImportError      = $importError
         TokenPath        = $tokenPath
         UserPromptBridge = $userPromptBridge
+        McpSupported     = $mcpSupported
     }
 }

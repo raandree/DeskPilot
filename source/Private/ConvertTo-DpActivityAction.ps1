@@ -76,6 +76,17 @@ function ConvertTo-DpActivityAction {
         $kind = [string]$known[$name].kind
         $field = [string]$known[$name].field
     }
+    elseif ($name -like 'mcp_*') {
+        # A tool from an attached MCP server, which the Engine namespaces as
+        # mcp_<alias>_<tool>. Its own kind rather than 'other' because this is the
+        # one class of tool whose code nobody here wrote and whose reach no
+        # Permission or tool policy narrows - the panel should say so, not blend it
+        # in with the built-ins. No detail is derived: the argument shape is the
+        # server's own JSON Schema, so there is no field this can know, and the
+        # alias cannot be split back out of the name reliably because both halves
+        # may contain an underscore.
+        $kind = 'mcp'
+    }
 
     $detail = ''
     if ($field -and -not [string]::IsNullOrWhiteSpace($Arguments)) {

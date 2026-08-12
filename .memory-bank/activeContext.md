@@ -10,6 +10,64 @@ source: repository evidence
 
 ## Current focus
 
+**MCP servers can now be attached (`ai/live-activity-feed`, 2026-08-12).** The
+Engine gained MCP in ShellPilot **0.4.0-preview0007** (`Register-ShpMcpServer` /
+`Get-ShpMcpServer` / `Unregister-ShpMcpServer`, `Invoke-Shp -DisableMcp`,
+`Origin`/`Server` on `Get-ShpTool`, `McpEnabled`/`McpToolsAvailable`/
+`McpToolsCalled` on the result), which was the blocker recorded in
+[060-roadmap](../specs/060-roadmap.md) and gap 3 of
+[100-competitive-landscape](../specs/100-competitive-landscape.md). This is the
+DeskPilot half. Six decisions worth keeping.
+
+**(1) DeskPilot owns the durable list because the Engine deliberately owns
+none.** An Engine registration lives only for the life of the session and the
+Engine refuses to discover a configuration file on its own — a repository anyone
+can open must never be able to start a process. So `settings.json` holds the
+rows and `Sync-DpMcpServer` carries them into the long-lived Engine Runspace at
+startup and on every save.
+
+**(2) It reconciles, it does not apply.** Attaching starts a third-party
+process, negotiates a protocol era and lists tools, so re-attaching everything
+on every save would restart working servers for nothing. An unchanged row —
+matched on a fingerprint of what actually decides the launch — is left alone; a
+**Faulted** one is re-attached, because the Engine deliberately never respawns a
+crashed server by itself and a user pressing Save is not an unattended loop.
+
+**(3) Ownership is tracked, not assumed.** A row that names an `mcp.json` may
+attach several servers, so the reconciler records the names that appeared while
+the row was applied. A live server no row owns is detached: this Runspace has
+exactly one configurer, so a survivor is a leftover still contributing its tools
+to every Turn.
+
+**(4) Secrets are names, never values.** `settings.json` is clear text.
+`envKeys` persists variable *names*; `Get-DpMcpRegisterParameter` resolves the
+values from the Host Server's own environment on the way into the registration,
+so a settings backup cannot leak a key. The fingerprint covers a **hash** of the
+value, so a rotated token re-attaches the server without the secret ever
+reaching the fingerprint, a log or the API.
+
+**(5) A capability probe, not a version comparison.** `Initialize-DpEngine`
+probes the imported Engine for `Register-ShpMcpServer` and records
+`McpSupported`. That stays true across a rename or a backport, and it is what
+lets `New-DpTurnParameter` withhold `-DisableMcp` from an older Engine — an
+unknown parameter name would fail the whole Turn, so the permission is gated on
+the probe rather than on the Setting alone.
+
+**(6) The panel says what the permissions do not.** The Permissions tab limits
+DeskPilot's *own* tools; it does not limit an attached server, which can bring
+file and shell tools of its own and cannot be sandboxed. `-ToolName` narrowing
+is surfaced as *Only offer these tools* because it is the one control that
+genuinely reduces reach. MCP tool calls get their own Activity kind (`mcp`) so
+the reader can tell whose code just ran, and no detail is derived from their
+arguments — the shape is the server's own schema.
+
+One bug caught by its own test before it shipped: an absent `args` key read as
+`$null`, and `@($null)` is a one-element array whose element became an empty
+string — a real, empty argument passed to every server configured without
+arguments.
+
+## Previous focus
+
 **The Activity panel now runs live, in order, and folds into one line
 (`ai/live-activity-feed`, 2026-08-12).** Asked for from three GHCP screenshots —
 you can see the files it touches as it touches them, then the whole run collapses

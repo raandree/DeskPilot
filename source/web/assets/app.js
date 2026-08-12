@@ -161,6 +161,9 @@ const state = {
     // Stop-and-Send and queue-flush to await the running Turn deterministically.
     streamEndPromise: null,
     streamEndResolve: null,
+    // GET /api/mcp: the configured MCP servers paired with what the Engine is
+    // actually running. Null until the Settings drawer first opens.
+    mcp: null,
 };
 
 const PERMISSIONS = [
@@ -169,6 +172,7 @@ const PERMISSIONS = [
     { key: 'terminal', name: 'Terminal', note: 'Run commands as you.', powerful: true },
     { key: 'askUser', name: 'Ask you', note: 'Pause to ask a question.', powerful: false },
     { key: 'userTools', name: 'Your tools', note: 'Call tools you registered.', powerful: false },
+    { key: 'mcp', name: 'MCP servers', note: 'Call tools from servers you attached.', powerful: true },
 ];
 
 // Fixed palette for the optional Conversation colour label. These names must
@@ -1433,6 +1437,10 @@ const ACTIVITY_KINDS = {
     search: { ico: '🔎', label: 'Searched', noun: 'searches' },
     ask: { ico: '❓', label: 'Asked', noun: 'questions' },
     load: { ico: '📘', label: 'Loaded', noun: 'files' },
+    // A tool from an attached MCP server. Marked apart from 'other' because this
+    // is the one tool class running somebody else's code, and the reader should be
+    // able to tell that at a glance.
+    mcp: { ico: '🔌', label: 'MCP', noun: 'MCP tools' },
     other: { ico: '•', label: 'Used', noun: 'tools' },
     dropped: { ico: '…', label: '', noun: '' },
 };
@@ -1447,7 +1455,7 @@ function activityLine(action) {
     const detail = String(action.detail || '');
     if (action.kind === 'dropped') return detail;
     if (detail) return `${kind.label} ${detail}`;
-    if (action.kind === 'other' && action.tool) return `${kind.label} ${action.tool}`;
+    if ((action.kind === 'other' || action.kind === 'mcp') && action.tool) return `${kind.label} ${action.tool}`;
     return kind.label;
 }
 
@@ -6037,6 +6045,211 @@ async function importSettings(file) {
 // Server enforces the same number, and a value approved here must still load from disk.
 const MAXITER_RECOMMENDED = 200;
 const MAXITER_HARD = 1000;
+// ===== MCP servers =====
+// The Engine keeps an MCP registration only for the life of its session and
+// discovers nothing on its own, so this panel is the durable list: every save
+// persists it and re-attaches whatever changed. A row can be a command DeskPilot
+// runs, or a configuration file the user named — which may attach several
+// servers at once, so a row reports the servers it produced rather than one.
+const mcpForm = { mode: 'command', editingId: '' };
+
+function mcpRows() { return (state.mcp && Array.isArray(state.mcp.servers)) ? state.mcp.servers : []; }
+
+// Back to the shape PUT /api/mcp accepts. The panel carries live status fields
+// the API neither wants nor keeps, so a round trip has to strip them.
+function mcpConfigOf(row) {
+    return {
+        id: row.id, name: row.name || '', source: row.source || 'command',
+        command: row.command || '', args: row.args || [], cwd: row.cwd || '',
+        envKeys: row.envKeys || [], path: row.path || '',
+        tools: row.tools || [], enabled: row.enabled !== false,
+    };
+}
+
+async function loadMcp() {
+    try { state.mcp = await api('GET', '/api/mcp'); }
+    catch { state.mcp = { supported: false, enabled: true, servers: [] }; }
+    renderMcpManager();
+}
+
+async function saveMcpServers(list) {
+    const btn = $('mcp-f-save');
+    if (btn) { btn.disabled = true; btn.textContent = 'Connecting…'; }
+    try {
+        state.mcp = await api('PUT', '/api/mcp', { servers: list });
+        closeMcpForm();
+        renderMcpManager();
+        // A row that saved but did not start is the case worth interrupting for:
+        // the panel shows it, but the user has just pressed a button and is owed
+        // an answer without having to read the list again.
+        const failed = mcpRows().find((r) => r.error);
+        if (failed) toast(`${failed.name || 'Server'} did not start: ${failed.error}`);
+    } catch (e) { toast(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Save and connect'; } }
+}
+
+function renderMcpManager() {
+    const box = $('set-mcp');
+    if (!box) return;
+    if (state.mcp && state.mcp.supported === false) {
+        box.innerHTML = '<div class="muted tiny">This engine does not support MCP servers. Update ShellPilot to 0.4.0-preview0007 or later, then restart DeskPilot.</div>';
+        return;
+    }
+    const rows = mcpRows();
+    if (!rows.length) {
+        box.innerHTML = '<div class="muted tiny">No servers attached.</div>';
+        return;
+    }
+    box.innerHTML = '';
+    for (const row of rows) {
+        const wrap = el('project-row');
+        const meta = el('project-meta');
+        const attached = Array.isArray(row.attached) ? row.attached : [];
+        const tools = attached.reduce((sum, a) => sum + (a.toolCount || 0), 0);
+        const badges = [];
+        if (row.enabled === false) badges.push('<span class="project-badge">off</span>');
+        else if (row.error) badges.push('<span class="project-badge">failed</span>');
+        else if (attached.some((a) => a.state === 'Faulted' || !a.running)) badges.push('<span class="project-badge">stopped</span>');
+        else if (attached.length) badges.push(`<span class="project-badge">${tools} tool${tools === 1 ? '' : 's'}</span>`);
+        if (attached.some((a) => a.sandboxRequested)) badges.push('<span class="project-badge">unsandboxed</span>');
+
+        const title = row.name || (row.path ? row.path.split(/[\\/]/).pop() : 'server');
+        const where = row.source === 'file' ? row.path : [row.command, ...(row.args || [])].join(' ');
+        meta.innerHTML = `<div class="project-name">${escapeHtml(title)} ${badges.join(' ')}</div>`
+            + `<div class="muted tiny path">${escapeHtml(where || '')}</div>`;
+
+        // The negotiated era and version are the answer to "is this thing actually
+        // talking to me", and the fault reason is otherwise invisible until a job
+        // fails halfway through.
+        for (const a of attached) {
+            const bits = [a.serverName || a.name, a.protocolVersion ? `${a.era || ''} ${a.protocolVersion}`.trim() : '', a.processId ? `pid ${a.processId}` : ''].filter(Boolean);
+            const line = document.createElement('div');
+            line.className = 'muted tiny';
+            line.textContent = bits.join(' · ');
+            meta.appendChild(line);
+            if (a.faultReason) {
+                const fault = document.createElement('div');
+                fault.className = 'muted tiny';
+                fault.textContent = `Stopped: ${a.faultReason}`;
+                meta.appendChild(fault);
+            }
+            if (a.tools && a.tools.length) {
+                const toolLine = document.createElement('div');
+                toolLine.className = 'muted tiny path';
+                toolLine.textContent = a.tools.join(', ');
+                toolLine.title = a.tools.join('\n');
+                meta.appendChild(toolLine);
+            }
+        }
+        if (row.error) {
+            const err = document.createElement('div');
+            err.className = 'muted tiny';
+            err.textContent = row.error;
+            meta.appendChild(err);
+        }
+
+        const actions = el('project-actions');
+        const toggle = document.createElement('button');
+        toggle.className = 'btn btn-small';
+        toggle.textContent = row.enabled === false ? 'Turn on' : 'Turn off';
+        toggle.title = row.enabled === false
+            ? 'Start this server and offer its tools again'
+            : 'Stop this server and keep its settings';
+        toggle.onclick = () => saveMcpServers(mcpRows().map((r) => (r.id === row.id
+            ? Object.assign(mcpConfigOf(r), { enabled: r.enabled === false })
+            : mcpConfigOf(r))));
+        actions.appendChild(toggle);
+
+        const edit = document.createElement('button');
+        edit.className = 'btn btn-small';
+        edit.textContent = 'Edit';
+        edit.onclick = () => openMcpForm(row.source === 'file' ? 'file' : 'command', row);
+        actions.appendChild(edit);
+
+        const rm = document.createElement('button');
+        rm.className = 'btn btn-small btn-danger';
+        rm.textContent = 'Remove';
+        rm.onclick = () => {
+            if (!window.confirm(`Remove “${title}”? Its program is stopped and its tools stop being offered.`)) return;
+            saveMcpServers(mcpRows().filter((r) => r.id !== row.id).map(mcpConfigOf));
+        };
+        actions.appendChild(rm);
+
+        wrap.append(meta, actions);
+        box.appendChild(wrap);
+    }
+}
+
+function openMcpForm(mode, row) {
+    mcpForm.mode = mode;
+    mcpForm.editingId = row ? row.id : '';
+    $('mcp-form').classList.remove('hidden');
+    $('mcp-form-title').textContent = row ? 'Edit server' : (mode === 'file' ? 'Attach a config file' : 'Add a server');
+    $('mcp-form-command').classList.toggle('hidden', mode !== 'command');
+    $('mcp-form-file').classList.toggle('hidden', mode !== 'file');
+    $('mcp-f-name').value = mode === 'command' && row ? (row.name || '') : '';
+    $('mcp-f-command').value = row ? (row.command || '') : '';
+    $('mcp-f-args').value = row && row.args ? row.args.join('\n') : '';
+    $('mcp-f-cwd').value = row ? (row.cwd || '') : '';
+    $('mcp-f-env').value = row && row.envKeys ? row.envKeys.join(', ') : '';
+    $('mcp-f-path').value = row ? (row.path || '') : '';
+    $('mcp-f-file-name').value = mode === 'file' && row ? (row.name || '') : '';
+    $('mcp-f-tools').value = row && row.tools ? row.tools.join(', ') : '';
+    ($(mode === 'file' ? 'mcp-f-path' : 'mcp-f-name')).focus();
+}
+
+function closeMcpForm() {
+    const form = $('mcp-form');
+    if (form) form.classList.add('hidden');
+    mcpForm.editingId = '';
+}
+
+function wireMcpPanel() {
+    if (!$('set-mcp')) return;
+    const splitList = (value) => String(value || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+    $('mcp-add-command').onclick = () => openMcpForm('command', null);
+    $('mcp-add-file').onclick = () => openMcpForm('file', null);
+    $('mcp-f-cancel').onclick = () => closeMcpForm();
+    $('mcp-refresh').onclick = async () => {
+        // Explicit, because the Engine freezes a server's tool list at the moment
+        // it attaches — that is what stops a server changing its tools after they
+        // were approved. This is also how a stopped server is restarted.
+        const btn = $('mcp-refresh');
+        btn.disabled = true;
+        try { state.mcp = await api('POST', '/api/mcp/refresh', {}); renderMcpManager(); }
+        catch (e) { toast(e.message); }
+        finally { btn.disabled = false; }
+    };
+    $('mcp-f-save').onclick = () => {
+        const editing = mcpForm.editingId;
+        const entry = mcpForm.mode === 'file'
+            ? {
+                source: 'file',
+                path: $('mcp-f-path').value.trim(),
+                name: $('mcp-f-file-name').value.trim(),
+            }
+            : {
+                source: 'command',
+                name: $('mcp-f-name').value.trim(),
+                command: $('mcp-f-command').value.trim(),
+                args: $('mcp-f-args').value.split('\n').map((x) => x.trim()).filter(Boolean),
+                cwd: $('mcp-f-cwd').value.trim(),
+                envKeys: splitList($('mcp-f-env').value),
+            };
+        entry.tools = splitList($('mcp-f-tools').value);
+        entry.enabled = true;
+        if (editing) entry.id = editing;
+
+        const next = editing
+            ? mcpRows().map((r) => (r.id === editing ? entry : mcpConfigOf(r)))
+            : [...mcpRows().map(mcpConfigOf), entry];
+        saveMcpServers(next);
+    };
+
+    loadMcp();
+}
+
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
@@ -6052,6 +6265,7 @@ function openSettings() {
       <button type="button" class="settings-tab-btn" role="tab" id="stab-permissions" data-tab="permissions" aria-controls="spane-permissions" aria-selected="false" tabindex="-1">Permissions</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-projects" data-tab="projects" aria-controls="spane-projects" aria-selected="false" tabindex="-1">Projects</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-custom" data-tab="custom" aria-controls="spane-custom" aria-selected="false" tabindex="-1">Customizations</button>
+      <button type="button" class="settings-tab-btn" role="tab" id="stab-mcp" data-tab="mcp" aria-controls="spane-mcp" aria-selected="false" tabindex="-1">MCP servers</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-memory" data-tab="memory" aria-controls="spane-memory" aria-selected="false" tabindex="-1">Memory &amp; context</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-engine" data-tab="engine" aria-controls="spane-engine" aria-selected="false" tabindex="-1">Engine &amp; data</button>
       <button type="button" class="settings-tab-btn" role="tab" id="stab-intercom" data-tab="intercom" aria-controls="spane-intercom" aria-selected="false" tabindex="-1">Intercom</button>
@@ -6159,6 +6373,46 @@ function openSettings() {
         <label>Atelier health</label>
         <div class="atelier-health" id="set-atelier"><button class="btn btn-small" id="atelier-refresh" type="button">Check customization folders</button></div>
         <p class="hint">Whether each <code>~/.copilot</code> customization folder resolves, and how many agents, skills, instructions and prompts were found.</p>
+      </div>
+    </section>
+    <section class="settings-tab" id="spane-mcp" data-tab="mcp" role="tabpanel" aria-labelledby="stab-mcp" hidden>
+      <div class="field">
+        <label>Attached servers</label>
+        <div class="projects-manager" id="set-mcp">Checking…</div>
+        <div class="backup-row" style="margin-top:10px">
+          <button class="btn btn-small" id="mcp-add-command" type="button">+ Add a server</button>
+          <button class="btn btn-small" id="mcp-add-file" type="button">📄 Attach a config file</button>
+          <button class="btn btn-small" id="mcp-refresh" type="button">↻ Reconnect all</button>
+        </div>
+        <p class="hint">An MCP server is a small program that gives the agent extra tools — your issue tracker, a database, a document store. DeskPilot starts each one you list here and offers its tools alongside its own.</p>
+      </div>
+      <div class="field hidden" id="mcp-form">
+        <label id="mcp-form-title">Add a server</label>
+        <div id="mcp-form-command">
+          <input type="text" id="mcp-f-name" placeholder="Short name, e.g. files" spellcheck="false" />
+          <p class="hint">Used to label its tools, so you can tell in the activity list which server acted. Letters, digits, <code>_</code> and <code>-</code>.</p>
+          <input type="text" id="mcp-f-command" placeholder="Command to run, e.g. npx" spellcheck="false" style="margin-top:8px" />
+          <textarea id="mcp-f-args" rows="3" placeholder="One argument per line, e.g.&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\work" spellcheck="false" style="margin-top:8px"></textarea>
+          <p class="hint">One per line — never one long string. Each line is passed as a separate argument, so a path with a space stays one argument.</p>
+          <input type="text" id="mcp-f-cwd" placeholder="Working folder (optional)" spellcheck="false" style="margin-top:8px" />
+          <input type="text" id="mcp-f-env" placeholder="Environment variables to pass, e.g. GITHUB_TOKEN, API_KEY" spellcheck="false" style="margin-top:8px" />
+          <p class="hint"><strong>Names only.</strong> DeskPilot reads each value from its own environment when it starts the server and never writes it to your settings file, so a settings backup can never leak a key. Set the variable before you start DeskPilot.</p>
+        </div>
+        <div id="mcp-form-file" class="hidden">
+          <input type="text" id="mcp-f-path" placeholder="Path to an mcp.json" spellcheck="false" />
+          <p class="hint">Reads a file you name — both the VS Code (<code>servers</code>) and Claude (<code>mcpServers</code>) shapes. Nothing is ever discovered automatically: a file that could start a program has to be named by you.</p>
+          <input type="text" id="mcp-f-file-name" placeholder="One entry from the file (optional — blank attaches them all)" spellcheck="false" style="margin-top:8px" />
+        </div>
+        <input type="text" id="mcp-f-tools" placeholder="Only offer these tools (optional, comma separated)" spellcheck="false" style="margin-top:8px" />
+        <p class="hint">The one control that genuinely narrows a server’s reach. Leave blank to offer every tool it advertises; name a few and the rest never reach the agent.</p>
+        <div class="backup-row" style="margin-top:10px">
+          <button class="btn btn-small btn-primary" id="mcp-f-save" type="button">Save and connect</button>
+          <button class="btn btn-small" id="mcp-f-cancel" type="button">Cancel</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>What attaching a server means</label>
+        <p class="hint">A server you attach is <strong>somebody else’s program, running as you</strong>, with your files and your network. DeskPilot cannot sandbox it. The permissions on the Permissions tab limit <em>DeskPilot’s own</em> tools — they do not limit an attached server, which can bring file and shell tools of its own. Its tool descriptions and everything it returns are read by the agent as it works, so a hostile server can try to talk the agent into things you never asked for. Attach only servers you would install by hand, and use <em>Only offer these tools</em> to keep each one to what you actually need.</p>
       </div>
     </section>
     <section class="settings-tab" id="spane-memory" data-tab="memory" role="tabpanel" aria-labelledby="stab-memory" hidden>
@@ -6293,6 +6547,7 @@ function openSettings() {
     buildPermList($('set-perms'));
     renderProjectsManager();
     wireSettingsTabs(body);
+    wireMcpPanel();
 
     const save = async (patch) => {
         try { state.settings = await api('PUT', '/api/settings', patch); updatePermDot(); populateProjectSelect(); }

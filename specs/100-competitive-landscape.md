@@ -49,7 +49,7 @@ Priority uses MoSCoW as in [010-requirements](010-requirements.md).
 | --- | --- | --- | --- | --- |
 | 1 | **No sandbox.** File and Terminal Tools run with the user's full privileges. | clawpier (Docker), LiveAgent (approval gate) | M | Already the top risk in [050-security-model](050-security-model.md). The cheapest large win is #2, not full containerisation. |
 | 2 | **No per-call approval.** Permissions are per *category*, decided before the Turn; a single `rm -rf` inside an allowed category is never confirmed. | LiveAgent ("per-tool execution approval gate") | M | Fits DeskPilot's "surface, don't hide" pattern exactly. Propose: an opt-in "ask me before each Terminal command / file write outside the Project". |
-| 3 | **No MCP support.** Tool extension is limited to what the Engine exposes. | LiveAgent (stdio + http MCP bridging) | S | MCP is the de-facto tool protocol. Depends on the Engine; raise as a ShellPilot request rather than re-implementing. |
+| 3 | ~~**No MCP support.**~~ **Closed (2026-08-12).** ShellPilot 0.4.0-preview0007 added a stdio MCP client (Engine spec 021); DeskPilot owns the durable server list, reconciles it into the Engine Runspace, and surfaces it in Settings → MCP servers. | LiveAgent (stdio + http MCP bridging) | S | Pursued via the Engine as planned, not by forking tool execution. Streamable HTTP is still out on the Engine side. |
 | 4 | **No installer.** Manual launch; documented as out of scope for v1. | Hermes One (signed MSI/DMG/RPM), LiveAgent (signed + notarized, MSI/portable/AppImage/DEB/RPM) | S | The single biggest adoption barrier for the stated persona. |
 | 5 | **No scheduled or recurring work.** | Hermes One (cron + 15 delivery targets), LiveAgent (bash/http/prompt cron) | S | "Every Monday, summarise X" is a natural knowledge-worker ask. |
 | 6 | **No math or diagram rendering.** Artifacts cover `html`/`svg` only. | LiveAgent (KaTeX, Mermaid, Monaco) | S | Mermaid and KaTeX both have build-free ESM builds, but each is a third-party dependency the no-build constraint currently forbids — decide deliberately. |
@@ -65,10 +65,12 @@ Priority uses MoSCoW as in [010-requirements](010-requirements.md).
 
 1. **Per-call approval for Terminal and out-of-Project writes** (gap 2) — the
    largest safety improvement per unit of work, and it needs no new dependency.
+   Now sharper than when this was written: an attached MCP server runs
+   unsandboxed and no Permission narrows it.
 2. **An installer** (gap 4) — removes the last "ask a developer for help" step.
 3. **Scheduled tasks** (gap 5) — the clearest unserved knowledge-worker workflow.
 4. **i18n** (gap 7) — mechanical, and directly serves current users.
-5. **MCP** (gap 3) — pursue via the Engine, not by forking tool execution.
+5. ~~**MCP** (gap 3)~~ — shipped 2026-08-12 via the Engine, as planned.
 
 Everything below that line should wait for evidence of demand.
 

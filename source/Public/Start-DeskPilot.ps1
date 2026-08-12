@@ -119,6 +119,11 @@ function Start-DeskPilot {
         Intercom        = Initialize-DpIntercom -Directory $dataDirFull
         DataDir         = $dataDirFull
         Engine          = $engine
+        # Which Engine MCP servers each configured row attached. The Engine holds a
+        # registration only for the life of the session and discovers nothing on its
+        # own, so this map is how Sync-DpMcpServer knows which live server belongs to
+        # which row - a row that names a configuration file can attach several.
+        Mcp             = @{ Rows = @{} }
         WebRoot         = $webRootFull
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
@@ -217,6 +222,9 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/git/cleanup'; Name = 'gitCleanup' }
             @{ Method = 'GET'; Pattern = '/api/atelier/health'; Name = 'atelierHealth' }
             @{ Method = 'POST'; Pattern = '/api/atelier/setup'; Name = 'atelierSetup' }
+            @{ Method = 'GET'; Pattern = '/api/mcp'; Name = 'getMcp' }
+            @{ Method = 'PUT'; Pattern = '/api/mcp'; Name = 'putMcp' }
+            @{ Method = 'POST'; Pattern = '/api/mcp/refresh'; Name = 'refreshMcp' }
             @{ Method = 'GET'; Pattern = '/api/intercom'; Name = 'getIntercom' }
             @{ Method = 'GET'; Pattern = '/api/intercom/turn'; Name = 'getIntercomTurn' }
             @{ Method = 'PUT'; Pattern = '/api/intercom'; Name = 'putIntercom' }
@@ -263,6 +271,35 @@ function Start-DeskPilot {
     }
 
     Write-Host "Data: $dataDirFull ($($conversations.Count) conversation(s) loaded)" -ForegroundColor DarkGray
+
+    # Attach the configured MCP servers. The Engine keeps a registration only for
+    # the life of a session, so without this a server the user configured last week
+    # would exist in Settings and nowhere else. Each attachment starts a
+    # third-party process, so it is reported here rather than done silently, and a
+    # failure is never fatal: DeskPilot serves with that server missing and the
+    # panel shows why.
+    if ($engine.Imported -and @($persistedSettings.mcpServers).Count -gt 0) {
+        if ($engine.McpSupported) {
+            try {
+                $mcpResults = @(Sync-DpMcpServer -Server @($persistedSettings.mcpServers))
+                foreach ($mcpResult in $mcpResults) {
+                    if ($mcpResult.ok) {
+                        $toolTotal = (@($mcpResult.servers) | Measure-Object -Property toolCount -Sum).Sum
+                        Write-Host "MCP server '$($mcpResult.name)' attached ($([int]$toolTotal) tool(s))." -ForegroundColor DarkGray
+                    }
+                    else {
+                        Write-Host "MCP server '$($mcpResult.name)' did not start: $($mcpResult.error)" -ForegroundColor Yellow
+                    }
+                }
+            }
+            catch {
+                Write-Host "MCP servers could not be attached: $_" -ForegroundColor Yellow
+            }
+        }
+        else {
+            Write-Host 'MCP servers are configured but this Engine does not support MCP. Update ShellPilot to 0.4.0-preview0007 or later.' -ForegroundColor Yellow
+        }
+    }
 
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
     $listener.Start()

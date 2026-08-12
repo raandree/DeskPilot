@@ -65,6 +65,32 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         }
     }
 
+    It 'renders every MCP control it binds to, and states what a server can reach' {
+        # Same failure this guard already catches for Intercom: a handler bound to
+        # an id the template never renders does nothing and throws nothing.
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $bound = [regex]::Matches($js, "\`$\('(mcp-[a-z-]+|set-mcp|stab-mcp)'\)") |
+            ForEach-Object { $_.Groups[1].Value } |
+            Select-Object -Unique
+
+        $bound.Count | Should -BeGreaterThan 5
+        foreach ($id in $bound) {
+            $rendered = $js.Contains("id=`"$id`"") -or
+                (Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw).Contains("id=`"$id`"")
+            $rendered | Should -BeTrue -Because "app.js binds `$('$id') but nothing renders that id"
+        }
+
+        # The panel must say the thing that is easy to get wrong: the permissions
+        # limit DeskPilot's own tools and do not limit an attached server.
+        $js | Should -Match 'do not limit an attached server'
+        $js | Should -Match 'cannot sandbox it'
+        # Environment values are named, never stored.
+        $js | Should -Match ([regex]::Escape('<strong>Names only.</strong>'))
+        # Removing a server stops a program; it must never be one click.
+        $js | Should -Match '(?s)rm\.onclick = \(\) => \{.{0,200}window\.confirm'
+    }
+
     It 'lets both sides of a conversation be copied in one click' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw

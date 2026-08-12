@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **MCP servers.** DeskPilot can now attach Model Context Protocol servers, so
+  the agent gains tools from programs you choose — an issue tracker, a database,
+  a document store — beside its own. A new **MCP servers** tab in Settings takes
+  either a command DeskPilot runs or the path to an `mcp.json` you already keep
+  for another editor (both the VS Code `servers` and the Claude `mcpServers`
+  shapes are read). Each server reports what it is actually doing: whether it is
+  running, which protocol version it negotiated, and exactly which tools it
+  contributes. Nothing is ever discovered on its own — a file that can start a
+  program has to be named by you — and a server's tools appear in the Activity
+  panel as they are called, marked apart from DeskPilot's own so you can always
+  tell whose code just ran.
+
+  Three deliberate limits, because an MCP server is somebody else's program
+  running with your privileges. **Secrets are never stored:** a server that needs
+  a token names the environment variable, and DeskPilot reads the value from its
+  own environment when it starts the server, so a settings backup cannot leak a
+  key. **Reach can be narrowed:** *Only offer these tools* attaches a server for
+  the two tools you want and keeps the rest away from the agent entirely. And a
+  new **MCP servers** permission withholds every attached server's tools for a
+  job without stopping the servers — while the panel states plainly that the
+  other permissions limit DeskPilot's own tools and do not limit an attached
+  server, which can bring file and shell tools of its own.
+
+  Requires ShellPilot 0.4.0-preview0007 or later; on an older engine the panel
+  says so and everything else works as before.
+
 - **You can now watch the agent work.** The Activity panel only ever appeared
   once a job had finished, as an unordered list of what it had touched — so while
   the agent was working, the window said nothing beyond a spinner unless *Show

@@ -23,8 +23,18 @@ function Get-DpDefaultSettings {
             terminal  = $false
             askUser   = $true
             userTools = $true
+            # Attached MCP servers contribute tools to every Turn. On by default
+            # because it is inert until the user attaches one: the Engine discovers
+            # nothing, so an empty mcpServers list means no MCP tools exist at all.
+            mcp       = $true
         }
         projects          = @()
+        # MCP servers the user configured. The Engine holds registrations only for
+        # the life of a session and refuses to discover a configuration file on its
+        # own, so this list is the durable record and Sync-DpMcpServer carries it
+        # into the Engine Runspace at startup and on every edit. Environment values
+        # are never stored here - only variable names (see ConvertTo-DpMcpServer).
+        mcpServers        = @()
         selectedProjectId = $null
         workspaceFolder   = $null
         agentsRoot        = $copilot.agentsRoot

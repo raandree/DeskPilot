@@ -666,6 +666,30 @@ source: repository evidence
   Whatever already streamed is the only record left, so accumulate it as it is
   flushed rather than reaching for a result that will never arrive.
 
+- **Engine session state that must survive a restart is DeskPilot's to hold, and
+  reconciled rather than applied.** An MCP registration lives only as long as the
+  Engine session and the Engine discovers nothing on its own, so the durable list
+  is `settings.json` and `Sync-DpMcpServer` moves only the difference into the
+  Runspace. Re-applying the whole list would restart working third-party
+  processes on every save; and because one row may attach several servers, what a
+  row owns is *recorded* at registration, never inferred from its name. A live
+  server no row owns is detached — there is exactly one configurer, so a survivor
+  is a leftover that still contributes its tools to every Turn.
+- **A secret is persisted as a name, never as a value.** `settings.json` is clear
+  text, so an MCP server that needs a token stores the environment variable's
+  *name*; the value is read from the Host Server's own environment on the way
+  into the registration. Where a changed value must still invalidate cached
+  state, hash it — `Get-DpMcpFingerprint` covers a SHA-256 of the value so a
+  rotated token re-attaches the server without the secret reaching a fingerprint,
+  a log or the API.
+- **Ask the Engine what it can do; do not compare its version.**
+  `Initialize-DpEngine` probes for the command (`Register-ShpMcpServer`) and
+  records the answer, the same way it probes `$script:DefaultTokenPath`. A
+  capability probe survives a rename or a backport, and it is what lets a new
+  `-Disable*` switch be withheld from an older Engine — passing an unknown
+  parameter name fails the entire Turn, so a Permission whose switch may not
+  exist has to be gated on the probe as well as on the Setting.
+
 ## Anti-patterns to avoid
 
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
