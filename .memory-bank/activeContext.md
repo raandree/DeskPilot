@@ -10,15 +10,20 @@ source: repository evidence
 
 ## Current focus
 
-**Closing the measured gap to VS Code Copilot (`ai/parity-01-narration`,
-2026-08-11).** Asked for from screenshots of both harnesses running the *same*
+**Closing the measured gap to VS Code Copilot (`main`, 2026-08-11/12).** Asked
+for from screenshots of both harnesses running the *same*
 handoff prompt, same Model, same Agent: DeskPilot answered defensibly for 30.13
 credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
 PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
-lives in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
+lived in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
 00-README carries the evidence table). Eight have shipped — the series is
 complete except for prompt 07's fix, which the user chose to leave unwritten.
+**All of it is on `main` as of 2026-08-12**: the five topic branches
+(`ai/parity-03-workspace-context`, `-04-search-tools`, `-05-edit-tool`,
+`-08-turn-transcript`, `-09-eval-harness`) were a linear chain, so main
+fast-forwarded to `9dd0390` in one move and is **5 commits ahead of
+`origin/main`, unpushed**.
 
 - **The narration was streamed and then deleted.** `Read-ShpChatStream` echoes
   assistant `content` on EVERY tool-calling iteration, but `Invoke-Shp` returns
