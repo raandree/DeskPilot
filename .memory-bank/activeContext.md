@@ -10,7 +10,22 @@ source: repository evidence
 
 ## Current focus
 
-**CI is green again on all three runners (`ai/fix-cross-platform-path-tests`,
+**The tool-iteration budget is now approvable, not merely capped
+(`ai/maxiter-confirm-above-200`, 2026-08-12).** `Start-DeskPilot` refused a
+persisted `maxToolIterations` with `must be 200 or fewer` and started on
+defaults; the question was where the 200 came from. Nowhere external — `d10488d`
+chose it as an anti-typo guard at 4× the default. It is now the **recommended**
+ceiling: the validator's absolute bound moved to **1000**, and the SPA asks for
+confirmation above 200, naming both risks (every step is a paid round trip, and a
+Turn that long outlives its own session token and dies with an unrecoverable
+401). The approval is deliberately **client-side**: `Import-DpSettings` reloads
+the persisted file through the same `Merge-DpSettings`, so a server-side
+confirmation flag would make an approved value fail its own reload — and one
+rejected key discards the entire `settings.json`. Sampler `build, test`
+**1126/1126**, 0 errors. The 401 itself is an Engine defect; the refreshed fix
+prompt is on the Desktop (`ShellPilot-session-token-refresh.prompt.md`).
+
+**CI is green on all three runners (`ai/fix-cross-platform-path-tests`,
 2026-08-12).** The parity series shipped with a red CI: run `31565886477` passed
 `windows-latest` and failed `ubuntu-latest` and `macos-latest` on the same six
 unit tests. Nothing in `source/` was wrong — two tests encoded Windows path

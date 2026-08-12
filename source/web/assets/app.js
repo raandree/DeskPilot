@@ -5866,6 +5866,13 @@ async function importSettings(file) {
 }
 
 // ===== Settings drawer =====
+// The tool-iteration budget. 200 is the recommended ceiling: past it a Turn is long
+// enough to outlive its own Copilot session token, which ends it with a sign-in error
+// that cannot be resumed, so a higher value is confirmed rather than saved silently.
+// The hard bound only exists so a typo cannot start an unattended runaway - the Host
+// Server enforces the same number, and a value approved here must still load from disk.
+const MAXITER_RECOMMENDED = 200;
+const MAXITER_HARD = 1000;
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
@@ -5914,7 +5921,8 @@ function openSettings() {
       </div>
       <div class="field">
         <label>Max tool iterations</label>
-        <input type="number" id="set-maxiter" min="1" max="200" value="${s.maxToolIterations || 50}" />
+        <input type="number" id="set-maxiter" min="1" max="${MAXITER_HARD}" value="${s.maxToolIterations || 50}" />
+        <p class="hint">How many tool steps the agent may take in one job. ${MAXITER_RECOMMENDED} is the recommended maximum &mdash; above that DeskPilot asks you to confirm, because every step is a paid round trip and a very long job can outlive its own sign-in token.</p>
       </div>
       <div class="field">
         <label>Send a message with</label>
@@ -6222,7 +6230,22 @@ function openSettings() {
     $('set-memory-learning').onchange = (e) => save({ memoryLearning: e.target.checked });
     $('set-reffiles').onchange = (e) => save({ referenceFiles: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) });
     $('set-budget').onchange = (e) => { state._budgetWarned = false; save({ costBudgetUSD: parseFloat(e.target.value) || 0 }); };
-    $('set-maxiter').onchange = (e) => save({ maxToolIterations: parseInt(e.target.value, 10) || 50 });
+    $('set-maxiter').onchange = (e) => {
+        const previous = (state.settings && state.settings.maxToolIterations) || 50;
+        let v = parseInt(e.target.value, 10);
+        if (!v || v < 1) { v = 50; }
+        if (v > MAXITER_HARD) { v = MAXITER_HARD; }
+        if (v > MAXITER_RECOMMENDED && !window.confirm(
+            `${v} tool steps is above the recommended maximum of ${MAXITER_RECOMMENDED}.\n\n`
+            + 'Every step is a paid model round trip, so a job that goes wrong can run up real cost unattended. '
+            + 'A job this long can also outlive its own Copilot session token and stop with a sign-in error that cannot be resumed.'
+            + `\n\nUse ${v} steps?`)) {
+            e.target.value = previous;
+            return;
+        }
+        e.target.value = v;
+        save({ maxToolIterations: v });
+    };
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
     $('set-voicelang').onchange = (e) => {

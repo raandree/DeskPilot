@@ -93,8 +93,10 @@ function Merge-DpSettings {
             'maxToolIterations' {
                 $count = [int]$value
                 if ($count -lt 1) { throw 'maxToolIterations must be at least 1.' }
-                # An unbounded cap turns one typo into an expensive runaway Turn.
-                if ($count -gt 200) { throw 'maxToolIterations must be 200 or fewer.' }
+                # 200 is the recommended ceiling and the SPA asks for confirmation past it;
+                # this bound only has to stop a typo becoming an unattended runaway, and it
+                # stays permissive enough that an approved value still loads from disk.
+                if ($count -gt 1000) { throw 'maxToolIterations must be 1000 or fewer.' }
                 $merged.maxToolIterations = $count
             }
             'autoCompaction' { $merged.autoCompaction = [bool]$value }

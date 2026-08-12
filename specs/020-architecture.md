@@ -210,7 +210,7 @@ launch and can be overridden with `Start-DeskPilot -DataDir`.
   "skillRoots": [], "instructionRoots": [], "promptRoots": [],
   "reasoningEffort": null,
   "showThinking": false,
-  "maxToolIterations": 25,
+  "maxToolIterations": 50,
   "taskTracking": true
 }
 ```

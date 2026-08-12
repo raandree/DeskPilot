@@ -210,7 +210,9 @@ Home/End move between tabs).
 - Skill roots, Instruction roots and Prompt roots (add/remove folder paths).
 - Reasoning effort (model-aware: the menu offers only the levels the effective
   Model advertises, and notes when a Model supports none), Show thinking, Max
-  tool iterations.
+  tool iterations. **Max tool iterations** is bounded at 1000; above the
+  recommended 200 the drawer states the cost and session-token risk and requires
+  a confirmation, reverting the field when it is declined.
 - **Task tracking**: when on (default), the agent is given the
   `manage_todo_list` tool and the Tasks panel renders live during a Turn.
 - **Memory & context**: an **Automatically compact long conversations** toggle

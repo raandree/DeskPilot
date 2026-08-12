@@ -1021,16 +1021,21 @@ Describe 'Format-DpThinkingTrace' {
 }
 
 Describe 'Tool-iteration budget' {
-    It 'rejects a cap below 1 or above 200' -ForEach @(
+    It 'rejects a cap below 1 or above the hard bound' -ForEach @(
         @{ Value = 0; Expected = '*at least 1*' }
         @{ Value = -5; Expected = '*at least 1*' }
-        @{ Value = 201; Expected = '*200 or fewer*' }
-        @{ Value = 5000; Expected = '*200 or fewer*' }
+        @{ Value = 1001; Expected = '*1000 or fewer*' }
+        @{ Value = 50000; Expected = '*1000 or fewer*' }
     ) {
         { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ maxToolIterations = $Value } } |
             Should -Throw -ExpectedMessage $Expected
     }
-    It 'accepts both bounds' -ForEach @(@{ Value = 1 }, @{ Value = 200 }) {
+    It 'accepts both bounds' -ForEach @(@{ Value = 1 }, @{ Value = 1000 }) {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ maxToolIterations = $Value }).maxToolIterations | Should -Be $Value
+    }
+    # Above the recommended 200 the approval is the SPA's confirmation, so a value
+    # already approved must still load from settings.json or a restored backup.
+    It 'accepts a value above the recommended ceiling' -ForEach @(@{ Value = 201 }, @{ Value = 500 }) {
         (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{ maxToolIterations = $Value }).maxToolIterations | Should -Be $Value
     }
     It 'tells the model what its budget is' {

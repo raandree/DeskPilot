@@ -35,6 +35,14 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **A limit the user may approve past is bounded on the server and approved in
+  the client.** `Import-DpSettings` reloads the persisted file through the same
+  `Merge-DpSettings` the API uses, so any server-side "I confirm" flag would have
+  to be replayed from disk or the approved value fails its own reload — and one
+  rejected key discards the whole `settings.json`, silently reverting every other
+  Setting. The validator therefore keeps only the absolute bound (the anti-typo
+  guard); the SPA owns the warning and the confirmation, and reverts the field
+  when it is declined.
 - **Boundary validation only.** Validate inputs where the browser meets the Host
   Server (route params, JSON bodies) and where the Host Server meets the Engine
   (parameter assembly). Do not sprinkle defensive checks through internal

@@ -85,9 +85,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   turns it off on a very large repository.
 - **A job that runs out of steps now tells you, and keeps its work.** The step
   budget rose from 25 to 50 — 25 cut off real work such as auditing a repository
-  or running a build and diagnosing it — and is now capped at 200 so a typo
-  cannot start an expensive runaway. The agent is also told how many steps it
-  has, so it can spend them deliberately instead of being cut off mid-thought.
+  or running a build and diagnosing it. **200 is the recommended maximum**, and
+  you can go above it, up to 1000, once you have confirmed a warning: every step
+  is a paid round trip, and a job that long can outlive its own sign-in token and
+  stop with an error it cannot recover from. So a deliberate long job is allowed
+  while a typo still cannot start an expensive runaway. The agent is also told how
+  many steps it has, so it can spend them deliberately instead of being cut off
+  mid-thought.
   When a job does hit the limit it no longer disappears into an error: it ends
   like a stopped job, explains that it ran out of budget, points at the setting,
   and keeps everything it had already said and planned.
