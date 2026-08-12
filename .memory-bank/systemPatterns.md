@@ -449,6 +449,13 @@ source: repository evidence
 - **The destructive action is never the one-click one.** The row button archives;
   deleting lives in the actions menu and the right-click menu, and confirms by
   naming the Conversation and offering archive instead.
+- **A bulk destructive action is placed away from the safe default.** The diff
+  viewer's **Discard all changes** sits at the far end of the footer from
+  **Close** (`margin-right: auto`), because the realistic failure is not that the
+  user cannot find it but that they hit it reaching for the button they meant.
+  It is also offered only where it differs from the per-file action - over a
+  single file *Undo this file* already is "discard everything", and a second
+  button for the same outcome only asks the user a question with no answer.
 - **Ctrl+Enter sends by default.** A stray Enter mid-thought should not fire a
   half-written instruction at an agent that can write files and run commands. The
   preference is per-machine (`localStorage`, beside the theme): the Host Server

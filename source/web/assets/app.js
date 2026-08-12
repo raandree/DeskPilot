@@ -1625,6 +1625,35 @@ async function undoTurnFiles(paths, btn, node) {
 // One modal for "show me what changed in this file", with the file list beside
 // it so a reviewer can walk a whole change set without reopening anything.
 const diffView = { files: [], index: 0 };
+const DIFF_DISCARD_LIST_LIMIT = 10;
+
+// "Discard all" over everything the viewer is showing: tracked files go back to
+// the last save, files that were never saved are deleted. It throws away work in
+// files the reviewer may never have opened, and an unsaved file has no second
+// copy anywhere, so it always confirms and names what it is about to take.
+async function discardAllDiffFiles(btn) {
+    const paths = diffView.files.map((f) => String((f && f.rel) || '')).filter(Boolean);
+    if (!paths.length) { toast('Nothing to discard.'); return; }
+    const shown = paths.slice(0, DIFF_DISCARD_LIST_LIMIT).map((p) => '\u2022 ' + p).join('\n');
+    const rest = paths.length - DIFF_DISCARD_LIST_LIMIT;
+    const confirmed = window.confirm(
+        `Discard the changes in ${paths.length} file${paths.length === 1 ? '' : 's'}?\n\n` +
+        'Each file goes back to the way it was at the last save, and a file that was never saved is deleted. ' +
+        'This cannot be undone.\n\n' + shown + (rest > 0 ? `\n\u2026and ${rest} more` : ''));
+    if (!confirmed) return;
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Discarding\u2026'; }
+    try {
+        const r = await api('POST', '/api/git/restore', { paths });
+        const bits = [];
+        if (r.restored && r.restored.length) bits.push(r.restored.length + ' put back');
+        if (r.removed && r.removed.length) bits.push(r.removed.length + ' removed');
+        if (r.skipped && r.skipped.length) bits.push(r.skipped.length + ' skipped');
+        toast(bits.length ? 'Discarded: ' + bits.join(', ') + '.' : 'Nothing to discard.');
+        await afterChangeDecision();
+    } catch (e) { toast(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
 
 function openDiffViewer(files, selectRel) {
     const list = asArray(files)
@@ -1765,6 +1794,19 @@ async function loadDiffFile() {
     closeBtn.type = 'button';
     closeBtn.textContent = 'Close';
     closeBtn.onclick = () => closeDiffViewer();
+    // Reviewing a whole change set file by file and undoing each one is the slow
+    // path; this is the one that ends it. Offered only over more than one file,
+    // because over a single file it is the same act as "Undo this file", and kept
+    // at the far end of the footer so it is nowhere near Close.
+    if (diffView.files.length > 1) {
+        const discardBtn = document.createElement('button');
+        discardBtn.className = 'btn btn-danger diff-discard-all';
+        discardBtn.type = 'button';
+        discardBtn.textContent = 'Discard all changes\u2026';
+        discardBtn.title = 'Put every file listed here back the way it was at the last save';
+        discardBtn.onclick = () => discardAllDiffFiles(discardBtn);
+        foot.appendChild(discardBtn);
+    }
     foot.append(undoBtn, closeBtn);
 }
 

@@ -4387,6 +4387,11 @@ button.tree-row {
     padding: 16px;
 }
 
+/* Away from Close, at the opposite end of the footer. */
+.diff-discard-all {
+    margin-right: auto;
+}
+
 .diff-headstat {
     font-family: var(--mono);
     white-space: nowrap;

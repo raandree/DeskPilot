@@ -10,6 +10,24 @@ source: repository evidence
 
 ## Current focus
 
+**A whole review can now be discarded in one confirmed act
+(`ai/discard-all-changes`, 2026-08-12).** The diff viewer — the surface the Git
+panel's **Review** button opens over every uncommitted file — offered exactly one
+decision, *Undo this file*, so putting a set of eight files back meant eight
+round trips through a modal. The footer now carries **Discard all changes**,
+which sends every path the viewer is listing to the existing
+`POST /api/git/restore`: tracked files go back to HEAD, untracked files are
+deleted, and the route already drops the matching pending-change entries so the
+panel stops offering an undo for work that is gone. Three choices worth keeping:
+it is offered **only over more than one file**, because over a single file it is
+the same act as *Undo this file* and two buttons for one outcome is a question
+the user should not have to answer; it sits at the opposite end of the footer
+from **Close** (`margin-right: auto`), because a mis-click next to the safe
+default is how the work actually gets lost; and it **always confirms**, naming
+the count, listing the first ten paths and saying that a file which was never
+saved has no other copy. No server change was needed. Sampler `build, test`
+**1127/1127**, 0 errors, 0 warnings.
+
 **The tool-iteration budget is now approvable, not merely capped
 (`ai/maxiter-confirm-above-200`, 2026-08-12).** `Start-DeskPilot` refused a
 persisted `maxToolIterations` with `must be 200 or fewer` and started on

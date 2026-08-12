@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **One way to throw away a whole review.** Reviewing a set of changed files
+  offered exactly one decision — *Undo this file* — so putting a whole change set
+  back meant walking every file and undoing each one. The review footer now
+  carries **Discard all changes**, which puts every file listed in the review
+  back the way it was at the last save and deletes the files that were never
+  saved. It appears only when there is more than one file to discard, sits at the
+  opposite end of the footer from **Close** so a mis-click cannot reach it, and
+  always asks first — naming how many files it is about to take, listing them,
+  and saying plainly that it cannot be undone.
 - **A way to measure whether any of this actually helped.** Everything above
   claims to close a gap against VS Code Copilot; none of it proved anything. A
   new parity eval harness under `tests/live/eval/` runs a corpus of tasks that

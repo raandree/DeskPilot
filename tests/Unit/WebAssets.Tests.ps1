@@ -405,6 +405,23 @@ assert.deepEqual(reconcileDiffFiles([{ rel: '' }, null], 0, lookup), { files: []
         $js | Should -Match 'await refreshDiffViewer\(\)'
     }
 
+    It 'discards a whole change set from the review footer, but never without a confirm' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # Undoing a set file by file is the slow path; the footer offers the whole
+        # set, and only where that is a different act from "Undo this file".
+        $js | Should -Match ([regex]::Escape('Discard all changes'))
+        $js | Should -Match ([regex]::Escape('if (diffView.files.length > 1) {'))
+        # This deletes files that were never saved, so the confirm has to come
+        # before the request, not after it.
+        $js | Should -Match '(?s)async function discardAllDiffFiles\(btn\).{0,800}window\.confirm'
+        $js | Should -Match '(?s)window\.confirm\(\s*`Discard the changes in.{0,900}api\(''POST'', ''/api/git/restore'''
+        $js | Should -Match '(?s)async function discardAllDiffFiles\(btn\).{0,1800}await afterChangeDecision\(\)'
+        # Sitting next to Close is how a mis-click throws the work away.
+        $css | Should -Match '(?s)\.diff-discard-all \{[^}]*margin-right: auto'
+    }
+
     It 'extracts clipboard files without intercepting text-only paste data' {
         $modulePath = Join-Path $script:webRoot 'assets' 'attachments.js'
         $nodeScript = @'
