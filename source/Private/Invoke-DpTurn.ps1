@@ -403,6 +403,24 @@ function Invoke-DpTurn {
             }
         }
 
+        # What DeskPilot itself has attached. Asked which MCP servers are available,
+        # a model with none goes looking on disk and reports another program's
+        # mcp.json as if it were DeskPilot's. Read here, with the other per-Turn
+        # context, while the Engine Runspace is idle.
+        $mcpContext = ''
+        if ($script:DeskPilot.Engine.McpSupported) {
+            try {
+                $attachedMcp = @(Invoke-DpEngineCommand -Command 'Get-ShpMcpServer') |
+                    ForEach-Object { ConvertTo-DpMcpServerView -InputObject $_ } |
+                    Where-Object { $_ }
+                $mcpContext = Get-DpMcpContext -Server @($attachedMcp) -Supported
+            }
+            catch {
+                $mcpContextError = $_
+                Write-Verbose "Could not read attached MCP servers: $mcpContextError"
+            }
+        }
+
         # Resolve the effective Model (Conversation-pinned, else the Settings
         # default, else DeskPilot's default) and its advertised reasoning efforts
         # from the capability cache the /api/models route fills. The resolved id is
@@ -419,7 +437,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported)
+        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported) -McpContext $mcpContext
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result

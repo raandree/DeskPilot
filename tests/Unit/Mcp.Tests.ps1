@@ -287,6 +287,42 @@ Describe 'Merge-DpSettings with MCP settings' {
     }
 }
 
+Describe 'Get-DpMcpContext' {
+    It 'says nothing at all on an Engine without MCP' {
+        Get-DpMcpContext -Server @() | Should -BeNullOrEmpty
+    }
+
+    It 'states that none are attached, and that another program''s config is not DeskPilot''s' {
+        $text = Get-DpMcpContext -Server @() -Supported
+        $text | Should -Match 'No MCP servers are attached'
+        $text | Should -Match 'mcp\.json'
+        $text | Should -Match 'not.*DeskPilot'
+    }
+
+    It 'names each attached server, its tool count and its prefix' {
+        $text = Get-DpMcpContext -Supported -Server @(
+            @{ name = 'files'; toolCount = 12; running = $true; state = 'Ready' }
+            @{ name = 'gh'; toolCount = 5; running = $true; state = 'Ready' }
+        )
+        $text | Should -Match 'files: 12 tool'
+        $text | Should -Match 'mcp_files_\*'
+        $text | Should -Match 'gh: 5 tool'
+        $text | Should -Not -Match 'No MCP servers are attached'
+    }
+
+    It 'marks a stopped server rather than offering it as usable' {
+        $text = Get-DpMcpContext -Supported -Server @(
+            @{ name = 'files'; toolCount = 0; running = $false; state = 'Faulted' }
+        )
+        $text | Should -Match 'stopped'
+    }
+
+    It 'says the tool list is fixed, because the Engine freezes it at attachment' {
+        $text = Get-DpMcpContext -Supported -Server @(@{ name = 'files'; toolCount = 1; running = $true; state = 'Ready' })
+        $text | Should -Match 'fixed when it was attached'
+    }
+}
+
 Describe 'New-DpTurnParameter and the MCP permission' {
     BeforeEach {
         $settings = Get-DpDefaultSettings
@@ -312,6 +348,17 @@ Describe 'New-DpTurnParameter and the MCP permission' {
         $params = New-DpTurnParameter -Prompt 'hi' -Settings $settings -McpSupported
         $params.Keys | Should -Not -Contain 'DisableUserTools'
         $params.DisableTerminal | Should -BeTrue
+    }
+
+    It 'puts DeskPilot''s MCP position in the system prompt' {
+        $context = Get-DpMcpContext -Server @() -Supported
+        $params = New-DpTurnParameter -Prompt 'hi' -Settings $settings -McpSupported -McpContext $context
+        $params.SystemPrompt | Should -Match 'No MCP servers are attached'
+    }
+
+    It 'omits the block on an Engine that has no MCP at all' {
+        $params = New-DpTurnParameter -Prompt 'hi' -Settings $settings -McpContext 'MCP servers attached to DeskPilot:'
+        $params.SystemPrompt | Should -Not -Match 'MCP servers attached'
     }
 }
 

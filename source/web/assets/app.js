@@ -6392,6 +6392,7 @@ function openSettings() {
           <input type="text" id="mcp-f-name" placeholder="Short name, e.g. files" spellcheck="false" />
           <p class="hint">Used to label its tools, so you can tell in the activity list which server acted. Letters, digits, <code>_</code> and <code>-</code>.</p>
           <input type="text" id="mcp-f-command" placeholder="Command to run, e.g. npx" spellcheck="false" style="margin-top:8px" />
+          <p class="hint">DeskPilot starts this program itself &mdash; it does not need VS Code or any other editor, and it reads no editor&rsquo;s settings. Whatever the server needs has to be installed: <code>npx</code> comes with Node.js, <code>uvx</code> with uv, and some servers ship as a single <code>.exe</code> you can point straight at.</p>
           <textarea id="mcp-f-args" rows="3" placeholder="One argument per line, e.g.&#10;-y&#10;@modelcontextprotocol/server-filesystem&#10;C:\work" spellcheck="false" style="margin-top:8px"></textarea>
           <p class="hint">One per line — never one long string. Each line is passed as a separate argument, so a path with a space stays one argument.</p>
           <input type="text" id="mcp-f-cwd" placeholder="Working folder (optional)" spellcheck="false" style="margin-top:8px" />

@@ -42,6 +42,10 @@ function New-DpTurnParameter {
         ShellPilot 0.4.0-preview0007 and DeskPilot runs against whichever Engine
         the machine has, so the switch is only ever sent to an Engine that has it -
         an unknown parameter name would fail the whole Turn.
+    .PARAMETER McpContext
+        DeskPilot's own MCP position, from Get-DpMcpContext. Passed in for the same
+        reason as WorkspaceContext: the Engine is asked once per Turn, in
+        Invoke-DpTurn, while its Runspace is idle.
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -71,7 +75,9 @@ function New-DpTurnParameter {
 
         [string[]]$ModelReasoningEfforts = @(),
 
-        [switch]$McpSupported
+        [switch]$McpSupported,
+
+        [string]$McpContext
     )
 
     $params = @{ Prompt = $Prompt }
@@ -168,6 +174,12 @@ $($AgentMemory.Trim())
     # budget were infinite and is then cut off mid-investigation.
     if ($Settings.maxToolIterations) {
         $systemParts.Add(('You have at most {0} tool-calling iterations for this task. Prefer decisive checks over exhaustive exploration, and if you are running short, report what you have established and what remains rather than stopping mid-investigation.' -f [int]$Settings.maxToolIterations))
+    }
+
+    # Same reason, for a question the model otherwise answers from whatever
+    # mcp.json it can find on disk - which belongs to some other program.
+    if ($McpSupported -and -not [string]::IsNullOrWhiteSpace($McpContext)) {
+        $systemParts.Add($McpContext.Trim())
     }
 
     if ([bool]$perm.askUser -and [bool]$perm.userTools) {
