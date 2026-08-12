@@ -10,6 +10,24 @@ source: repository evidence
 
 ## Current focus
 
+**CI is green again on all three runners (`ai/fix-cross-platform-path-tests`,
+2026-08-12).** The parity series shipped with a red CI: run `31565886477` passed
+`windows-latest` and failed `ubuntu-latest` and `macos-latest` on the same six
+unit tests. Nothing in `source/` was wrong — two tests encoded Windows path
+semantics. `Get-DpTranscriptPath`'s Describe passed `'C:\data'` into `Join-Path`,
+which resolves a **provider** path and therefore reads `C:` as a drive
+qualifier: on a runner with no `C:` PSDrive it throws `Cannot find drive`, in the
+function *and* in the test's own expected values, so all five of its tests died.
+It now uses `$TestDrive`. And `Resolve-DpWorkspacePath`'s traversal case
+`..\outside.txt` is only a traversal on Windows — elsewhere a backslash is a legal
+file-name character and the candidate genuinely stays inside the root, so the
+resolver was right and the assertion was wrong; it moved to its own
+`-Skip:(-not $IsWindows)` test. Confinement is untouched, because
+`Get-DpSearchPatternError` normalises `\` to `/` and refuses `..` by shape on
+every platform. Windows `build, test`: **1124/1124**, 0 failed, 0 errors.
+
+## Previous focus — parity with VS Code Copilot
+
 **Closing the measured gap to VS Code Copilot (`main`, 2026-08-11/12).** Asked
 for from screenshots of both harnesses running the *same*
 handoff prompt, same Model, same Agent: DeskPilot answered defensibly for 30.13

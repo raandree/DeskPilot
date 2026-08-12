@@ -5821,9 +5821,15 @@ Describe 'Resolve-DpWorkspacePath' {
     It 'refuses a path that leaves the root' -ForEach @(
         @{ Candidate = '../outside.txt' }
         @{ Candidate = 'a/../../outside.txt' }
-        @{ Candidate = '..\outside.txt' }
     ) {
         Resolve-DpWorkspacePath -Root $script:confineRoot -Path $Candidate | Should -BeNullOrEmpty
+    }
+
+    It 'refuses a backslash-separated path that leaves the root' -Skip:(-not $IsWindows) {
+        # Only Windows treats a backslash as a separator; elsewhere this is one
+        # legal file name that stays inside the root, and Get-DpSearchPatternError
+        # refuses it by shape on every platform.
+        Resolve-DpWorkspacePath -Root $script:confineRoot -Path '..\outside.txt' | Should -BeNullOrEmpty
     }
 
     It 'refuses an absolute path outside the root' {
@@ -6202,10 +6208,17 @@ Describe 'New-DpTranscriptRecord' {
 }
 
 Describe 'Get-DpTranscriptPath' {
+    # A literal such as 'C:\data' would make Join-Path and Split-Path resolve a
+    # drive qualifier that only exists on Windows, so the data directory is a
+    # real path on whichever platform is running the test.
+    BeforeAll {
+        $script:transcriptDataDir = [string]$TestDrive
+    }
+
     It 'names one file per Turn under a transcripts folder' {
-        $t = Get-DpTranscriptPath -Directory 'C:\data' -ConversationId 'c_1' -MessageId 'm_2'
-        $t.directory | Should -Be (Join-Path 'C:\data' 'transcripts')
-        $t.path | Should -Be (Join-Path (Join-Path 'C:\data' 'transcripts') 'c_1-m_2.jsonl')
+        $t = Get-DpTranscriptPath -Directory $script:transcriptDataDir -ConversationId 'c_1' -MessageId 'm_2'
+        $t.directory | Should -Be (Join-Path $script:transcriptDataDir 'transcripts')
+        $t.path | Should -Be (Join-Path (Join-Path $script:transcriptDataDir 'transcripts') 'c_1-m_2.jsonl')
     }
 
     It 'refuses to let an id address a file anywhere else' -ForEach @(
@@ -6213,13 +6226,13 @@ Describe 'Get-DpTranscriptPath' {
         @{ Conversation = 'c_1'; Message = '..\..\passwd' }
         @{ Conversation = 'c/1'; Message = 'm:2' }
     ) {
-        $t = Get-DpTranscriptPath -Directory 'C:\data' -ConversationId $Conversation -MessageId $Message
-        (Split-Path -Parent $t.path) | Should -Be (Join-Path 'C:\data' 'transcripts')
+        $t = Get-DpTranscriptPath -Directory $script:transcriptDataDir -ConversationId $Conversation -MessageId $Message
+        (Split-Path -Parent $t.path) | Should -Be (Join-Path $script:transcriptDataDir 'transcripts')
         (Split-Path -Leaf $t.path) | Should -Not -Match '[/\\:]'
     }
 
     It 'still produces a name for empty ids' {
-        (Split-Path -Leaf (Get-DpTranscriptPath -Directory 'C:\data' -ConversationId '' -MessageId '').path) | Should -Be 'unknown-unknown.jsonl'
+        (Split-Path -Leaf (Get-DpTranscriptPath -Directory $script:transcriptDataDir -ConversationId '' -MessageId '').path) | Should -Be 'unknown-unknown.jsonl'
     }
 }
 

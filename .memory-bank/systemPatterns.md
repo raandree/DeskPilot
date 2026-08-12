@@ -608,6 +608,19 @@ source: repository evidence
   `$null`. Read the cache from anywhere; write it only where its full shape is
   produced.
 
+- **A Windows path literal in a test is a Linux failure waiting for CI.** The
+  suite runs on `windows-latest`, `ubuntu-latest` and `macos-latest`, and two
+  things behave differently there. `Join-Path`, `Split-Path` and friends are
+  *provider*-aware: `C:` is parsed as a drive qualifier, so `Join-Path 'C:\data'
+  'x'` throws `Cannot find drive` on a host with no `C:` PSDrive — the same way
+  `Join-Path 'Q:\data' 'x'` throws on Windows. And `\` is only a separator on
+  Windows; elsewhere `..\outside.txt` is one perfectly legal file name that never
+  leaves the folder it is combined with. Use `$TestDrive` for a fixture directory
+  instead of a drive-lettered literal, and gate a backslash-traversal assertion on
+  `$IsWindows`. Confinement itself is unaffected: `Get-DpSearchPatternError`
+  normalises `\` to `/` and refuses `..` on every platform, so the shape guard
+  still covers what the platform-specific assertion cannot.
+
 - **An ellipsis in a Thinking trace is the provider's, not ours.** Claude returns
   *summarised* extended thinking, and the summariser regularly ends a block
   mid-sentence with `…`; the full chain of thought exists only as the encrypted
