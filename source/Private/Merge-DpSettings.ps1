@@ -104,6 +104,13 @@ function Merge-DpSettings {
                 if ($count -gt 1000) { throw 'maxToolIterations must be 1000 or fewer.' }
                 $merged.maxToolIterations = $count
             }
+            'responseRetryCount' {
+                $count = [int]$value
+                if ($count -lt 0 -or $count -gt 100) {
+                    throw 'responseRetryCount must be between 0 and 100.'
+                }
+                $merged.responseRetryCount = $count
+            }
             'autoCompaction' { $merged.autoCompaction = [bool]$value }
             'compactionThreshold' {
                 $fraction = [double]$value

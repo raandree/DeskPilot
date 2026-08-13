@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic response retries.** A Turn no longer stops at the first transient
+  Engine failure or successful-but-empty response before work has begun. The new
+  **Response retries** Setting controls how many extra attempts DeskPilot makes
+  after the first (`0–100`, default `2`), with each wait capped at five seconds;
+  `0` turns the behavior off, and Stop remains responsive during the wait.
+  Retries stop as soon as any answer or Tool Activity has appeared, so DeskPilot
+  never repeats a command or write behind the user's back. The Setting also says
+  plainly that failed attempts can still consume time and Copilot credits, and
+  the final token and cost Usage includes every attempt the Engine recorded
+  rather than only the successful one.
+
 - **MCP servers.** DeskPilot can now attach Model Context Protocol servers, so
   the agent gains tools from programs you choose — an issue tracker, a database,
   a document store — beside its own. A new **MCP servers** tab in Settings takes

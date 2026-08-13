@@ -176,6 +176,9 @@ Describe 'Get-DpDefaultSettings' {
     It 'defaults the tool-iteration cap to 50' {
         (Get-DpDefaultSettings).maxToolIterations | Should -Be 50
     }
+    It 'defaults response retries to two after the first attempt' {
+        (Get-DpDefaultSettings).responseRetryCount | Should -Be 2
+    }
     It 'includes a promptRoots array alongside the other Copilot roots' {
         $s = Get-DpDefaultSettings
         $s.ContainsKey('promptRoots') | Should -BeTrue
@@ -224,6 +227,20 @@ Describe 'Merge-DpSettings' {
     It 'rejects a tool-iteration cap below 1' {
         { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ maxToolIterations = 0 }) } |
             Should -Throw -ExpectedMessage '*at least 1*'
+    }
+    It 'rejects a response retry count outside zero to 100' -ForEach @(
+        @{ Value = -1 }
+        @{ Value = 101 }
+    ) {
+        { Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ responseRetryCount = $Value }) } |
+            Should -Throw -ExpectedMessage '*responseRetryCount must be between 0 and 100*'
+    }
+    It 'accepts both response retry count bounds' -ForEach @(
+        @{ Value = 0 }
+        @{ Value = 100 }
+    ) {
+        (Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch ([pscustomobject]@{ responseRetryCount = $Value })).responseRetryCount |
+            Should -Be $Value
     }
 }
 
@@ -1966,6 +1983,71 @@ Describe 'Get-DpStoppedTurnUsage' {
     }
 }
 
+Describe 'Merge-DpRetriedTurnUsage' {
+    It 'includes every recorded Engine attempt in a successful Turn' {
+        $final = @{
+            promptTokens = 80; completionTokens = 25; totalTokens = 105
+            costUSD = 0.009; credits = 0.9; iterations = 3; priced = $true
+        }
+        $before = [pscustomobject]@{
+            Calls = 2; PromptTokens = 100; CompletionTokens = 20
+            TotalTokens = 120; CostUSD = 0.01; Credits = 1.0
+        }
+        $after = [pscustomobject]@{
+            Calls = 4; PromptTokens = 250; CompletionTokens = 60
+            TotalTokens = 310; CostUSD = 0.026; Credits = 2.6
+        }
+
+        $usage = Merge-DpRetriedTurnUsage -Usage $final -Before $before -After $after
+
+        $usage.promptTokens | Should -Be 150
+        $usage.completionTokens | Should -Be 40
+        $usage.totalTokens | Should -Be 190
+        $usage.costUSD | Should -Be 0.016
+        $usage.credits | Should -Be 1.6
+        $usage.iterations | Should -Be 4
+        $usage.ContainsKey('estimated') | Should -BeFalse
+        $usage.ContainsKey('partial') | Should -BeFalse
+    }
+
+    It 'keeps final Usage when an exact baseline is unavailable' {
+        $final = @{
+            promptTokens = 80; completionTokens = 25; totalTokens = 105
+            costUSD = 0.009; credits = 0.9; iterations = 3; priced = $true
+        }
+        $after = [pscustomobject]@{
+            Calls = 4; PromptTokens = 250; CompletionTokens = 60
+            TotalTokens = 310; CostUSD = 0.026; Credits = 2.6
+        }
+
+        $usage = Merge-DpRetriedTurnUsage -Usage $final -Before $null -After $after
+
+        $usage.promptTokens | Should -Be 80
+        $usage.totalTokens | Should -Be 105
+        $usage.iterations | Should -Be 3
+        $usage.ContainsKey('partial') | Should -BeFalse
+    }
+
+    It 'preserves final pricing when the summary omits cost fields' {
+        $final = @{
+            promptTokens = 80; completionTokens = 25; totalTokens = 105
+            costUSD = 0.009; credits = 0.9; iterations = 3; priced = $true
+        }
+        $before = [pscustomobject]@{
+            Calls = 2; PromptTokens = 100; CompletionTokens = 20; TotalTokens = 120
+        }
+        $after = [pscustomobject]@{
+            Calls = 4; PromptTokens = 250; CompletionTokens = 60; TotalTokens = 310
+        }
+
+        $usage = Merge-DpRetriedTurnUsage -Usage $final -Before $before -After $after
+
+        $usage.priced | Should -BeTrue
+        $usage.costUSD | Should -Be 0.009
+        $usage.credits | Should -Be 0.9
+    }
+}
+
 Describe 'Get-DpStoppedTurnEstimateText' {
     It 'uses the prompt when the optional SystemPrompt key is absent' {
         $estimateTextParams = @{
@@ -2227,6 +2309,15 @@ Describe 'Settings persistence' {
         $s.permissions.file = $false
         Save-DpSettings -Settings $s -Directory $script:dir
         (Import-DpSettings -Directory $script:dir).permissions.file | Should -BeFalse
+    }
+
+    It 'adds the default response retry count to an older partial settings file' {
+        Set-Content -LiteralPath (Join-Path $script:dir 'settings.json') -Value '{"showThinking":true}' -Encoding utf8
+
+        $loaded = Import-DpSettings -Directory $script:dir
+
+        $loaded.showThinking | Should -BeTrue
+        $loaded.responseRetryCount | Should -Be 2
     }
 }
 
@@ -4330,6 +4421,40 @@ Describe 'Invoke-DpPendingRequest' {
     }
 }
 
+Describe 'Wait-DpResponseRetry' {
+    BeforeEach {
+        $script:savedRetryDeskPilot = $script:DeskPilot
+        $script:DeskPilot = @{ CancelRequested = $false }
+        $script:retryPumpCount = 0
+        Mock Start-Sleep { }
+    }
+
+    AfterEach {
+        $script:DeskPilot = $script:savedRetryDeskPilot
+    }
+
+    It 'pumps pending requests throughout the bounded wait' {
+        Mock Invoke-DpPendingRequest { }
+
+        Wait-DpResponseRetry -Milliseconds 120 -PollMilliseconds 50 | Should -BeTrue
+
+        Should -Invoke Start-Sleep -Times 3 -Exactly
+        Should -Invoke Invoke-DpPendingRequest -Times 4 -Exactly
+    }
+
+    It 'ends the wait when a pending request cancels the Turn' {
+        Mock Invoke-DpPendingRequest {
+            $script:retryPumpCount++
+            if ($script:retryPumpCount -eq 2) { $script:DeskPilot.CancelRequested = $true }
+        }
+
+        Wait-DpResponseRetry -Milliseconds 5000 -PollMilliseconds 50 | Should -BeFalse
+
+        Should -Invoke Start-Sleep -Times 1 -Exactly
+        Should -Invoke Invoke-DpPendingRequest -Times 2 -Exactly
+    }
+}
+
 Describe 'Test-DpAuthError' {
     It 'flags a 401 / Unauthorized message' {
         Test-DpAuthError -ErrorRecord 'Response status code does not indicate success: 401 (Unauthorized).' | Should -BeTrue
@@ -4391,11 +4516,69 @@ Describe 'Test-DpTransientEngineError' {
     It 'does NOT flag a missing token file' {
         Test-DpTransientEngineError -ErrorRecord 'Token file not found: C:\Users\me\.shellpilot-token. Run Initialize-Shp first.' | Should -BeFalse
     }
-    It 'does NOT flag an unrelated engine error' {
-        Test-DpTransientEngineError -ErrorRecord 'The model returned an empty response.' | Should -BeFalse
+    It 'flags an empty Engine response' -ForEach @(
+        @{ Message = 'The model returned an empty response.' }
+        @{ Message = 'Sorry, no response was returned.' }
+        @{ Message = 'The Engine returned no response.' }
+    ) {
+        Test-DpTransientEngineError -ErrorRecord $Message | Should -BeTrue
     }
     It 'returns false for a null error' {
         Test-DpTransientEngineError -ErrorRecord $null | Should -BeFalse
+    }
+}
+
+Describe 'Test-DpEmptyEngineResult' {
+    It 'flags a missing result' {
+        Test-DpEmptyEngineResult -Result $null | Should -BeTrue
+    }
+    It 'flags a result whose content is empty' -ForEach @(
+        @{ Content = '' }
+        @{ Content = '   ' }
+        @{ Content = $null }
+    ) {
+        Test-DpEmptyEngineResult -Result ([pscustomobject]@{ Content = $Content }) | Should -BeTrue
+    }
+    It 'accepts a result with response content' {
+        Test-DpEmptyEngineResult -Result ([pscustomobject]@{ Content = 'Done.' }) | Should -BeFalse
+    }
+}
+
+Describe 'Test-DpEngineResultRetry' {
+    It 'retries an empty result before anything streams' {
+        Test-DpEngineResultRetry -Result ([pscustomobject]@{ Content = '' }) -EmittedCount 0 |
+            Should -BeTrue
+    }
+    It 'keeps an empty result after response or Tool Activity has streamed' {
+        Test-DpEngineResultRetry -Result ([pscustomobject]@{ Content = '' }) -EmittedCount 1 |
+            Should -BeFalse
+    }
+    It 'keeps a result that has response content' {
+        Test-DpEngineResultRetry -Result ([pscustomobject]@{ Content = 'Done.' }) -EmittedCount 0 |
+            Should -BeFalse
+    }
+}
+
+Describe 'the Turn retries empty Engine responses' {
+    BeforeAll {
+        $script:responseRetryTurnSource = Get-Content -LiteralPath (
+            Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+    }
+
+    It 'derives attempts from the configured retry count plus the first attempt' {
+        $script:responseRetryTurnSource | Should -Match '\$maxAttempts\s*=\s*\[int\]\$settings\.responseRetryCount\s*\+\s*1'
+    }
+    It 'treats an empty successful pipeline result as retryable' {
+        $script:responseRetryTurnSource | Should -Match 'Test-DpEngineResultRetry\s+-Result\s+\$result\s+-EmittedCount\s+\(\[int\]\$turnState\.emitted\)'
+    }
+    It 'still refuses to retry after anything has streamed' {
+        $script:responseRetryTurnSource | Should -Match '\[int\]\$turnState\.emitted\s*-eq\s*0'
+    }
+    It 'caps each retry delay at five seconds while keeping Stop responsive' {
+        $script:responseRetryTurnSource | Should -Match 'Wait-DpResponseRetry\s+-Milliseconds\s+\(\[Math\]::Min\(5000,\s*\(400\s*\*\s*\$attempt\)\)\)'
+    }
+    It 'aggregates Engine Usage after a successful retry' {
+        $script:responseRetryTurnSource | Should -Match 'Merge-DpRetriedTurnUsage\s+-Usage\s+\$mapped\.usage\s+-Before\s+\$engineUsageBefore\s+-After\s+\$engineUsageAfter'
     }
 }
 

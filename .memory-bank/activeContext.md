@@ -2,13 +2,66 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-08-11
+last-verified: 2026-08-13
 source: repository evidence
 ---
 
 # Active Context
 
 ## Current focus
+
+**All four feature Branches are integrated into `main` (2026-08-13).**
+`ai/discard-all-changes`, `ai/live-activity-feed`, `ai/mcp-servers` and
+`ai/response-auto-retry` formed one linear chain — each Branch's tip was the
+next one's base — so integration was two moves rather than four: `main`
+fast-forwarded to the MCP tip, which already contained the first three, and then
+took the retry Branch as a merge commit. The only conflicts were in this file
+and `progress.md`, where both sides prepended a record to the same position;
+both records were kept rather than either being dropped. The Branches were
+deleted locally only after `git branch -d` confirmed each was contained in
+`main` — the safe deletion that refuses to discard unmerged work.
+
+## Previous focus — response retries
+
+**Response retries are now configurable and side-effect safe
+(`ai/response-auto-retry`, 2026-08-13).** The reported interruption was GitHub
+Copilot Chat repeatedly ending with *"Sorry, no response was returned"* until
+the user pressed Retry enough times. DeskPilot already retried a narrow set of
+transient failures, but the count was hard-coded at two retries and an empty
+successful Engine result was deliberately classified as unrelated. The new
+`responseRetryCount` Setting means **extra attempts after the first** (`0–100`,
+default `2`, so existing behavior is preserved) and is exposed as **Response
+retries** in General Settings; old partial `settings.json` files inherit the
+default through `Import-DpSettings`.
+
+Five decisions are load-bearing. **(1) Empty is retryable only before anything
+streams.** `Test-DpEngineResultRetry` combines the empty-result test with the
+Turn's emitted-frame count. Once answer text or Tool Activity exists, a blank
+final answer stays on the ordinary completed path so Activity, pending changes,
+Undo and Usage are preserved; restarting then could repeat a command or write.
+This relies on ShellPilot emitting its structured `ToolCall` progress record
+before executing the Tool. **(2) Known empty-response errors and a null/blank
+pipeline result share the same policy.** `Test-DpTransientEngineError` recognizes
+the former; `Test-DpEmptyEngineResult` recognizes the latter. A real 401 remains
+non-transient. **(3) Backoff is bounded and cancellable.** Each wait grows from
+400 ms but caps at 5 s, and `Wait-DpResponseRetry` pumps pending Host Server
+requests every 50 ms so Stop remains responsive. **(4) Failed attempts are not
+free.** If the Engine records more than one call, `Merge-DpRetriedTurnUsage`
+uses the exact pre/post summary delta for tokens, cost and credits; the summary
+does not expose failed calls' internal iteration counts, so iterations are a
+documented conservative minimum. **(5) Successful Usage keeps its normal
+shape.** Missing summary fields preserve the final result's pricing rather than
+turning a priced Turn into an unpriced one.
+
+The implementation was developed red/green in focused slices and independently
+reviewed twice. The first review found that an unconditional empty-result throw
+would have dropped Activity and pending-change tracking after Tool work; the
+new behavioral predicate test caught and guards that case. The scoped re-review
+approved the corrected design with no Blocker or remaining Major finding. Final
+Sampler `build, test`: **1250/1250**, 0 failed/skipped/not-run, 16 tasks, 0
+errors, 0 warnings.
+
+## Previous focus — the MCP Branch was synchronized with `main`
 
 **The MCP Branch is synchronized with `main` (`ai/mcp-servers`, 2026-08-13).**
 Local `main` merged the latest `origin/main`, then the MCP Branch merged local
