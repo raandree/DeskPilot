@@ -222,6 +222,12 @@ source: repository evidence
   place (`Restore-DpSyncStash`); when the pop fails it keeps `stashed` true, sets
   `stashPopConflict`, and names the stash. Telling a non-expert their work was
   restored when it is in `refs/stash` is worse than telling them nothing.
+- **A clean text merge can still cross a release boundary.** When release
+  automation inserts a version heading while a feature Branch adds entries at
+  the top of `[Unreleased]`, Git can auto-merge both edits and silently place
+  unreleased work under the released version. After merging a release commit,
+  compare the feature Branch's changelog diff from the merge base and put the
+  version heading immediately before the first pre-existing release entry.
 - **A generated prompt is a suggestion, never an action.** The conflict prompt is
   returned as text, shown in an editable box, and sent only by an explicit click.
   Its wording ("do not run git") is a guardrail, not a control - the real

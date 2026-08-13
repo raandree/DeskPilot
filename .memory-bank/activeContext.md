@@ -10,6 +10,18 @@ source: repository evidence
 
 ## Current focus
 
+**The MCP Branch is synchronized with `main` (`ai/mcp-servers`, 2026-08-13).**
+Local `main` merged the latest `origin/main`, then the MCP Branch merged local
+`main`. Git reported no text conflict, but self-review found a semantic one:
+the incoming `0.4.0` heading landed above the MCP, live Activity, and Discard
+entries, incorrectly placing those unreleased changes in the released version.
+The three feature-Branch entries remain under `[Unreleased]`; the `0.4.0`
+boundary now starts immediately before the older parity-eval entry. Git checks
+confirm `main` is an ancestor, the worktree has no unmerged entries, and the
+resolved heading order is unique and correct.
+
+## Previous focus — MCP servers
+
 **MCP servers can now be attached (`ai/live-activity-feed`, 2026-08-12).** The
 Engine gained MCP in ShellPilot **0.4.0-preview0007** (`Register-ShpMcpServer` /
 `Get-ShpMcpServer` / `Unregister-ShpMcpServer`, `Invoke-Shp -DisableMcp`,

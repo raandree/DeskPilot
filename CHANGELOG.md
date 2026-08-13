@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opposite end of the footer from **Close** so a mis-click cannot reach it, and
   always asks first — naming how many files it is about to take, listing them,
   and saying plainly that it cannot be undone.
+
+## [0.4.0] - 2026-08-09
+
+### Added
+
 - **A way to measure whether any of this actually helped.** Everything above
   claims to close a gap against VS Code Copilot; none of it proved anything. A
   new parity eval harness under `tests/live/eval/` runs a corpus of tasks that
