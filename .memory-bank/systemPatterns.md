@@ -239,6 +239,14 @@ source: repository evidence
   unreleased work under the released version. After merging a release commit,
   compare the feature Branch's changelog diff from the merge base and put the
   version heading immediately before the first pre-existing release entry.
+- **Check whether Branches are a chain before treating them as a set.** Several
+  open `ai/*` Branches are often stacked — each one's tip is the next one's base
+  — so merging the newest already delivers the rest, and merging them one by one
+  manufactures conflicts that never existed. Read `git rev-list --parents` and
+  `git merge-base --is-ancestor` first; when the chain holds, the merged tree
+  should be identical to the newest tip, which is a cheap assertion worth making.
+  Delete only with `git branch -d`, never `-D`: the safe form is what refuses to
+  discard a Branch whose work never reached `main`.
 - **A generated prompt is a suggestion, never an action.** The conflict prompt is
   returned as text, shown in an editable box, and sent only by an explicit click.
   Its wording ("do not run git") is a guardrail, not a control - the real

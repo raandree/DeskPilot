@@ -21,6 +21,17 @@ both records were kept rather than either being dropped. The Branches were
 deleted locally only after `git branch -d` confirmed each was contained in
 `main` — the safe deletion that refuses to discard unmerged work.
 
+Nothing in `source/`, `tests/` or `specs/` had to be reconciled: because the
+chain was linear, the retry Branch's tree already contained every MCP, live
+Activity and Discard change, and `git diff 08e3ad5 e0566d8 -- source tests
+specs` is empty. Verified on the merged `main` with the authoritative Sampler
+gate, `./build.ps1 -Tasks build, test`: **1250/1250**, 0 failed, 16 tasks, 0
+errors, 0 warnings. The first two gate runs failed on `DeskPilot.psm1` being
+*used by another process* — the environmental build-output lock already recorded
+for 2026-07-08, not a code fault; it cleared after removing
+`output/module/DeskPilot` and letting one build run alone. `main` is 9 commits
+ahead of `origin/main` and unpushed.
+
 ## Previous focus — response retries
 
 **Response retries are now configurable and side-effect safe
