@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-08-05
+last-verified: 2026-08-13
 source: repository evidence
 ---
 
@@ -35,6 +35,17 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Retry only while the Turn is observably side-effect free.** An Engine call
+  may be repeated only before any response or Tool Activity frame has streamed.
+  ShellPilot emits a structured `ToolCall` progress record before executing the
+  Tool; once DeskPilot sees that record, restarting the Turn could repeat a
+  command or write and is forbidden. A blank final response after Activity is a
+  completed Turn with an empty answer, not a retry candidate: preserve the
+  Message, Activity, pending changes, Undo and Usage. Keep retry waits bounded
+  and pump pending Host Server requests during them so Stop remains responsive.
+  If failed attempts can be billable, use the Engine's exact pre/post Usage
+  summary delta for tokens and cost while preserving the successful result when
+  a summary field is unavailable.
 - **A limit the user may approve past is bounded on the server and approved in
   the client.** `Import-DpSettings` reloads the persisted file through the same
   `Merge-DpSettings` the API uses, so any server-side "I confirm" flag would have

@@ -91,6 +91,19 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $js | Should -Match '(?s)rm\.onclick = \(\) => \{.{0,200}window\.confirm'
     }
 
+    It 'offers and persists a bounded response retry count' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $js | Should -Match 'id="set-response-retries"\s+min="0"\s+max="\$\{RESPONSE_RETRY_MAX\}"'
+        # Zero disables retries and must render as zero rather than falling back to
+        # the default through JavaScript's falsy-value rules.
+        $js | Should -Match 's\.responseRetryCount\s*\?\?\s*2'
+        $js | Should -Match 'save\(\{\s*responseRetryCount:\s*v\s*\}\)'
+        $js | Should -Match 'const RESPONSE_RETRY_MAX = 100;'
+        $js | Should -Match 'if \(Number\.isNaN\(v\)\) \{ v = 2; \}'
+        $js | Should -Match 'if \(v < 0\) \{ v = 0; \}'
+    }
+
     It 'lets both sides of a conversation be copied in one click' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw

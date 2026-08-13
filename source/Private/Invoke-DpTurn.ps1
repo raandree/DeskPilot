@@ -489,14 +489,13 @@ function Invoke-DpTurn {
             }
         }
 
-        # Run the Engine call with a bounded retry for transient PRE-STREAM
-        # failures. ShellPilot exchanges the GitHub token for a short-lived Copilot
-        # session token at the start of every Turn, and that exchange intermittently
-        # returns 403 (or 429/5xx); previously the whole Turn failed and the user had
-        # to stop and resend. Retry only while nothing has streamed yet
-        # ($turnState.emitted -eq 0) so no answer text is ever duplicated, and only
-        # for transient errors - a genuine 401/expired token is surfaced, not retried.
-        $maxAttempts = 3
+        # Run the Engine call with the configured retry count for transient
+        # PRE-STREAM failures. Besides an intermittent 403/429/5xx or network
+        # failure, an Engine request can complete successfully but return no content.
+        # Retry only while nothing has streamed yet ($turnState.emitted -eq 0), so
+        # answer text, commands, and writes are never duplicated. A genuine
+        # 401/expired token is surfaced rather than retried.
+        $maxAttempts = [int]$settings.responseRetryCount + 1
         $attempt = 0
         $result = $null
         while ($true) {
@@ -649,6 +648,9 @@ function Invoke-DpTurn {
                     $firstError = $shell.Streams.Error | Select-Object -First 1
                     throw ($(if ($firstError) { $firstError.ToString() } else { 'The Engine returned an error.' }))
                 }
+                if (Test-DpEngineResultRetry -Result $result -EmittedCount ([int]$turnState.emitted)) {
+                    throw 'The Engine returned no response.'
+                }
                 break
             }
             catch {
@@ -658,8 +660,7 @@ function Invoke-DpTurn {
                 if ($attempt -lt $maxAttempts -and [int]$turnState.emitted -eq 0 -and (Test-DpTransientEngineError -ErrorRecord $_)) {
                     try { $shell.Dispose() } catch { $null = $_ }
                     $shell = $null
-                    Start-Sleep -Milliseconds (400 * $attempt)
-                    if ($script:DeskPilot.CancelRequested) {
+                    if (-not (Wait-DpResponseRetry -Milliseconds ([Math]::Min(5000, (400 * $attempt))))) {
                         $writer.Write((ConvertTo-DpSseFrame -EventName 'error' -Data @{ message = 'Turn stopped.' }))
                         return
                     }
@@ -670,6 +671,21 @@ function Invoke-DpTurn {
         }
 
         $mapped = ConvertFrom-DpEngineResult -Result $result
+        if ($attempt -gt 1) {
+            try {
+                $usageCommandParams = @{
+                    Command   = 'Get-ShpUsage'
+                    Parameter = @{ Summary = $true }
+                }
+                $engineUsageAfter = Invoke-DpEngineCommand @usageCommandParams |
+                    Select-Object -Last 1
+                $mapped.usage = Merge-DpRetriedTurnUsage -Usage $mapped.usage -Before $engineUsageBefore -After $engineUsageAfter
+            }
+            catch {
+                $usageProbeError = $_
+                Write-Verbose "Could not capture retried-Turn Engine Usage: $usageProbeError"
+            }
+        }
 
         # A file changed through replace_in_file never reaches result.FilesWritten -
         # ShellPilot fills that only from its own write_file - so it would be

@@ -56,14 +56,24 @@ pipeline, and emits an `error` frame (`Turn stopped.`). Without this pump the
 stop request would wait in the TCP backlog until the Turn finished, making the
 Stop button a no-op.
 
-**Transient pre-stream retry.** ShellPilot exchanges the cached GitHub token for a
-short-lived Copilot session token at the start of every Turn, and that exchange
-intermittently fails (for example a 403). Because it happens before any answer has
-streamed, the Turn loop retries the Engine call a few times (bounded, short
-back-off) on a transient error (`Test-DpTransientEngineError`) **only while nothing
-has streamed yet**, so the user is not forced to stop and resend and no answer text
-is ever duplicated. A genuine 401/expired sign-in is not transient and is not
-retried.
+**Configurable pre-stream retry.** ShellPilot exchanges the cached GitHub token
+for a short-lived Copilot session token at the start of every Turn, and that
+exchange intermittently fails (for example a 403). An Engine request can also
+complete with no result or blank content. `responseRetryCount` controls how many
+extra attempts DeskPilot makes after the first (`0–100`, default `2`), with a
+short back-off capped at five seconds per wait; the wait continues pumping Host
+Server requests so Stop remains responsive. The Turn loop retries a transient
+error (`Test-DpTransientEngineError`) or an empty result
+(`Test-DpEmptyEngineResult`) **only while nothing has streamed yet**, so the user
+is not forced to stop and resend and no answer text, command, or write is ever
+duplicated. This relies on the Engine's structured Tool Activity record being
+emitted before the Tool executes; once that record appears, DeskPilot will not
+restart the Turn. When the Engine records Usage for more than one attempt, the
+exact pre/post token and cost deltas are stored on the final Message so empty
+attempts are not hidden from the cost. The Engine summary has only a call count,
+not failed calls' internal iteration counts, so the displayed iteration total is
+a conservative minimum. A genuine 401/expired sign-in is not transient and is
+not retried.
 
 The **final Message text is `.Content`** (clean), not the concatenated deltas
 (which exist only for the live typing effect). `-ShowThinking` is **off** for the
@@ -211,6 +221,7 @@ launch and can be overridden with `Start-DeskPilot -DataDir`.
   "reasoningEffort": null,
   "showThinking": false,
   "maxToolIterations": 50,
+  "responseRetryCount": 2,
   "taskTracking": true
 }
 ```

@@ -6,13 +6,14 @@
     .DESCRIPTION
         The Copilot session-token exchange that ShellPilot performs at the start
         of every Turn intermittently returns 403 (and occasionally 429/5xx or a
-        network timeout); retrying the call succeeds. This classifier flags those
-        transient failures so Invoke-DpTurn can retry the Engine call before any
-        answer has streamed, sparing the user a manual stop-and-resend. It walks
-        the inner-exception chain and matches transient HTTP status codes and
-        network conditions only. It deliberately does NOT match 401/Unauthorized
-        (a genuine expired sign-in), so an expired token is surfaced for re-auth
-        rather than retried pointlessly.
+        network timeout), or a request can complete without response content;
+        retrying the call succeeds. This classifier flags those failures so
+        Invoke-DpTurn can retry the Engine call before any answer has streamed,
+        sparing the user a manual stop-and-resend. It walks the inner-exception
+        chain and matches transient HTTP status codes, network conditions, and
+        known empty-response messages. It deliberately does NOT match
+        401/Unauthorized (a genuine expired sign-in), so an expired token is
+        surfaced for re-auth rather than retried pointlessly.
     .PARAMETER ErrorRecord
         The caught error: an ErrorRecord, an Exception, or a string.
     .OUTPUTS
@@ -45,5 +46,5 @@
 
     $text = $parts -join ' '
 
-    return [bool]($text -match '(?i)\b403\b|\b408\b|\b429\b|\b5\d\d\b|forbidden|too many requests|timed?\s*out|temporarily|service unavailable|bad gateway|gateway timeout|(?:connection|socket).{0,24}(?:reset|refused|closed|aborted)|unable to connect|no such host|network is unreachable')
+    return [bool]($text -match '(?i)\b403\b|\b408\b|\b429\b|\b5\d\d\b|forbidden|too many requests|timed?\s*out|temporarily|service unavailable|bad gateway|gateway timeout|(?:connection|socket).{0,24}(?:reset|refused|closed|aborted)|unable to connect|no such host|network is unreachable|no response was returned|returned (?:an )?empty response|returned no response')
 }

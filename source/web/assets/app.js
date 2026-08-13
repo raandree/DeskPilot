@@ -6045,6 +6045,7 @@ async function importSettings(file) {
 // Server enforces the same number, and a value approved here must still load from disk.
 const MAXITER_RECOMMENDED = 200;
 const MAXITER_HARD = 1000;
+const RESPONSE_RETRY_MAX = 100;
 // ===== MCP servers =====
 // The Engine keeps an MCP registration only for the life of its session and
 // discovers nothing on its own, so this panel is the durable list: every save
@@ -6302,6 +6303,11 @@ function openSettings() {
         <input type="number" id="set-maxiter" min="1" max="${MAXITER_HARD}" value="${s.maxToolIterations || 50}" />
         <p class="hint">How many tool steps the agent may take in one job. ${MAXITER_RECOMMENDED} is the recommended maximum &mdash; above that DeskPilot asks you to confirm, because every step is a paid round trip and a very long job can outlive its own sign-in token.</p>
       </div>
+            <div class="field">
+                <label>Response retries</label>
+                <input type="number" id="set-response-retries" min="0" max="${RESPONSE_RETRY_MAX}" value="${s.responseRetryCount ?? 2}" />
+                <p class="hint">Extra attempts after the first when the Engine returns no response before any answer or activity begins. Set to 0 to turn this off; failed attempts can still consume time and Copilot credits.</p>
+            </div>
       <div class="field">
         <label>Send a message with</label>
         <select id="set-sendkey">
@@ -6665,6 +6671,14 @@ function openSettings() {
         }
         e.target.value = v;
         save({ maxToolIterations: v });
+    };
+    $('set-response-retries').onchange = (e) => {
+        let v = parseInt(e.target.value, 10);
+        if (Number.isNaN(v)) { v = 2; }
+        if (v < 0) { v = 0; }
+        if (v > RESPONSE_RETRY_MAX) { v = RESPONSE_RETRY_MAX; }
+        e.target.value = v;
+        save({ responseRetryCount: v });
     };
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };

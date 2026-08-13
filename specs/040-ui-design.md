@@ -203,7 +203,7 @@ accent fills so the bright dark-mode accent stays legible.
 The drawer's fields are grouped into tabs, shown as a sticky pill strip at the
 top of the drawer so it stays easy to navigate as settings grow: **General**
 (Model, reasoning effort, show thinking, task tracking, max tool iterations,
-theme), **Permissions**, **Projects** (Projects + reference files),
+response retries, theme), **Permissions**, **Projects** (Projects + reference files),
 **Customizations** (Skill/Instruction/Prompt roots, Agents folder, Atelier
 health), **Memory & context** (User profile, Agent memory, auto-compaction), and
 **Engine & data** (spend warning, updates, Engine status, back up & restore). Only the
@@ -221,6 +221,12 @@ Home/End move between tabs).
   tool iterations. **Max tool iterations** is bounded at 1000; above the
   recommended 200 the drawer states the cost and session-token risk and requires
   a confirmation, reverting the field when it is declined.
+- **Response retries**: extra Engine attempts after the first (`0–100`, default
+  `2`) when a transient failure or empty response occurs before any answer or
+  Activity begins. Each wait is capped at five seconds; the drawer states that
+  failed attempts can still consume time and Copilot credits, and Stop stays
+  responsive during the wait. A Turn that has already streamed is never
+  restarted, because that could repeat a command or write.
 - **Task tracking**: when on (default), the agent is given the
   `manage_todo_list` tool and the Tasks panel renders live during a Turn.
 - **Memory & context**: an **Automatically compact long conversations** toggle

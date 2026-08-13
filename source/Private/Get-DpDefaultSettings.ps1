@@ -69,6 +69,10 @@ function Get-DpDefaultSettings {
         # reports - routinely needs more than the Engine's own default of 25, and
         # running out costs the whole Turn.
         maxToolIterations = 50
+        # Repeat a failed Engine call only before any response or Tool Activity has
+        # streamed. Two retries preserve the existing three-attempt policy; zero
+        # disables automatic retries, while higher values tolerate a noisy service.
+        responseRetryCount = 2
         # Memory & context. When autoCompaction is on, a Conversation whose last
         # Turn filled its Model context window to at least compactionThreshold is
         # summarised automatically after the Turn (the same summarise-and-keep-tail
