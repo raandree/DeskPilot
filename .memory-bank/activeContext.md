@@ -10,6 +10,56 @@ source: repository evidence
 
 ## Current focus
 
+**Image Attachments no longer overflow the Turn's request body (2026-08-24,
+uncommitted on `main`).** Reported as a Turn dying with `Exception calling
+"EndInvoke" with "1" argument(s): "Request Entity Too Large"` while the same
+photos worked in Copilot Chat. The 413 came from the Copilot endpoint, not the
+Host Server: nothing on the Vision path budgeted bytes, so a full-resolution
+camera JPEG went on the wire inflated ~4/3 by base64 (the Engine's
+`ConvertTo-ShpImageContent` reads the file and inlines a `data:` URI). The upload
+route's 25 MiB cap is per file part, not per request. **ShellPilot needed no
+change** — it faithfully sends what it is given; the missing budget was
+DeskPilot's.
+
+Five decisions are load-bearing. **(1) The browser makes it work, the Host
+Server makes it safe.** The SPA downscales an over-budget image through a canvas
+before uploading (long edge 1568, ~1.5 MB, quality 0.82), but the browser is not
+a trust boundary and an Attachment also arrives from Intercom, so
+`Get-DpVisionBudgetError` enforces 3.5 MB per image and 8 MB per Turn against
+the bytes on disk. The client budget is deliberately tighter than the server's,
+so anything the browser shrank always passes. **(2) Only an over-budget image is
+touched.** Re-encoding a file the user attached, for no gain, is a silent edit
+of their data; a PNG also keeps its codec, because JPEG ringing is worst on the
+screenshot text that is the usual reason for attaching one. **(3) Animation is
+sniffed, not inferred from the MIME type.** A canvas re-encode keeps one frame;
+GIF is excluded outright, but animated WebP and APNG share their still form's
+MIME type, so the header is scanned for `ANIM`/`acTL`. The independent review
+caught this — the first cut excluded only GIF while the CHANGELOG promised
+animated images were safe. **(4) The refusal happens before the Turn starts**,
+as `413 too_large` naming the file and its real size, rather than paying a round
+trip for a bare endpoint 413 that arrives as a raw `EndInvoke` string.
+`Test-DpTransientEngineError` correctly does not match 413, so Retry never
+resends an identical oversized body. **(5) A refused Turn hands the work back.**
+`send()` clears the composer and the Attachment chips *before* the request
+opens, so making a pre-Turn rejection reachable for the first time would have
+destroyed the user's prompt; `_runTurn` now reports whether the server's `start`
+frame ever arrived, and `send()` restores both when it did not.
+
+Also from review: sizes format with `InvariantCulture` (a `de-DE` host would
+have rendered `3,5 MB` and broken every caller matching on it),
+`createImageBitmap` passes `imageOrientation: 'from-image'` so an older engine
+cannot bake a portrait phone photo in sideways, and a file that vanished or
+locked between validation and the size check is skipped rather than thrown —
+that path surfaced as a 500 quoting the absolute path.
+
+Red proven before green in throwaway worktrees at `HEAD`, twice: 9/9 new tests
+failed without the fix, and the Intercom guard was isolated separately (without
+it the 4 MB photo really is handed to Vision). Final Sampler gate
+`./build.ps1 -Tasks build, test`: **1272/1272**, 0 failed/skipped, 16 tasks,
+0 errors, 0 warnings. Left uncommitted at the user's request.
+
+## Previous focus — pasting a file into the chat
+
 **Pasting a file into the chat is fast again (2026-08-24, uncommitted on
 `main`).** Reported as "when pasting files from the clipboard using Ctrl+V it
 takes quite some time until they appear in the chat". Measured before touching

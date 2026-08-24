@@ -563,6 +563,103 @@ assert.deepEqual(uploaded, [screenshot]);
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
+    It 'plans a downscale for an image too large to inline into a Turn' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'attachments.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { planVisionDownscale, getVisionFileName, hasAnimationMarker, VISION_LIMITS } =
+    await import(pathToFileURL(process.argv[1]).href);
+
+const q = VISION_LIMITS.quality;
+
+// A camera photo is the reported failure: inlined verbatim it is ~4/3 larger
+// again as base64 and the Copilot endpoint answers a bare 413.
+assert.deepEqual(
+    planVisionDownscale({ type: 'image/jpeg', size: 8 * 1024 * 1024, width: 4032, height: 3024 }),
+    { width: 1568, height: 1176, type: 'image/jpeg', quality: q });
+assert.deepEqual(
+    planVisionDownscale({ type: 'image/jpeg', size: 8 * 1024 * 1024, width: 3024, height: 4032 }),
+    { width: 1176, height: 1568, type: 'image/jpeg', quality: q });
+
+// An image already inside both budgets is never touched: re-encoding a file the
+// user attached, for no gain, is a silent edit of their data.
+assert.equal(planVisionDownscale({ type: 'image/png', size: 120 * 1024, width: 800, height: 600 }), null);
+
+// A PNG stays a PNG so screenshot text is not smeared by JPEG ringing.
+assert.deepEqual(
+    planVisionDownscale({ type: 'image/png', size: 9 * 1024 * 1024, width: 3840, height: 2160 }),
+    { width: 1568, height: 882, type: 'image/png', quality: q });
+
+// Inside the edge cap but far over the byte budget: re-encode at native size.
+assert.deepEqual(
+    planVisionDownscale({ type: 'image/bmp', size: 6 * 1024 * 1024, width: 1000, height: 800 }),
+    { width: 1000, height: 800, type: 'image/jpeg', quality: q });
+
+// Never upscale a small image to the cap.
+assert.deepEqual(
+    planVisionDownscale({ type: 'image/jpeg', size: 6 * 1024 * 1024, width: 400, height: 300 }),
+    { width: 400, height: 300, type: 'image/jpeg', quality: q });
+
+// An animated GIF is left alone; re-encoding it would destroy the animation.
+assert.equal(planVisionDownscale({ type: 'image/gif', size: 12 * 1024 * 1024, width: 900, height: 900 }), null);
+// A non-image, and an image whose dimensions could not be decoded, are not ours to plan.
+assert.equal(planVisionDownscale({ type: 'application/pdf', size: 30 * 1024 * 1024, width: 0, height: 0 }), null);
+assert.equal(planVisionDownscale({ type: 'image/jpeg', size: 30 * 1024 * 1024, width: 0, height: 0 }), null);
+
+// The Engine infers the MIME type from the file extension, so a re-encoded blob
+// that kept its old name would be sent as the wrong type.
+assert.equal(getVisionFileName('holiday.bmp', 'image/jpeg'), 'holiday.jpg');
+assert.equal(getVisionFileName('holiday.jpeg', 'image/jpeg'), 'holiday.jpg');
+assert.equal(getVisionFileName('screen.png', 'image/png'), 'screen.png');
+assert.equal(getVisionFileName('', 'image/jpeg'), 'image.jpg');
+
+// Animation lives under the same MIME type as the still form for WebP and APNG,
+// so the container is sniffed. A canvas re-encode would keep one frame.
+const bytesOf = (text) => Array.from(text, (c) => c.charCodeAt(0));
+assert.equal(hasAnimationMarker('image/webp', bytesOf('RIFF....WEBPVP8X....ANIM')), true);
+assert.equal(hasAnimationMarker('image/webp', bytesOf('RIFF....WEBPVP8L....')), false);
+assert.equal(hasAnimationMarker('image/png', bytesOf('\x89PNG\r\n\x1a\n....IHDR....acTL')), true);
+assert.equal(hasAnimationMarker('image/png', bytesOf('\x89PNG\r\n\x1a\n....IHDR....IDAT')), false);
+// A format with no animated variant is never sniffed, and neither is a non-image.
+assert.equal(hasAnimationMarker('image/jpeg', bytesOf('ANIMacTL')), false);
+assert.equal(hasAnimationMarker('application/pdf', bytesOf('ANIMacTL')), false);
+assert.equal(hasAnimationMarker('image/png', null), false);
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+    }
+
+    It 'downscales an oversized image before uploading it, and says so' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # The upload is what lands in the Workspace Folder and what the Turn
+        # inlines, so the shrink has to happen before the FormData is built.
+        $js | Should -Match '(?s)async function uploadFiles\(files\).{0,700}await prepareVisionUploads\('
+        $js | Should -Match '(?s)await prepareVisionUploads\(.{0,600}fd\.append\('
+        # Changing a file the user attached is only acceptable if they are told.
+        $js | Should -Match '(?s)async function uploadFiles\(files\).{0,1400}toast\(`Resized'
+        $js | Should -Match "import \{[^}]*prepareVisionUploads[^}]*\} from '\./attachments\.js';"
+    }
+
+    It 'hands the prompt and the Attachments back when a Turn is refused before it starts' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # send() clears the composer and the chips before the request is opened,
+        # so a pre-Turn rejection - an oversized image is the reachable case -
+        # would otherwise destroy work the user cannot get back.
+        $js | Should -Match '(?s)const started = await _runTurn\(.{0,400}if \(!started\) \{'
+        $js | Should -Match '(?s)if \(!started\) \{.{0,700}state\.pendingAttachments = attached;'
+        $js | Should -Match '(?s)if \(!started\) \{.{0,700}renderAttachments\(\)'
+        # Only the server's own start frame may count as started.
+        $js | Should -Match 'start: \(d\) => \{ turnStarted = true;'
+        $js | Should -Match '(?s)flushDispatchQueue\(\);.{0,120}return turnStarted;'
+    }
+
     It 'keeps the device code and link pinned while the sign-in poll runs' {
         $modulePath = Join-Path $script:webRoot 'assets' 'auth.js'
         $nodeScript = @'

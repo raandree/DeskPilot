@@ -97,4 +97,119 @@ Describe 'postMessage image Attachments' -Tag 'Unit' {
         $script:DeskPilot.Attachments.ContainsKey($savedPath) | Should -BeTrue
         $script:DeskPilot.Attachments[$savedPath] | Should -Be 'image/png'
     }
+
+    It 'refuses an image Attachment set that would overflow the request body' {
+        $hugePath = Join-Path $attachmentRoot 'photo.jpg'
+        [System.IO.File]::WriteAllBytes($hugePath, [byte[]]::new(4MB))
+        $script:DeskPilot.Attachments[[System.IO.Path]::GetFullPath($hugePath)] = 'image/jpeg'
+        $body = [pscustomobject]@{ prompt = 'What is in this photo?'; images = @($hugePath) }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        $response = [System.Text.Encoding]::UTF8.GetString($script:responseStream.ToArray())
+        $response | Should -Match '^HTTP/1\.1 413'
+        $json = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
+        $json.error.code | Should -Be 'too_large'
+        $json.error.message | Should -Match 'photo\.jpg'
+        # The Turn must never start: a 413 from the Copilot endpoint costs a round
+        # trip and surfaces as a raw EndInvoke exception with nothing to act on.
+        Should -Invoke Invoke-DpTurn -Times 0 -Exactly
+    }
+
+    It 'refuses an image Attachment set whose total would overflow the request body' {
+        $paths = foreach ($name in 'a.jpg', 'b.jpg', 'c.jpg') {
+            $path = Join-Path $attachmentRoot $name
+            [System.IO.File]::WriteAllBytes($path, [byte[]]::new(3MB))
+            $script:DeskPilot.Attachments[[System.IO.Path]::GetFullPath($path)] = 'image/jpeg'
+            $path
+        }
+        $body = [pscustomobject]@{ prompt = 'Compare these'; images = @($paths) }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        $response = [System.Text.Encoding]::UTF8.GetString($script:responseStream.ToArray())
+        $response | Should -Match '^HTTP/1\.1 413'
+        $json = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
+        $json.error.code | Should -Be 'too_large'
+        $json.error.message | Should -Match '3 images'
+        Should -Invoke Invoke-DpTurn -Times 0 -Exactly
+    }
+}
+
+Describe 'Get-DpVisionBudgetError' -Tag 'Unit' {
+    BeforeEach {
+        $script:imageRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:imageRoot | Out-Null
+    }
+
+    It 'accepts an empty Attachment set' {
+        Get-DpVisionBudgetError -Path @() | Should -BeNullOrEmpty
+    }
+
+    It 'accepts images inside both budgets' {
+        $first = Join-Path $script:imageRoot 'a.png'
+        $second = Join-Path $script:imageRoot 'b.png'
+        [System.IO.File]::WriteAllBytes($first, [byte[]]::new(400))
+        [System.IO.File]::WriteAllBytes($second, [byte[]]::new(400))
+
+        Get-DpVisionBudgetError -Path @($first, $second) -MaxImageBytes 1000 -MaxTotalBytes 1000 |
+            Should -BeNullOrEmpty
+    }
+
+    It 'names the file and its actual size when one image is over the per-image budget' {
+        $path = Join-Path $script:imageRoot 'holiday.jpg'
+        [System.IO.File]::WriteAllBytes($path, [byte[]]::new(2MB))
+
+        $message = Get-DpVisionBudgetError -Path @($path) -MaxImageBytes 1MB -MaxTotalBytes 8MB
+
+        $message | Should -Match 'holiday\.jpg'
+        # Invariant, not current-culture: on a de-DE host '{0:0.#}' would render
+        # '1,5' and an assertion written with a dot would fail there and only there.
+        $message | Should -Match '2 MB'
+        $message | Should -Match '1 MB'
+    }
+
+    It 'formats sizes the same way under a comma-decimal culture' {
+        $path = Join-Path $script:imageRoot 'holiday.jpg'
+        [System.IO.File]::WriteAllBytes($path, [byte[]]::new(1536KB))
+
+        $previous = [System.Threading.Thread]::CurrentThread.CurrentCulture
+        try {
+            [System.Threading.Thread]::CurrentThread.CurrentCulture = [System.Globalization.CultureInfo]::new('de-DE')
+            $message = Get-DpVisionBudgetError -Path @($path) -MaxImageBytes 1MB -MaxTotalBytes 8MB
+        }
+        finally { [System.Threading.Thread]::CurrentThread.CurrentCulture = $previous }
+
+        $message | Should -Match '1\.5 MB'
+        $message | Should -Not -Match '1,5 MB'
+    }
+
+    It 'refuses a set whose total exceeds the budget even when each image fits' {
+        $paths = foreach ($name in 'one.png', 'two.png', 'three.png') {
+            $path = Join-Path $script:imageRoot $name
+            [System.IO.File]::WriteAllBytes($path, [byte[]]::new(400KB))
+            $path
+        }
+
+        $message = Get-DpVisionBudgetError -Path $paths -MaxImageBytes 1MB -MaxTotalBytes 1MB
+
+        $message | Should -Match '3 images'
+        $message | Should -Match '1\.2 MB'
+    }
+
+    It 'refuses a camera-sized photo at the shipped defaults' {
+        # Guards the numbers that actually ship, not just the comparison: a 4 MB
+        # JPEG is ~5.3 MB once base64-encoded into the request body.
+        $path = Join-Path $script:imageRoot 'camera.jpg'
+        [System.IO.File]::WriteAllBytes($path, [byte[]]::new(4MB))
+
+        Get-DpVisionBudgetError -Path @($path) | Should -Not -BeNullOrEmpty
+    }
+
+    It 'accepts a downscaled image at the shipped defaults' {
+        $path = Join-Path $script:imageRoot 'downscaled.jpg'
+        [System.IO.File]::WriteAllBytes($path, [byte[]]::new(300KB))
+
+        Get-DpVisionBudgetError -Path @($path) | Should -BeNullOrEmpty
+    }
 }

@@ -1106,6 +1106,14 @@ function Invoke-DpRouteHandler {
                         Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'invalid_attachment'; message = $attachmentError.Exception.Message } }
                         return
                     }
+
+                    # Refuse here rather than paying a round trip for the endpoint's
+                    # bare 413, which arrives as a raw EndInvoke exception.
+                    $budgetError = Get-DpVisionBudgetError -Path $imagePaths
+                    if ($budgetError) {
+                        Write-DpResponse -Stream $Stream -Status 413 -Json @{ error = @{ code = 'too_large'; message = $budgetError } }
+                        return
+                    }
                 }
             }
 

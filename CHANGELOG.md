@@ -73,6 +73,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Attaching a photo no longer fails the whole message.** A camera-sized image
+  attached to a Conversation ended the Turn at once with *Request Entity Too
+  Large* and nothing in it to act on, while the same picture worked in Copilot
+  Chat. DeskPilot was sending the original file at full resolution, and an image
+  is written into the request encoded — about a third larger again — so one
+  modern phone photo could overflow the request on its own, and attaching the
+  same one twice made it certain. An image too large to send is now scaled down
+  to the resolution the Models work at before it is uploaded, and DeskPilot says
+  how many it resized rather than changing your file silently. An image that is
+  already small enough is never touched, a PNG stays a PNG so screenshot text is
+  not smeared, and an animated image — GIF, animated WebP or APNG — is left
+  alone rather than being flattened to a single frame. If an oversized image
+  still arrives — over Intercom, which has no browser to resize it — it is now
+  refused up front with a message naming the file and its actual size, instead
+  of costing a round trip and coming back as an unreadable error. A Turn refused
+  this way hands your prompt and your Attachments back to the composer instead
+  of discarding them.
+
 - **Pasting a file into the chat is no longer slow.** Attaching a screenshot or a
   file with Ctrl+V left the composer waiting seconds before the attachment chip
   appeared, and the delay grew with the size of the file. Two things inside the

@@ -73,9 +73,19 @@ image client-side before the request; the raw file never leaves the client.
 **Rule:** treat a 413 on an image Turn as payload size, never as sign-in or a
 transient fault. `Test-DpTransientEngineError` deliberately does not match 413
 (only `403|408|429|5xx`), so it fails fast rather than resending an identical
-oversized body — resending or pressing Retry cannot help. The durable fix is a
-downscale/re-encode step plus a request-level byte budget with a named error;
-neither exists yet.
+oversized body — resending or pressing Retry cannot help.
+
+**Fixed the same day.** `Get-DpVisionBudgetError` now enforces a per-image and
+per-Turn byte budget at both entry points (`postMessage` answers `413 too_large`
+before any Turn starts; the Intercom pump refuses the Vision hand-off but keeps
+the saved file), and the SPA downscales an over-budget image through a canvas
+before uploading it. Three things about that fix are worth remembering: the
+browser is a convenience and never the control, because an Attachment also
+arrives from Telegram; a canvas re-encode keeps one frame, so WebP and PNG have
+to be **sniffed** for `ANIM`/`acTL` rather than trusted by MIME type; and
+`send()` clears the composer before the request opens, so making a pre-Turn
+rejection reachable for the first time also required handing the prompt and the
+Attachment chips back.
 
 ## A gate failure can be a PowerShell upgrade, not a regression (2026-08-24)
 

@@ -1401,3 +1401,90 @@ Describe 'Intercom update batching' -Tag 'Unit' {
         $script:DeskPilot.Intercom.Counters.errors | Should -Be 1
     }
 }
+
+Describe 'Intercom refuses an image too large for the Engine Vision input' -Tag 'Unit' {
+    BeforeEach {
+        $script:workspace = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:workspace | Out-Null
+
+        $settings = Get-DpDefaultSettings
+        $settings.workspaceFolder = $script:workspace
+
+        $script:DeskPilot = @{
+            Settings    = $settings
+            Attachments = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            Intercom    = @{
+                Log          = [System.Collections.Generic.List[object]]::new()
+                Counters     = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
+                Token        = ''
+                QueuedPrompt = $null
+                QueuedImage  = $null
+                Download     = @{
+                    stage    = 'fetch'
+                    task     = $null
+                    fileName = 'photo.jpg'
+                    mimeType = 'image/jpeg'
+                    isImage  = $true
+                    caption  = 'What is this?'
+                }
+            }
+        }
+
+        Mock Send-DpIntercomMessage { $true }
+        Mock Receive-DpTelegramResponse { @{ ok = $true; result = $null } }
+
+        $script:setDownloadBytes = {
+            param([int]$Size)
+            $httpResponse = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::OK)
+            $httpResponse.Content = [System.Net.Http.ByteArrayContent]::new([byte[]]::new($Size))
+            $script:DeskPilot.Intercom.Download.task = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'saves the file but refuses to hand an oversized image to Vision' {
+        # Well inside the 20 MB maxAttachmentMB write limit, well outside the
+        # budget for base64-inlining it into a Turn.
+        & $script:setDownloadBytes 4MB
+
+        Update-DpIntercomDownload
+
+        $saved = Join-Path $script:workspace 'photo.jpg'
+        Test-Path -LiteralPath $saved | Should -BeTrue
+        $script:DeskPilot.Intercom.QueuedImage | Should -BeNullOrEmpty
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+        $script:DeskPilot.Intercom.Counters.errors | Should -Be 1
+        Should -Invoke Send-DpIntercomMessage -Times 1 -Exactly -ParameterFilter { $Title -match 'too large' }
+
+        $entry = @($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'attachment-error' } | Select-Object -First 1
+        $entry | Should -Not -BeNullOrEmpty
+        $entry.detail | Should -Match 'photo\.jpg'
+    }
+
+    It 'still queues an image that fits the budget' {
+        & $script:setDownloadBytes 300KB
+
+        Update-DpIntercomDownload
+
+        $saved = [System.IO.Path]::GetFullPath((Join-Path $script:workspace 'photo.jpg'))
+        $script:DeskPilot.Intercom.QueuedImage | Should -Be $saved
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -Match 'What is this\?'
+        $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
+    }
+
+    It 'applies the budget to images only, never to a large document' {
+        # The Vision budget exists because an image is inlined into the request;
+        # a file the agent merely reads from disk is bounded by maxAttachmentMB.
+        $script:DeskPilot.Intercom.Download.isImage = $false
+        $script:DeskPilot.Intercom.Download.fileName = 'statement.pdf'
+        $script:DeskPilot.Intercom.Download.mimeType = 'application/pdf'
+        & $script:setDownloadBytes 4MB
+
+        Update-DpIntercomDownload
+
+        $script:DeskPilot.Intercom.QueuedPrompt | Should -Match 'statement\.pdf'
+        $script:DeskPilot.Intercom.QueuedImage | Should -BeNullOrEmpty
+        $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
+    }
+}

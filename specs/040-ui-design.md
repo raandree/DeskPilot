@@ -180,6 +180,11 @@ accent fills so the bright dark-mode accent stays legible.
   flow accepts files dropped onto the composer or pasted into the prompt box;
   text-only clipboard content still pastes as text. Uploaded images are sent
   through the Engine's native Vision input as well as being named in the prompt.
+  An image too large to inline into a Turn is downscaled to the Models' working
+  resolution *before* it is uploaded, and a toast says how many were resized — an
+  image already inside the budget is never re-encoded, a PNG keeps its codec, and
+  an animated image (GIF, animated WebP, APNG) is left alone. A Turn the Host
+  Server refuses for size hands the prompt and the Attachment chips back.
 - **Send** turns into **Stop** while a Turn streams.
 - **Mid-Turn dispatch.** When a Turn is streaming and the user starts typing,
   a chevron (`▾`) appears next to **Stop** and opens a small popover with three

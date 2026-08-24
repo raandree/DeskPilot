@@ -734,7 +734,14 @@ during the current Host Server launch. Each path must be absolute, still exist,
 and be registered with an `image/*` content type; a Project change after upload
 does not invalidate it. Valid paths are passed to the Engine's native `-Image`
 parameter. An unregistered, relative, missing, or non-image path returns
-`400 invalid_attachment`. Returns `409` if a Turn is already running.
+`400 invalid_attachment`. Because the Engine inlines each image into the request
+body as a base64 data URI, the set is also size-checked by
+`Get-DpVisionBudgetError` and returns `413 too_large` — naming the file and its
+actual size — when one image exceeds 3.5 MB or the set exceeds 8 MB on disk (both
+binary, as PowerShell's `1MB`); no Turn is started. The SPA downscales an
+oversized image before uploading it, so this bound is normally reached only by an
+Attachment that did not come from the browser. Returns `409` if a Turn is already
+running.
 
 | event | data | when |
 | --- | --- | --- |

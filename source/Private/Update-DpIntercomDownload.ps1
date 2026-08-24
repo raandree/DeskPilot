@@ -103,6 +103,23 @@ function Update-DpIntercomDownload {
 
     Add-DpIntercomLog -Direction 'in' -Kind 'attachment' -Detail "Saved $([System.IO.Path]::GetFileName($saved)) ($([int]($bytes.Length / 1KB)) KB)."
 
+    # maxAttachmentMB bounds what may be written to disk; Vision has its own,
+    # much smaller budget, because an image is inlined into the Turn as base64
+    # and an oversized one fails the whole request at the Copilot endpoint. There
+    # is no browser here to downscale it first, so it is refused with the reason.
+    if ($download.isImage) {
+        $visionBudgetError = Get-DpVisionBudgetError -Path @($saved)
+        if ($visionBudgetError) {
+            $intercom.Counters.errors++
+            Add-DpIntercomLog -Direction 'in' -Kind 'attachment-error' -Detail $visionBudgetError -Accepted $false
+            $null = Send-DpIntercomMessage -Title 'That image is too large to show the model.' -Line @(
+                $visionBudgetError
+                "It is saved as $([System.IO.Path]::GetFileName($saved)), so I can still read it as a file."
+            ) -Kind 'failed'
+            return
+        }
+    }
+
     $caption = [string]$download.caption
     if ([string]::IsNullOrWhiteSpace($caption)) { $caption = 'Have a look at this file and tell me what it is.' }
     $intercom.QueuedPrompt = "$caption`n`n[Attached file: $saved]"

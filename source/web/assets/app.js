@@ -1,4 +1,4 @@
-import { getImagePaths, wireClipboardAttachments } from './attachments.js';
+import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import {
     newFileRows,
@@ -2390,6 +2390,7 @@ async function send() {
 
     let prompt = userPrompt;
     let images = [];
+    const attached = state.pendingAttachments;
     if (state.pendingAttachments.length) {
         const count = state.pendingAttachments.length;
         const hasWorkspace = !!(state.settings && state.settings.workspaceFolder);
@@ -2407,7 +2408,17 @@ async function send() {
 
     promptEl.value = '';
     autoGrow(promptEl);
-    await _runTurn({ prompt, displayText: prompt, images });
+    const started = await _runTurn({ prompt, displayText: prompt, images });
+    if (!started) {
+        // A Turn the Host Server refused never took the prompt with it — an
+        // oversized image Attachment is the reachable case. Hand back what was
+        // cleared rather than making the user reassemble it from the error.
+        promptEl.value = userPrompt;
+        autoGrow(promptEl);
+        state.pendingAttachments = attached;
+        renderAttachments();
+        setSendEnabled(!!userPrompt || !!attached.length);
+    }
 }
 
 // Core Turn runner. `prompt` is what the server sees; `displayText` is what the
@@ -2435,6 +2446,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     setStreamingUI(true);
     let raw = '';
     let think = '';
+    let turnStarted = false;
     let turnCompleted = false;
     let turnStopped = false;
     const conversationId = state.current.id;
@@ -2452,7 +2464,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
         const messageBody = { prompt };
         if (images.length) messageBody.images = images;
         await streamPost('/api/conversations/' + conversationId + '/messages', messageBody, {
-            start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
+            start: (d) => { turnStarted = true; if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
                 if (state.stopRequested) return;
                 raw += (d && d.text) || '';
@@ -2527,6 +2539,8 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
     }
+
+    return turnStarted;
 }
 
 function showInlineError(wrap, message) {
@@ -5986,8 +6000,14 @@ async function newCustomization() {
 async function uploadFiles(files) {
     // No Project required: with no Workspace Folder the server saves uploads to
     // an 'uploads' folder in the data directory and returns their absolute paths.
+    const original = Array.from(files || []);
+    // Shrink before the upload, not after: this is the file the Turn inlines as
+    // base64, and a camera photo sent verbatim makes the endpoint refuse the
+    // whole request. Only an over-budget image is touched.
+    const prepared = await prepareVisionUploads(original);
+    const resized = prepared.filter((file, i) => file !== original[i]).length;
     const fd = new FormData();
-    for (const f of files) fd.append('files', f, f.name);
+    for (const f of prepared) fd.append('files', f, f.name);
     try {
         // Note: do NOT set Content-Type here — the browser must set the multipart
         // boundary itself. We only add the session-token header (the api() helper
@@ -5999,6 +6019,8 @@ async function uploadFiles(files) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { toast((data && data.error && data.error.message) || ('Upload failed (' + res.status + ')')); return; }
+        // Only now: an upload that failed did not resize anything the user keeps.
+        if (resized) toast(`Resized ${resized} image${resized === 1 ? '' : 's'} to fit the model.`);
         for (const saved of (data.files || [])) state.pendingAttachments.push(saved);
         renderAttachments();
         setSendEnabled(!!$('prompt').value.trim() || !!state.pendingAttachments.length);
