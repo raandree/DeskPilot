@@ -1,6 +1,8 @@
 import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import {
+    isBinaryDiff,
+    isImagePath,
     newFileRows,
     parseUnifiedDiff,
     reconcileDiffFiles,
@@ -1911,13 +1913,17 @@ async function loadDiffFile() {
     let deleted = 0;
     if (data.untracked) {
         if (data.binary) {
-            body.innerHTML = '<div class="muted tiny diff-msg">New binary file — there is no text to compare.</div>';
+            showBinaryChange(body, current.rel, 'New file — this is what it looks like now.',
+                'New binary file — there is no text to compare.');
         } else {
             rows = newFileRows(data.content);
             added = rows.length;
         }
     } else if (!data.diff || !data.diff.trim()) {
         body.innerHTML = '<div class="muted tiny diff-msg">No changes against the last commit.</div>';
+    } else if (isBinaryDiff(data.diff)) {
+        showBinaryChange(body, current.rel, 'This file changed — this is what it looks like now.',
+            'This binary file changed — there is no text to compare.');
     } else {
         const parsed = parseUnifiedDiff(data.diff);
         rows = parsed.rows;
@@ -1978,6 +1984,37 @@ function buildDiffTable(rows) {
         table.appendChild(line);
     }
     return table;
+}
+
+// Shows a Project file as a picture. The browser fetches it from the Host Server,
+// which serves it only after recognising its signature bytes as one of the image
+// formats a browser can draw. An <img> cannot send the session-token header, so
+// the token travels in the query the same way the SPA's own entry URL carries it.
+// A file that turns out not to be servable falls back to the plain message.
+function buildImagePreview(path, caption, fallback) {
+    const wrap = el('image-preview');
+    const img = document.createElement('img');
+    img.alt = caption || 'Preview';
+    img.src = '/api/fs/image?path=' + encodeURIComponent(path) + '&t=' + encodeURIComponent(token);
+    img.onerror = () => { wrap.innerHTML = `<div class="muted tiny">${escapeHtml(fallback)}</div>`; };
+    wrap.appendChild(img);
+    if (caption) {
+        const note = el('muted tiny');
+        note.textContent = caption;
+        wrap.appendChild(note);
+    }
+    return wrap;
+}
+
+// Nothing can line up two versions of a binary file line by line - but for the
+// formats a browser can draw, showing the picture beats saying "no text here".
+function showBinaryChange(body, rel, caption, message) {
+    body.innerHTML = '';
+    if (isImagePath(rel)) {
+        body.appendChild(buildImagePreview(rel, caption, message));
+        return;
+    }
+    body.innerHTML = `<div class="muted tiny diff-msg">${escapeHtml(message)}</div>`;
 }
 
 // Renders the in-Turn Task List as a compact, always-visible checklist. The full
@@ -5818,7 +5855,9 @@ function renderFileView() {
     if (!data) return;
 
     const bits = [formatBytes(data.bytes)];
-    if (data.truncated) bits.push('preview truncated to the first ' + formatBytes((data.text || '').length));
+    // The text read stops at 1 MiB, but a previewed image is shown whole - saying
+    // "truncated" beside a complete picture would be a lie.
+    if (data.truncated && !data.binary) bits.push('preview truncated to the first ' + formatBytes((data.text || '').length));
     $('file-meta').textContent = bits.join(' · ');
 
     // The rendered/raw switch only makes sense for Markdown text.
@@ -5828,6 +5867,11 @@ function renderFileView() {
     $('file-view-raw').classList.toggle('active', fileViewer.mode === 'raw');
 
     if (data.binary) {
+        body.innerHTML = '';
+        if (isImagePath(fileViewer.name)) {
+            body.appendChild(buildImagePreview(data.path || '', '', 'This file can’t be previewed.'));
+            return;
+        }
         body.innerHTML = '<div class="file-msg muted">This file can’t be previewed as text.</div>';
         return;
     }

@@ -61,6 +61,9 @@ function Write-DpResponse {
     [void]$head.Append("Content-Type: $ContentType`r`n")
     [void]$head.Append("Content-Length: $($payload.Length)`r`n")
     [void]$head.Append("Cache-Control: no-store`r`n")
+    # Some bodies are user content (a previewed image); never let the browser
+    # re-interpret one as a type it would trust more than the declared one.
+    [void]$head.Append("X-Content-Type-Options: nosniff`r`n")
     [void]$head.Append("Connection: close`r`n`r`n")
 
     $headBytes = [System.Text.Encoding]::ASCII.GetBytes($head.ToString())

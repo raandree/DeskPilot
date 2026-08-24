@@ -34,6 +34,26 @@ export function statusLabel(status) {
     }
 }
 
+// The raster formats every current browser renders inline, and the Host Server
+// serves from /api/fs/image. SVG is deliberately absent: it is text, so it
+// already shows as a normal diff, and previewing it would mean serving
+// script-capable markup back into the app's own origin.
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif']);
+
+// Whether a path is worth *offering* a preview for. The server still decides
+// from the file's own bytes, so a mislabelled file simply fails to load.
+export function isImagePath(rel) {
+    const name = String(rel || '').replace(/\\/g, '/').split('/').pop();
+    const idx = name.lastIndexOf('.');
+    return idx > 0 && IMAGE_EXTENSIONS.has(name.slice(idx + 1).toLowerCase());
+}
+
+// Git puts no content in the diff of a binary file; it says the two versions
+// differ, or emits a "GIT binary patch" block when asked for one.
+export function isBinaryDiff(text) {
+    return /^(?:Binary files .* differ|GIT binary patch)\r?$/m.test(String(text || ''));
+}
+
 // Parses a unified diff into rows carrying their old/new line numbers, so the
 // viewer can show a real two-column gutter instead of raw +/- text. Returns
 // { rows, added, deleted }; a row is { type, oldNo, newNo, text } where type is

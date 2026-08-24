@@ -305,7 +305,12 @@ shows a unified diff with **two gutters** — the old line number and the new on
 a `+`/`−` sign column, and colour-coded added/removed rows. The header shows the
 file path and its `+A −B` totals; `↑`/`↓` (or `k`/`j`) step through the file
 list. The footer offers **Undo this file** and **Close**. A brand-new file is
-rendered as all-additions; a binary file says so rather than showing bytes.
+rendered as all-additions. A file with no text to compare — a new binary file,
+or a tracked one git reports only as "binary files differ" — shows **the
+picture** when it is an image format a browser can draw (PNG, JPEG, GIF, WebP,
+BMP, ICO, AVIF), captioned with what happened to it, and says so in words
+otherwise. There is no before/after for a picture: the preview is the file as it
+is now.
 
 ### 6d. Branch Wizard
 

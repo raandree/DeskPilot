@@ -3239,6 +3239,88 @@ Describe 'Get-DpFileContent' {
     }
 }
 
+Describe 'Get-DpImageMediaType' {
+    It 'names every raster format a browser can draw' {
+        $tail = @(0) * 12
+        $cases = @(
+            @{ Head = @(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A); Mime = 'image/png' }
+            @{ Head = @(0xFF, 0xD8, 0xFF, 0xE0); Mime = 'image/jpeg' }
+            @{ Head = [int[]][char[]]'GIF87a'; Mime = 'image/gif' }
+            @{ Head = [int[]][char[]]'GIF89a'; Mime = 'image/gif' }
+            @{ Head = [int[]][char[]]'RIFF????WEBP'; Mime = 'image/webp' }
+            @{ Head = [int[]][char[]]'BM'; Mime = 'image/bmp' }
+            @{ Head = @(0x00, 0x00, 0x01, 0x00); Mime = 'image/x-icon' }
+            @{ Head = [int[]][char[]]'????ftypavif'; Mime = 'image/avif' }
+        )
+        foreach ($case in $cases) {
+            Get-DpImageMediaType -Bytes ([byte[]](@($case.Head) + $tail)) | Should -Be $case.Mime
+        }
+    }
+
+    It 'refuses anything else, including script-capable SVG' {
+        Get-DpImageMediaType -Bytes ([System.Text.Encoding]::UTF8.GetBytes('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')) | Should -BeNullOrEmpty
+        Get-DpImageMediaType -Bytes ([System.Text.Encoding]::UTF8.GetBytes('just some plain text')) | Should -BeNullOrEmpty
+        Get-DpImageMediaType -Bytes ([byte[]]@(0x89, 0x50, 0x4E, 0x47)) | Should -BeNullOrEmpty
+        Get-DpImageMediaType -Bytes $null | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Get-DpFileImage' {
+    BeforeAll {
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $root 'assets') -Force | Out-Null
+        $png = [byte[]](@(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) + @(0) * 20)
+        [System.IO.File]::WriteAllBytes((Join-Path $root 'assets/logo.png'), $png)
+    }
+
+    It 'returns the bytes and media type for a project-relative path' {
+        $r = Get-DpFileImage -Root $root -Path 'assets/logo.png'
+        $r.error | Should -BeNullOrEmpty
+        $r.mime | Should -Be 'image/png'
+        $r.name | Should -Be 'logo.png'
+        $r.bytes | Should -Be $png.Length
+        [System.BitConverter]::ToString($r.content) | Should -Be ([System.BitConverter]::ToString($png))
+    }
+
+    It 'accepts an absolute path inside the project' {
+        $r = Get-DpFileImage -Root $root -Path (Join-Path $root 'assets/logo.png')
+        $r.mime | Should -Be 'image/png'
+    }
+
+    It 'refuses a path outside the project folder' {
+        $outside = Join-Path $TestDrive 'outside.png'
+        [System.IO.File]::WriteAllBytes($outside, $png)
+        $r = Get-DpFileImage -Root $root -Path $outside
+        $r.code | Should -Be 'outside_workspace'
+        $r.content | Should -BeNullOrEmpty
+    }
+
+    It 'reports a missing file separately, so the route can answer 404' {
+        $r = Get-DpFileImage -Root $root -Path 'assets/nope.png'
+        $r.code | Should -Be 'not_found'
+    }
+
+    It 'believes the bytes, not the extension' {
+        $fake = Join-Path $root 'assets/trap.png'
+        Set-Content -LiteralPath $fake -Value '<html><script>alert(1)</script></html>' -NoNewline -Encoding utf8
+        $r = Get-DpFileImage -Root $root -Path 'assets/trap.png'
+        $r.code | Should -Be 'not_previewable'
+        $r.mime | Should -BeNullOrEmpty
+        $r.content | Should -BeNullOrEmpty
+    }
+
+    It 'refuses an image over the size cap rather than serving half of one' {
+        $r = Get-DpFileImage -Root $root -Path 'assets/logo.png' -MaxBytes 4
+        $r.code | Should -Be 'too_large'
+        $r.content | Should -BeNullOrEmpty
+    }
+
+    It 'reports no project folder when the root is missing' {
+        $r = Get-DpFileImage -Root (Join-Path $TestDrive 'no-such-dir') -Path 'x.png'
+        $r.code | Should -Be 'no_workspace'
+    }
+}
+
 
 Describe 'New-DpConversation pin/archive defaults' {
     It 'creates a Conversation with pinned and archived false' {

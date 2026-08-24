@@ -547,6 +547,52 @@ assert.match(statusLabel('conflicted'), /conflict/i);
         $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
     }
 
+    It 'recognises the image formats a browser can draw, and a binary diff' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
+        $nodeScript = @'
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+
+const { isImagePath, isBinaryDiff } = await import(pathToFileURL(process.argv[1]).href);
+
+for (const name of ['a.png', 'a.JPG', 'deep/dir/photo.jpeg', 'win\\style\\anim.gif',
+    'x.webp', 'x.bmp', 'favicon.ico', 'shot.avif']) {
+    assert.equal(isImagePath(name), true, name + ' should offer a preview');
+}
+
+// SVG is text: it already diffs and reads as text, and previewing it would mean
+// serving script-capable markup from the app's own origin.
+for (const name of ['logo.svg', 'notes.md', 'archive.zip', 'mail.msg', 'noext',
+    '.gitignore', 'folder.png/inside.txt', '', null]) {
+    assert.equal(isImagePath(name), false, String(name) + ' should not offer a preview');
+}
+
+assert.equal(isBinaryDiff('diff --git a/x.png b/x.png\nBinary files a/x.png and b/x.png differ\n'), true);
+assert.equal(isBinaryDiff('diff --git a/x.png b/x.png\r\nGIT binary patch\r\nliteral 12\r\n'), true);
+assert.equal(isBinaryDiff('@@ -1 +1 @@\n-a\n+b\n'), false);
+assert.equal(isBinaryDiff('+Binary files are mentioned in this added line differ'), false);
+assert.equal(isBinaryDiff(''), false);
+'@
+
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $exitCode = $LASTEXITCODE
+
+        $exitCode | Should -Be 0 -Because ($output -join [Environment]::NewLine)
+    }
+
+    It 'previews an image instead of announcing a binary file' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # An <img> cannot send the session-token header, so the token has to travel
+        # in the query - without it every preview would come back 401.
+        $js | Should -Match ([regex]::Escape("'/api/fs/image?path=' + encodeURIComponent(path) + '&t=' + encodeURIComponent(token)"))
+        # Both viewers reach for the same preview; the diff viewer also has to
+        # notice the binary diff git writes for a tracked image.
+        $js | Should -Match '(?s)function showBinaryChange.{0,400}isImagePath\(rel\).{0,200}buildImagePreview'
+        $js | Should -Match 'isBinaryDiff\(data\.diff\)'
+        $js | Should -Match '(?s)if \(data\.binary\).{0,300}isImagePath\(fileViewer\.name\).{0,200}buildImagePreview'
+    }
+
     It 'drops a file from the diff viewer once it no longer differs' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

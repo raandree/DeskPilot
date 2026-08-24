@@ -10,6 +10,48 @@ source: repository evidence
 
 ## Current focus
 
+**An image is shown as a picture instead of "there is no text to compare"
+(2026-08-24, uncommitted on `main`).** Asked from a screenshot of the Diff
+viewer over four untracked `.jpg` files and four `.msg` files: "of course we
+cannot display every binary format, but can we show a preview of the usual image
+formats like gif, jpg, png, etc." The viewer had one message for every file it
+could not diff, so a screenshot the agent had just saved was reviewable only by
+its name.
+
+Both previewers now show the picture: the Diff viewer for a new binary file and
+for a tracked one git reports only as `Binary files … differ`, and the file
+viewer where it used to say the file cannot be previewed as text. Anything else
+keeps the words. New `GET /api/fs/image` returns the raw bytes; `Get-DpFileImage`
+confines the path to the Project exactly as `Get-DpFileContent` and
+`Get-DpGitDiff` do, and `Get-DpImageMediaType` decides the type.
+
+Five decisions. **(1) The signature bytes decide the media type, never the
+extension.** The endpoint serves user-controlled bytes back into the app's own
+origin, so `trap.png` containing `<script>` is refused rather than labelled
+`image/png`. **(2) SVG is deliberately not previewable.** It is script-capable
+markup, and being text it already diffs and reads as text — excluding it removes
+the whole class of risk instead of filtering it. Every response now also carries
+`X-Content-Type-Options: nosniff`. **(3) The token travels in the query.** An
+`<img>` cannot send `X-DeskPilot-Token`, and the session gate already accepts
+`?t=` — the same way the served entry URL carries it — so the endpoint is no less
+authenticated than the rest of `/api/*`. **(4) There is no before/after.**
+Reading the old blob would mean a byte-safe `git show`, which `Invoke-DpGitCommand`
+cannot do (it returns decoded strings); the preview is the file as it stands now,
+and the caption says which. **(5) An over-size file is refused, not truncated** —
+half an image is not an image — and the file viewer no longer claims a
+"truncated" preview beside a complete picture, since the 1 MiB cap belongs to the
+text read.
+
+A missing or unservable file falls back to the same message through the `<img>`
+`onerror` handler, which is what covers a deleted image without a second code
+path.
+
+Verified: 926/926 unit tests across the three affected files (13 new), 47/47
+`WebAssets`, `node --check` clean, PSScriptAnalyzer clean (the two findings are
+pre-existing and reproduce on `HEAD`).
+
+## Previous focus — a Turn in the order it happened
+
 **A Turn is laid out in the order it happened, with the answer last (2026-08-24,
 uncommitted on `main`).** Two rounds. The first moved the reasoning from above
 the answer to below it, and the screenshot of the result showed why that was only

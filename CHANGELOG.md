@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Image previews instead of "there is no text to compare."** A screenshot the
+  agent saved, a logo you dropped into the Project, an icon that changed — the
+  Diff viewer and the file viewer now *show the picture* for the formats a
+  browser can draw (PNG, JPEG, GIF, WebP, BMP, ICO, AVIF), captioned with what
+  happened to the file, on a checkerboard so a transparent image reads on either
+  theme. Anything else still says plainly that it has no text to compare. There
+  is no before-and-after for a picture: the preview is the file as it stands
+  now.
+
+  Backed by a new `GET /api/fs/image`, confined to the selected Project exactly
+  like the file tree. It is the file's **own signature bytes** that decide the
+  media type it is served under, never its extension, so a file named `.png`
+  that is really a web page is refused rather than handed to the browser. SVG is
+  deliberately not previewed — it is script-capable markup, and being text it
+  is already readable as text. Every response now also carries
+  `X-Content-Type-Options: nosniff`.
+
 - **Automatic response retries.** A Turn no longer stops at the first transient
   Engine failure or successful-but-empty response before work has begun. The new
   **Response retries** Setting controls how many extra attempts DeskPilot makes

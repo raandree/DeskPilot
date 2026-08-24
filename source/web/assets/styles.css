@@ -4484,6 +4484,31 @@ button.tree-row {
     padding: 16px;
 }
 
+/* A previewed image, in the diff viewer and the file viewer alike. The
+   checkerboard is what makes a transparent image readable on either theme. */
+.image-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 16px;
+    min-width: 0;
+}
+
+.image-preview img {
+    max-width: 100%;
+    max-height: 62vh;
+    object-fit: contain;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background-color: var(--surface);
+    background-image:
+        linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%),
+        linear-gradient(45deg, var(--surface-2) 25%, transparent 25%, transparent 75%, var(--surface-2) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 8px 8px;
+}
+
 /* Away from Close, at the opposite end of the footer. */
 .diff-discard-all {
     margin-right: auto;

@@ -264,6 +264,22 @@ returns the listing of the new folder (same shape as `GET /api/fs/list`). `name`
 must be a single path segment; separators, `..`, and invalid characters are
 rejected with `400`.
 
+### `GET /api/fs/image?path=<file>`
+
+Backs the image previews in the Diff viewer and the file viewer. Returns the
+**raw bytes** of one image — not JSON — with the media type the file's own
+signature says it is: `image/png`, `image/jpeg`, `image/gif`, `image/webp`,
+`image/bmp`, `image/x-icon` or `image/avif`. `path` is Project-relative or an
+absolute path inside the Project; anything else is refused. The extension is
+never trusted, and text-based formats (notably SVG, which is script-capable) are
+deliberately not served here — they are readable as text anyway.
+
+`404 not_found` for a missing file; `400` for `no_workspace`, `no_path`,
+`outside_workspace`, `too_large` (over 16 MiB) or `not_previewable` (the bytes
+are not one of the formats above). Because an `<img>` element cannot send the
+`X-DeskPilot-Token` header, this endpoint is normally called with the token in
+the `t` query parameter, which the session gate already accepts.
+
 ## Git (selected Project)
 
 These operate on the selected Project's folder (`settings.workspaceFolder`) only.

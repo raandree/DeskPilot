@@ -35,6 +35,20 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Serving user content back into the app's own origin: the bytes decide the
+  type, and script-capable formats are excluded rather than filtered.**
+  `/api/fs/image` (`Get-DpFileImage` + `Get-DpImageMediaType`) confines the path
+  to the Project, then reads the media type from the file's **signature**, never
+  its extension, so a `.png` holding markup is refused instead of labelled
+  `image/png`. Only raster formats a browser draws are recognised; **SVG is
+  deliberately absent** because it is script-capable and, being text, is already
+  readable through the text endpoints — removing the class beats sanitising it.
+  Every response carries `X-Content-Type-Options: nosniff`, and an over-size file
+  is refused rather than truncated. When the request is issued by an element that
+  cannot set headers (an `<img>`), pass the session token as `?t=` — the gate in
+  `Invoke-DpRequest` already accepts it, the same way the served entry URL does —
+  and let the element's `onerror` be the single fallback path for "not there, not
+  servable", instead of duplicating the decision on the client.
 - **Retry only while the Turn is observably side-effect free.** An Engine call
   may be repeated only before any response or Tool Activity frame has streamed.
   ShellPilot emits a structured `ToolCall` progress record before executing the

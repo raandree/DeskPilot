@@ -173,9 +173,10 @@ HEAD → sync blocked with `detached`; the wizard says so. Unborn HEAD → branc
 creation uses `checkout -b`. Push rejected as non-fast-forward → `push-rejected`
 with "get the server's changes first". Stalled remote → the timeout kills git and
 reports it rather than hanging the Host Server. Binary file → shown as `binary`
-with no line counts and no text diff. Renamed file → reported as `renamed` with
-its original path. Huge change set → capped at 500 files with `truncated`, while
-the totals stay exact.
+with no line counts and no text diff; the Diff viewer shows the picture instead
+when it is an image format a browser can draw. Renamed file → reported as
+`renamed` with its original path. Huge change set → capped at 500 files with
+`truncated`, while the totals stay exact.
 
 ## Security
 
