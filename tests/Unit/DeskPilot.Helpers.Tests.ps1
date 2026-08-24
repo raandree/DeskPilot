@@ -2341,7 +2341,9 @@ Describe 'Multipart parsing' {
             }
             $end = $enc.GetBytes("--$Boundary--`r`n")
             $ms.Write($end, 0, $end.Length)
-            $ms.ToArray()
+            # Comma-wrapped: a bare byte[] as the last statement is unrolled by the
+            # pipeline into a boxed object[], which the real caller never passes.
+            , $ms.ToArray()
         }
     }
 
@@ -2376,6 +2378,95 @@ Describe 'Multipart parsing' {
         @($parts).Count | Should -Be 2
         [System.Text.Encoding]::UTF8.GetString($parts[0].Content) | Should -Be 'hello'
         [System.Text.Encoding]::UTF8.GetString($parts[1].Content) | Should -Be 'world!!'
+    }
+
+    It 'keeps a payload made of boundary-like dash runs byte-for-byte' {
+        # The scan looks for the delimiter's first byte and verifies the rest, so
+        # a payload full of near-miss delimiters is what can break it.
+        $boundary = '----DashHeavy'
+        $ms = [System.IO.MemoryStream]::new()
+        foreach ($chunk in @('--', '----', '----DashHeav', '--DashHeavy', "`r`n----DashHeav_", '-')) {
+            $b = [System.Text.Encoding]::ASCII.GetBytes($chunk)
+            $ms.Write($b, 0, $b.Length)
+        }
+        $payload = $ms.ToArray()
+        $bytes = New-MultipartBody -Boundary $boundary -Parts @(@{ Name = 'files'; FileName = 'dashes.bin'; ContentType = 'application/octet-stream'; Bytes = $payload })
+
+        $parts = Read-DpMultipartParts -Bytes $bytes -Boundary $boundary
+        @($parts).Count | Should -Be 1
+        $parts[0].Content.Length | Should -Be $payload.Length
+        for ($i = 0; $i -lt $payload.Length; $i++) { $parts[0].Content[$i] | Should -Be $payload[$i] }
+    }
+
+    It 'parses a multi-megabyte upload without scanning byte by byte' {
+        # Pasting a screenshot sends a few megabytes. The interpreted per-byte
+        # scan this replaced cost ~350 ms per megabyte, so a 4 MB paste spent
+        # over a second in the parser alone before the response even started.
+        $boundary = '----BigPaste'
+        $payload = [byte[]]::new(4 * 1024 * 1024)
+        [System.Random]::new(42).NextBytes($payload)
+        $bytes = New-MultipartBody -Boundary $boundary -Parts @(@{ Name = 'files'; FileName = 'paste.png'; ContentType = 'image/png'; Bytes = $payload })
+
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $parts = Read-DpMultipartParts -Bytes $bytes -Boundary $boundary
+        $sw.Stop()
+
+        @($parts).Count | Should -Be 1
+        $parts[0].Content.Length | Should -Be $payload.Length
+        # A byte[], not the boxed object[] an `if`-expression assignment produced:
+        # that alone was ~700 ms and five million boxed bytes per 5 MB upload.
+        $parts[0].Content.GetType().FullName | Should -Be 'System.Byte[]'
+        # Generous next to both the ~1400 ms baseline and the few milliseconds this
+        # costs now, so the budget catches a return to per-byte work and nothing else.
+        $sw.ElapsedMilliseconds | Should -BeLessThan 400
+    }
+}
+
+Describe 'Receive-DpHttpRequest' {
+    BeforeAll {
+        function New-RequestStream {
+            param([string]$Head, [byte[]]$Body)
+            $ms = [System.IO.MemoryStream]::new()
+            $h = [System.Text.Encoding]::ASCII.GetBytes($Head)
+            $ms.Write($h, 0, $h.Length)
+            if ($Body) { $ms.Write($Body, 0, $Body.Length) }
+            $ms.Position = 0
+            $ms
+        }
+    }
+
+    It 'decodes a JSON body to text' {
+        $json = '{"prompt":"hi"}'
+        $body = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $head = "POST /api/x HTTP/1.1`r`nContent-Type: application/json`r`nContent-Length: $($body.Length)`r`n`r`n"
+        $request = Receive-DpHttpRequest -Stream (New-RequestStream -Head $head -Body $body)
+
+        $request.Body | Should -Be $json
+        $request.BodyBytes.Length | Should -Be $body.Length
+    }
+
+    It 'does not decode a multipart body to text' {
+        # A pasted screenshot is megabytes of binary. Decoding it as UTF-8 cost
+        # hundreds of milliseconds and a second copy for a string only the JSON
+        # path ever reads - and that path already skips multipart.
+        $body = [byte[]]::new(64 * 1024)
+        [System.Random]::new(7).NextBytes($body)
+        $head = "POST /api/uploads HTTP/1.1`r`nContent-Type: multipart/form-data; boundary=----X`r`nContent-Length: $($body.Length)`r`n`r`n"
+        $request = Receive-DpHttpRequest -Stream (New-RequestStream -Head $head -Body $body)
+
+        $request.Body | Should -BeNullOrEmpty
+        $request.BodyBytes.Length | Should -Be $body.Length
+        $request.BodyBytes[0] | Should -Be $body[0]
+        $request.BodyBytes[$body.Length - 1] | Should -Be $body[$body.Length - 1]
+    }
+
+    It 'returns exactly the bytes that arrived when the body is short' {
+        $body = [System.Text.Encoding]::ASCII.GetBytes('abcd')
+        $head = "POST /api/x HTTP/1.1`r`nContent-Type: application/json`r`nContent-Length: 10`r`n`r`n"
+        $request = Receive-DpHttpRequest -Stream (New-RequestStream -Head $head -Body $body)
+
+        $request.BodyBytes.Length | Should -Be 4
+        [System.Text.Encoding]::ASCII.GetString($request.BodyBytes) | Should -Be 'abcd'
     }
 }
 

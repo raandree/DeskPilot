@@ -71,6 +71,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always asks first — naming how many files it is about to take, listing them,
   and saying plainly that it cannot be undone.
 
+### Fixed
+
+- **Pasting a file into the chat is no longer slow.** Attaching a screenshot or a
+  file with Ctrl+V left the composer waiting seconds before the attachment chip
+  appeared, and the delay grew with the size of the file. Two things inside the
+  upload handler were responsible: the request body was scanned for its part
+  boundaries one byte at a time, and the file's own bytes were then copied into a
+  structure that stored every single byte as a separate boxed object — several
+  million of them for one pasted screenshot. Both are gone; a paste that took
+  well over a second of server time now takes a few milliseconds. A binary upload
+  is also no longer decoded as text on arrival, which was a second full pass over
+  every byte for a string nothing ever read.
+
+- **Starting a new conversation now closes the current one.** Clicking
+  **+ New conversation** while the agent was still working opened the new chat
+  but left the old turn running underneath it: **Stop** would have acted on the
+  new conversation instead of the working one, and any message queued for the old
+  chat was delivered to the new one. Starting a new conversation now ends the
+  running turn first — asking before it does, and saying that everything produced
+  so far is kept in the conversation being left behind.
+
+- **Copying the prompt you just sent.** The copy icon on a message only appeared
+  once that message had been stored, so for the whole length of a Turn the prompt
+  on screen offered no way to copy it — the very moment you are most likely to
+  want it back. Hovering a prompt now always reveals the same copy icon the
+  answers carry; **Edit & resend** still waits for the message to be stored,
+  because it re-runs the conversation from that point.
+
 ## [0.4.0] - 2026-08-09
 
 ### Added

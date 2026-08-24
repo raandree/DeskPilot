@@ -1169,7 +1169,33 @@ async function exportConversation(id) {
     toast('Exported ' + a.download);
 }
 
+// End whatever the open Conversation is still doing, so the next one starts
+// clean. Without this a Turn goes on running against a Conversation the user has
+// moved on from: Stop would target the new chat instead, and messages queued for
+// the old one would be delivered to it. Returns false if the user declines.
+async function closeCurrentConversation() {
+    if (!state.current) return true;
+    if (state.streaming) {
+        const ok = window.confirm(
+            'Start a new conversation and stop the turn that is still running?\n\n' +
+            'Whatever the agent has produced so far is kept in the current conversation. ' +
+            'Any message still waiting in its queue is discarded.');
+        if (!ok) return false;
+        // Resolved by the running Turn's own finally block; waiting for it is what
+        // makes this a close rather than a race with that block.
+        const ended = state.streamEndPromise;
+        await stopTurn();
+        if (ended) await ended;
+    }
+    if (state.dispatchQueue.length) {
+        state.dispatchQueue = [];
+        renderDispatchQueue();
+    }
+    return true;
+}
+
 async function newConversation() {
+    if (!(await closeCurrentConversation())) return;
     const model = (state.settings && state.settings.model) || state.defaultModel || null;
     const summary = await api('POST', '/api/conversations', { model });
     state.conversations.unshift(summary);
@@ -1333,23 +1359,20 @@ function buildUserEl(m) {
         badge.textContent = 'Sent from queue';
         wrap.appendChild(badge);
     }
-    // Edit & resend, and copy (only meaningful for a persisted message with text).
-    if (m && m.id && m.text) {
+    // Copying needs the text and nothing else, so it is offered on the optimistic
+    // bubble too; edit-and-resend re-runs a stored message and needs its id.
+    if (m && m.text) {
         const actions = el('user-actions');
-        const copy = el('msg-action-btn', 'button');
-        copy.type = 'button';
-        copy.title = 'Copy message';
-        copy.setAttribute('aria-label', 'Copy message');
-        copy.textContent = '⧉';
-        copy.onclick = () => copyMessageText(m.text);
-        actions.appendChild(copy);
-        const edit = el('msg-action-btn', 'button');
-        edit.type = 'button';
-        edit.title = 'Edit & resend';
-        edit.setAttribute('aria-label', 'Edit and resend');
-        edit.textContent = '✎';
-        edit.onclick = () => startEditMessage(wrap, m);
-        actions.appendChild(edit);
+        actions.appendChild(buildCopyButton(() => copyMessageText(m.text)));
+        if (m.id) {
+            const edit = el('msg-action-btn', 'button');
+            edit.type = 'button';
+            edit.title = 'Edit & resend';
+            edit.setAttribute('aria-label', 'Edit and resend');
+            edit.textContent = '✎';
+            edit.onclick = () => startEditMessage(wrap, m);
+            actions.appendChild(edit);
+        }
         wrap.appendChild(actions);
     }
     return wrap;
@@ -7090,17 +7113,23 @@ function navPromptHistory(dir, el) {
 function closeSidebar() { $('sidebar').classList.remove('open'); }
 
 // ===== Message actions (copy, read aloud) =====
-function buildMessageActions(node, m) {
-    node.innerHTML = '';
-    const text = (m && m.text) || '';
-    if (!text.trim()) return;
+
+// The one copy affordance, so a prompt and an answer never offer a different icon.
+function buildCopyButton(onCopy) {
     const copy = el('msg-action-btn', 'button');
     copy.type = 'button';
     copy.title = 'Copy message';
     copy.setAttribute('aria-label', 'Copy message');
     copy.textContent = '⧉';
-    copy.onclick = () => copyMessageText(text);
-    node.appendChild(copy);
+    copy.onclick = onCopy;
+    return copy;
+}
+
+function buildMessageActions(node, m) {
+    node.innerHTML = '';
+    const text = (m && m.text) || '';
+    if (!text.trim()) return;
+    node.appendChild(buildCopyButton(() => copyMessageText(text)));
     if (canSpeak()) {
         const speak = el('msg-action-btn', 'button');
         speak.type = 'button';

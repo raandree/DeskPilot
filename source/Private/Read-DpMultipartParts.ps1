@@ -24,22 +24,29 @@ function Read-DpMultipartParts {
         [string]$Boundary
     )
 
-    $delim = [System.Text.Encoding]::ASCII.GetBytes("--$Boundary")
+    $delim = "--$Boundary"
+    $delimLength = $delim.Length
 
-    # Find every boundary offset.
+    # Find every boundary offset. Latin-1 maps bytes 0-255 one-to-one onto chars,
+    # so this is a byte-exact view of the body that String.IndexOf can search with
+    # a vectorised native scan - the payload itself is still copied from $Bytes and
+    # never round-trips through the string. The interpreted per-byte loop this
+    # replaces was most of the second a 5 MB paste spent in here.
+    $text = [System.Text.Encoding]::Latin1.GetString($Bytes)
     $offsets = [System.Collections.Generic.List[int]]::new()
-    for ($i = 0; $i -le $Bytes.Length - $delim.Length; $i++) {
-        $match = $true
-        for ($j = 0; $j -lt $delim.Length; $j++) {
-            if ($Bytes[$i + $j] -ne $delim[$j]) { $match = $false; break }
-        }
-        if ($match) { $offsets.Add($i); $i += $delim.Length - 1 }
+    $limit = $Bytes.Length - $delimLength
+    $i = 0
+    while ($i -ge 0 -and $i -le $limit) {
+        $i = $text.IndexOf($delim, $i, [System.StringComparison]::Ordinal)
+        if ($i -lt 0 -or $i -gt $limit) { break }
+        $offsets.Add($i)
+        $i += $delimLength
     }
     if ($offsets.Count -lt 2) { return @() }
 
     $parts = [System.Collections.Generic.List[hashtable]]::new()
     for ($k = 0; $k -lt $offsets.Count - 1; $k++) {
-        $partStart = $offsets[$k] + $delim.Length
+        $partStart = $offsets[$k] + $delimLength
         # Skip an optional trailing "--" (final boundary marker).
         if ($Bytes.Length -ge $partStart + 2 -and $Bytes[$partStart] -eq 45 -and $Bytes[$partStart + 1] -eq 45) { continue }
         # Skip the CRLF after the boundary.
@@ -72,7 +79,11 @@ function Read-DpMultipartParts {
 
         $contentStart = $headerEnd + 4
         $contentLength = $partEnd - $contentStart
-        $content = if ($contentLength -gt 0) { [byte[]]::new($contentLength) } else { [byte[]]::new(0) }
+        # Assigned directly, never as the result of an `if`: a statement used as an
+        # expression sends its value through the pipeline, which unrolls a byte[]
+        # into a boxed object[]. That turned a 5 MB upload into five million boxed
+        # bytes, cost ~700 ms here, and handed callers the wrong type.
+        $content = [byte[]]::new([Math]::Max(0, $contentLength))
         if ($contentLength -gt 0) { [Array]::Copy($Bytes, $contentStart, $content, 0, $contentLength) }
 
         $parts.Add(@{

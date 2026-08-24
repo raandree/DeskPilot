@@ -118,6 +118,42 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match ([regex]::Escape('.msg-user:focus-within .user-actions'))
     }
 
+    It 'offers the copy icon on a prompt before it is persisted' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # One builder for the icon, so the two sides cannot drift apart.
+        $js | Should -Match 'function buildCopyButton\(onCopy\)'
+        ([regex]::Matches($js, [regex]::Escape("copy.title = 'Copy message';"))).Count |
+            Should -Be 1 -Because 'the copy button is built in exactly one place'
+
+        # The optimistic bubble in _runTurn carries no id until the start frame
+        # lands, so gating the whole action row on one hid copy for the whole
+        # Turn - on the very prompt the user is most likely to want back.
+        $js | Should -Match ([regex]::Escape('const userEl = buildUserEl({ text: displayText, dispatch });'))
+        $js | Should -Not -Match ([regex]::Escape('if (m && m.id && m.text) {'))
+        # Edit-and-resend re-runs a stored message, so it stays gated on the id.
+        $js | Should -Match '(?s)function buildUserEl.{0,2000}if \(m\.id\) \{.{0,400}Edit & resend'
+    }
+
+    It 'closes the open conversation before starting a new one' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # The button, the command palette and Ctrl+Shift+O all route through
+        # newConversation, so the close belongs there, not at three call sites.
+        $js | Should -Match '(?s)async function newConversation\(\) \{\s*\r?\n\s*if \(!\(await closeCurrentConversation\(\)\)\) return;'
+        # Startup, delete and the Intercom resync null out state.current first and
+        # have nothing to close; they must not try to stop or confirm anything.
+        $js | Should -Match '(?s)async function closeCurrentConversation\(\) \{\s*\r?\n\s*if \(!state\.current\) return true;'
+        # Ending a running Turn is never silent, and waiting for the stream to
+        # close is what makes this a close rather than a race with its own finally.
+        $js | Should -Match '(?s)async function closeCurrentConversation\(\).{0,1200}window\.confirm'
+        $js | Should -Match ([regex]::Escape('await stopTurn();'))
+        $js | Should -Match '(?s)async function closeCurrentConversation\(\).{0,1200}if \(ended\) await ended;'
+        # Messages queued for the closed Conversation must not be delivered to
+        # the new one - flushDispatchQueue fires against whatever is current.
+        $js | Should -Match '(?s)async function closeCurrentConversation\(\).{0,1400}state\.dispatchQueue = \[\];'
+    }
+
     It 'keeps destructive conversation actions out of one click' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
 

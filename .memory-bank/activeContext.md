@@ -10,6 +10,121 @@ source: repository evidence
 
 ## Current focus
 
+**Pasting a file into the chat is fast again (2026-08-24, uncommitted on
+`main`).** Reported as "when pasting files from the clipboard using Ctrl+V it
+takes quite some time until they appear in the chat". Measured before touching
+anything: `Read-DpMultipartParts` took **1817 ms** for a 5 MB body, linear in
+size. Two causes, and the second was not the obvious one.
+
+**(1) The boundary scan walked every byte in interpreted PowerShell.** Replaced
+with a Latin-1 view of the body (`Encoding::Latin1` is a one-to-one byte↔char
+map, so it is byte-exact) and `String.IndexOf(…, Ordinal)`, which is a vectorised
+native scan: 297 ms → **11 ms** for the same body. An intermediate attempt using
+`[Array]::IndexOf` on the delimiter's first byte was only 27× worse than that,
+because random binary yields ~20,000 candidate positions per 5 MB and each one
+costs a full interpreted loop iteration. The payload is still copied from
+`$Bytes`; it never round-trips through the string.
+
+**(2) The real cost was `$content = if (…) { [byte[]]::new($n) } else { … }`.**
+Assigning the result of an `if` **statement** sends its value through the
+pipeline, which **unrolls a `byte[]` into a boxed `object[]`**. A 5 MB upload
+became five million boxed bytes: **737 ms** in `Array.Copy` alone, ~200 MB of
+garbage, and `$part.Content` typed `System.Object[]` in a function whose
+docstring promises a byte array — so `File.WriteAllBytes` then paid another full
+conversion. Fixed by assigning `[byte[]]::new(…)` directly. **This idiom is worth
+hunting for elsewhere in the codebase.**
+
+**(3) `Receive-DpHttpRequest` decoded every body as UTF-8**, including megabytes
+of binary, for a `$body` string that only the JSON path reads — and
+`Invoke-DpRequest` already skips multipart there. Now gated on the content type;
+that alone was ~790 ms per 5 MB paste. Its truncated-read path also used
+`$bodyBuffer[0..($offset - 1)]`, which materialises an int range array and
+indexes element by element, and produced garbage for a zero-byte read; replaced
+with `Array.Copy`.
+
+Net: the parser body is **6 ms** for 5 MB, down from ~816 ms. One trap found
+while testing: the repo's own `New-MultipartBody` test helper ended with a bare
+`$ms.ToArray()`, hitting the *same* unroll, so the perf test was timing an
+`object[]`→`byte[]` conversion the real caller never performs. It now returns
+`, $ms.ToArray()`.
+
+## Previous focus — closing a Conversation
+
+**Starting a new Conversation now closes the open one (2026-08-24, uncommitted
+on `main`).** Reported as "when clicking on **+ New conversation**, the current
+conversation should be closed and a new chat started — right now the current chat
+stays active". *Active* was the precise word: `newConversation()` was the only
+Conversation-switching entry point **without** a `state.streaming` guard, while
+`goHome()`, `regenerateTurn()`, `startEditMessage()` and `restoreCheckpoint()`
+all had one. Clicking it mid-Turn flipped `state.current` to the new Conversation
+and re-rendered the thread, but the Turn kept running underneath: `stopTurn()`
+posts to `state.current.id`, so **Stop** would have targeted the new chat rather
+than the working one, and `flushDispatchQueue()` fires `_runTurn` against
+whatever is current when the old Turn's `finally` block reaches it — so a message
+queued for the old chat was delivered to the new one.
+
+Three decisions. **(1) The close lives in `newConversation`, not at the call
+sites.** The button, the command palette entry and Ctrl+Shift+O all route through
+it, and putting the logic in one place is what keeps the three consistent.
+**(2) `if (!state.current) return true` is what makes that safe.** Four internal
+callers reach `newConversation()` without a user gesture — startup,
+`deleteConversation`, `send()` with nothing open, and
+`syncConversationsFromServer` — and the three that could be mid-Turn all null out
+`state.current` first, so they skip the close entirely instead of awaiting a
+stream end that may never be theirs. **(3) It confirms, then waits.** Ending a
+Turn on a mis-click of a prominent sidebar button is not silent; the dialog says
+the partial answer is kept on the Conversation being left. The wait reuses the
+`dispatchStopAndSend` pattern — capture `state.streamEndPromise`, `await
+stopTurn()`, `await ended` — because the Turn's own `finally` resolves that
+promise **before** it runs `refreshCurrentConversation()` and
+`flushDispatchQueue()`. Clearing `state.dispatchQueue` before returning is what
+makes the later flush a no-op rather than a delivery into the new chat.
+
+Not changed: the composer draft and pending Attachments survive, because typing
+something and then deciding it belongs in a new chat is a real workflow.
+Hover-reveal, sidebar selection and `goHome()`'s refuse-while-streaming were left
+as they are.
+
+## Previous focus — copying a prompt mid-Turn
+
+**A prompt can be copied while its Turn is still running (2026-08-24,
+uncommitted on `main`).** Reported as "we need a little copy icon / button for
+quickly copying prompts in the chat — right now there is nothing like that",
+then corrected to "we have already a copy icon somewhere else that we should
+reuse". Both readings were right about something. The icon existed — `⧉` on a
+`msg-action-btn` — but it was hand-rolled **twice**, once in `buildUserEl` and
+once in `buildMessageActions`, and the user-side copy sat behind
+`if (m && m.id && m.text)`. `_runTurn` builds its optimistic bubble as
+`buildUserEl({ text: displayText, dispatch })` with **no id** — the id only
+arrives later on the `start` frame — so for the entire length of a Turn the
+prompt on screen offered no copy at all, and the affordance reappeared only
+when `refreshCurrentConversation` re-rendered the thread at the end. The report
+was therefore accurate for the exact moment a user is most likely to want the
+prompt back.
+
+Three decisions. **(1) One builder, not a third icon.** `buildCopyButton(onCopy)`
+is the single place the icon is constructed, and a test asserts
+`copy.title = 'Copy message';` appears exactly once in `app.js` — the drift that
+let the two sides diverge in the first place is now a failing test rather than a
+review question. No new SVG was drawn; the existing glyph is reused, as asked.
+**(2) The gate was split by what each action actually needs.** Copy needs the
+text, so it is offered whenever there is text; **Edit & resend** re-runs the
+Conversation from a stored message and still requires `m.id`. Gating both on the
+id was a single condition doing two unrelated jobs. **(3) Hover-reveal was left
+alone**, because `.msg-user:hover`/`:focus-within` is the established pattern for
+both sides and the reported gap was absence, not discoverability.
+
+Gate: **1242/1251**, 0 errors, 0 warnings. The 9 failures are all Engine
+registration tests and are **environmental, not a regression** — the host is now
+PowerShell **7.6.3** (the previous 1250/1250 was 7.5.5) and
+`Get-Module ShellPilot -ListAvailable` returns nothing under it. Only three
+files changed, none of them PowerShell source. Both facts are recorded in
+`debugging-insights.md`, together with the `DeskPilot.psm1` *used by another
+process* lock — which is the previous run's test-phase import, cleared by
+running `-Tasks build` alone first, not by deleting the output folder.
+
+## Previous focus — Branch integration
+
 **All four feature Branches are integrated into `main` (2026-08-13).**
 `ai/discard-all-changes`, `ai/live-activity-feed`, `ai/mcp-servers` and
 `ai/response-auto-retry` formed one linear chain — each Branch's tip was the

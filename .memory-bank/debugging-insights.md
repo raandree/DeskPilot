@@ -2,6 +2,117 @@
 
 Recurring issues and how they were resolved.
 
+## Assigning an `if` statement unrolls an array into a boxed `object[]` (2026-08-24)
+
+**Symptom:** pasting a file into the chat took seconds. `Read-DpMultipartParts`
+measured **1817 ms** for a 5 MB body, and the obvious suspect — an interpreted
+per-byte boundary scan — turned out to be the *smaller* half.
+
+**Root cause:** `$content = if ($n -gt 0) { [byte[]]::new($n) } else { [byte[]]::new(0) }`.
+A PowerShell statement used as an expression sends its value **through the
+pipeline**, which enumerates an array and re-collects it. So the assignment
+produced `System.Object[]` of `$n` **boxed bytes** rather than `System.Byte[]`:
+
+```powershell
+$x = if ($true) { [byte[]]::new(8) }   # -> System.Object[]
+$y = [byte[]]::new(8)                  # -> System.Byte[]
+```
+
+For a 5 MB upload that was five million boxed bytes — 737 ms in `Array.Copy`
+alone, ~200 MB of garbage, and the wrong type handed to every caller.
+
+The same trap hides in a **function's return value**: a bare `$ms.ToArray()` as
+the last statement returns `object[]`; `, $ms.ToArray()` returns `byte[]`. The
+repo's own `New-MultipartBody` test helper had it, which made a performance test
+measure a conversion the real caller never performs.
+
+**Rule:** never assign an array from an `if`/`switch`/`foreach` statement, and
+never return one bare from a function. Assign the constructor directly, or
+comma-wrap the return. When a byte pipeline is unexpectedly slow, check
+`$x.GetType().FullName` before optimising the loop next to it.
+
+## Search megabytes of bytes through a Latin-1 view, not a PowerShell loop (2026-08-24)
+
+**Symptom:** scanning a request body for its multipart boundary cost hundreds of
+milliseconds per megabyte.
+
+**Root cause:** the scan was an interpreted `for` loop over every byte. Replacing
+it with `[Array]::IndexOf` on the delimiter's first byte only helped ~3×: random
+binary contains that byte roughly every 256 positions, so a 5 MB body still ran
+~20,000 interpreted verification iterations.
+
+**Rule:** `[System.Text.Encoding]::Latin1` maps bytes 0-255 one-to-one onto
+chars, so `Latin1.GetString($bytes)` is a **byte-exact** searchable view.
+`String.IndexOf(needle, start, [StringComparison]::Ordinal)` is vectorised and
+returns only true matches — 297 ms became 11 ms. Copy the payload from the
+original `byte[]`; never convert the string back.
+
+## "Request Entity Too Large" on an image Turn is the un-budgeted Vision path (2026-08-24)
+
+**Symptom:** a Turn with photo Attachments dies at once with
+`Exception calling "EndInvoke" with "1" argument(s): "Request Entity Too Large"`.
+The same files work in VS Code Copilot Chat.
+
+**Root cause:** the 413 is the Copilot chat-completions endpoint rejecting the
+request body, not DeskPilot's Host Server (which answers a JSON 413 instead of
+throwing). Nothing on the Vision path budgets bytes: `getImagePaths`
+(`source/web/assets/attachments.js`) forwards every `image/*` Attachment path
+unchanged, `Resolve-DpAttachmentPath` checks registration, absoluteness,
+existence and content type but **no size**, `New-DpTurnParameter` hands the
+paths to `Invoke-Shp -Image`, and ShellPilot's `ConvertTo-ShpImageContent`
+`ReadAllBytes` + `ToBase64String` each file into an inline `data:` URI. The
+original camera JPEG therefore goes on the wire at full resolution, inflated
+~4/3 by base64. The upload route's 25 MiB cap is **per file part**, not per
+request, so one file at the limit alone is ~34 MB of body. Re-attaching the same
+files multiplies it, because `Get-DpUniqueFilePath` saves `(1)` duplicates that
+are then inlined again.
+
+Copilot Chat does not fail because it downscales and re-encodes an attached
+image client-side before the request; the raw file never leaves the client.
+
+**Rule:** treat a 413 on an image Turn as payload size, never as sign-in or a
+transient fault. `Test-DpTransientEngineError` deliberately does not match 413
+(only `403|408|429|5xx`), so it fails fast rather than resending an identical
+oversized body — resending or pressing Retry cannot help. The durable fix is a
+downscale/re-encode step plus a request-level byte budget with a named error;
+neither exists yet.
+
+## A gate failure can be a PowerShell upgrade, not a regression (2026-08-24)
+
+**Symptom:** `./build.ps1 -Tasks build, test` reports **9 failed** where the
+last recorded gate was 1250/1250. Every failure is an Engine registration test
+(`Initialize-DpWorkspaceTool`, `Initialize-DpQuestionnaireTool`,
+`Initialize-DpUserPromptBridge`) failing with *Expected a value, but got `$null`
+or empty*.
+
+**Root cause:** the host moved from PowerShell **7.5.5** to **7.6.3** — visible
+in the results filename itself (`…PSv.7.6.3.xml` beside the committed
+`…PSv.7.5.5.xml`) — and `Get-Module ShellPilot -ListAvailable` returns nothing
+under the new version. The Engine is deliberately not a manifest
+`RequiredModule`, so its absence never fails the import; it fails only the tests
+that register against a live Engine.
+
+**Rule:** before treating a gate failure as a regression, compare the results
+filename's PowerShell version with the recorded one and check
+`Get-Module ShellPilot -ListAvailable`. Reinstall the Engine for the current
+PowerShell version to restore those 9 tests.
+
+## `DeskPilot.psm1` "used by another process" is the previous run's test phase (2026-08-24)
+
+**Symptom:** `build, test` dies immediately at `Set-Content` on
+`output/module/DeskPilot/<version>/DeskPilot.psm1`. Deleting the folder and
+retrying fails again at the same step, so it looks like a virus scanner.
+
+**Root cause:** it is not a race. The `test` phase imports the built module, and
+a run that ends badly leaves that handle alive; the **next** run's build cannot
+rewrite the root script. An exclusive-open probe between runs reports the file
+FREE, which is what makes the scanner theory tempting and wrong.
+
+**Rule:** run `./build.ps1 -Tasks build` **on its own** first. It succeeds
+because nothing has imported the module yet, and it leaves the tree writable for
+the combined `build, test` that follows. Deleting `output/module/DeskPilot` on
+its own does not help.
+
 ## "timestamp pending" is a missing clock, not a rendering bug (2026-08-12)
 
 **Symptom:** the same pre-flight instruction produces `[2026-08-12 08:14 UTC]`

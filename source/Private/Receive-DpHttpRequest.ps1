@@ -80,12 +80,19 @@ function Receive-DpHttpRequest {
             $offset += $chunk
         }
         if ($offset -lt $contentLength) {
-            $bodyBytes = $bodyBuffer[0..($offset - 1)]
+            $bodyBytes = [byte[]]::new($offset)
+            [System.Array]::Copy($bodyBuffer, 0, $bodyBytes, 0, $offset)
         }
         else {
             $bodyBytes = $bodyBuffer
         }
-        $body = [System.Text.Encoding]::UTF8.GetString($bodyBytes)
+        # A multipart body is binary and can be megabytes long. Only the JSON path
+        # reads the decoded string, and that path already skips multipart, so
+        # decoding one here just burns time and a second copy of the upload.
+        $requestContentType = if ($headers['Content-Type']) { [string]$headers['Content-Type'] } else { '' }
+        if ($requestContentType -notmatch '^multipart/form-data') {
+            $body = [System.Text.Encoding]::UTF8.GetString($bodyBytes)
+        }
     }
 
     @{
