@@ -10,6 +10,110 @@ source: repository evidence
 
 ## Current focus
 
+**A Turn is laid out in the order it happened, with the answer last (2026-08-24,
+uncommitted on `main`).** Two rounds. The first moved the reasoning from above
+the answer to below it, and the screenshot of the result showed why that was only
+half an answer: the answer body still grows in one place, so *all* the boxes pile
+up on whichever side of it they are put — the first round put them above, the
+second put them below, and both are wrong for the reasoning that happened on the
+other side of some prose. The requirement, stated plainly the second time, is
+chronology: "break up the reasoning so it does not pile up but rather continues
+in a new box after the output… the output may also be broken into several
+sections as long as we have one full summary at the end."
+
+The message is now `role, steps, turn-flow, content, …`. The **flow** is the Turn
+as it happened — a `.thinking` box per run, and a `.flow-answer` block holding the
+prose the model emitted between two runs — and `content` below it is the one full
+summary.
+
+Five decisions. **(1) The two boundaries are different frames and both are
+needed.** A `delta` with text seals the open run (`if (t && think) {
+sealThinking(wrap); think = ''; }`) — otherwise the trace stays open above the
+answer it was reasoning towards. A `reasoning` frame arriving with answer text on
+screen calls `flushAnswerChunk`, which moves that text into the flow and empties
+`content` — that is what puts the prose *above* the run it led to. Doing both in
+`delta` cannot work: at that moment there is no next run to be above.
+**(2) The last chunk is never flushed.** `finalizeAssistant` overwrites `content`
+with `m.text`, and since `Invoke-Shp` returns only the final iteration's content,
+that is exactly the summary — no duplication and no reconstruction needed.
+**(3) `.thinking:last-child`, not `lastElementChild`.** It returns null when the
+flow ends in a flushed chunk, which is precisely what makes the prose a boundary
+a later run cannot grow back through. **(4) Steps is suppressed when the flow
+carries the narration** (`r.flow.querySelector('.flow-answer') ? null :
+m.narration`), or the same prose prints twice — inline and again in the
+disclosure. A thread rebuilt from storage has no flow, so Steps still does its
+job there. **(5) With `showThinking` off none of this activates**, because the
+Engine only emits `reasoning` frames under `-ShowThinking`: no runs, no flush, no
+chunks, and Steps behaves exactly as before.
+
+Carried over from the first round: a live box streams open and folds on seal
+(`showThinking` no longer decides, since it was always true for a live box); a
+`summary` click sets `data-touched` and `sealThinking` skips those, so a box the
+reader opened is not shut under them; `showInlineError` seals, or a Turn that
+dies mid-reasoning leaves a box open and unlabelled forever; a sealed box reads
+`Thought for Ns`; and `renderStoredThinking` returns early on
+`flow.dataset.live === '1'` so the flat stored trace never overwrites the live
+layout.
+
+Red proven first in both rounds. Round two: 43/43 in `WebAssets.Tests.ps1`.
+
+## The scroll that stopped short
+
+Reported twice, and the first diagnosis was wrong. Round one read "there is more
+content below but the scroll bar is already at the end — I can go there when
+selecting the text and moving down with the mouse" as a scroll *position* short
+of the bottom, and fixed two real things on that basis. Round two arrived with
+two screenshots that showed what the bar actually was.
+
+**The bar at the end was the Thinking box's own.** While a run streams, the box
+sat in the middle of the flow with the answer body and the Activity panel below
+it, and `.thinking .disclosure-body` carried `max-height: min(46vh, 420px);
+overflow: auto`. A wheel over a box that scrolls itself never reaches the thread
+— Chrome latches the gesture to the inner scroller — so the reader hit the end of
+the *box's* bar with the rest of the message out of reach, while drag-select
+auto-scroll (which targets the thread) got there. The screenshot shows it
+exactly: the box's own thumb is at the bottom of its own track, and the caret
+block and Activity panel that follow it are not on screen.
+
+Fixed by making the live box **clipped, not scrollable**:
+`.thinking:not([data-sealed="1"]) .disclosure-body` is `max-height: 220px;
+overflow: hidden`, and `renderThinking`'s existing `body.scrollTop =
+body.scrollHeight` pin still keeps the newest line in view — a programmatic
+scroll works on an `overflow: hidden` box. A **sealed** box keeps `min(46vh,
+420px)` and `overflow: auto`, because opening a finished run is the reader's own
+choice and nothing is moving. Measured against the real stylesheet in headless
+Edge: live `{ clientH: 220, userScrollable: false, pinnedToNewest: true }`,
+sealed `{ clientH: 370, userScrollable: true }`. Halving the live height also
+stops one box filling the window on its own.
+
+Two other real causes were fixed in round one and stay. **(1) The follow was
+animated:** `scrollThread()` assigned `scrollTop = scrollHeight` while `.thread`
+carries `scroll-behavior: smooth`, and `followThread()` re-aims at the bottom on
+every streamed frame — an animation restarted every ~16 ms trails the content.
+It now uses `scrollTo({ …, behavior: 'instant' })`; `revealThinking`'s
+`scrollIntoView` still asks for `smooth`. **(2) The thread grows after the last
+follow:** `done` follows, and *then* the `finally` runs
+`refreshCurrentConversation()` → `syncCheckpointDividers()`, and
+`maybeAutoCompact()` can rebuild the thread outright, so a final `followThread()`
+now sits after everything in both runners' `finally`.
+
+**Two hypotheses were measured and killed**, which is why the third was found.
+The static layout is sound — `.app` does not overflow `100vh` and a tall message
+leaves 34 px of clearance above the composer. And a full simulated Turn driving
+the *real* `wireThreadFollow` logic (reasoning runs, seals, chunk flushes,
+activity frames, answer bursts) ends with `threadFollow: true` and
+`gapFromBottom: 0`, so neither the collapsing boxes nor `flushAnswerChunk`'s
+clear-and-append kills the auto-follow. The animation lag itself remains
+inference: under `--virtual-time-budget` a smooth scroll completes between
+frames, so old and new both measure a zero gap.
+
+Found while fixing it: **chunking introduced a real regression in `renderLive`.**
+A paint scheduled by the last `delta` can land *after* `done` has written the
+final answer, and `raw` is now only the chunk since the last run of thinking — so
+that late paint truncated the answer. Both runners now bail on `turnCompleted`.
+
+## Previous focus — image Attachments
+
 **Image Attachments no longer overflow the Turn's request body (2026-08-24,
 uncommitted on `main`).** Reported as a Turn dying with `Exception calling
 "EndInvoke" with "1" argument(s): "Request Entity Too Large"` while the same

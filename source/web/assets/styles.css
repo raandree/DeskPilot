@@ -1165,15 +1165,72 @@ button.tree-row {
     font-size: 13px;
 }
 
+/* The Turn as it happened: a box per run of thinking, and the prose the model
+   emitted between them, in order. The answer body follows it, below. */
+.turn-flow {
+    margin: 0 0 12px;
+}
+
+.turn-flow>.disclosure:last-child {
+    margin-bottom: 0;
+}
+
+/* Prose the model emitted mid-Turn, held visibly apart from the answer it leads
+   up to, which is rendered in full at the end. */
+.turn-flow .flow-answer {
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    margin: 0 0 12px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+}
+
+.turn-flow .flow-answer:last-child {
+    margin-bottom: 0;
+}
+
+.turn-flow .flow-answer>:last-child {
+    margin-bottom: 0;
+}
+
+/* A folded run has to look openable, and the shared summary rule hides the
+   native marker - so the chevron is drawn back in here. */
+.thinking>summary::before {
+    content: "›";
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    transition: transform .15s ease;
+}
+
+.thinking[open]>summary::before {
+    transform: rotate(90deg);
+}
+
 .thinking .disclosure-body {
     font-family: var(--font-read);
     color: var(--muted);
     white-space: pre-wrap;
-    /* A trace runs to thousands of lines once tool arguments are laid out, so it
-       scrolls itself rather than burying the answer it belongs to. */
+    overflow-wrap: anywhere;
+}
+
+/* A live run sits in the middle of the flow with the answer and the Activity
+   panel below it, so it must not be a scroll trap: a wheel over a box that
+   scrolls itself never reaches the thread, and the reader is left at the end of
+   the box's own bar with the rest of the message out of reach. It is clipped
+   instead, and renderThinking keeps it pinned to its newest line. */
+.thinking:not([data-sealed="1"]) .disclosure-body {
+    max-height: 220px;
+    overflow: hidden;
+}
+
+/* Once the run has ended, opening it is the reader's own choice and nothing is
+   moving, so it may scroll: a laid-out trace runs to thousands of lines and would
+   otherwise bury the whole thread. */
+.thinking[data-sealed="1"] .disclosure-body {
     max-height: min(46vh, 420px);
     overflow: auto;
-    overflow-wrap: anywhere;
 }
 
 .steps .disclosure-body {

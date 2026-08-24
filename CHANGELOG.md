@@ -71,7 +71,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always asks first — naming how many files it is about to take, listing them,
   and saying plainly that it cannot be undone.
 
+### Changed
+
+- **A Turn is now laid out in the order it happened, with the answer last.** The
+  reasoning trace used to be printed as one block above the reply, so the answer
+  you were waiting for was buried under thousands of lines explaining it, and the
+  box stayed open forever once the job was done. DeskPilot now shows the Turn the
+  way GitHub Copilot Chat does: each run of thinking gets its own box, placed at
+  the point it happened, and whatever the model said before that run stays above
+  it rather than being collected somewhere else — so neither the reasoning nor
+  the reply piles up on one side of the other. Each box folds to a single line
+  the moment its run ends, labelled with how long it took, and any of them can be
+  opened again afterwards. A run streams open while it is happening, so nothing
+  is hidden while you wait for it, and a box you opened yourself stays open
+  rather than being shut under you when the run finishes. The complete answer is
+  always rendered in full at the end, below everything else.
+
 ### Fixed
+
+- **The end of a long answer is reachable again.** The thread could stop scrolling
+  with a bar apparently already at the end while more of the answer was still
+  below — reachable only by dragging a text selection downwards. The bar at the
+  end belonged to the *thinking box*, not the conversation: while a run of
+  thinking streams, that box sat in the middle of the message with the answer and
+  the Activity panel below it, and it scrolled on its own — so a mouse wheel over
+  it moved the box and never reached the conversation behind it. A run that is
+  still streaming no longer scrolls separately; it shows its newest lines and
+  passes the wheel straight through, and it is shorter, so it no longer fills the
+  window on its own. A finished run still scrolls when you open it, because
+  nothing is moving then and you asked for it.
+
+  Two smaller causes of the same thing were fixed with it. The window follows the
+  newest output by re-aiming at the bottom on every streamed frame, and because
+  that scroll was animated, an animation restarted that often never arrived — it
+  trailed the content instead of landing on it. And the checks that run once a job
+  finishes, filling in the checkpoint markers and auto-compaction rebuilding the
+  conversation, make the thread taller *after* the last scroll. Following is now
+  immediate, and the window follows once more after everything that finishes a
+  job. The one scroll that should glide, jumping to the thinking box from the
+  status line beside the spinner, still does.
 
 - **Attaching a photo no longer fails the whole message.** A camera-sized image
   attached to a Conversation ended the Turn at once with *Request Entity Too

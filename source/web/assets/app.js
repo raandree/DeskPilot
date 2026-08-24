@@ -1385,23 +1385,24 @@ function buildAssistantEl(m) {
     role.innerHTML = '<span class="brand-mark-img brand-mark-img-sm" aria-hidden="true"></span> DeskPilot';
     const actions = el('msg-actions');
     role.appendChild(actions);
-    const thinking = el('disclosure thinking hidden', 'details');
-    thinking.innerHTML = '<summary>Thinking</summary><div class="disclosure-body"></div>';
-    // Asking to see the model's thinking means seeing it, not finding a box to open.
-    thinking.open = !!(state.settings && state.settings.showThinking);
     // What the model said between its tool calls. Deliberately NOT gated on the
     // thinking setting: this is answer text the model chose to emit, not a trace.
     const steps = el('disclosure steps hidden', 'details');
     steps.innerHTML = '<summary>Steps</summary><div class="disclosure-body"></div>';
     const content = el('content');
+    // The Turn as it happened: a box per run of thinking, and the prose the model
+    // emitted between them, in order. The answer body below it is the summary —
+    // one growing body with the whole trace stacked on one side of it puts the
+    // reasoning in the wrong place whichever side that is.
+    const flow = el('turn-flow hidden');
     const tasks = el('tasks-panel hidden');
     const userPrompts = el('user-prompts hidden');
     userPrompts.setAttribute('aria-live', 'polite');
     const changes = el('changes-card hidden');
     const activity = el('disclosure activity hidden', 'details');
     const usage = el('usage-foot hidden');
-    wrap.append(role, thinking, steps, content, tasks, userPrompts, changes, activity, usage);
-    wrap._refs = { content, thinking, steps, tasks, userPrompts, changes, activity, usage, actions };
+    wrap.append(role, steps, flow, content, tasks, userPrompts, changes, activity, usage);
+    wrap._refs = { content, flow, steps, tasks, userPrompts, changes, activity, usage, actions };
     return wrap;
 }
 
@@ -1415,11 +1416,12 @@ function finalizeAssistant(wrap, m, opts) {
         decorateArtifacts(r.content);
     }
     if (r.actions) buildMessageActions(r.actions, m, opts && opts.isLast);
-    if (m.reasoning) {
-        wrap.querySelector('.thinking').classList.remove('hidden');
-        wrap.querySelector('.thinking .disclosure-body').textContent = m.reasoning;
-    }
-    renderSteps(r.steps, m.narration);
+    if (m.reasoning) renderStoredThinking(wrap, m.reasoning);
+    // The Turn is over, so no run of thinking is still running.
+    sealThinking(wrap);
+    // A live flow already carries the narration inline and in order; repeating it
+    // in a Steps disclosure would print the same prose twice.
+    renderSteps(r.steps, r.flow && r.flow.querySelector('.flow-answer') ? null : m.narration);
     renderTasks(r.tasks, m.tasks);
     renderActivity(r.activity, m.activity);
     renderChanges(r.changes, m);
@@ -2298,7 +2300,12 @@ function wireThreadFollow() {
 
 function scrollThread() {
     const t = $('thread');
-    t.scrollTop = t.scrollHeight;
+    // 'instant' overrides the stylesheet's smooth behaviour on purpose. The follow
+    // re-targets the bottom on every streamed frame, and an animation restarted
+    // that often never lands: it trails the newest content, which then sits just
+    // below the fold with the scrollbar apparently already at the end. The one
+    // scroll that should ease is revealThinking's, and that one asks for it.
+    t.scrollTo({ top: t.scrollHeight, behavior: 'instant' });
     threadFollow = true;
 }
 
@@ -2306,14 +2313,38 @@ function followThread() {
     if (threadFollow) scrollThread();
 }
 
-// Put a reasoning delta in a message's Thinking box and follow it down. The box
-// only appears after the turn-start scroll, so without this it unfolds below the
-// fold and a long think looks like a stalled turn. The box is height-bounded and
-// scrolls itself, so the thread scroll alone would still leave the newest line
-// out of sight.
+// Reasoning is shown the way GitHub Copilot Chat shows it: one box per run of
+// thinking, in the flow at the point the run happened, open while it streams and
+// folded away the moment it ends.
+function openThinkingBox(flow) {
+    const box = el('disclosure thinking', 'details');
+    box.innerHTML = '<summary><span class="thinking-label">Thinking…</span></summary>' +
+        '<div class="disclosure-body"></div>';
+    // The box exists only because the reader asked to see the thinking, so it
+    // streams open; sealing is what folds it away.
+    box.open = true;
+    // A box the reader opened themselves must not be yanked shut under them when
+    // its run ends. A summary click is the gesture, for mouse and keyboard both.
+    box.querySelector('summary').addEventListener('click', () => { box.dataset.touched = '1'; });
+    flow.appendChild(box);
+    return box;
+}
+
+// Put a reasoning delta in the message's open Thinking box and follow it down.
+// A live box is clipped rather than scrollable, so this pin is the only thing
+// keeping the newest line in view.
 function renderThinking(wrap, text) {
-    const box = wrap.querySelector('.thinking');
-    box.classList.remove('hidden');
+    const flow = wrap && wrap.querySelector('.turn-flow');
+    if (!flow) return;
+    flow.classList.remove('hidden');
+    flow.dataset.live = '1';
+    // Null when the flow ends in a flushed answer chunk, which is what makes the
+    // prose a boundary rather than something a later run can grow through.
+    let box = flow.querySelector('.thinking:last-child');
+    if (!box || box.dataset.sealed === '1') {
+        box = openThinkingBox(flow);
+        box.dataset.startedAt = String(Date.now());
+    }
     const body = box.querySelector('.disclosure-body');
     body.textContent = text;
     body.scrollTop = body.scrollHeight;
@@ -2321,11 +2352,58 @@ function renderThinking(wrap, text) {
     followThread();
 }
 
-// The Thinking box sits above the answer inside its message, so a long answer
-// pushes it out of the viewport and the only thing still moving is the spinner —
-// which cannot tell "still working" from "hung". Mirror the newest trace line
-// next to that spinner, where the composer keeps it visible whatever the thread
-// does, and let a click jump back to the box it came from.
+// Answer text belongs above whatever the model reasons next, so a new run of
+// thinking moves what is on screen into the flow and leaves the answer body
+// empty below it. The last chunk is never flushed: finalizeAssistant replaces it
+// with the complete answer, which is the one full summary at the end.
+function flushAnswerChunk(wrap, text) {
+    const flow = wrap && wrap.querySelector('.turn-flow');
+    if (!flow || !text) return;
+    sealThinking(wrap);
+    flow.classList.remove('hidden');
+    const block = el('content flow-answer');
+    block.innerHTML = renderMarkdown(text);
+    hydrateCopies(block);
+    flow.appendChild(block);
+    wrap._refs.content.innerHTML = '';
+}
+
+// End every run still open in this message. Idempotent, because both the answer
+// path and the error path reach it.
+function sealThinking(wrap) {
+    const flow = wrap && wrap.querySelector('.turn-flow');
+    if (!flow) return;
+    for (const box of flow.querySelectorAll('.thinking:not([data-sealed="1"])')) {
+        box.dataset.sealed = '1';
+        const label = box.querySelector('.thinking-label');
+        if (label) label.textContent = thoughtLabel(box.dataset.startedAt);
+        if (box.dataset.touched !== '1') box.open = false;
+    }
+}
+
+// A folded box is only useful if its one line says what it holds.
+function thoughtLabel(startedAt) {
+    const started = Number(startedAt);
+    if (!started) return 'Thinking';
+    const secs = Math.max(1, Math.round((Date.now() - started) / 1000));
+    return `Thought for ${secs}s`;
+}
+
+// A thread rebuilt from storage has the whole trace as one string and no flow to
+// order it by, so it gets a single box. A message that just streamed already has
+// its runs laid out, and overwriting them with the flat string would destroy the
+// account of the Turn that just ran.
+function renderStoredThinking(wrap, reasoning) {
+    const flow = wrap && wrap.querySelector('.turn-flow');
+    if (!flow || flow.dataset.live === '1') return;
+    flow.classList.remove('hidden');
+    openThinkingBox(flow).querySelector('.disclosure-body').textContent = reasoning;
+}
+
+// A long Turn pushes the newest box past the fold and the only thing still moving
+// is the spinner — which cannot tell "still working" from "hung". Mirror the
+// newest trace line next to that spinner, where the composer keeps it visible
+// whatever the thread does, and let a click jump back to the box it came from.
 function setActivityStatus(line) {
     const hint = $('activity-hint');
     const status = $('activity-status');
@@ -2349,20 +2427,21 @@ function lastTraceLine(text) {
     return '';
 }
 
-// Jump from the status line to the box it mirrors, unfolding it if the user (or
-// the "Show the model's thinking" setting) left it closed. Clicking it means
-// "let me read this", so it also stops the following outright: the scroll below
-// is smooth, and the next streamed frame would otherwise win the race and pull
-// the thread straight back to the bottom. With Thinking off there is no such box
-// and the line is mirroring the Activity panel, so open that instead.
+// Jump from the status line to the box it mirrors, unfolding it if it was sealed
+// or the user left it closed. Clicking it means "let me read this", so it also
+// stops the following outright: the scroll below is smooth, and the next streamed
+// frame would otherwise win the race and pull the thread straight back to the
+// bottom. With Thinking off there is no such box and the line is mirroring the
+// Activity panel, so open that instead.
 function revealThinking() {
     const thread = $('thread');
-    const thinking = thread.querySelectorAll('.msg-assistant .thinking:not(.hidden)');
+    const thinking = thread.querySelectorAll('.msg-assistant .turn-flow:not(.hidden) .thinking');
     const activity = thread.querySelectorAll('.msg-assistant .activity:not(.hidden)');
     const box = thinking[thinking.length - 1] || activity[activity.length - 1];
     if (!box) return;
     threadFollow = false;
     box.open = true;
+    box.dataset.touched = '1';
     box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
@@ -2455,7 +2534,10 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     let renderScheduled = false;
     const renderLive = () => {
         renderScheduled = false;
-        if (state.stopRequested || turnStopped) return;
+        // A frame scheduled by the last delta can land after `done` has already
+        // painted the final answer; `raw` is only the chunk since the last run of
+        // thinking, so repainting it here would truncate what the reader has.
+        if (state.stopRequested || turnStopped || turnCompleted) return;
         wrap._refs.content.innerHTML = renderMarkdown(raw);
         followThread();
     };
@@ -2467,7 +2549,11 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
             start: (d) => { turnStarted = true; if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
                 if (state.stopRequested) return;
-                raw += (d && d.text) || '';
+                const t = (d && d.text) || '';
+                // Once the answer starts, the run of thinking that led to it is
+                // over; the next run is what moves this prose into the flow.
+                if (t && think) { sealThinking(wrap); think = ''; }
+                raw += t;
                 if (!renderScheduled) {
                     renderScheduled = true;
                     requestAnimationFrame(renderLive);
@@ -2475,6 +2561,8 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
             },
             reasoning: (d) => {
                 if (state.stopRequested) return;
+                // A new run of thinking starts below the prose that led to it.
+                if (raw) { flushAnswerChunk(wrap, raw); raw = ''; think = ''; }
                 think += (d && d.text) || '';
                 renderThinking(wrap, think);
             },
@@ -2535,6 +2623,11 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
             await maybeAutoCompact();
             await maybeLearnMemory();
         }
+        // Everything above can make the thread taller than it was when `done` last
+        // followed it — checkpoint dividers arrive with refreshCurrentConversation,
+        // and auto-compaction rebuilds the thread outright. Without a last follow
+        // the tail of a long answer stays below the fold with the bar at the end.
+        followThread();
         // Drain one queued/steered message, if any. We only fire the next one;
         // its own finally will drain the one after it (chained, never racing).
         flushDispatchQueue();
@@ -2550,6 +2643,9 @@ function showInlineError(wrap, message) {
     err.textContent = '⚠ ' + message;
     wrap.classList.add('msg-error');
     refs.content.appendChild(err);
+    // Whatever the Turn was thinking when it died is now a finished run, not a
+    // live one; without this it streams open with no label forever.
+    sealThinking(wrap);
 }
 
 // After the first Turn of a new Conversation, ask the server to replace the
@@ -7244,24 +7340,28 @@ async function _streamRerun({ endpoint, body }) {
     let raw = '';
     let think = '';
     let turnStopped = false;
+    let turnCompleted = false;
     let renderScheduled = false;
     const renderLive = () => {
         renderScheduled = false;
-        if (state.stopRequested || turnStopped) return;
+        // A frame scheduled by the last delta can land after `done` has already
+        // painted the final answer; `raw` is only the chunk since the last run of
+        // thinking, so repainting it here would truncate what the reader has.
+        if (state.stopRequested || turnStopped || turnCompleted) return;
         wrap._refs.content.innerHTML = renderMarkdown(raw);
         followThread();
     };
     try {
         await streamPost('/api/conversations/' + conversationId + endpoint, body, {
             start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; },
-            delta: (d) => { if (!state.stopRequested) { raw += (d && d.text) || ''; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
-            reasoning: (d) => { if (!state.stopRequested) { think += (d && d.text) || ''; renderThinking(wrap, think); } },
+            delta: (d) => { if (!state.stopRequested) { const t = (d && d.text) || ''; if (t && think) { sealThinking(wrap); think = ''; } raw += t; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
+            reasoning: (d) => { if (!state.stopRequested) { if (raw) { flushAnswerChunk(wrap, raw); raw = ''; think = ''; } think += (d && d.text) || ''; renderThinking(wrap, think); } },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
             stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
-            done: (m) => { wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
+            done: (m) => { turnCompleted = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
             error: (d) => { wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Something went wrong.'); },
         });
     } catch (e) {
@@ -7278,6 +7378,9 @@ async function _streamRerun({ endpoint, body }) {
         await loadConversations();
         await refreshUsage();
         if (explorerOpen()) refreshExplorer();
+        // The thread grew after `done` last followed it (checkpoint dividers), so
+        // the tail of a long answer would otherwise stay below the fold.
+        followThread();
     }
 }
 

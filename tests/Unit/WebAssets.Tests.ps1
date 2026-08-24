@@ -188,40 +188,119 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match ([regex]::Escape('.checkpoint-label'))
     }
 
-    It 'shows the model''s thinking expanded, and keeps it in view while it streams' {
+    It 'lays the Turn out in the order it happened, with the answer last' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
-        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # "Show the model's thinking" that lands collapsed shows nothing.
-        $js | Should -Match ([regex]::Escape('thinking.open = !!(state.settings && state.settings.showThinking)'))
-        # The box only appears after the turn-start scroll, so it has to scroll for
-        # itself or it unfolds below the fold and the turn reads as stalled.
-        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,600}?followThread\(\);\s*\}'
+        # One growing answer body with the whole trace stacked on one side of it
+        # puts the reasoning in the wrong place whichever side that is. The flow
+        # holds the Turn as it happened; the answer body is the summary after it.
+        $js | Should -Match ([regex]::Escape('wrap.append(role, steps, flow, content,'))
+        $js | Should -Match ([regex]::Escape('wrap._refs = { content, flow, steps,'))
+        $js | Should -Not -Match ([regex]::Escape('wrap.append(role, thinking, steps, content,'))
+        $js | Should -Not -Match ([regex]::Escape('wrap.append(role, steps, content, thinking,'))
+        # A live run streams open: the box exists only because the reader asked to
+        # see the thinking, and one that lands collapsed shows nothing.
+        $js | Should -Match '(?s)function openThinkingBox\(flow\).{0,700}?box\.open = true;'
+        # The box only appears after the turn-start scroll, so the thread has to
+        # follow it or it unfolds below the fold and the turn reads as stalled.
+        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,900}?followThread\(\);\s*\}'
         # Every live reasoning frame goes through that helper; an inline update
         # would silently lose the scroll again.
         $reasoning = [regex]::Matches($js, 'reasoning: \(d\) =>')
         $reasoning.Count | Should -BeGreaterThan 0
         [regex]::Matches($js, 'renderThinking\(wrap, think\)').Count | Should -Be $reasoning.Count
         $js | Should -Not -Match ([regex]::Escape(".thinking .disclosure-body').textContent = think"))
-        # A laid-out trace runs to thousands of lines, so the box is bounded and
-        # scrolls itself - which means the thread scroll alone would leave the
-        # newest line out of sight.
-        $css | Should -Match '(?s)\.thinking \.disclosure-body \{[^}]*max-height:'
-        $css | Should -Match '(?s)\.thinking \.disclosure-body \{[^}]*overflow: auto'
+        # A live box is clipped, so this pin is the only thing keeping the newest
+        # line of the trace in view.
         $js | Should -Match ([regex]::Escape('body.scrollTop = body.scrollHeight'))
+    }
+
+    It 'never lets a live run of thinking trap the wheel' {
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # A live box sits in the middle of the flow with the answer and the Activity
+        # panel below it. A wheel over a box that scrolls itself never reaches the
+        # thread, so the reader ends at that box's own bar with the rest of the
+        # message out of reach - which is exactly what was reported. Clipped, and
+        # kept on its newest line by renderThinking's pin instead.
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*overflow: hidden'
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*max-height:'
+        # A sealed box the reader chose to open may scroll: nothing is moving, and a
+        # laid-out trace runs to thousands of lines.
+        $css | Should -Match '(?s)\.thinking\[data-sealed="1"\] \.disclosure-body \{[^}]*max-height: min\(46vh, 420px\)'
+        $css | Should -Match '(?s)\.thinking\[data-sealed="1"\] \.disclosure-body \{[^}]*overflow: auto'
+        # The shared rule must not put either back for both states.
+        $css | Should -Not -Match '(?s)\.thinking \.disclosure-body \{[^}]*overflow: auto'
+        $css | Should -Not -Match '(?s)\.thinking \.disclosure-body \{[^}]*max-height:'
+    }
+
+    It 'breaks the answer at each run of thinking instead of letting either pile up' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # A run of thinking belongs BELOW the answer text that preceded it, so the
+        # reasoning frame is what closes the answer body and moves what is in it
+        # into the flow - the delta is not where this decision can be made.
+        ([regex]::Matches($js, [regex]::Escape("if (raw) { flushAnswerChunk(wrap, raw); raw = ''; think = ''; }"))).Count |
+            Should -Be 2 -Because 'send and regenerate/edit both stream reasoning'
+        # The answer starting still ends the run that led to it, or the trace stays
+        # open above the answer it was reasoning towards.
+        ([regex]::Matches($js, [regex]::Escape("if (t && think) { sealThinking(wrap); think = ''; }"))).Count |
+            Should -Be 2 -Because 'send and regenerate/edit both stream answer text'
+        $js | Should -Match '(?s)function flushAnswerChunk\(wrap, text\).{0,700}?sealThinking\(wrap\);'
+        $js | Should -Match '(?s)function flushAnswerChunk\(wrap, text\).{0,700}?wrap\._refs\.content\.innerHTML = '''';'
+        # The chunk left in the answer body when the Turn ends is never flushed:
+        # finalizeAssistant replaces it with the complete answer, which is the one
+        # full summary the reader gets at the end.
+        $js | Should -Match '(?s)function finalizeAssistant.{0,600}?r\.content\.innerHTML = renderMarkdown\(m\.text \|\| ''''\);'
+        # And the flow already carries that prose in order, so repeating it in a
+        # Steps disclosure would print the same text twice.
+        $js | Should -Match ([regex]::Escape("renderSteps(r.steps, r.flow && r.flow.querySelector('.flow-answer') ? null : m.narration);"))
+        $css | Should -Match '(?s)\.turn-flow \.flow-answer \{'
+    }
+
+    It 'folds each run of thinking away, and lets it be opened again' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # A flushed answer chunk is the last child of the flow, so the next run of
+        # thinking cannot append to the box before it.
+        $js | Should -Match ([regex]::Escape("flow.querySelector('.thinking:last-child')"))
+        $js | Should -Match '(?s)function renderThinking.{0,900}?if \(!box \|\| box\.dataset\.sealed === ''1''\)'
+        # The Turn ending seals whatever is left, on the answer path and the error
+        # path both - otherwise a failed Turn leaves a box streaming open forever.
+        $js | Should -Match '(?s)function finalizeAssistant.{0,1000}?sealThinking\(wrap\);'
+        $js | Should -Match '(?s)function showInlineError\(wrap, message\).{0,400}?sealThinking\(wrap\);'
+        $js | Should -Match '(?s)function sealThinking\(wrap\).{0,800}?box\.open = false;'
+        # Folding it away is only acceptable because it opens again, and a box the
+        # reader opened must not be yanked shut under them when its run ends.
+        $js | Should -Match ([regex]::Escape("box.dataset.touched = '1';"))
+        $js | Should -Match '(?s)function sealThinking\(wrap\).{0,800}?if \(box\.dataset\.touched !== ''1''\)'
+        $css | Should -Match '(?s)\.thinking>summary::before \{'
+        $css | Should -Match '(?s)\.thinking\[open\]>summary::before \{[^}]*rotate'
+        # A collapsed box has to say what it holds, or it is an unlabelled line.
+        $js | Should -Match 'function thoughtLabel\(startedAt\)'
+        $js | Should -Match ([regex]::Escape('`Thought for ${secs}s`'))
+        # A thread rebuilt from storage has the whole trace as one string and no
+        # flow to order it by; overwriting the live one with it would destroy the
+        # account of the Turn that just ran.
+        $js | Should -Match '(?s)function renderStoredThinking\(wrap, reasoning\).{0,500}?flow\.dataset\.live === ''1''\) return;'
+        $js | Should -Not -Match ([regex]::Escape("wrap.querySelector('.thinking .disclosure-body').textContent = m.reasoning"))
     }
 
     It 'keeps the live thinking readable once the answer has scrolled it away' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # The Thinking box sits above the answer, so a long answer pushes it out of
-        # the viewport and only the spinner is left - which cannot tell "still
-        # working" from "hung". The newest trace line is mirrored beside it.
+        # A long Turn pushes the newest box past the fold and only the spinner is
+        # left - which cannot tell "still working" from "hung". The newest trace
+        # line is mirrored beside it.
         $js | Should -Match ([regex]::Escape('setActivityStatus(lastTraceLine(text))'))
         $js | Should -Match ([regex]::Escape('id="activity-status"'))
         $js | Should -Match ([regex]::Escape('$(''activity-status'').onclick = revealThinking'))
-        $js | Should -Match '(?s)function revealThinking\(\).{0,400}?scrollIntoView'
+        $js | Should -Match '(?s)function revealThinking\(\).{0,500}?scrollIntoView'
+        # It reaches the newest box inside the flow, not the flow itself.
+        $js | Should -Match ([regex]::Escape("'.msg-assistant .turn-flow:not(.hidden) .thinking'"))
         # Scanning the whole trace once per streamed frame would cost more than the
         # repaint it decorates.
         $js | Should -Match ([regex]::Escape('text.slice(-600)'))
@@ -242,9 +321,32 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         # Clicking the status line means "let me read this", so it stops following
         # outright - the scroll it starts is smooth, and the next streamed frame
         # would otherwise win the race back to the bottom.
-        $js | Should -Match '(?s)function revealThinking\(\).{0,400}?threadFollow = false;'
+        $js | Should -Match '(?s)function revealThinking\(\).{0,500}?threadFollow = false;'
         [regex]::Matches($js, 'renderMarkdown\(raw\);\s*followThread\(\);').Count | Should -Be 2
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
+    }
+
+    It 'follows the answer all the way to the end of a Turn' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        # The follow re-targets the bottom on every streamed frame, and the CSS asks
+        # for smooth scrolling - an animation restarted that often never lands, so
+        # the newest content sits below the fold with the bar apparently at the end.
+        $js | Should -Match ([regex]::Escape("t.scrollTo({ top: t.scrollHeight, behavior: 'instant' });"))
+        $js | Should -Not -Match ([regex]::Escape('t.scrollTop = t.scrollHeight;'))
+        # revealThinking is the one scroll that should ease, and it asks for it.
+        $js | Should -Match ([regex]::Escape("scrollIntoView({ block: 'nearest', behavior: 'smooth' })"))
+        # refreshCurrentConversation fills in checkpoint dividers and auto-compaction
+        # rebuilds the thread, both after `done` has already followed - so the last
+        # follow has to come after everything the finally block does.
+        $js | Should -Match '(?s)followThread\(\);\s*\r?\n\s*// Drain one queued/steered message'
+        $js | Should -Match '(?s)if \(explorerOpen\(\)\) refreshExplorer\(\);\s*\r?\n\s*//[^\n]*\r?\n\s*//[^\n]*\r?\n\s*followThread\(\);\s*\r?\n\s*\}'
+        # A frame scheduled by the last delta can land after `done` painted the
+        # final answer, and `raw` is only the chunk since the last run of thinking -
+        # so repainting it then would truncate the answer the reader has.
+        [regex]::Matches($js, ([regex]::Escape('if (state.stopRequested || turnStopped || turnCompleted) return;'))).Count |
+            Should -Be 2 -Because 'both streaming runners coalesce their paints'
+        $js | Should -Not -Match ([regex]::Escape('if (state.stopRequested || turnStopped) return;'))
     }
 
     It 'shows what a Turn is touching while it is still touching it' {
@@ -320,10 +422,10 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         # replaces that body with the final answer, so without a home of its own the
         # whole account of how the Turn was worked is destroyed the moment it ends.
         $js | Should -Match '(?s)function buildAssistantEl.{0,1200}const steps = el\(''disclosure steps hidden'', ''details''\)'
-        $js | Should -Match ([regex]::Escape('wrap._refs = { content, thinking, steps,'))
+        $js | Should -Match ([regex]::Escape('wrap._refs = { content, flow, steps,'))
         # Rendered from the persisted Message, so it survives done, stopped, and a
         # rebuild of the thread from storage.
-        $js | Should -Match '(?s)function finalizeAssistant.{0,600}?renderSteps\(r\.steps, m\.narration\)'
+        $js | Should -Match '(?s)function finalizeAssistant.{0,900}?renderSteps\(r\.steps,'
         $js | Should -Match 'function renderSteps\(node, narration\)'
         # Absent rather than empty when the Turn had no intermediate narration.
         $js | Should -Match '(?s)function renderSteps.{0,300}?if \(!blocks\.length\) \{ node\.classList\.add\(''hidden''\); return; \}'
@@ -895,7 +997,10 @@ assert.equal(html.includes('<p></p>'), false, 'an empty paragraph means a line w
         $app | Should -Match 'estimateScope'
         ([regex]::Matches($app, 'let\s+turnStopped\s*=\s*false;')).Count | Should -Be 2
         ([regex]::Matches($app, 'turnStopped\s*=\s*true;')).Count | Should -Be 4
-        ([regex]::Matches($app, 'renderScheduled\s*=\s*false;\s*if\s*\(state\.stopRequested\s*\|\|\s*turnStopped\)\s*return;')).Count |
+        # A coalesced paint scheduled by the last delta must not repaint a Turn that
+        # has since stopped (nor one that has since finished - see the scroll guard).
+        ([regex]::Matches($app, 'renderScheduled\s*=\s*false;')).Count | Should -Be 4
+        ([regex]::Matches($app, 'if \(state\.stopRequested \|\| turnStopped \|\| turnCompleted\) return;')).Count |
             Should -Be 2
     }
 
