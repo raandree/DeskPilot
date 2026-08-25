@@ -10,6 +10,57 @@ source: repository evidence
 
 ## Current focus
 
+**Attachments are chips on the message, not a sentence inside it (2026-08-25,
+`ai/attachment-chips`).** Asked from two screenshots — DeskPilot's own bubble
+opening with "I attached 2 file(s) in the Workspace Folder: …" beside GitHub
+Copilot Chat's chips above the message — as "DP attaches files like on
+screenshot 1 to the chat. Can we rather do that like GHCP is doing it in
+screenshot 2?"
+
+The note was composed in `send()` and prepended to the prompt, so it was the
+user's message: read back in their own bubble, used as the conversation title
+(`Invoke-DpTurn` titles from the first 60 characters of the prompt), replayed on
+regenerate, and handed to them again in the edit box. The paths now travel
+beside the prompt. `POST /messages` accepts `attachments` (paths from
+`/api/uploads`), records them on the user Message as `{ name, path }`, and the
+new pure `Get-DpAttachmentNote` composes the model-facing line that
+`Invoke-DpTurn` prepends to the **Engine** prompt only.
+
+Six decisions. **(1) The Message keeps the user's words; `$enginePrompt` is a
+separate value.** Everything the user sees or edits reads `text`; only
+`New-DpTurnParameter`, the fallback history and the stopped-Turn cost estimate
+read `$enginePrompt`, so the three places the note actually has to reach get it
+and no display path does. **(2) The Host Server decides the form of the path,
+not the browser.** It knows whether the file is inside the Workspace Folder, so
+a file in the Project is named relative to it (the Engine's working directory,
+which is what its File Tool resolves) and anything else — an upload made with no
+Project selected — by its absolute path; the client used to guess from
+`state.settings.workspaceFolder`, which is right about the *upload directory*
+and says nothing about a given file. **(3) The same upload-store gate as Vision
+input.** `Resolve-DpAttachmentPath -AnyContentType` drops only the `image/*`
+requirement, so a crafted Message still cannot nominate an arbitrary local file
+for the agent to read — the paths reaching the model are exactly the ones this
+launch wrote. **(4) A Turn may be attachments and nothing else.** Dropping files
+and pressing Send is a request about those files, so the empty-prompt check now
+fires only when there is neither; `$Prompt` gained `[AllowEmptyString()]`, the
+bubble is omitted rather than rendered empty, and the title falls back to the
+file names. **(5) Re-runs carry the files.** With the note out of the text, a
+regenerate or an edit would silently drop them, so both routes read
+`attachments` off the stored Message **before** `Reset-DpConversationForRerun`
+truncates it. **(6) The chips are built from the Message, not from
+`state.pendingAttachments`,** so they survive a reload, an edit and a
+regenerate; `textContent`/`title` only, never `innerHTML`.
+
+Verified: full Sampler `build, test` **1308/1308**, 0 failed, 9 tasks, 0 errors,
+0 warnings; `AttachmentRoutes` re-run **19/19** after the last handler edit;
+`node --check` clean on `app.js`; PSScriptAnalyzer clean on the changed files
+(the two `PSUseBOMForUnicodeEncodedFile` warnings are pre-existing). Red proven
+against `HEAD` rather than assumed: `HEAD:app.js` still contains the injected
+note the new assertions forbid, `HEAD`'s route handler does not read
+`attachments`, and `Get-DpAttachmentNote` does not exist there at all.
+
+## Previous focus — an image is shown as a picture
+
 **An image is shown as a picture instead of "there is no text to compare"
 (2026-08-24, uncommitted on `main`).** Asked from a screenshot of the Diff
 viewer over four untracked `.jpg` files and four `.msg` files: "of course we

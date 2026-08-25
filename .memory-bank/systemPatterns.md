@@ -35,6 +35,22 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Context the model needs travels beside the user's message, never inside
+  it.** Anything DeskPilot has to tell the Engine about a Turn — the files
+  attached to it, and by the same argument anything added later — is composed by
+  the Host Server and prepended to a separate `$enginePrompt`; the stored
+  Message keeps the user's own words plus structured metadata the UI renders
+  (Attachments become chips above the bubble). Writing it into the prompt makes
+  it the user's message: it is read back in their bubble, becomes the
+  conversation title, is replayed by regenerate, and is handed to them in the
+  edit box. Only the Engine call, the fallback history and the stopped-Turn cost
+  estimate may read the composed form. The Host Server also decides the *form*
+  of a path — relative to the Workspace Folder when the file is inside it, else
+  absolute — because the browser knows the upload directory, not where a given
+  file landed. Every such path goes through the upload-store gate
+  (`Resolve-DpAttachmentPath`), so a crafted Message cannot nominate an
+  arbitrary local file; and any route that re-runs a Message must read its
+  metadata *before* `Reset-DpConversationForRerun` truncates it.
 - **Serving user content back into the app's own origin: the bytes decide the
   type, and script-capable formats are excluded rather than filtered.**
   `/api/fs/image` (`Get-DpFileImage` + `Get-DpImageMediaType`) confines the path

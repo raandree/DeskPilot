@@ -2542,8 +2542,69 @@ Describe 'Resolve-DpAttachmentPath' {
         { Resolve-DpAttachmentPath -Path $attachmentPath -AttachmentStore $attachmentStore } | Should -Throw '*is not an image*'
     }
 
+    It 'accepts a recorded non-image Attachment for the File Tool' {
+        # The same upload-store gate, without the Vision requirement: a .docx the
+        # user attached is not a Vision input but is a file the agent may read.
+        $attachmentStore[[System.IO.Path]::GetFullPath($attachmentPath)] = 'text/plain'
+
+        Resolve-DpAttachmentPath -Path $attachmentPath -AttachmentStore $attachmentStore -AnyContentType |
+            Should -Be ([System.IO.Path]::GetFullPath($attachmentPath))
+    }
+
+    It 'still refuses an unrecorded file when any content type is allowed' {
+        $unregisteredPath = Join-Path $attachmentRoot 'unregistered.txt'
+        Set-Content -LiteralPath $unregisteredPath -Value 'unregistered'
+
+        { Resolve-DpAttachmentPath -Path $unregisteredPath -AttachmentStore $attachmentStore -AnyContentType } |
+            Should -Throw '*not a current upload*'
+    }
+
     It 'rejects a relative Attachment path' {
         { Resolve-DpAttachmentPath -Path 'pasted-image.png' -AttachmentStore $attachmentStore } | Should -Throw '*must be absolute*'
+    }
+}
+
+Describe 'Get-DpAttachmentNote' {
+    It 'says nothing when nothing is attached' {
+        Get-DpAttachmentNote -Attachment @() -WorkspaceFolder 'C:\projects\demo' | Should -BeNullOrEmpty
+    }
+
+    It 'names a file in the Workspace Folder relative to it' {
+        # That folder is the Engine working directory, so the relative name is what
+        # the File Tool resolves.
+        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = 'C:\projects\demo\notes.docx' }) -WorkspaceFolder 'C:\projects\demo'
+
+        $note | Should -Match 'File attached to this message: notes\.docx\.'
+        $note | Should -Not -Match 'C:'
+    }
+
+    It 'names a file outside the Workspace Folder by its absolute path' {
+        # An upload made with no Project selected lands in the data directory; a
+        # bare file name could not be found from the working directory.
+        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = 'C:\data\uploads\notes.docx' }) -WorkspaceFolder 'C:\projects\demo'
+
+        $note | Should -Match ([regex]::Escape('C:\data\uploads\notes.docx'))
+    }
+
+    It 'names every file, and reads as a plural' {
+        $note = Get-DpAttachmentNote -Attachment @(
+            @{ name = 'a.msg'; path = 'C:\projects\demo\a.msg' }
+            @{ name = 'b.jpg'; path = 'C:\projects\demo\sub\b.jpg' }
+        ) -WorkspaceFolder 'C:\projects\demo\'
+
+        $note | Should -Match 'Files attached to this message: a\.msg, sub\\b\.jpg\.'
+    }
+
+    It 'reads a record that has been through the conversation store' {
+        # A re-run carries the Attachments of a stored Message, which are
+        # PSCustomObjects rather than the hashtables the Turn recorded.
+        $stored = @{ name = 'notes.docx'; path = 'C:\projects\demo\notes.docx' } | ConvertTo-Json | ConvertFrom-Json
+
+        Get-DpAttachmentNote -Attachment @($stored) -WorkspaceFolder 'C:\projects\demo' | Should -Match 'notes\.docx'
+    }
+
+    It 'skips a record with no path rather than naming an empty file' {
+        Get-DpAttachmentNote -Attachment @(@{ name = 'ghost.txt' }) -WorkspaceFolder 'C:\projects\demo' | Should -BeNullOrEmpty
     }
 }
 

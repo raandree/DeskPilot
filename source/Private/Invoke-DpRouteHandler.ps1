@@ -1108,8 +1108,30 @@ function Invoke-DpRouteHandler {
                 return
             }
             $prompt = if ($Body -and $Body.PSObject.Properties['prompt']) { [string]$Body.prompt } else { '' }
-            if ([string]::IsNullOrWhiteSpace($prompt)) {
-                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_prompt'; message = 'A prompt is required.' } }
+
+            # Attachments are read before the empty-prompt check: dropping files on
+            # the composer and pressing Send without typing is a Turn, not a
+            # mistake - the files are what the user is asking about. They go
+            # through the same upload-store gate as Vision input, so a crafted
+            # Message still cannot nominate an arbitrary local file for the agent.
+            $attachments = @()
+            if ($Body -and $Body.PSObject.Properties['attachments']) {
+                $requestedAttachmentPaths = @($Body.attachments | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+                if ($requestedAttachmentPaths.Count -gt 0) {
+                    try {
+                        $attachments = @(Resolve-DpAttachmentPath -Path $requestedAttachmentPaths -AttachmentStore $state.Attachments -AnyContentType |
+                                ForEach-Object { @{ name = [System.IO.Path]::GetFileName($_); path = $_ } })
+                    }
+                    catch {
+                        $attachmentError = $_
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'invalid_attachment'; message = $attachmentError.Exception.Message } }
+                        return
+                    }
+                }
+            }
+
+            if ([string]::IsNullOrWhiteSpace($prompt) -and $attachments.Count -eq 0) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_prompt'; message = 'A prompt or an Attachment is required.' } }
                 return
             }
 
@@ -1136,7 +1158,7 @@ function Invoke-DpRouteHandler {
                 }
             }
 
-            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Image $imagePaths -Stream $Stream
+            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Image $imagePaths -Attachment $attachments -Stream $Stream
         }
         'regenerateTurn' {
             $conversation = $state.Conversations[$RouteParams.id]
@@ -1158,12 +1180,16 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'nothing_to_regenerate'; message = 'There is no user message to regenerate.' } }
                 return
             }
+            # An Attachment belongs to the Message rather than to its text, so a
+            # re-run has to carry it forward or the model loses the files the
+            # answer was about. Read before the truncation removes the Message.
+            $priorAttachments = @(Get-DpPropertyValue -InputObject $lastUser -Name @('attachments') -Default @() | Where-Object { $_ })
             $prompt = Reset-DpConversationForRerun -Conversation $conversation -FromMessageId ([string]$lastUser.id)
-            if ([string]::IsNullOrWhiteSpace($prompt)) {
+            if ([string]::IsNullOrWhiteSpace($prompt) -and $priorAttachments.Count -eq 0) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'nothing_to_regenerate'; message = 'There is no user message to regenerate.' } }
                 return
             }
-            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
+            Invoke-DpTurn -Conversation $conversation -Prompt ([string]$prompt) -Attachment $priorAttachments -Stream $Stream
         }
         'editTurn' {
             $conversation = $state.Conversations[$RouteParams.id]
@@ -1186,12 +1212,14 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_request'; message = 'A messageId and a non-empty prompt are required.' } }
                 return
             }
+            $edited = @($conversation.messages | Where-Object { [string]$_.id -eq $messageId }) | Select-Object -First 1
+            $priorAttachments = @(Get-DpPropertyValue -InputObject $edited -Name @('attachments') -Default @() | Where-Object { $_ })
             $removed = Reset-DpConversationForRerun -Conversation $conversation -FromMessageId $messageId
             if ($null -eq $removed) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'not_a_user_message'; message = 'That message cannot be edited (not found or not a user message).' } }
                 return
             }
-            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Stream $Stream
+            Invoke-DpTurn -Conversation $conversation -Prompt $prompt -Attachment $priorAttachments -Stream $Stream
         }
         'restoreCheckpoint' {
             $conversation = $state.Conversations[$RouteParams.id]

@@ -1349,9 +1349,27 @@ async function restoreCheckpoint(m) {
 function buildUserEl(m) {
     const wrap = el('msg msg-user');
     if (m && m.id) wrap.dataset.id = m.id;
-    const bubble = el('bubble');
-    bubble.textContent = m.text;
-    wrap.appendChild(bubble);
+    // What was attached, above the bubble and out of the message text - naming the
+    // files in the prompt made the user read back a sentence they never wrote, and
+    // it became the conversation title.
+    const files = asArray(m && m.attachments).filter((f) => f && (f.name || f.path));
+    if (files.length) {
+        const row = el('msg-attachments');
+        for (const f of files) {
+            const chip = el('msg-attachment-chip', 'span');
+            chip.title = f.path || f.name;
+            chip.textContent = f.name || f.path;
+            row.appendChild(chip);
+        }
+        wrap.appendChild(row);
+    }
+    // A Turn can be Attachments and nothing else; an empty bubble would be a
+    // stray box under the chips.
+    if (m && m.text) {
+        const bubble = el('bubble');
+        bubble.textContent = m.text;
+        wrap.appendChild(bubble);
+    }
     if (m.dispatch === 'steered') {
         const badge = el('steered-badge');
         badge.textContent = 'Steered mid-turn';
@@ -2504,27 +2522,22 @@ async function send() {
 
     recordPrompt(userPrompt);
 
-    let prompt = userPrompt;
     let images = [];
+    let attachments = [];
     const attached = state.pendingAttachments;
-    if (state.pendingAttachments.length) {
-        const count = state.pendingAttachments.length;
-        const hasWorkspace = !!(state.settings && state.settings.workspaceFolder);
-        images = getImagePaths(state.pendingAttachments);
-        // With a Project active the agent's working directory is the Workspace
-        // Folder, so relative names suffice; with no Project the uploads live
-        // elsewhere, so name their absolute paths instead.
-        const note = hasWorkspace
-            ? `I attached ${count} file(s) in the Workspace Folder: ${state.pendingAttachments.map(f => f.savedAs).join(', ')}. Read them with your file tool when relevant.`
-            : `I attached ${count} file(s) at these paths: ${state.pendingAttachments.map(f => f.path).join(', ')}. Read them with your file tool when relevant.`;
-        prompt = prompt ? `${note}\n\n${prompt}` : note;
+    if (attached.length) {
+        images = getImagePaths(attached);
+        // The paths travel beside the prompt, not inside it: the Host Server names
+        // them to the model and the bubble shows them as chips, so what the user
+        // typed stays what the user typed.
+        attachments = attached.map((f) => ({ name: f.savedAs, path: f.path }));
         state.pendingAttachments = [];
         renderAttachments();
     }
 
     promptEl.value = '';
     autoGrow(promptEl);
-    const started = await _runTurn({ prompt, displayText: prompt, images });
+    const started = await _runTurn({ prompt: userPrompt, displayText: userPrompt, images, attachments });
     if (!started) {
         // A Turn the Host Server refused never took the prompt with it — an
         // oversized image Attachment is the reachable case. Hand back what was
@@ -2540,14 +2553,14 @@ async function send() {
 // Core Turn runner. `prompt` is what the server sees; `displayText` is what the
 // user bubble shows; `dispatch` (optional) is 'queued' or 'steered' and renders
 // a small badge below the bubble so the user sees how the message was sent.
-async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
+async function _runTurn({ prompt, displayText, dispatch, images = [], attachments = [] }) {
     const promptEl = $('prompt');
     setSendEnabled(false);
 
     // optimistic user message
     const empty = $('thread').querySelector('.empty-state');
     if (empty) $('thread').innerHTML = '';
-    const userEl = buildUserEl({ text: displayText, dispatch });
+    const userEl = buildUserEl({ text: displayText, dispatch, attachments });
     $('thread').appendChild(userEl);
 
     const wrap = buildAssistantEl({ id: 'pending' });
@@ -2582,6 +2595,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [] }) {
     try {
         const messageBody = { prompt };
         if (images.length) messageBody.images = images;
+        if (attachments.length) messageBody.attachments = attachments.map((a) => a.path);
         await streamPost('/api/conversations/' + conversationId + '/messages', messageBody, {
             start: (d) => { turnStarted = true; if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
@@ -7362,7 +7376,7 @@ function startEditMessage(wrap, m) {
         const thread = $('thread');
         let node = wrap;
         while (node) { const nx = node.nextElementSibling; node.remove(); node = nx; }
-        thread.appendChild(buildUserEl({ id: m.id, text: next }));
+        thread.appendChild(buildUserEl({ id: m.id, text: next, attachments: m.attachments }));
         await _streamRerun({ endpoint: '/edit', body: { messageId: m.id, prompt: next } });
     };
 }

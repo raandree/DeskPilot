@@ -90,6 +90,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Attachments are shown as chips on your message, not typed into it.**
+  Attaching files used to write a sentence into the prompt on your behalf — "I
+  attached 2 file(s) in the Workspace Folder: …" — which you then read back in
+  your own bubble, saw again in the conversation title, and carried along every
+  time you edited or regenerated the Turn. The files now travel beside the
+  message the way GitHub Copilot Chat shows them: a chip per file above the
+  bubble, hover for the full path, and your text stays exactly what you typed.
+  The agent is still told what is attached and where to find it; DeskPilot says
+  it rather than putting the words in your mouth, naming a file inside the
+  Project relative to it and anything else by its absolute path. Attachments now
+  survive a reload, an edit and a regenerate, a message can be nothing but
+  attachments, and every attached path goes through the same upload check that
+  already guarded images — so a crafted request still cannot point the agent at
+  an arbitrary local file.
+
 - **A Turn is now laid out in the order it happened, with the answer last.** The
   reasoning trace used to be printed as one block above the reply, so the answer
   you were waiting for was buried under thousands of lines explaining it, and the

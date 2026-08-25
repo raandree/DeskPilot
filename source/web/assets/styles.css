@@ -993,6 +993,37 @@ button.tree-row {
     word-wrap: break-word;
 }
 
+/* What the user attached, shown as chips above their bubble rather than named
+   in the message text. */
+.msg-user .msg-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.msg-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 260px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    border-radius: var(--radius-sm);
+    padding: 3px 9px;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.msg-attachment-chip::before {
+    content: '📎';
+    font-size: 11px;
+}
+
 .msg-assistant .role {
     display: flex;
     align-items: center;

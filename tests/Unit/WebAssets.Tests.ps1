@@ -129,7 +129,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         # The optimistic bubble in _runTurn carries no id until the start frame
         # lands, so gating the whole action row on one hid copy for the whole
         # Turn - on the very prompt the user is most likely to want back.
-        $js | Should -Match ([regex]::Escape('const userEl = buildUserEl({ text: displayText, dispatch });'))
+        $js | Should -Match ([regex]::Escape('const userEl = buildUserEl({ text: displayText, dispatch, attachments });'))
         $js | Should -Not -Match ([regex]::Escape('if (m && m.id && m.text) {'))
         # Edit-and-resend re-runs a stored message, so it stays gated on the id.
         $js | Should -Match '(?s)function buildUserEl.{0,2000}if \(m\.id\) \{.{0,400}Edit & resend'
@@ -806,6 +806,23 @@ assert.equal(hasAnimationMarker('image/png', null), false);
         # Only the server's own start frame may count as started.
         $js | Should -Match 'start: \(d\) => \{ turnStarted = true;'
         $js | Should -Match '(?s)flushDispatchQueue\(\);.{0,120}return turnStarted;'
+    }
+
+    It 'shows Attachments as chips on the bubble instead of writing them into the prompt' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # The note used to be composed here and prepended to what the user typed,
+        # so they read back a sentence they never wrote - and it became the
+        # conversation title. The Host Server names the files to the model now.
+        $js | Should -Not -Match 'I attached \$\{count\}'
+        $js | Should -Not -Match 'Read them with your file tool'
+        # They travel beside the prompt instead.
+        $js | Should -Match '(?s)const started = await _runTurn\(\{ prompt: userPrompt, displayText: userPrompt, images, attachments \}\)'
+        $js | Should -Match 'messageBody\.attachments = attachments\.map\('
+        # And are rendered from the Message, so a reload shows them too.
+        $js | Should -Match '(?s)function buildUserEl\(m\).{0,700}msg-attachment-chip'
+        $css | Should -Match ([regex]::Escape('.msg-attachment-chip'))
     }
 
     It 'keeps the device code and link pinned while the sign-in poll runs' {

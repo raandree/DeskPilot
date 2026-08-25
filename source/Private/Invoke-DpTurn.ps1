@@ -12,9 +12,15 @@ function Invoke-DpTurn {
     .PARAMETER Conversation
         The Conversation hashtable to run the Turn against.
     .PARAMETER Prompt
-        The user prompt.
+        The user prompt. May be empty when the Turn carries Attachments and
+        nothing else.
     .PARAMETER Image
         Paths to image Attachments for the Engine's native Vision input.
+    .PARAMETER Attachment
+        The files the user attached to this Turn ({ name, path } records). They
+        are recorded on the user Message so the UI can show them as chips, and
+        named to the model through Get-DpAttachmentNote - never by editing the
+        user's own message text.
     .PARAMETER Stream
         The network stream to write SSE frames to.
     #>
@@ -24,10 +30,14 @@ function Invoke-DpTurn {
         [hashtable]$Conversation,
 
         [Parameter(Mandatory)]
+        [AllowEmptyString()]
         [string]$Prompt,
 
         [AllowEmptyCollection()]
         [string[]]$Image = @(),
+
+        [AllowEmptyCollection()]
+        [object[]]$Attachment = @(),
 
         [Parameter(Mandatory)]
         [System.IO.Stream]$Stream
@@ -47,6 +57,14 @@ function Invoke-DpTurn {
     $userPromptBridge = $script:DeskPilot.Engine.UserPromptBridge
     $engineUsageBefore = $null
     $stoppedUsageEstimate = $null
+
+    # What the Engine is sent is not what the user typed: an Attachment is named
+    # in a note in front of the prompt, while the Message keeps the user's own
+    # words and carries the files as metadata the UI renders as chips.
+    $attachmentNote = Get-DpAttachmentNote -Attachment @($Attachment) -WorkspaceFolder ([string]$settings.workspaceFolder)
+    $enginePrompt = if (-not $attachmentNote) { $Prompt }
+    elseif ([string]::IsNullOrWhiteSpace($Prompt)) { $attachmentNote }
+    else { "$attachmentNote`n`n$Prompt" }
 
     # Per-Turn Task List state. This is a fresh function-local on every Turn, so one
     # Turn's list never bleeds into the next. It holds the latest list streamed live
@@ -333,12 +351,19 @@ function Invoke-DpTurn {
             text       = $Prompt
             createdUtc = [DateTime]::UtcNow.ToString('o')
         }
+        if (@($Attachment).Count -gt 0) { $userMessage.attachments = @($Attachment) }
         $Conversation.messages.Add($userMessage)
         $Conversation.updatedUtc = $userMessage.createdUtc
         if ($Conversation.title -eq 'New conversation') {
-            $trimmed = $Prompt.Substring(0, [Math]::Min(60, $Prompt.Length))
-            if ($Prompt.Length -gt 60) { $trimmed += '…' }
-            $Conversation.title = $trimmed
+            # A Turn that is nothing but Attachments has no words to be titled
+            # after, so the files name it rather than leaving it 'New conversation'.
+            $titleSource = if (-not [string]::IsNullOrWhiteSpace($Prompt)) { $Prompt }
+            else { @($Attachment | ForEach-Object { [string](Get-DpPropertyValue -InputObject $_ -Name @('name') -Default '') } | Where-Object { $_ }) -join ', ' }
+            if (-not [string]::IsNullOrWhiteSpace($titleSource)) {
+                $trimmed = $titleSource.Substring(0, [Math]::Min(60, $titleSource.Length))
+                if ($titleSource.Length -gt 60) { $trimmed += '…' }
+                $Conversation.title = $trimmed
+            }
         }
 
         $writer.Write((ConvertTo-DpSseFrame -EventName 'start' -Data @{ messageId = $assistantId; userMessageId = $userMessage.id }))
@@ -360,7 +385,7 @@ function Invoke-DpTurn {
                 showThinking    = [bool]$settings.showThinking
                 maxIterations   = [int]$settings.maxToolIterations
                 promptChars     = [int]$Prompt.Length
-                attachments     = [int]@($Image).Count
+                attachments     = [int][Math]::Max(@($Image).Count, @($Attachment).Count)
                 hasProject      = [bool]$settings.workspaceFolder
                 toolResults     = 'not-observable'
             }
@@ -437,7 +462,7 @@ function Invoke-DpTurn {
             if ($modelEntry) { $modelEfforts = @($modelEntry.reasoningEfforts) }
         }
 
-        $params = New-DpTurnParameter -Prompt $Prompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported) -McpContext $mcpContext
+        $params = New-DpTurnParameter -Prompt $enginePrompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported) -McpContext $mcpContext
         if ($settings.showThinking) { $params.ShowThinking = $true }
 
         # A hard pipeline stop can interrupt the Engine before its normal result
@@ -581,7 +606,7 @@ function Invoke-DpTurn {
                     $estimateTextParams = @{
                         TurnParameter = $params
                         History       = @($Conversation.history)
-                        Prompt        = $Prompt
+                        Prompt        = $enginePrompt
                     }
                     $estimateText = Get-DpStoppedTurnEstimateText @estimateTextParams
                     $estimateParams = @{ Text = $estimateText }
@@ -709,7 +734,7 @@ function Invoke-DpTurn {
         }
         else {
             $fallback = @($Conversation.history)
-            $fallback += @{ role = 'user'; content = $Prompt }
+            $fallback += @{ role = 'user'; content = $enginePrompt }
             $fallback += @{ role = 'assistant'; content = $mapped.content }
             $Conversation.history = $fallback
         }

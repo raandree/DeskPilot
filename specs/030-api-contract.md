@@ -744,13 +744,20 @@ literal `read-all` path matches ahead of the `{id}` wildcard.
 
 ### `POST /api/conversations/{id}/messages`
 
-Body: `{ "prompt": "…", "images"?: ["C:/path/uploaded-image.png"] }`. Response
+Body: `{ "prompt": "…", "images"?: ["C:/path/uploaded-image.png"],
+"attachments"?: ["C:/path/uploaded-notes.docx"] }`. Response
 is `text/event-stream`. `images` contains paths returned by `POST /api/uploads`
 during the current Host Server launch. Each path must be absolute, still exist,
 and be registered with an `image/*` content type; a Project change after upload
 does not invalidate it. Valid paths are passed to the Engine's native `-Image`
 parameter. An unregistered, relative, missing, or non-image path returns
-`400 invalid_attachment`. Because the Engine inlines each image into the request
+`400 invalid_attachment`. `attachments` is every file the user attached to the
+Turn, images included, and goes through the same upload-store gate without the
+`image/*` requirement. It is recorded on the user Message as `{ name, path }`
+records so the client can render them as chips, and the Host Server — not the
+prompt — names them to the model. A Turn may therefore carry attachments and no
+prompt; only a request with neither returns `400 empty_prompt`. Because the
+Engine inlines each image into the request
 body as a base64 data URI, the set is also size-checked by
 `Get-DpVisionBudgetError` and returns `413 too_large` — naming the file and its
 actual size — when one image exceeds 3.5 MB or the set exceeds 8 MB on disk (both

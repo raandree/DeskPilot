@@ -1,17 +1,21 @@
 function Resolve-DpAttachmentPath {
     <#
     .SYNOPSIS
-        Resolves image Attachment paths recorded by the upload route.
+        Resolves Attachment paths recorded by the upload route.
     .DESCRIPTION
         Requires an absolute path recorded in the Host Server's per-launch
-        Attachment store, an image content type, and an existing file. The store
-        contains only paths successfully written by POST /api/uploads, so a
-        Project change after upload does not invalidate the Attachment and a
-        crafted Message cannot nominate an arbitrary local file.
+        Attachment store and an existing file, and by default an image content
+        type. The store contains only paths successfully written by POST
+        /api/uploads, so a Project change after upload does not invalidate the
+        Attachment and a crafted Message cannot nominate an arbitrary local file.
     .PARAMETER Path
         One or more local Attachment paths to validate.
     .PARAMETER AttachmentStore
         The per-launch map of normalized uploaded paths to content types.
+    .PARAMETER AnyContentType
+        Accept any uploaded file rather than images only. Vision input needs an
+        image; an Attachment the agent reads with its File Tool is any file the
+        user attached, and both go through this same gate.
     .OUTPUTS
         System.String
     #>
@@ -23,7 +27,9 @@ function Resolve-DpAttachmentPath {
         [string[]]$Path,
 
         [Parameter(Mandatory)]
-        [System.Collections.Generic.Dictionary[string, string]]$AttachmentStore
+        [System.Collections.Generic.Dictionary[string, string]]$AttachmentStore,
+
+        [switch]$AnyContentType
     )
 
     process {
@@ -38,7 +44,7 @@ function Resolve-DpAttachmentPath {
             if (-not $AttachmentStore.TryGetValue($fullPath, [ref]$contentType)) {
                 throw "Attachment path '$candidate' is not a current upload."
             }
-            if (-not $contentType.StartsWith('image/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            if (-not $AnyContentType -and -not $contentType.StartsWith('image/', [System.StringComparison]::OrdinalIgnoreCase)) {
                 throw "Attachment path '$candidate' is not an image."
             }
             if (-not [System.IO.File]::Exists($fullPath)) {

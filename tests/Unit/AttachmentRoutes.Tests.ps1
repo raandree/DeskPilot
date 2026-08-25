@@ -21,11 +21,15 @@ Describe 'postMessage image Attachments' -Tag 'Unit' {
         }
         $script:responseStream = [System.IO.MemoryStream]::new()
         $script:forwardedImages = @()
+        $script:forwardedAttachments = @()
+        $script:forwardedPrompt = $null
 
         Mock Invoke-DpTurn {
-            param($Conversation, $Prompt, $Stream, $Image)
-            $null = $Conversation, $Prompt, $Stream
+            param($Conversation, $Prompt, $Stream, $Image, $Attachment)
+            $null = $Conversation, $Stream
             $script:forwardedImages = @($Image)
+            $script:forwardedAttachments = @($Attachment)
+            $script:forwardedPrompt = $Prompt
         }
     }
 
@@ -60,6 +64,103 @@ Describe 'postMessage image Attachments' -Tag 'Unit' {
         $json = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
         $json.error.code | Should -Be 'invalid_attachment'
         Should -Invoke Invoke-DpTurn -Times 0 -Exactly
+    }
+
+    It 'forwards an Attachment as a Message record and leaves the prompt untouched' {
+        # The paths reach the model through the Turn, not by being written into
+        # what the user typed - which is what put a sentence nobody wrote into the
+        # bubble and into the conversation title.
+        $notesPath = Join-Path $attachmentRoot 'notes.docx'
+        Set-Content -LiteralPath $notesPath -Value 'notes'
+        $script:DeskPilot.Attachments[[System.IO.Path]::GetFullPath($notesPath)] = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        $body = [pscustomobject]@{ prompt = 'Summarise this'; attachments = @($notesPath) }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        $script:forwardedPrompt | Should -Be 'Summarise this'
+        $script:forwardedAttachments.Count | Should -Be 1
+        $script:forwardedAttachments[0].name | Should -Be 'notes.docx'
+        $script:forwardedAttachments[0].path | Should -Be ([System.IO.Path]::GetFullPath($notesPath))
+        Should -Invoke Invoke-DpTurn -Times 1 -Exactly
+    }
+
+    It 'runs a Turn that is Attachments and nothing else' {
+        # Dropping files on the composer and pressing Send without typing is a
+        # request about those files, not an empty message.
+        $notesPath = Join-Path $attachmentRoot 'report.pdf'
+        Set-Content -LiteralPath $notesPath -Value 'report'
+        $script:DeskPilot.Attachments[[System.IO.Path]::GetFullPath($notesPath)] = 'application/pdf'
+        $body = [pscustomobject]@{ prompt = ''; attachments = @($notesPath) }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        Should -Invoke Invoke-DpTurn -Times 1 -Exactly
+        $script:forwardedPrompt | Should -BeNullOrEmpty
+        $script:forwardedAttachments.Count | Should -Be 1
+    }
+
+    It 'refuses a Message with neither a prompt nor an Attachment' {
+        $body = [pscustomobject]@{ prompt = '   ' }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        $response = [System.Text.Encoding]::UTF8.GetString($script:responseStream.ToArray())
+        $response | Should -Match '^HTTP/1\.1 400 Bad Request'
+        $json = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
+        $json.error.code | Should -Be 'empty_prompt'
+        Should -Invoke Invoke-DpTurn -Times 0 -Exactly
+    }
+
+    It 'rejects an Attachment path that was not uploaded' {
+        # Without the upload-store gate a crafted Message could name any local
+        # file and have the Turn hand its path to the agent.
+        $unregisteredPath = Join-Path $TestDrive 'unregistered.docx'
+        Set-Content -LiteralPath $unregisteredPath -Value 'unregistered'
+        $body = [pscustomobject]@{ prompt = 'Summarise this'; attachments = @($unregisteredPath) }
+
+        Invoke-DpRouteHandler -Name 'postMessage' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        $response = [System.Text.Encoding]::UTF8.GetString($script:responseStream.ToArray())
+        $response | Should -Match '^HTTP/1\.1 400 Bad Request'
+        $json = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
+        $json.error.code | Should -Be 'invalid_attachment'
+        Should -Invoke Invoke-DpTurn -Times 0 -Exactly
+    }
+
+    It 'carries the Attachments of the Message it re-runs' {
+        # They belong to the Message rather than to its text, so a Regenerate that
+        # replays only the words loses the files the answer was about.
+        $conversation.messages.Add(@{
+                id          = 'm_1'
+                role        = 'user'
+                text        = 'Summarise this'
+                attachments = @(@{ name = 'notes.docx'; path = (Join-Path $attachmentRoot 'notes.docx') })
+            })
+        $conversation.messages.Add(@{ id = 'm_2'; role = 'assistant'; text = 'Done.' })
+
+        Invoke-DpRouteHandler -Name 'regenerateTurn' -RouteParams @{ id = $conversation.id } -Body ([pscustomobject]@{}) -Stream $script:responseStream
+
+        Should -Invoke Invoke-DpTurn -Times 1 -Exactly
+        $script:forwardedPrompt | Should -Be 'Summarise this'
+        $script:forwardedAttachments.Count | Should -Be 1
+        $script:forwardedAttachments[0].name | Should -Be 'notes.docx'
+    }
+
+    It 'keeps the Attachments when the Message text is edited' {
+        $conversation.messages.Add(@{
+                id          = 'm_1'
+                role        = 'user'
+                text        = 'Summarise this'
+                attachments = @(@{ name = 'notes.docx'; path = (Join-Path $attachmentRoot 'notes.docx') })
+            })
+        $body = [pscustomobject]@{ messageId = 'm_1'; prompt = 'Summarise it in German' }
+
+        Invoke-DpRouteHandler -Name 'editTurn' -RouteParams @{ id = $conversation.id } -Body $body -Stream $script:responseStream
+
+        Should -Invoke Invoke-DpTurn -Times 1 -Exactly
+        $script:forwardedPrompt | Should -Be 'Summarise it in German'
+        $script:forwardedAttachments.Count | Should -Be 1
+        $script:forwardedAttachments[0].name | Should -Be 'notes.docx'
     }
 
     It 'rejects an uploaded non-image file as a Vision input' {
