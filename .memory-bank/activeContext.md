@@ -59,6 +59,14 @@ against `HEAD` rather than assumed: `HEAD:app.js` still contains the injected
 note the new assertions forbid, `HEAD`'s route handler does not read
 `attachments`, and `Get-DpAttachmentNote` does not exist there at all.
 
+**Follow-up (2026-08-25, uncommitted on `main`):** that gate ran on Windows only.
+CI at `d88542b` failed the `Test` leg on `ubuntu-latest` and `macos-latest` with
+two `Get-DpAttachmentNote` cases, because the Describe fed the function
+`C:\projects\demo\…` literals — on POSIX a relative name whose backslashes are
+ordinary characters, so nothing lands inside the Workspace Folder. The function
+is correct and unchanged; the tests now build their root from the running
+platform. See `progress.md` and the path-literal pattern in `systemPatterns.md`.
+
 ## Previous focus — an image is shown as a picture
 
 **An image is shown as a picture instead of "there is no text to compare"

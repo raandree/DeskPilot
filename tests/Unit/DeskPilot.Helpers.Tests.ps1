@@ -2565,46 +2565,58 @@ Describe 'Resolve-DpAttachmentPath' {
 }
 
 Describe 'Get-DpAttachmentNote' {
+    BeforeAll {
+        # These tests exercise real path arithmetic against the Workspace Folder.
+        # A literal 'C:\projects\demo' is only a path on Windows - elsewhere the
+        # backslash is an ordinary filename character, so nothing lands inside the
+        # folder and every file is named absolutely. Use the running platform's
+        # own root and separator.
+        $script:noteSeparator = [System.IO.Path]::DirectorySeparatorChar
+        $script:noteRoot = if ($IsWindows) { 'C:\projects\demo' } else { '/projects/demo' }
+        $script:noteInside = [System.IO.Path]::Combine($script:noteRoot, 'notes.docx')
+        $script:noteOutside = if ($IsWindows) { 'C:\data\uploads\notes.docx' } else { '/data/uploads/notes.docx' }
+    }
+
     It 'says nothing when nothing is attached' {
-        Get-DpAttachmentNote -Attachment @() -WorkspaceFolder 'C:\projects\demo' | Should -BeNullOrEmpty
+        Get-DpAttachmentNote -Attachment @() -WorkspaceFolder $script:noteRoot | Should -BeNullOrEmpty
     }
 
     It 'names a file in the Workspace Folder relative to it' {
         # That folder is the Engine working directory, so the relative name is what
         # the File Tool resolves.
-        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = 'C:\projects\demo\notes.docx' }) -WorkspaceFolder 'C:\projects\demo'
+        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = $script:noteInside }) -WorkspaceFolder $script:noteRoot
 
         $note | Should -Match 'File attached to this message: notes\.docx\.'
-        $note | Should -Not -Match 'C:'
+        $note | Should -Not -Match ([regex]::Escape($script:noteRoot))
     }
 
     It 'names a file outside the Workspace Folder by its absolute path' {
         # An upload made with no Project selected lands in the data directory; a
         # bare file name could not be found from the working directory.
-        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = 'C:\data\uploads\notes.docx' }) -WorkspaceFolder 'C:\projects\demo'
+        $note = Get-DpAttachmentNote -Attachment @(@{ name = 'notes.docx'; path = $script:noteOutside }) -WorkspaceFolder $script:noteRoot
 
-        $note | Should -Match ([regex]::Escape('C:\data\uploads\notes.docx'))
+        $note | Should -Match ([regex]::Escape($script:noteOutside))
     }
 
     It 'names every file, and reads as a plural' {
         $note = Get-DpAttachmentNote -Attachment @(
-            @{ name = 'a.msg'; path = 'C:\projects\demo\a.msg' }
-            @{ name = 'b.jpg'; path = 'C:\projects\demo\sub\b.jpg' }
-        ) -WorkspaceFolder 'C:\projects\demo\'
+            @{ name = 'a.msg'; path = [System.IO.Path]::Combine($script:noteRoot, 'a.msg') }
+            @{ name = 'b.jpg'; path = [System.IO.Path]::Combine($script:noteRoot, 'sub', 'b.jpg') }
+        ) -WorkspaceFolder ($script:noteRoot + $script:noteSeparator)
 
-        $note | Should -Match 'Files attached to this message: a\.msg, sub\\b\.jpg\.'
+        $note | Should -Match ('Files attached to this message: a\.msg, ' + [regex]::Escape("sub$($script:noteSeparator)b.jpg") + '\.')
     }
 
     It 'reads a record that has been through the conversation store' {
         # A re-run carries the Attachments of a stored Message, which are
         # PSCustomObjects rather than the hashtables the Turn recorded.
-        $stored = @{ name = 'notes.docx'; path = 'C:\projects\demo\notes.docx' } | ConvertTo-Json | ConvertFrom-Json
+        $stored = @{ name = 'notes.docx'; path = $script:noteInside } | ConvertTo-Json | ConvertFrom-Json
 
-        Get-DpAttachmentNote -Attachment @($stored) -WorkspaceFolder 'C:\projects\demo' | Should -Match 'notes\.docx'
+        Get-DpAttachmentNote -Attachment @($stored) -WorkspaceFolder $script:noteRoot | Should -Match 'notes\.docx'
     }
 
     It 'skips a record with no path rather than naming an empty file' {
-        Get-DpAttachmentNote -Attachment @(@{ name = 'ghost.txt' }) -WorkspaceFolder 'C:\projects\demo' | Should -BeNullOrEmpty
+        Get-DpAttachmentNote -Attachment @(@{ name = 'ghost.txt' }) -WorkspaceFolder $script:noteRoot | Should -BeNullOrEmpty
     }
 }
 

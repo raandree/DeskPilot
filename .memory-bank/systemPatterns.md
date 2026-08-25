@@ -709,6 +709,21 @@ source: repository evidence
   normalises `\` to `/` and refuses `..` on every platform, so the shape guard
   still covers what the platform-specific assertion cannot.
 
+  A *pure string* function is caught by the same trap, with no provider and no
+  filesystem in sight. `Get-DpAttachmentNote` decides whether a file is inside
+  the Workspace Folder with `StartsWith($root +
+  [System.IO.Path]::DirectorySeparatorChar, OrdinalIgnoreCase)` - the house
+  boundary arithmetic, shared with `ConvertTo-DpProjectRelativePath`. Hand it
+  `C:\projects\demo\notes.docx` on POSIX and `GetFullPath` treats the whole
+  thing as a *relative* name, prefixing the runner's working directory, while
+  the separator being `/` means nothing can match the boundary: every file comes
+  back absolute and the relative-name assertion fails. Build the root from
+  `$IsWindows`, join with `[System.IO.Path]::Combine`, and assert a relative
+  result against `[System.IO.Path]::DirectorySeparatorChar` rather than a
+  literal `\`. A drive-letter leak check (`Should -Not -Match 'C:'`) is the same
+  bug wearing an assertion: escape the root instead, which reads the same on
+  every platform.
+
 - **An ellipsis in a Thinking trace is the provider's, not ours.** Claude returns
   *summarised* extended thinking, and the summariser regularly ends a block
   mid-sentence with `…`; the full chain of thought exists only as the encrypted
