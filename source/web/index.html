@@ -281,11 +281,31 @@
                     <button id="file-view-rendered" class="range-btn active" type="button">Rendered</button>
                     <button id="file-view-raw" class="range-btn" type="button">Raw</button>
                 </div>
+                <button id="file-external" class="icon-btn" type="button"
+                    title="Open with the program your computer uses for this file type"
+                    aria-label="Open outside DeskPilot">↗</button>
                 <button id="file-close" class="icon-btn" aria-label="Close">✕</button>
             </div>
         </div>
         <div id="file-meta" class="file-meta muted tiny"></div>
         <div id="file-body" class="file-body"></div>
+    </div>
+
+    <!-- Open a file with the program the operating system assigns to its type -->
+    <div id="extopen-backdrop" class="backdrop extopen-backdrop hidden"></div>
+    <div id="extopen-modal" class="modal extopen-modal hidden" role="dialog" aria-modal="true"
+        aria-labelledby="extopen-title">
+        <div class="modal-head">
+            <h2 id="extopen-title">Open outside DeskPilot?</h2>
+            <button id="extopen-close" class="icon-btn" type="button" aria-label="Close">✕</button>
+        </div>
+        <div id="extopen-body" class="extopen-body"></div>
+        <div class="modal-foot extopen-foot">
+            <label class="extopen-remember"><input type="checkbox" id="extopen-remember" /> <span
+                    id="extopen-remember-label">Keep this setting</span></label>
+            <button id="extopen-cancel" class="btn" type="button">Cancel</button>
+            <button id="extopen-confirm" class="btn btn-primary" type="button">Open</button>
+        </div>
     </div>
 
     <!-- Customizations (manage AI resources: agents, skills, instructions, prompts) -->

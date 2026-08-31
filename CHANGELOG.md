@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open a file with your own program.** A spreadsheet, a Word document, a PDF —
+  DeskPilot cannot draw any of them, and until now clicking one in the file panel
+  said so and stopped. Trying to open a file it can't show now asks whether to
+  hand it to the program your computer already uses for that file type, with a
+  **Always open .xlsx files this way** box on the question. Tick it and that type
+  opens straight away from then on; leave it and DeskPilot asks again next time.
+  Every file also has an **↗** button in the viewer, so a Markdown file or an
+  image can be opened in your own editor whenever you want it there. The types
+  you chose to keep are listed under **Settings › General**, each with a ✕ that
+  makes DeskPilot ask again, plus **Forget all**.
+
+  **A program or a script is never opened this way, and there is no way to allow
+  one.** The agent writes into the same folder the file panel lists, so a
+  `.exe`, `.bat`, `.ps1`, `.sh`, `.lnk` — or a `budget.xlsx.exe` — is refused
+  outright rather than confirmed, and cannot be remembered either; opening it
+  would be running it. Those files are still readable in DeskPilot's own viewer.
+  Backed by a new `POST /api/fs/open`, confined to the selected Project exactly
+  like the file tree, which chooses no program and passes no arguments of its
+  own.
+
 - **Image previews instead of "there is no text to compare."** A screenshot the
   agent saved, a logo you dropped into the Project, an icon that changed — the
   Diff viewer and the file viewer now *show the picture* for the formats a

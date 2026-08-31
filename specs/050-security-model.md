@@ -159,6 +159,34 @@ Tool it can aim there is worse.
 - v1 recommends pointing it at a dedicated working folder, not a home or system
   directory.
 
+## Opening a file outside DeskPilot (`POST /api/fs/open`)
+
+The file explorer can hand a file to the program the operating system associates
+with its type, which is the only way to read a spreadsheet or a Word document
+DeskPilot cannot preview. That is a launch, and the agent writes into the very
+folder the explorer lists, so the boundary is drawn by refusal rather than by
+judging content:
+
+- **An executable or script type is refused outright, not confirmed.** Every
+  extension a supported platform treats as directly runnable or as script-host
+  input (`Get-DpExecutableExtension`) is rejected with `403 executable`. There is
+  no "are you sure" that gets past it and no Setting that whitelists one, so a
+  `budget.xlsx.exe` the agent wrote cannot be launched by a click in the tree.
+  The file is still readable in DeskPilot's own viewer.
+- **The file type must be a plain `.` plus 1–16 letters or digits.** This is a
+  shape allow-list, not a deny-list: an alternate data stream (`notes.txt:run.exe`),
+  a name padded with trailing punctuation, or any other decorated suffix never
+  reaches the shell.
+- **The path is confined to the selected Project** exactly as `GET /api/fs/file`
+  and `GET /api/fs/image` are, and must resolve to an existing file.
+- **DeskPilot chooses no program and passes no arguments.** On Windows the path
+  is handed to ShellExecute; elsewhere it is a single argv entry to `open` or
+  `xdg-open`, so no shell re-splits a name containing spaces or quotes.
+- **A remembered choice is per file type and the user's own.** `externalOpenTypes`
+  is written only when the user ticks the box in the question, is validated
+  against the same refusals on write, and every entry is listed in Settings with
+  a control to remove it.
+
 ## Destructive-operations guidance
 
 Mirroring the AgenticOperatingModel's guardrail theme:

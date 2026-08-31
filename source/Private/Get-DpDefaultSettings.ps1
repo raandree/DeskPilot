@@ -64,6 +64,11 @@ function Get-DpDefaultSettings {
         turnTranscript    = $false
         preferences       = $null
         referenceFiles    = @()
+        # File types the user chose to open with their own program instead of
+        # DeskPilot's viewer (lowercase, leading dot). Empty by default: the choice
+        # is only ever remembered when the user ticks the box in the question, and
+        # an executable or script type is never accepted here.
+        externalOpenTypes = @()
         costBudgetUSD     = 0.0
         # A serious agentic task - audit a repository, run a build, diagnose what it
         # reports - routinely needs more than the Engine's own default of 25, and

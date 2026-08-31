@@ -90,6 +90,22 @@ function Merge-DpSettings {
             'referenceFiles' {
                 $merged.referenceFiles = @($value | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
             }
+            'externalOpenTypes' {
+                # A bad type throws rather than being dropped: a silently discarded
+                # entry would report the choice as remembered and then ask again.
+                $executable = Get-DpExecutableExtension
+                $types = @(foreach ($entry in @($value)) {
+                        $ext = ([string]$entry).Trim().ToLowerInvariant()
+                        if (-not $ext) { continue }
+                        if (-not $ext.StartsWith('.')) { $ext = '.' + $ext }
+                        if ($ext -notmatch '^\.[a-z0-9]{1,16}$') { throw "Invalid file type '$entry'." }
+                        if ($executable -contains $ext) { throw "DeskPilot never opens a $ext file outside itself, so it cannot be remembered." }
+                        $ext
+                    })
+                $types = @($types | Select-Object -Unique)
+                if ($types.Count -gt 100) { throw 'At most 100 file types can be remembered.' }
+                $merged.externalOpenTypes = $types
+            }
             'costBudgetUSD' {
                 $amount = [double]$value
                 if ($amount -lt 0) { throw 'costBudgetUSD must be zero or greater.' }

@@ -98,6 +98,13 @@ The update keys are validated on write: `updateCheckIntervalMinutes` (an integer
 1–1440; out of range returns `400`) and `updateIncludePrereleases` (boolean). They
 control the background Gallery check (see **Updates**).
 
+`externalOpenTypes` is the list of file types the user chose to open with their
+own program rather than DeskPilot's viewer (see `POST /api/fs/open`). Each entry
+is normalised to a lowercase, dotted extension (`XLSX` → `.xlsx`) and de-duplicated;
+at most 100 are kept. A malformed type, or one DeskPilot never opens externally
+(an executable or a script), returns `400` rather than being dropped — a silently
+discarded entry would report the choice as remembered and then ask again.
+
 Projects are managed through this endpoint: send `projects` (an array of
 `{ id?, name?, path }`; a missing `id` is generated and a missing `name`
 defaults to the path leaf) and/or `selectedProjectId` (must reference a known
@@ -279,6 +286,33 @@ deliberately not served here — they are readable as text anyway.
 are not one of the formats above). Because an `<img>` element cannot send the
 `X-DeskPilot-Token` header, this endpoint is normally called with the token in
 the `t` query parameter, which the session gate already accepts.
+
+### `POST /api/fs/open`
+
+Body `{ "path": "<file>" }`. Hands one Project file to the operating system's
+own file association — ShellExecute on Windows, `open` on macOS, `xdg-open`
+elsewhere — so a spreadsheet or a document opens in the program the user already
+uses for it. DeskPilot chooses no program and passes no arguments; the path goes
+to the launcher as a single argv entry, so a name with spaces or quotes is never
+re-split by a shell. `path` is Project-relative or an absolute path inside the
+Project.
+
+```json
+{ "opened": true, "path": "C:/proj/budget.xlsx", "name": "budget.xlsx", "extension": ".xlsx" }
+```
+
+Two refusals stand in front of the launch. The file type must be a plain `.`
+followed by 1–16 letters or digits, so an alternate data stream or a padded name
+cannot reach the shell (`400 no_file_type`); and a type the platform treats as
+executable or as script-host input is refused outright rather than confirmed
+(`403 executable`), because the agent writes into the same folder the file tree
+lists and one click must never be able to run code. Such a file is still readable
+in DeskPilot's own viewer.
+
+`404 not_found` for a missing file or a folder; `400` for `no_workspace`,
+`no_path`, `outside_workspace` or `invalid_path`; `500 open_failed` when the
+platform launcher itself fails (for example no program is registered for the
+type).
 
 ## Git (selected Project)
 

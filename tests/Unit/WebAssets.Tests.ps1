@@ -593,6 +593,32 @@ assert.equal(isBinaryDiff(''), false);
         $js | Should -Match '(?s)if \(data\.binary\).{0,300}isImagePath\(fileViewer\.name\).{0,200}buildImagePreview'
     }
 
+    It 'offers the program the computer uses for a file it cannot show' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+
+        # Trying to open a spreadsheet is the moment the question is raised, so the
+        # offer has to hang off the viewer discovering it cannot show the file.
+        $js | Should -Match '(?s)if \(data\.binary && !isImagePath\(fileViewer\.name\)\) await confirmAndOpenExternally'
+        $js | Should -Match ([regex]::Escape("api('POST', '/api/fs/open', { path })"))
+        # Declining leaves the same offer on the panel, so the question is not a
+        # one-shot the user can lose.
+        $js | Should -Match '(?s)function buildNoPreviewPanel.{0,500}confirmAndOpenExternally'
+        # Nothing is stored unless the box was ticked, and never for an open that failed.
+        $js | Should -Match '(?s)if \(!await openFileExternally\(path, name\)\) return;.{0,120}if \(answer\.remember\) await rememberExternalOpenType'
+        # A remembered type skips the viewer entirely.
+        $js | Should -Match '(?s)function openTreeFile.{0,300}externalOpenTypes\(\)\.includes\(type\).{0,120}openFileExternally'
+        # And it can always be taken back.
+        $js | Should -Match 'function forgetExternalOpenTypes'
+        $js | Should -Match 'renderExternalOpenTypes\(\)'
+
+        foreach ($id in 'extopen-modal', 'extopen-backdrop', 'extopen-body', 'extopen-remember', 'extopen-remember-label', 'extopen-confirm', 'extopen-cancel', 'extopen-close', 'file-external') {
+            $html | Should -Match ([regex]::Escape("id=`"$id`"")) -Because "app.js binds `$('$id')"
+        }
+        # The Settings list is rendered from the SPA template, not index.html.
+        $js | Should -Match ([regex]::Escape('id="set-exttypes"'))
+    }
+
     It 'drops a file from the diff viewer once it no longer differs' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

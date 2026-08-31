@@ -10,6 +10,51 @@ source: repository evidence
 
 ## Current focus
 
+**A file DeskPilot cannot show opens in the program the computer already uses
+for it (2026-08-31, uncommitted on `main`).** Asked as "files in the right file
+pane should be openable with the program that is assigned to the file type by
+os. excel files cannot be shown in the dp preview but when trying to opening it
+there should be a question with a (keep this setting checkbox) to use the
+assigned app. there should be also a way to remove the saved preference."
+
+The file viewer had one dead end for anything binary — *This file can't be
+previewed as text* — so a spreadsheet in the Project was readable only by its
+name. Clicking one now loads the viewer as before, and the moment it reports the
+file is binary and not an image the question is raised: **Always open .xlsx
+files this way**. New `POST /api/fs/open` hands the file to the platform's own
+association; the new Setting `externalOpenTypes` holds the types the user chose
+to keep, and Settings › General lists each one with a ✕ plus **Forget all**.
+
+Six decisions. **(1) An executable or script type is refused, not confirmed.**
+`Get-DpExecutableExtension` is the whole class — `.exe`, `.bat`, `.ps1`, `.sh`,
+`.lnk`, `.jar`, `.py`… — and `Start-DpExternalFile` rejects it with `403
+executable` with no dialog that gets past it and no Setting that whitelists one.
+The agent writes into the same folder the tree lists, so `budget.xlsx.exe`
+must not be one click from running; the deny-list also gates the *Setting*, so a
+type that can never be opened can never be remembered either. **(2) The file
+type is an allow-shape, not a deny-list**: `^\.[a-z0-9]{1,16}$` on the resolved
+extension, which removes alternate data streams (`notes.txt:run.exe`) and
+trailing-junk padding as a class rather than enumerating them. **(3) The launch
+is the ShouldProcess operation**, so the whole gate is testable under `-WhatIf`
+without a program appearing on the machine running the suite; the route test
+mocks `Start-DpExternalFile` for the one success case. **(4) No shell, no
+arguments.** Windows gets `UseShellExecute` on the path; elsewhere the path is a
+single `ArgumentList` entry to `open`/`xdg-open`, so a name with spaces or
+quotes is never re-split. **(5) Nothing is remembered for an open that failed** —
+`confirmAndOpenExternally` stores the type only after `openFileExternally`
+returns true. **(6) Declining is not a dead end**: the same offer stays on the
+panel (`buildNoPreviewPanel`), and every file has an **↗** in the viewer head, so
+a Markdown file or an image can be opened in the user's own editor too.
+
+Verified: full Sampler `build, test` **1348/1348**, 0 failed, 16 tasks, 0 errors,
+0 warnings (run in a clean `pwsh` — an interactive session with two Pester
+versions loaded makes Sampler skip both Pester tasks and report a green build
+that ran nothing). `node --check` clean; PSScriptAnalyzer clean on the new files.
+Red proven against `HEAD`: `git show HEAD:source/web/assets/app.js` matches none
+of `confirmAndOpenExternally|api/fs/open|externalOpenTypes`.
+
+## Previous focus — attachments are chips
+
 **Attachments are chips on the message, not a sentence inside it (2026-08-25,
 `ai/attachment-chips`).** Asked from two screenshots — DeskPilot's own bubble
 opening with "I attached 2 file(s) in the Workspace Folder: …" beside GitHub

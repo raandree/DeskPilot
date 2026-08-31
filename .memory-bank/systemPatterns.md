@@ -65,6 +65,22 @@ source: repository evidence
   `Invoke-DpRequest` already accepts it, the same way the served entry URL does —
   and let the element's `onerror` be the single fallback path for "not there, not
   servable", instead of duplicating the decision on the client.
+- **Handing a Project file to another program: refuse the class, do not confirm
+  it.** `/api/fs/open` (`Start-DpExternalFile`) exists so a spreadsheet or a
+  document opens in the program the user already has, and it is the one surface
+  where a click can *launch* something the agent may have written. So the file
+  type is checked twice, both times as a removal rather than a warning. It must
+  match `^\.[a-z0-9]{1,16}$` on the resolved extension — an allow-shape, which
+  takes out alternate data streams and trailing-junk padding as a class instead
+  of enumerating them — and it must not be in `Get-DpExecutableExtension`, which
+  answers `403 executable` with no dialog that gets past it and no Setting that
+  whitelists one; `budget.xlsx.exe` is caught by its real extension. The same
+  list also gates the `externalOpenTypes` Setting, so a type that can never be
+  opened can never be remembered. DeskPilot chooses no program and adds no
+  arguments: `UseShellExecute` on the path for Windows, a single `ArgumentList`
+  entry to `open`/`xdg-open` elsewhere, so no shell re-splits a name. The launch
+  is the `ShouldProcess` operation, which is what makes the whole gate provable
+  under `-WhatIf` without starting a program on the machine running the suite.
 - **Retry only while the Turn is observably side-effect free.** An Engine call
   may be repeated only before any response or Tool Activity frame has streamed.
   ShellPilot emits a structured `ToolCall` progress record before executing the

@@ -3175,7 +3175,94 @@ button.tree-row {
     font-size: 13px;
 }
 
+.file-msg .btn {
+    margin-top: 10px;
+}
+
 .file-error {
+    color: var(--danger, #c0392b);
+}
+
+/* Open a file with the program the operating system assigns to its type. The
+   question can be raised on top of the file viewer, so it sits above it. */
+.extopen-backdrop {
+    z-index: 65;
+}
+
+.extopen-modal {
+    width: min(520px, 94vw);
+    z-index: 66;
+}
+
+.extopen-body {
+    padding: 16px;
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.extopen-body p {
+    margin: 0 0 10px;
+}
+
+.extopen-body p:last-child {
+    margin-bottom: 0;
+}
+
+.extopen-file {
+    font-family: var(--mono, ui-monospace, monospace);
+    word-break: break-all;
+}
+
+.extopen-foot {
+    flex-wrap: wrap;
+}
+
+.extopen-remember {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-right: auto;
+    font-size: 12.5px;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.extopen-remember input {
+    margin: 0;
+}
+
+/* Remembered file types, listed in Settings so a choice can be taken back. */
+.ext-types {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.ext-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg);
+    padding: 3px 5px 3px 10px;
+    font-size: 12px;
+    font-family: var(--mono, ui-monospace, monospace);
+}
+
+.ext-type button {
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 999px;
+}
+
+.ext-type button:hover {
     color: var(--danger, #c0392b);
 }
 

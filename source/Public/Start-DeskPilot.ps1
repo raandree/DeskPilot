@@ -197,6 +197,7 @@ function Start-DeskPilot {
             @{ Method = 'GET'; Pattern = '/api/fs/image'; Name = 'fsImage' }
             @{ Method = 'GET'; Pattern = '/api/fs/find'; Name = 'fsFind' }
             @{ Method = 'POST'; Pattern = '/api/fs/mkdir'; Name = 'fsMkdir' }
+            @{ Method = 'POST'; Pattern = '/api/fs/open'; Name = 'fsOpen' }
             @{ Method = 'GET'; Pattern = '/api/git/status'; Name = 'gitStatus' }
             @{ Method = 'POST'; Pattern = '/api/git/init'; Name = 'gitInit' }
             @{ Method = 'POST'; Pattern = '/api/git/checkout'; Name = 'gitCheckout' }

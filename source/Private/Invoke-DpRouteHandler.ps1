@@ -250,6 +250,30 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Bytes $image.content -ContentType $image.mime
         }
+        'fsOpen' {
+            $root = $state.Settings.workspaceFolder
+            if ([string]::IsNullOrWhiteSpace($root)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_workspace'; message = 'No project selected.' } }
+                return
+            }
+            $requested = [string](Get-DpPropertyValue -InputObject $Body -Name @('path') -Default '')
+            if ([string]::IsNullOrWhiteSpace($requested)) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_path'; message = 'A file path is required.' } }
+                return
+            }
+            $opened = Start-DpExternalFile -Root $root -Path $requested
+            if ($opened.error) {
+                $status = switch ($opened.code) {
+                    'not_found' { 404 }
+                    'executable' { 403 }
+                    'open_failed' { 500 }
+                    default { 400 }
+                }
+                Write-DpResponse -Stream $Stream -Status $status -Json @{ error = @{ code = $opened.code; message = $opened.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json @{ opened = $true; path = $opened.path; name = $opened.name; extension = $opened.extension }
+        }
         'gitStatus' {
             Write-DpResponse -Stream $Stream -Json (Get-DpGitStatus -Path $state.Settings.workspaceFolder)
         }

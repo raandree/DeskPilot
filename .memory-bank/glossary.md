@@ -64,6 +64,8 @@ synonym.
 | Preview | A prerelease Gallery version of DeskPilot (or ShellPilot). Previews are considered only when the user opts in; the newest full release is otherwise the update target, and updating to a Preview also accepts a Preview Engine. | beta, nightly, dev build, prerelease (in UI copy) |
 | Checkpoint | The pre-Turn snapshot made addressable from the transcript: a marker above a user Message offering to go back to the moment just before it was sent. Restoring one discards that Message and every later one, and puts back the files the discarded Turns wrote. | restore point, revert point, save point, rollback, snapshot (that is the underlying commit), Save (that is a Git commit) |
 | Restore (a Checkpoint) | Going back to a Checkpoint: the Conversation is truncated, the discarded prompt returns to the composer, and the files those Turns wrote are put back. The user's own edits to other files are untouched. Reachable from the window and from Intercom's `/undo`. | roll back, rewind, revert (that is a Git revert), reset, undo (that is a single-file Undo) |
+| External Open | Handing one Project file to the program the operating system associates with its type, instead of showing it in DeskPilot's own file viewer. DeskPilot chooses no program; an executable or script type is refused outright. | launch, run, execute, shell open, open with (in identifiers) |
+| File Type | The lowercase, dotted extension an External Open is keyed on (`.xlsx`), and the unit a remembered choice is stored per. | extension (in UI copy), format, MIME type, suffix |
 
 ## Notes
 

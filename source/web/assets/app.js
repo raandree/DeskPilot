@@ -3318,6 +3318,37 @@ function renderProjectsManager() {
     }
 }
 
+// The file types the user chose to keep, so a choice made in a one-line question
+// is visible somewhere it can be taken back.
+function renderExternalOpenTypes() {
+    const container = $('set-exttypes');
+    if (!container) return;
+    const types = externalOpenTypes();
+    container.innerHTML = '';
+    if (!types.length) {
+        container.innerHTML = '<div class="muted tiny">None yet — DeskPilot asks each time.</div>';
+        return;
+    }
+    for (const type of types) {
+        const chip = el('ext-type');
+        const name = document.createElement('span');
+        name.textContent = type;
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '✕';
+        rm.title = `Ask again for ${type} files`;
+        rm.setAttribute('aria-label', `Ask again for ${type} files`);
+        rm.onclick = () => forgetExternalOpenTypes(type);
+        chip.append(name, rm);
+        container.appendChild(chip);
+    }
+    const all = el('btn btn-small', 'button');
+    all.type = 'button';
+    all.textContent = 'Forget all';
+    all.onclick = () => forgetExternalOpenTypes(null);
+    container.appendChild(all);
+}
+
 // ===== Agents =====
 async function loadAgents() {
     try {
@@ -5800,7 +5831,7 @@ function buildFileNode(ent) {
     row.querySelector('.tree-name').textContent = ent.name;
     row.title = ent.path;
     decorateTreeRow(li, row, gitStatusFor(ent.path, false), ent.path);
-    row.onclick = () => openFileViewer(ent);
+    row.onclick = () => openTreeFile(ent);
     li.appendChild(row);
     return li;
 }
@@ -5837,14 +5868,120 @@ function formatBytes(n) {
 }
 
 // ===== File viewer =====
-const fileViewer = { data: null, name: '', markdown: false, mode: 'rendered' };
+const fileViewer = { data: null, name: '', path: '', markdown: false, mode: 'rendered' };
 
 function isMarkdownName(name) {
     return /\.(md|markdown|mdown|mkd|mkdn)$/i.test(name || '');
 }
 
+// The file type as the Host Server reads it: a dot plus letters and digits,
+// lower-cased. Anything else has no association to remember or act on.
+function fileTypeOf(name) {
+    const m = /\.[A-Za-z0-9]{1,16}$/.exec(String(name || ''));
+    return m ? m[0].toLowerCase() : '';
+}
+
+function externalOpenTypes() {
+    return ((state.settings && state.settings.externalOpenTypes) || []).map((t) => String(t).toLowerCase());
+}
+
+// Opening a file from the tree: a type the user chose to keep goes straight to
+// their own program, everything else opens in DeskPilot's viewer first.
+function openTreeFile(ent) {
+    const type = fileTypeOf(ent.name);
+    if (type && externalOpenTypes().includes(type)) { openFileExternally(ent.path, ent.name); return; }
+    openFileViewer(ent);
+}
+
+async function openFileExternally(path, name) {
+    try {
+        await api('POST', '/api/fs/open', { path });
+        toast(`Opening ${name} outside DeskPilot…`);
+        return true;
+    } catch (e) { toast(e.message); return false; }
+}
+
+// Holds the pending question's resolver so the dialog's own buttons, wired once
+// at startup, can answer it.
+const extOpenAsk = { finish: null };
+
+// Asks before handing a file to another program, because that program is not
+// DeskPilot and the file leaves its window. Resolves to null on cancel, or to
+// { remember } - remember is what the user ticked, so the answer is theirs and
+// nothing is stored unless they said so.
+function askExternalOpen(name) {
+    // A second question would orphan the first one's promise.
+    if (extOpenAsk.finish) extOpenAsk.finish(null);
+    const type = fileTypeOf(name);
+    const body = $('extopen-body');
+    body.innerHTML = '';
+    const lead = document.createElement('p');
+    lead.textContent = type
+        ? `DeskPilot can’t show a ${type} file. Open it with the program your computer uses for this file type?`
+        : 'Open this file with the program your computer uses for it?';
+    const file = document.createElement('p');
+    file.className = 'extopen-file muted';
+    file.textContent = name || '';
+    body.append(lead, file);
+
+    const remember = $('extopen-remember');
+    const rememberRow = remember.closest('.extopen-remember');
+    remember.checked = false;
+    // With no file type there is nothing to key a saved choice on.
+    rememberRow.classList.toggle('hidden', !type);
+    $('extopen-remember-label').textContent = type
+        ? `Always open ${type} files this way`
+        : 'Keep this setting';
+
+    $('extopen-backdrop').classList.remove('hidden');
+    $('extopen-modal').classList.remove('hidden');
+    $('extopen-confirm').focus();
+
+    return new Promise((resolve) => {
+        const finish = (answer) => {
+            $('extopen-backdrop').classList.add('hidden');
+            $('extopen-modal').classList.add('hidden');
+            document.removeEventListener('keydown', onKey, true);
+            extOpenAsk.finish = null;
+            resolve(answer);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish(null); } };
+        document.addEventListener('keydown', onKey, true);
+        extOpenAsk.finish = finish;
+    });
+}
+
+// The full flow behind ↗ and behind a file the viewer cannot show: ask, open,
+// and only then store the choice - a type is never remembered for an open that
+// failed.
+async function confirmAndOpenExternally(path, name) {
+    if (!path) return;
+    const answer = await askExternalOpen(name);
+    if (!answer) return;
+    if (!await openFileExternally(path, name)) return;
+    if (answer.remember) await rememberExternalOpenType(fileTypeOf(name));
+    closeFileViewer();
+}
+
+async function rememberExternalOpenType(type) {
+    if (!type) return;
+    const next = externalOpenTypes().filter((t) => t !== type).concat(type).sort();
+    try { state.settings = await api('PUT', '/api/settings', { externalOpenTypes: next }); }
+    catch (e) { toast(e.message); }
+}
+
+async function forgetExternalOpenTypes(type) {
+    const next = type ? externalOpenTypes().filter((t) => t !== type) : [];
+    try {
+        state.settings = await api('PUT', '/api/settings', { externalOpenTypes: next });
+        renderExternalOpenTypes();
+        toast(type ? `DeskPilot will ask again for ${type} files.` : 'DeskPilot will ask again for every file type.');
+    } catch (e) { toast(e.message); }
+}
+
 async function openFileViewer(ent) {
     fileViewer.name = ent.name;
+    fileViewer.path = ent.path || '';
     fileViewer.markdown = isMarkdownName(ent.name);
     fileViewer.mode = fileViewer.markdown ? 'rendered' : 'raw';
     fileViewer.data = null;
@@ -5861,6 +5998,10 @@ async function openFileViewer(ent) {
     if (data.error) { $('file-body').innerHTML = `<div class="file-error">⚠ ${escapeHtml(data.error)}</div>`; return; }
     fileViewer.data = data;
     renderFileView();
+    // A spreadsheet or a document has nothing to show here, so trying to open it
+    // is the moment to offer the program that can. Declining leaves the panel
+    // below, which offers the same thing again.
+    if (data.binary && !isImagePath(fileViewer.name)) await confirmAndOpenExternally(fileViewer.path, fileViewer.name);
 }
 
 function renderFileView() {
@@ -5886,7 +6027,7 @@ function renderFileView() {
             body.appendChild(buildImagePreview(data.path || '', '', 'This file can’t be previewed.'));
             return;
         }
-        body.innerHTML = '<div class="file-msg muted">This file can’t be previewed as text.</div>';
+        body.appendChild(buildNoPreviewPanel());
         return;
     }
 
@@ -5908,6 +6049,20 @@ function setFileViewMode(mode) {
     if (fileViewer.mode === mode) return;
     fileViewer.mode = mode;
     renderFileView();
+}
+
+// What stands in for a preview DeskPilot cannot draw: the plain fact, plus the
+// way out, so the offer is still there after the question was declined.
+function buildNoPreviewPanel() {
+    const wrap = el('file-msg muted');
+    const text = document.createElement('div');
+    text.textContent = 'DeskPilot can’t show this file.';
+    const open = el('btn btn-small', 'button');
+    open.type = 'button';
+    open.textContent = '↗ Open with my own program';
+    open.onclick = () => confirmAndOpenExternally(fileViewer.path, fileViewer.name);
+    wrap.append(text, open);
+    return wrap;
 }
 
 function closeFileViewer() {
@@ -6533,6 +6688,11 @@ function openSettings() {
           ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
         </select>
       </div>
+      <div class="field">
+        <label>File types you open with your own programs</label>
+        <div class="ext-types" id="set-exttypes"></div>
+        <p class="hint">DeskPilot can&rsquo;t show a spreadsheet or a Word document, so it offers to hand the file to the program your computer uses for that type. A type you chose to keep is listed here and opens straight away &mdash; remove it to be asked again. Programs and scripts are never opened this way.</p>
+      </div>
     </section>
     <section class="settings-tab" id="spane-permissions" data-tab="permissions" role="tabpanel" aria-labelledby="stab-permissions" hidden>
       <div class="field">
@@ -6752,6 +6912,7 @@ function openSettings() {
 
     buildPermList($('set-perms'));
     renderProjectsManager();
+    renderExternalOpenTypes();
     wireSettingsTabs(body);
     wireMcpPanel();
 
@@ -8052,11 +8213,20 @@ function wireGlobal() {
     // File viewer
     $('file-close').onclick = () => closeFileViewer();
     $('file-backdrop').onclick = () => closeFileViewer();
+    $('file-external').onclick = () => confirmAndOpenExternally(fileViewer.path, fileViewer.name);
     $('file-view-rendered').onclick = () => setFileViewMode('rendered');
     $('file-view-raw').onclick = () => setFileViewMode('raw');
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !$('file-modal').classList.contains('hidden')) closeFileViewer();
     });
+
+    // Open a file outside DeskPilot. Every route out of the question answers the
+    // one pending promise, so a dismissed dialog can never leave it hanging.
+    const answerExtOpen = (answer) => { if (extOpenAsk.finish) extOpenAsk.finish(answer); };
+    $('extopen-close').onclick = () => answerExtOpen(null);
+    $('extopen-cancel').onclick = () => answerExtOpen(null);
+    $('extopen-backdrop').onclick = () => answerExtOpen(null);
+    $('extopen-confirm').onclick = () => answerExtOpen({ remember: $('extopen-remember').checked });
 
     // CopilotAtelier setup (opt-in, consent-gated)
     $('atelier-close').onclick = () => closeAtelierSetup();
