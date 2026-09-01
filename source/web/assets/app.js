@@ -5990,6 +5990,7 @@ async function openFileViewer(ent) {
     $('file-meta').textContent = '';
     $('file-viewmode').classList.add('hidden');
     $('file-body').innerHTML = '<div class="muted tiny file-msg">Loading…</div>';
+    applyFileViewerSize();
     $('file-backdrop').classList.remove('hidden');
     $('file-modal').classList.remove('hidden');
     let data;
@@ -6049,6 +6050,26 @@ function setFileViewMode(mode) {
     if (fileViewer.mode === mode) return;
     fileViewer.mode = mode;
     renderFileView();
+}
+
+// Maximizing is a window preference, not a per-file one, so it outlives the
+// viewer and the browser session the way the theme does.
+function fileViewerMaximized() {
+    return localStorage.getItem('ad_filemax') === '1';
+}
+
+function applyFileViewerSize() {
+    const on = fileViewerMaximized();
+    $('file-modal').classList.toggle('is-maximized', on);
+    const btn = $('file-maximize');
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Restore down' : 'Maximize';
+    btn.setAttribute('aria-label', btn.title);
+}
+
+function toggleFileViewerMaximized() {
+    localStorage.setItem('ad_filemax', fileViewerMaximized() ? '0' : '1');
+    applyFileViewerSize();
 }
 
 // What stands in for a preview DeskPilot cannot draw: the plain fact, plus the
@@ -8214,6 +8235,7 @@ function wireGlobal() {
     $('file-close').onclick = () => closeFileViewer();
     $('file-backdrop').onclick = () => closeFileViewer();
     $('file-external').onclick = () => confirmAndOpenExternally(fileViewer.path, fileViewer.name);
+    $('file-maximize').onclick = () => toggleFileViewerMaximized();
     $('file-view-rendered').onclick = () => setFileViewMode('rendered');
     $('file-view-raw').onclick = () => setFileViewMode('raw');
     document.addEventListener('keydown', (e) => {

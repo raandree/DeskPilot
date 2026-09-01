@@ -619,6 +619,28 @@ assert.equal(isBinaryDiff(''), false);
         $js | Should -Match ([regex]::Escape('id="set-exttypes"'))
     }
 
+    It 'maximizes the file viewer, and remembers that between files' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        $html | Should -Match ([regex]::Escape('id="file-maximize"'))
+        $js | Should -Match 'toggleFileViewerMaximized\(\)'
+        # A hard-coded width would make the button do nothing, and .modal centres
+        # itself with a translate - leaving that on inserts a margin no width can
+        # close.
+        $css | Should -Match '(?s)\.file-modal\.is-maximized \{[^}]*transform: none;[^}]*\}'
+        $css | Should -Match '(?s)\.file-modal\.is-maximized \{[^}]*width: 100vw;[^}]*\}'
+        $css | Should -Match '(?s)\.file-modal\.is-maximized \{[^}]*max-height: 100vh;[^}]*\}'
+        $js | Should -Match ([regex]::Escape("classList.toggle('is-maximized'"))
+        # The size is a window preference, so it has to be re-applied on every open.
+        $js | Should -Match '(?s)function openFileViewer.{0,900}applyFileViewerSize\(\)'
+        $js | Should -Match ([regex]::Escape("localStorage.setItem('ad_filemax'"))
+        # One control, two states: the glyph never changes, so the label has to.
+        $js | Should -Match ([regex]::Escape("btn.title = on ? 'Restore down' : 'Maximize';"))
+        $js | Should -Match ([regex]::Escape("setAttribute('aria-pressed'"))
+    }
+
     It 'drops a file from the diff viewer once it no longer differs' {
         $modulePath = Join-Path $script:webRoot 'assets' 'diff.js'
         $nodeScript = @'

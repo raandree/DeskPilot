@@ -2311,6 +2311,11 @@ button.tree-row {
     color: var(--text);
 }
 
+.icon-btn[aria-pressed="true"] {
+    background: var(--surface-2);
+    color: var(--accent);
+}
+
 /* ===== Overlay / auth ===== */
 .overlay {
     position: fixed;
@@ -3110,6 +3115,27 @@ button.tree-row {
 .file-modal {
     width: min(880px, 94vw);
     max-height: min(86vh, 900px);
+}
+
+.file-modal.is-maximized {
+    top: 0;
+    left: 0;
+    /* .modal centres itself with a translate; full screen has to undo it. */
+    transform: none;
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: 100vh;
+    border: none;
+    border-radius: 0;
+}
+
+.file-modal.is-maximized .file-body {
+    margin: 8px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    border-radius: 0;
 }
 
 .file-title {

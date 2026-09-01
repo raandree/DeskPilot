@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **A full-screen file viewer.** The viewer opens at a comfortable reading width,
+  but a wide table, a long diff or a large screenshot wants the whole window. The
+  new ⛶ button in its header takes the viewer edge to edge — no border, no rounded
+  corners, no margin — and back again. The choice is remembered, so once you have
+  said you want files full screen, every file opens that way until you say
+  otherwise. Escape and ✕ still close it.
+
 - **Open a file with your own program.** A spreadsheet, a Word document, a PDF —
   DeskPilot cannot draw any of them, and until now clicking one in the file panel
   said so and stopped. Trying to open a file it can't show now asks whether to

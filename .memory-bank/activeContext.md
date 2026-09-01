@@ -53,6 +53,30 @@ that ran nothing). `node --check` clean; PSScriptAnalyzer clean on the new files
 Red proven against `HEAD`: `git show HEAD:source/web/assets/app.js` matches none
 of `confirmAndOpenExternally|api/fs/open|externalOpenTypes`.
 
+**Follow-up — the viewer goes full screen (2026-09-01).** Asked as "can we also
+have a maximize window button?", then "lets make it really full screen. There is
+still a big margin". The first cut set `width: 96vw; height: 94vh` and left a
+visible inset, and the reason was not the 4% — `.modal` centres itself with
+`transform: translate(-50%, -50%)`, and **no width can close a gap a translate
+re-introduces**. `.file-modal.is-maximized` now clears the transform, pins
+`top/left: 0`, takes `100vw × 100vh`, and drops the border and radius; the body's
+side margins and rounded frame go with it, while `.file-content`'s own padding
+still keeps text off the glass.
+
+One control, two states: the glyph stays `⛶` and the title/`aria-label` flips
+between **Maximize** and **Restore down** with `aria-pressed` carrying the state,
+which avoids a restore glyph that renders as a box on fonts without it. The
+choice lives in `localStorage` under `ad_filemax`, beside `ad_theme`, and
+`applyFileViewerSize()` runs on every `openFileViewer` — it is a window
+preference, not a per-file one.
+
+**Measured, not asserted from the CSS.** Rendered in headless Edge against the
+real `styles.css`: `viewport [1570, 805]`, `modal [0, 0, 1570, 805]`,
+`gap { left: 0, top: 0, right: 0, bottom: 0 }`, `radius 0px`. The `WebAssets`
+guard now asserts `transform: none`, `width: 100vw` and `max-height: 100vh`
+inside that rule specifically, so restoring the centering fails a test rather
+than silently re-inserting the margin. Gate **1349/1349**, 0 errors, 0 warnings.
+
 ## Previous focus — attachments are chips
 
 **Attachments are chips on the message, not a sentence inside it (2026-08-25,
