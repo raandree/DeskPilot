@@ -35,6 +35,15 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **A feature Prompt File carries its decision boundary, not just its desired
+  outcome.** A candidate implementation prompt starts with product usefulness and
+  one concrete DeskPilot use case, then names the controlling repository context,
+  required behavior, safety boundary, test-first proof, Definition of Done, and
+  non-goals. Split features when they have independent dependencies or rollback
+  paths. Put prerequisites in a hard gate: a later capability must stop at a
+  design record when the controls it depends on are absent. This lets selecting a
+  Prompt File start grounded discovery without silently selecting adjacent work,
+  waiving architecture constraints, or turning research into a roadmap promise.
 - **Compare competitor breadth separately from DeskPilot product fit.** A
   capability in another agent harness is evidence that a workflow exists, not
   evidence that DeskPilot should copy it. Record whether DeskPilot ships,

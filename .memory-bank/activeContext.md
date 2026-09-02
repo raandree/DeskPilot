@@ -10,6 +10,17 @@ source: repository evidence
 
 ## Current focus
 
+**Eight competitive-gap Prompt Files are ready for selection (2026-09-02).**
+The five ranked gaps are now expanded into independent implementation briefs,
+with packaging and localization split because their dependencies and rollback
+paths differ; the two later bets are included too. Every Prompt File opens with
+why the feature matters and a concrete DeskPilot use case, then pins required
+context, behavior, safety boundaries, test-first proof, Definition of Done, and
+non-goals. Per-call approval remains the recommended first choice. Isolated Tool
+execution requires approval; parallel Agents require approval plus isolation;
+browser automation requires both plus one named workflow and a broken lethal-
+trifecta path. The Prompt Files are decision artifacts, not roadmap commitments.
+
 **Competitive harness research completed (2026-09-02).** Spec 100 now compares
 DeskPilot with Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue,
 Goose, OpenCode, and Aider using primary sources and explicit evidence states.

@@ -29,6 +29,26 @@ Parallel Agents and browser/computer automation are later bets. Both increase
 the value of DeskPilot, but also multiply the consequences of its current
 full-user-privilege execution model.
 
+## Feature prompt chooser
+
+Each candidate has an independent Prompt File under `.github/prompts`. Packaging
+and localization are separate choices because they have different dependencies,
+acceptance criteria, and rollback paths.
+
+| Candidate | Selection guidance | Prompt File |
+| --- | --- | --- |
+| Per-call approval | Start here; it closes the clearest safety gap and is a prerequisite for higher-agency work. | [Implement per-call approval](../.github/prompts/implement-per-call-approval.prompt.md) |
+| Diagnostics and support bundle | Choose for faster support and trustworthy failure evidence without Model Usage. | [Implement diagnostics and support bundle](../.github/prompts/implement-diagnostics-support-bundle.prompt.md) |
+| Scheduled work | Choose for recurring local knowledge work after collision and unattended-Permission policy is approved. | [Implement scheduled work](../.github/prompts/implement-scheduled-work.prompt.md) |
+| Windows packaging | Choose to remove PowerShell and browser-launch concepts from installation and startup. | [Implement Windows packaging](../.github/prompts/implement-windows-packaging.prompt.md) |
+| Localization | Choose to ship maintainable English and German UI and safety text without a frontend build step. | [Implement localization](../.github/prompts/implement-localization.prompt.md) |
+| Isolated Tool execution | Choose after per-call approval; this is an architectural security boundary, not a UI-only feature. | [Implement isolated Tool execution](../.github/prompts/implement-isolated-tool-execution.prompt.md) |
+| Parallel Agents | Later bet; requires approval and isolation plus separate child state and reviewable file integration. | [Implement parallel Agents](../.github/prompts/implement-parallel-agents.prompt.md) |
+| Browser automation | Later bet; requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
+
+Selecting a Prompt File starts implementation discovery; it does not waive its
+prerequisite or decision gates.
+
 ## Comparison method
 
 The peer set is relevance-based rather than a raw popularity ranking. It spans
@@ -132,7 +152,7 @@ larger shell only when it measurably improves installation or isolation.
 
 This is the clearest safety and product gap. Cline asks before file edits and
 Terminal commands, Roo separates auto-approval by capability, and Continue
-persists allow/ask/deny policies. DeskPilot currently authorizes a category for
+persists allow/ask/exclude policies. DeskPilot currently authorizes a category for
 the entire Turn. One allowed Terminal Tool can therefore issue a command much
 broader than the user expected.
 
