@@ -34,7 +34,7 @@ is a Skill.**
 | Never on the accept thread | The Host Server accepts on a single thread and handles requests inline, so a 25-second long-poll on that thread would freeze the whole UI — the same failure `Invoke-DpGitCommand` exists to prevent. Every Telegram call is an **`HttpClient` `Task`** started on one tick and reaped on a later one. The pump never waits. |
 | Where the pump runs | `Update-DpIntercomState` is called from **two** places: the accept loop's idle tick (so Intercom works between Turns) and `Invoke-DpPendingRequest` (so it works *during* a Turn, which is exactly when the agent asks a question). |
 | Authority | A remote message may only act on a Project whose **`intercom` flag is on**. Inside such a Project a remote Turn has the *same* Permissions as a local one — including `git push` — because the flag is the boundary. With no Project selected, or the flag off, every control command is refused with a plain sentence. |
-| Sender authentication | A hard **allow-list on `chat_id`**. The operator's own chat is always the primary one; a second, shared **group** chat can be added, and is refused unless *both* `allowGroupChat` is on and `groupChatId` is set. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. Two gates rather than one nullable id, because allow-listing a group is not the same kind of act as allow-listing a phone - see *Accepted risks*. |
+| Sender authentication | A hard **allow-list on `chat_id`**. The operator's own chat is always the primary one; **shared group chats** can be added alongside it, and are refused unless *both* `allowGroupChat` is on and `groupChatIds` holds at least one id. Up to ten, so the allow-list stays bounded. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. Two gates rather than one list, because allow-listing a group is not the same kind of act as allow-listing a phone - see *Accepted risks*. |
 | Where a reply goes | **Answer where you were asked.** Every queued message carries the chat the interaction it belongs to came from, so work requested in the group is acknowledged, questioned and reported in the group rather than surfacing privately. A Turn started from the window, and every message DeskPilot sends on its own initiative, goes to the operator's chat. The live status message is the deliberate exception: there is exactly one of it, edited in place against a single `message_id`, and it belongs to the operator. |
 | Answering across two chats | Telegram message ids are **per-chat sequences**, so with two chats allow-listed an unrelated reply in one can carry the same id as the question pending in the other. The pending question therefore records the chat it was sent to, and a reply is only an answer when it replies to that message *in that chat*; anywhere else it is an ordinary prompt. |
 | Addressing a group message | Under Telegram's group privacy a plain instruction only reaches the bot if it **@mentions** it, so that mention is *addressing, not content* - the same reason `/command@BotName` already loses its suffix. A leading mention of the bot's own name is stripped before the text becomes a prompt, on a word boundary so `@bot2` is not read as `@bot`. Left in, it reached the agent as the first words of the work and became the Conversation title, which is derived from them. The name comes from one non-blocking `getMe` started on the enable transition; if it fails, nothing is stripped and the only cost is the noise. |
@@ -90,15 +90,15 @@ Recorded as **accepted**, not mitigated, by explicit operator decision.
   full control until the bot token is revoked in BotFather from another device.
   There is no time-based or session-based expiry.
 - **A3 — A group shares the operator's authority.** With `allowGroupChat` on,
-  every member of that group holds exactly the control the operator does:
-  instructions, answers to the agent's questions, and work in an opted-in
+  every member of every allow-listed group holds exactly the control the operator
+  does: instructions, answers to the agent's questions, and work in an opted-in
   Project including `git push`. Membership is Telegram's to change, so anyone an
   admin adds later inherits it, and DeskPilot never learns that it happened.
-  There is no per-sender allow-list inside the group and no per-member
+  There is no per-sender allow-list inside a group and no per-member
   Permission - Intercom carries one authority, not accounts. Mitigation is
   confined to making the consequence unmissable: the feature is off by default,
-  needs two separate switches, states the consequence where it is enabled, and
-  repeats it on every `/status` check-in.
+  needs two separate switches, is capped at ten groups, states the consequence
+  where it is enabled, and repeats it on every `/status` check-in.
 
 ## Non-goals
 
@@ -324,8 +324,8 @@ Stored under `settings.intercom`; the bot token is **not** among them.
 | --- | --- | --- |
 | `enabled` | `false` | The single on/off switch |
 | `chatId` | `null` | The operator's own allow-listed Telegram chat |
-| `allowGroupChat` | `false` | Whether a shared group chat is allow-listed as well |
-| `groupChatId` | `null` | That group's chat id, always negative, and inert while `allowGroupChat` is off |
+| `allowGroupChat` | `false` | Whether shared group chats are allow-listed as well |
+| `groupChatIds` | `[]` | Their chat ids, always negative, at most ten, and inert while `allowGroupChat` is off. A `groupChatId` string written by an earlier version migrates into this list on load |
 | `heartbeatMinutes` | `5` | How often the status message is refreshed |
 | `stallMinutes` | `5` | Silence inside a running Turn before the stall warning |
 | `questionTimeoutMinutes` | `60` | How long a forwarded question stays answerable |

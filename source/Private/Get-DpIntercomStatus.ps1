@@ -57,8 +57,10 @@ function Get-DpIntercomStatus {
     # Stated on every check-in rather than only at setup: a shared group means
     # everyone in it can drive this machine, and that is not a fact anyone should
     # have to remember from a settings screen they saw once.
-    if ([bool]$settings.intercom.allowGroupChat -and $settings.intercom.groupChatId) {
-        $lines.Add("Group control: on for chat $([string]$settings.intercom.groupChatId) - anyone in that group can send instructions.")
+    $groups = @($settings.intercom.groupChatIds)
+    if ([bool]$settings.intercom.allowGroupChat -and $groups.Count -gt 0) {
+        $noun = if ($groups.Count -eq 1) { 'group' } else { 'groups' }
+        $lines.Add("Group control: on for $noun $($groups -join ', ') - anyone in $(if ($groups.Count -eq 1) { 'that group' } else { 'those groups' }) can send instructions.")
     }
 
     if ($state.TurnRunning) {

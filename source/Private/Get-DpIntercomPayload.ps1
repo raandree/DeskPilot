@@ -38,7 +38,7 @@ function Get-DpIntercomPayload {
         tokenConfigured        = [bool]$intercom.TokenConfigured
         chatId                 = [string]$settings.chatId
         allowGroupChat         = [bool]$settings.allowGroupChat
-        groupChatId            = [string]$settings.groupChatId
+        groupChatIds           = @($settings.groupChatIds)
         heartbeatMinutes       = [int]$settings.heartbeatMinutes
         stallMinutes           = [int]$settings.stallMinutes
         questionTimeoutMinutes = [int]$settings.questionTimeoutMinutes

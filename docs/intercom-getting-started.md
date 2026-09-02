@@ -109,6 +109,7 @@ and stays off until you turn on **two** separate switches.
    `Message from chat '-1001234567890' is not allow-listed.`
 4. On the **Intercom** tab, tick **Also accept messages from a Telegram group**
    and paste that id — including the leading minus sign — into the box below it.
+   For more than one group, separate the ids with commas (up to ten).
 
 Your own chat keeps working exactly as before. DeskPilot replies wherever it was
 asked: something sent in the group is acknowledged and reported in the group, and

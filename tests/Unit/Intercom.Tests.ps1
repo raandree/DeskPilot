@@ -68,6 +68,14 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         $own.chatId | Should -Be '111'
     }
 
+    It 'accepts every allow-listed group, not just the first' {
+        $params = @{ AllowedChatId = '111'; AllowedGroupChatId = @('-1004455397827', '-5551574266') }
+
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1004455397827') @params).kind | Should -Be 'prompt'
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-5551574266') @params).kind | Should -Be 'prompt'
+        (ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-9999999999') @params).kind | Should -Be 'rejected'
+    }
+
     It 'still rejects a third chat when a group is allow-listed' {
         $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1009999999999') -AllowedChatId '111' -AllowedGroupChatId '-1004455397827'
 
@@ -1094,28 +1102,56 @@ Describe 'Intercom Settings validation' -Tag 'Unit' {
 
     It 'defaults group control to off with no group named' {
         $script:current.intercom.allowGroupChat | Should -BeFalse
-        $script:current.intercom.groupChatId | Should -BeNullOrEmpty
+        @($script:current.intercom.groupChatIds) | Should -BeNullOrEmpty
     }
 
     It 'accepts a group chat id, which is always negative' {
-        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ allowGroupChat = $true; groupChatId = '-1004455397827' } }
+        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ allowGroupChat = $true; groupChatIds = @('-1004455397827') } }
 
         $merged.intercom.allowGroupChat | Should -BeTrue
-        $merged.intercom.groupChatId | Should -Be '-1004455397827'
+        @($merged.intercom.groupChatIds) | Should -Be @('-1004455397827')
+    }
+
+    It 'accepts several groups, however the box spelled them' {
+        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatIds = '-1004455397827, -5551574266' } }
+
+        @($merged.intercom.groupChatIds) | Should -Be @('-1004455397827', '-5551574266')
+    }
+
+    It 'drops a repeated group rather than allow-listing it twice' {
+        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatIds = @('-100777', '-100777') } }
+
+        @($merged.intercom.groupChatIds).Count | Should -Be 1
+    }
+
+    It 'migrates a settings file written before the list existed' {
+        # The retired singular key still has to load, or an existing install
+        # silently loses the group it had allow-listed.
+        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatId = '-1004455397827' } }
+
+        @($merged.intercom.groupChatIds) | Should -Be @('-1004455397827')
+        $merged.intercom.ContainsKey('groupChatId') | Should -BeFalse
     }
 
     It 'refuses a positive id in the group field' {
         # A private chat allow-listed through the group door would bypass the
         # warning that everyone in a group shares the operator's control.
-        { Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatId = '222' } } } |
-            Should -Throw -ExpectedMessage '*always starts with -*'
+        { Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatIds = @('222') } } } |
+            Should -Throw -ExpectedMessage '*always start with -*'
     }
 
     It 'refuses a group that is the same chat as the operator' {
         $current = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ chatId = '-100777' } }
 
-        { Merge-DpSettings -Current $current -Patch @{ intercom = @{ groupChatId = '-100777' } } } |
-            Should -Throw -ExpectedMessage '*different chat*'
+        { Merge-DpSettings -Current $current -Patch @{ intercom = @{ groupChatIds = @('-100777') } } } |
+            Should -Throw -ExpectedMessage '*must not contain*'
+    }
+
+    It 'bounds how many groups can hold the operator authority' {
+        $many = @(1..11 | ForEach-Object { "-100$_" })
+
+        { Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatIds = $many } } } |
+            Should -Throw -ExpectedMessage '*At most 10*'
     }
 
     It 'accepts a valid patch' {

@@ -27,21 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of them is what you mean. Your words reach the agent exactly as written, and the
   buttons keep working in case you change your mind.
 
-- **Let a Telegram group reach Intercom, not just your own chat.** Adding the bot
+- **Let Telegram groups reach Intercom, not just your own chat.** Adding the bot
   to a group used to be a dead end: every message from it was counted, rejected
   and thrown away, with only a line in the Status box to say why. **Settings ›
   Intercom** now has **Also accept messages from a Telegram group** and a box for
-  the group's id, and DeskPilot accepts both chats at once. It replies wherever it
-  was asked — something sent in the group is acknowledged, questioned and reported
-  in the group, while your private chat stays private and keeps the check-in
-  status message.
+  the group ids — separate several with commas, up to ten — and DeskPilot accepts
+  them alongside your own chat. It replies wherever it was asked: something sent
+  in a group is acknowledged, questioned and reported in that group, while your
+  private chat stays private and keeps the check-in status message.
 
-  **This is off by default and needs two switches, because everyone in that group
-  gets exactly the control you have** — instructions, answers to the agent's
+  **This is off by default and needs two switches, because everyone in those
+  groups gets exactly the control you have** — instructions, answers to the agent's
   questions, and work in any project you opted in, including `git push`. Telegram
-  decides who is in the group, so anyone added later inherits it. The consequence
+  decides who is in a group, so anyone added later inherits it. The consequence
   is stated where you turn it on, and repeated on every `/status` check-in.
-  Turning it back off drops anything the group had queued or was being asked,
+  Turning a group back off drops anything it had queued or was being asked,
   rather than delivering it to a chat that is no longer trusted.
 
   The panel also tells you what Telegram will not: a bot in a group sees nothing

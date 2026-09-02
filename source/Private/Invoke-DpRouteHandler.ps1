@@ -1786,8 +1786,8 @@ function Invoke-DpRouteHandler {
             }
 
             if ($patch.Count -gt 0) {
-                $groupBefore = ''
-                if ([bool]$state.Settings.intercom.allowGroupChat) { $groupBefore = [string]$state.Settings.intercom.groupChatId }
+                $groupsBefore = @()
+                if ([bool]$state.Settings.intercom.allowGroupChat) { $groupsBefore = @($state.Settings.intercom.groupChatIds) }
                 try {
                     $merged = Merge-DpSettings -Current $state.Settings -Patch @{ intercom = $patch }
                     $state.Settings = $merged
@@ -1797,25 +1797,26 @@ function Invoke-DpRouteHandler {
                     Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_settings'; message = "$_" } }
                     return
                 }
-                $groupAfter = ''
-                if ([bool]$merged.intercom.allowGroupChat) { $groupAfter = [string]$merged.intercom.groupChatId }
-                if ($groupBefore -ne $groupAfter) {
+                $groupsAfter = @()
+                if ([bool]$merged.intercom.allowGroupChat) { $groupsAfter = @($merged.intercom.groupChatIds) }
+                $dropped = @($groupsBefore | Where-Object { $groupsAfter -notcontains $_ })
+                if ($dropped.Count -gt 0 -or (@($groupsAfter | Where-Object { $groupsBefore -notcontains $_ }).Count -gt 0)) {
                     # Work a group asked for must not be reported back to it once it
-                    # is no longer allow-listed, so anything still bound to the old
-                    # one is dropped rather than delivered to a de-authorised chat.
-                    if ($groupBefore) {
+                    # is no longer allow-listed, so anything still bound to one that
+                    # was dropped goes rather than reaching a de-authorised chat.
+                    if ($dropped.Count -gt 0) {
                         $pendingChat = ''
                         if ($state.Intercom.PendingQuestion) {
                             $pendingChat = [string](Get-DpPropertyValue -InputObject $state.Intercom.PendingQuestion -Name @('chatId') -Default '')
                         }
-                        if ($pendingChat -eq $groupBefore) { $state.Intercom.PendingQuestion = $null }
-                        if ([string](Get-DpPropertyValue -InputObject $state.Intercom -Name @('QueuedChatId') -Default '') -eq $groupBefore) {
+                        if ($dropped -contains $pendingChat) { $state.Intercom.PendingQuestion = $null }
+                        if ($dropped -contains [string](Get-DpPropertyValue -InputObject $state.Intercom -Name @('QueuedChatId') -Default '')) {
                             $state.Intercom.QueuedPrompt = $null
                             $state.Intercom.QueuedImage = $null
                             $state.Intercom.QueuedChatId = $null
                         }
                     }
-                    Add-DpIntercomLog -Direction 'system' -Kind 'group' -Detail $(if ($groupAfter) { "Group $groupAfter can now send instructions. Everyone in that group has the same control you do." } else { 'Group control is off. Only your own chat can reach DeskPilot.' })
+                    Add-DpIntercomLog -Direction 'system' -Kind 'group' -Detail $(if ($groupsAfter.Count -gt 0) { "Groups $($groupsAfter -join ', ') can now send instructions. Everyone in them has the same control you do." } else { 'Group control is off. Only your own chat can reach DeskPilot.' })
                 }
                 if ($patch.ContainsKey('chatId')) {
                     # A different allow-listed chat is a different link: close any

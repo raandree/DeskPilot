@@ -37,9 +37,9 @@ function ConvertFrom-DpIntercomUpdate {
         The operator's own allow-listed chat id. An empty value allow-lists
         nothing through this parameter.
     .PARAMETER AllowedGroupChatId
-        An optional second allow-listed chat, the shared group. The caller passes
-        it only when the operator has switched group access on, so an empty value
-        here is the normal case and rejects every group message.
+        The allow-listed shared group chats. The caller passes these only when the
+        operator has switched group access on, so an empty value here is the normal
+        case and rejects every group message.
     .PARAMETER PendingQuestionMessageId
         The Telegram message id the pending question was sent as, or 0 when no
         question is waiting. A reply to this id is the only accepted answer.
@@ -70,7 +70,8 @@ function ConvertFrom-DpIntercomUpdate {
         [string]$AllowedChatId,
 
         [AllowNull()]
-        [string]$AllowedGroupChatId,
+        [AllowEmptyCollection()]
+        [string[]]$AllowedGroupChatId,
 
         [long]$PendingQuestionMessageId = 0,
 
@@ -84,7 +85,7 @@ function ConvertFrom-DpIntercomUpdate {
         [int]$MaxTextLength = 4000
     )
 
-    $allowedChats = @(@($AllowedChatId, $AllowedGroupChatId) |
+    $allowedChats = @(@(@($AllowedChatId) + @($AllowedGroupChatId)) |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             ForEach-Object { $_.Trim() })
 

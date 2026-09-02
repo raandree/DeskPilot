@@ -3970,10 +3970,10 @@ function renderIntercomPairing() {
     if (!i) { box.innerHTML = '<span class="muted tiny">Checking…</span>'; return; }
 
     if (i.chatId) {
-        const grouped = i.allowGroupChat && i.groupChatId;
+        const groups = i.allowGroupChat ? asArray(i.groupChatIds) : [];
         box.innerHTML = `<div class="intercom-state ok">Linked to chat ${escapeHtml(i.chatId)}</div>` +
-            (grouped
-                ? `<div class="intercom-state warn">Group ${escapeHtml(i.groupChatId)} is also accepted — everyone in it can control this machine.</div>`
+            (groups.length
+                ? `<div class="intercom-state warn">${groups.length === 1 ? 'Group' : 'Groups'} ${escapeHtml(groups.join(', '))} ${groups.length === 1 ? 'is' : 'are'} also accepted — everyone in ${groups.length === 1 ? 'it' : 'them'} can control this machine.</div>`
                 : '') +
             '<div class="muted tiny">To link a different phone, clear the box below and link again.</div>';
         return;
@@ -6902,9 +6902,9 @@ function openSettings() {
       </div>
       <div class="field">
         <label><input type="checkbox" id="set-ic-group" ${ic.allowGroupChat ? 'checked' : ''} /> Also accept messages from a Telegram group</label>
-        <input type="text" id="set-ic-group-chat" spellcheck="false" placeholder="e.g. -1001234567890" value="${escapeHtml(ic.groupChatId || '')}" ${ic.allowGroupChat ? '' : 'disabled'} />
-        <p class="hint"><strong>Everyone in that group can control this machine</strong> — send instructions, answer the agent’s questions, and run work in a project you have opted in, including <code>git push</code>. Telegram decides who is in the group, not DeskPilot, so anyone added later gets the same control. Nothing from the group is accepted unless you tick this box <em>and</em> fill in the id.</p>
-        <p class="hint">To find the id: add your bot to the group, send any message there, then read it from the rejection line in the <strong>Status</strong> box above — it looks like <code>-1001234567890</code>.</p>
+        <input type="text" id="set-ic-group-chat" spellcheck="false" placeholder="e.g. -1001234567890, -1009876543210" value="${escapeHtml(asArray(ic.groupChatIds).join(', '))}" ${ic.allowGroupChat ? '' : 'disabled'} />
+        <p class="hint"><strong>Everyone in those groups can control this machine</strong> — send instructions, answer the agent’s questions, and run work in a project you have opted in, including <code>git push</code>. Telegram decides who is in a group, not DeskPilot, so anyone added later gets the same control. Nothing from a group is accepted unless you tick this box <em>and</em> fill in at least one id.</p>
+        <p class="hint">Separate several groups with commas — up to ten. To find an id: add your bot to the group, send any message there, then read it from the rejection line in the <strong>Status</strong> box above — it looks like <code>-1001234567890</code>.</p>
         <p class="hint">Telegram also hides ordinary group messages from bots. In <strong>@BotFather</strong> pick your bot → <em>Bot Settings</em> → <em>Group Privacy</em> → <strong>Turn off</strong>, then remove the bot from the group and add it back. Until you do, only <code>/commands</code>, replies to the bot, and messages that @mention it ever reach DeskPilot.</p>
       </div>
       <div class="field">
@@ -7118,10 +7118,12 @@ function openSettings() {
         $('set-ic-group-chat').disabled = !on;
         await saveIntercom({ allowGroupChat: on });
         if (on && !$('set-ic-group-chat').value.trim()) {
-            toast('Now enter the group id below — nothing from the group is accepted until you do.');
+            toast('Now enter one or more group ids below — nothing from a group is accepted until you do.');
         }
     };
-    $('set-ic-group-chat').onchange = (e) => saveIntercom({ groupChatId: e.target.value.trim() });
+    $('set-ic-group-chat').onchange = (e) => saveIntercom({
+        groupChatIds: e.target.value.split(/[,;]/).map((id) => id.trim()).filter(Boolean),
+    });
     renderIntercomPairing();
     icNumber('set-ic-heartbeat', 'heartbeatMinutes', 5, 1, 1440);
     icNumber('set-ic-stall', 'stallMinutes', 5, 1, 1440);

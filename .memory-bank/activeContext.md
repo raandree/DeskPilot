@@ -173,6 +173,14 @@ parameter's value, never on `$PSBoundParameters`.
 Gate: **1384 tests, 0 failures**; PSScriptAnalyzer clean on every changed
 production file.
 
+**Follow-up — several groups, not one (2026-09-02).** `intercom.groupChatId`
+became `intercom.groupChatIds`, an array capped at ten. The Settings box takes a
+comma-separated list; each id is still validated as negative, de-duplicated, and
+refused when it equals `chatId`. The retired singular key is still read so an
+existing `settings.json` migrates on load — verified against the operator's real
+file rather than a fixture. De-authorisation is now a set difference, so removing
+one group of several drops only the work bound to that one.
+
 ## Previous focus — opening a file with the OS program
 
 **A file DeskPilot cannot show opens in the program the computer already uses

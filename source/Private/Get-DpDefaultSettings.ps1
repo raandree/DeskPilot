@@ -107,16 +107,16 @@ function Get-DpDefaultSettings {
         # intercom.secret - never here) and one chat id is allow-listed. A remote
         # message can only act on a Project whose own intercom flag is on.
         #
-        # allowGroupChat widens that allow-list to a second, shared chat. It is a
-        # deliberate second switch rather than just a null id, because a group's
-        # membership is Telegram's to change: everyone in it, now and later, gets
-        # the same control as the operator. Both it and groupChatId must be set
-        # before a group message is accepted.
+        # allowGroupChat widens that allow-list to shared group chats. It is a
+        # deliberate second switch rather than just an empty list, because a
+        # group's membership is Telegram's to change: everyone in it, now and
+        # later, gets the same control as the operator. Both it and at least one
+        # groupChatIds entry must be set before a group message is accepted.
         intercom                   = @{
             enabled                = $false
             chatId                 = $null
             allowGroupChat         = $false
-            groupChatId            = $null
+            groupChatIds           = @()
             heartbeatMinutes       = 5
             stallMinutes           = 5
             questionTimeoutMinutes = 60

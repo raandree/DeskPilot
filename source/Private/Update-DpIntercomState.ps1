@@ -43,11 +43,11 @@ function Update-DpIntercomState {
     $settings = $state.Settings.intercom
     $chatId = if ($settings) { [string]$settings.chatId } else { '' }
 
-    # The shared group is allow-listed only when the operator has switched it on
-    # and named it. Two gates rather than one null check, because everyone in that
-    # group - now and whoever is added later - gets the operator's own control.
-    $groupChatId = ''
-    if ($settings -and [bool]$settings.allowGroupChat) { $groupChatId = [string]$settings.groupChatId }
+    # A shared group is allow-listed only when the operator has switched it on and
+    # named it. Two gates rather than one list check, because everyone in those
+    # groups - now and whoever is added later - gets the operator's own control.
+    $groupChatIds = @()
+    if ($settings -and [bool]$settings.allowGroupChat) { $groupChatIds = @($settings.groupChatIds) }
 
     # A pairing window lets the poller run before a chat is allow-listed, purely
     # so the operator can discover their own chat id. It expires on its own: an
@@ -222,7 +222,7 @@ function Update-DpIntercomState {
                             $commandParams = @{
                                 Update                   = $update
                                 AllowedChatId            = $chatId
-                                AllowedGroupChatId       = $groupChatId
+                                AllowedGroupChatId       = $groupChatIds
                                 PendingQuestionMessageId = $pendingMessageId
                                 PendingQuestionChatId    = $pendingChatId
                                 BotUsername              = [string](Get-DpPropertyValue -InputObject $intercom -Name @('BotUsername') -Default '')

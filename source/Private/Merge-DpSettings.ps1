@@ -184,6 +184,26 @@ function Merge-DpSettings {
                 $merged.mcpServers = $servers
             }
             'intercom' {
+                # A group list arrives either as an array or as the comma-separated
+                # string the Settings box takes, and the legacy single-id key folds
+                # into the same list so an existing settings.json keeps working.
+                $readGroupIds = {
+                    param([object]$Value)
+                    $ids = [System.Collections.Generic.List[string]]::new()
+                    foreach ($entry in @($Value)) {
+                        if ($null -eq $entry) { continue }
+                        foreach ($piece in (([string]$entry) -split '[,;]')) {
+                            $id = $piece.Trim()
+                            if (-not $id) { continue }
+                            if ($id -notmatch '^-\d{1,20}$') {
+                                throw "intercom.groupChatIds takes Telegram group chat ids, which always start with -. '$id' is not one."
+                            }
+                            if (-not $ids.Contains($id)) { $ids.Add($id) }
+                        }
+                    }
+                    if ($ids.Count -gt 10) { throw 'At most 10 group chats can be allow-listed.' }
+                    @($ids.ToArray())
+                }
                 $intercomMap = @{}
                 if ($value -is [hashtable]) { foreach ($k in $value.Keys) { $intercomMap[$k] = $value[$k] } }
                 elseif ($null -ne $value) { foreach ($p in $value.PSObject.Properties) { $intercomMap[$p.Name] = $p.Value } }
@@ -201,18 +221,10 @@ function Merge-DpSettings {
                             }
                             $merged.intercom.chatId = if ($chat) { $chat } else { $null }
                         }
-                        'groupChatId' {
-                            # A group id is always negative. Requiring the sign here
-                            # stops a second private chat being allow-listed through
-                            # the group field, where the warning about shared control
-                            # would not apply and the operator would have no idea a
-                            # second person could drive the machine.
-                            $group = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
-                            if ($group -and $group -notmatch '^-\d{1,20}$') {
-                                throw 'intercom.groupChatId must be a Telegram group chat id, which always starts with -.'
-                            }
-                            $merged.intercom.groupChatId = if ($group) { $group } else { $null }
-                        }
+                        'groupChatIds' { $merged.intercom.groupChatIds = & $readGroupIds $intercomValue }
+                        # Retired in favour of the list; still read so a settings
+                        # file written before the change migrates on first load.
+                        'groupChatId' { $merged.intercom.groupChatIds = & $readGroupIds $intercomValue }
                         # The bot token is never a Setting: it lives in
                         # intercom.secret so a Settings backup cannot carry a
                         # credential that grants control of this machine.
@@ -230,8 +242,8 @@ function Merge-DpSettings {
                 }
                 # Cross-field, so it runs once both keys have been applied: a patch
                 # can carry either or both, and a hashtable has no key order.
-                if ($merged.intercom.groupChatId -and $merged.intercom.groupChatId -eq $merged.intercom.chatId) {
-                    throw 'intercom.groupChatId must be a different chat from intercom.chatId.'
+                if ($merged.intercom.chatId -and (@($merged.intercom.groupChatIds) -contains $merged.intercom.chatId)) {
+                    throw 'intercom.groupChatIds must not contain intercom.chatId.'
                 }
             }
             'projects' {

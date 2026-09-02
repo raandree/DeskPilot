@@ -40,8 +40,8 @@ function Stop-DpIntercom {
             # would otherwise see silence, which is the one state Intercom exists
             # to stop being ambiguous.
             $targets = @([string]$state.Settings.intercom.chatId)
-            if ([bool]$state.Settings.intercom.allowGroupChat -and $state.Settings.intercom.groupChatId) {
-                $targets += [string]$state.Settings.intercom.groupChatId
+            if ([bool]$state.Settings.intercom.allowGroupChat) {
+                $targets += @($state.Settings.intercom.groupChatIds)
             }
             foreach ($target in $targets) {
                 $payload = @{
