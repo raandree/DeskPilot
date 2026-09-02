@@ -125,6 +125,14 @@ message itself, or tap one of its buttons. A new message in the group is a new
 instruction, not an answer — so if the agent is waiting, replying is the only
 thing that unblocks it.
 
+**Answering a set of questions.** The agent usually needs several things at once.
+DeskPilot asks them **one at a time**: tap an answer and the next question
+arrives. A question that takes more than one answer toggles its choices on and
+off and finishes with **Done**. A question with no choices is answered by
+replying to it. Replying with a number works too — "2" picks the second choice,
+"1,3" picks two — and `/stop` abandons the whole set if you would rather deal
+with it at the machine.
+
 To turn it off again, clear the tick. Anything the group had queued or was being
 asked is dropped rather than delivered to a chat that is no longer trusted.
 

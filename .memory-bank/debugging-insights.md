@@ -2,6 +2,79 @@
 
 Recurring issues and how they were resolved.
 
+## Intercom buttons "stopped working": nothing changed, two rules contradict (2026-09-02)
+
+**Symptom:** the operator reported that tappable answer buttons on the phone
+"worked some weeks ago" and now every Ask-User arrives as a numbered list to type
+a reply to. Suspicion fell on ShellPilot, which is pinned to `latest`.
+
+**Root cause: no regression.** Two DeskPilot rules have contradicted each other
+since the day Intercom shipped.
+
+- `Initialize-DpQuestionnaireTool` tells the model, in the tool description the
+  Engine advertises: *"Use ONE call to bundle all related questions that are
+  currently known; **do not ask them one at a time**. Use 1-10 questions."*
+  Written 2026-08-05, never changed.
+- `Send-DpIntercomQuestion` offers a keyboard only when
+  `$questions.Count -eq 1 -and options -gt 0 -and -not multiSelect`. Written
+  2026-08-09 — four days later, against a tool that was already telling the model
+  to batch. Byte-identical ever since; `Get-DpIntercomKeyboard` has been touched
+  exactly once, in that same commit.
+
+So DeskPilot instructs the model never to produce the only shape its own phone UI
+can render as buttons. Buttons appear only for the degenerate one-question call
+the tool description actively discourages. Weeks ago the agent happened to ask
+single questions; now it runs multi-question design interviews, which is exactly
+what it was told to do.
+
+**Evidence, and its limit.** The git history proves both rules are unchanged. The
+local Conversation store could *not* corroborate the "weeks ago" behaviour — it
+held only two Conversations, both from that day — so what the agent asked back
+then is inference from the code, not observation. Said plainly rather than
+dressed up as a finding.
+
+**Separate real hazard, found while looking:** `RequiredModules.psd1` pins
+`ShellPilot = 'latest'`. The installed 0.4.0 landed 2026-08-26. DeskPilot's
+behaviour can therefore shift with nothing in its own history to explain it, and
+"did the Engine change?" is unanswerable after the fact. That did not cause this
+symptom — DeskPilot's gate suppresses buttons for a six-question call whatever the
+Engine does — but it is why the question was reasonable and hard to settle.
+
+**Rule:** when a UI renders only one shape of a payload, the tool description that
+shapes that payload and the renderer that consumes it are one contract. Check both
+before believing a regression, and check the model-facing text, not just the code.
+
+**Resolved the same day** by making the renderer match the contract rather than
+the other way round: Intercom now asks a Questionnaire one question at a time,
+with buttons on every step, and submits the whole set at the end. Two of the tests
+that had guarded the old rule turned out to be **vacuous** - see the next entry.
+
+## A Pester mock sees an empty $PSBoundParameters when the caller splats (2026-09-02)
+
+**Symptom:** `IntercomKeyboard.Tests.ps1` asserted `$captured['HasKeyboard'] |
+Should -BeFalse` for the cases that were supposed to fall back to a written reply.
+Those tests passed. They also passed after the behaviour was deliberately
+reversed and a keyboard *was* being sent.
+
+**Root cause:** the mock recorded
+`HasKeyboard = $PSBoundParameters.ContainsKey('Keyboard')`, and the production
+caller invokes `Send-DpIntercomMessage @sendParams`. Inside a Pester mock body
+`$PSBoundParameters` is empty for a splatted call, so `HasKeyboard` was **always**
+`$false` and every assertion built on it was vacuous. Proved with a probe that
+recorded both forms side by side:
+
+```
+{"HasKeyboard":false,"KeyboardNull":false,"Rows":3}
+```
+
+The keyboard was present, correct, and three rows deep while the flag said it had
+never been passed.
+
+**Rule:** in a mock, assert on the parameter's **value**, never on
+`$PSBoundParameters`. A `Should -BeFalse` that also passes for `$null` will hide a
+mock that never ran, so pair any negative assertion with a positive one that
+proves the code path was reached at all.
+
 ## Assigning an `if` statement unrolls an array into a boxed `object[]` (2026-08-24)
 
 **Symptom:** pasting a file into the chat took seconds. `Read-DpMultipartParts`

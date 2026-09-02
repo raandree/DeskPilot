@@ -65,6 +65,13 @@ function Get-DpIntercomStatus {
         $quiet = [int]([DateTime]::UtcNow - $intercom.LastActivityUtc).TotalMinutes
         $lines.Add("Last agent activity: $(if ($quiet -lt 1) { 'just now' } else { "$quiet min ago" })")
     }
+    if ($intercom.PendingQuestion) {
+        $asked = @(Get-DpPropertyValue -InputObject $intercom.PendingQuestion -Name @('questions') -Default @())
+        if ($asked.Count -gt 1) {
+            $at = [int](Get-DpPropertyValue -InputObject $intercom.PendingQuestion -Name @('step') -Default 0)
+            $lines.Add("Waiting on question $($at + 1) of $($asked.Count).")
+        }
+    }
     if ($intercom.QueuedPrompt) { $lines.Add('Queued: one instruction is waiting for the current job to finish.') }
 
     $nowLocal = [DateTime]::Now

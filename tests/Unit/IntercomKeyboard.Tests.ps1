@@ -122,6 +122,21 @@ Describe 'Invoke-DpIntercomCallback' -Tag 'Unit' {
                     askedUtc       = [DateTime]::UtcNow
                     token          = 'abcd1234'
                     options        = @('Munich', 'Berlin')
+                    title          = 'Where?'
+                    structured     = $false
+                    step           = 0
+                    multiSelect    = $false
+                    questions      = @(
+                        @{
+                            header             = 'Location'
+                            question           = 'Which city?'
+                            options            = @(@{ label = 'Munich'; description = '' }, @{ label = 'Berlin'; description = '' })
+                            multiSelect        = $false
+                            allowFreeformInput = $false
+                            selectedOptions    = @()
+                            freeText           = ''
+                        }
+                    )
                 }
             }
         }
@@ -201,7 +216,10 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
                 Title       = $Title
                 Line        = @($Line)
                 Keyboard    = $Keyboard
-                HasKeyboard = $PSBoundParameters.ContainsKey('Keyboard')
+                # Read the value, not $PSBoundParameters: Pester leaves that empty
+                # inside a mock when the caller splatted, so a ContainsKey check is
+                # always false and every assertion built on it passes vacuously.
+                HasKeyboard = ($null -ne $Keyboard)
             }
             $true
         }
@@ -255,7 +273,7 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         }
     }
 
-    It 'falls back to a written reply for a multi-select question' {
+    It 'offers toggle buttons and a Done for a multi-select question' {
         $questionnaire = @{
             title     = 'Pick'
             questions = @(@{ header = 'Which'; question = 'Choose any'; options = @(@{ label = 'a'; description = '' }, @{ label = 'b'; description = '' }); multiSelect = $true; allowFreeformInput = $false })
@@ -263,14 +281,20 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
 
         Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $questionnaire
 
-        $script:captured['HasKeyboard'] | Should -BeFalse
-        $script:DeskPilot.Intercom.PendingQuestion.token | Should -BeNullOrEmpty
-        ($script:captured['Line'] -join ' ') | Should -Match 'Reply to this message'
-        # The reason is otherwise invisible from the phone: every cause looks the same there.
-        @($script:DeskPilot.Intercom.Log)[-1].detail | Should -Match 'multi-select'
+        $script:captured | Should -Not -BeNullOrEmpty
+        $script:captured['HasKeyboard'] | Should -BeTrue
+        $rows = @($script:captured['Keyboard'].inline_keyboard)
+        # One button per option, then the one that closes the step.
+        $rows.Count | Should -Be 3
+        $rows[2][0].text | Should -Be 'Done'
+        $rows[2][0].callback_data | Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|d"
+        ($script:captured['Line'] -join ' ') | Should -Match 'then tap Done'
     }
 
-    It 'falls back to a written reply when there is more than one question' {
+    It 'asks a multi-question Questionnaire one question at a time' {
+        # DeskPilot's own Tool description tells the model to bundle every question
+        # into one call, so refusing buttons for a bundle refused them for almost
+        # every real Questionnaire.
         $questionnaire = @{
             title     = 'Two things'
             questions = @(
@@ -281,7 +305,13 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
 
         Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $questionnaire
 
-        $script:captured['HasKeyboard'] | Should -BeFalse
+        $script:captured | Should -Not -BeNullOrEmpty
+        $script:captured['HasKeyboard'] | Should -BeTrue
+        ($script:captured['Line'] -join ' ') | Should -Match 'Question 1 of 2'
+        # Only the first question ships; the rest wait their turn.
+        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 1
+        $script:DeskPilot.Intercom.PendingQuestion.step | Should -Be 0
+        @($script:DeskPilot.Intercom.PendingQuestion.questions).Count | Should -Be 2
     }
 
     It 'sends a free-text question exactly as before' {

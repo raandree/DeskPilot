@@ -1526,7 +1526,18 @@ Describe 'Submit-DpIntercomAnswer' -Tag 'Unit' {
                 Token           = ''
                 StallNotified   = $true
                 LastActivityUtc = [DateTime]::UtcNow.AddMinutes(-10)
-                PendingQuestion = @{ id = 'q1'; conversationId = 'c1'; messageId = 42; chatId = '111' }
+                PendingQuestion = @{
+                    id = 'q1'; conversationId = 'c1'; messageId = 42; chatId = '111'
+                    title = 'One thing'; structured = $false; step = 0; multiSelect = $false
+                    token = ''; options = @()
+                    questions = @(
+                        @{
+                            header = 'Q'; question = 'Which one?'; options = @()
+                            multiSelect = $false; allowFreeformInput = $true
+                            selectedOptions = @(); freeText = ''
+                        }
+                    )
+                }
             }
         }
     }

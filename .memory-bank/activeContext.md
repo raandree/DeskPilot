@@ -148,6 +148,31 @@ was restored and re-counted. Gate **1372/1372**.
 No CHANGELOG entry — the `[Unreleased]` Added entry already promises "It replies
 wherever it was asked", which was false when written and is now true.
 
+**Follow-up — questions are tappable now (2026-09-02).** The operator asked for a
+"more comfortable" question format and believed it had regressed. It had not:
+`Initialize-DpQuestionnaireTool` has told the model *"Use ONE call to bundle all
+related questions; do not ask them one at a time"* since 2026-08-05, while
+`Send-DpIntercomQuestion` rendered a keyboard only for `questions.Count -eq 1`
+since 2026-08-09 — byte-identical ever since. **DeskPilot instructed the model
+never to produce the only shape its own phone UI could render as buttons.**
+
+Fixed by making the renderer match the contract: `Send-DpIntercomQuestionStep`
+sends one question at a time with its options as buttons and a per-step nonce,
+`Move-DpIntercomInterview` advances or submits, and
+`ConvertTo-DpQuestionnaireAnswer` serializes to the browser wizard's own wire
+format so the bridge is still called exactly once. Multi-select toggles and closes
+on **Done**, with feedback as a toast on the tap acknowledgement. A typed reply is
+mapped onto the options first, so "2" and "1,3" still work.
+
+**Two existing tests were vacuous** and were rewritten: the mock recorded
+`HasKeyboard = $PSBoundParameters.ContainsKey('Keyboard')`, which is always
+`$false` inside a Pester mock when the caller splats. `Should -BeFalse` had never
+tested anything, and kept passing after the behaviour was reversed. Assert on the
+parameter's value, never on `$PSBoundParameters`.
+
+Gate: **1384 tests, 0 failures**; PSScriptAnalyzer clean on every changed
+production file.
+
 ## Previous focus — opening a file with the OS program
 
 **A file DeskPilot cannot show opens in the program the computer already uses

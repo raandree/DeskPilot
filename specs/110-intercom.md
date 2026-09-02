@@ -194,13 +194,34 @@ Reading a numbered list and typing a number is the wrong interaction at a bus
 stop. Where a choice is closed, Intercom attaches Telegram's **inline keyboard**
 so the operator taps instead - the affordance BotFather uses.
 
-Buttons are offered for an Ask-User question **only when it is a single question
-with options and is not multi-select**. A multi-select or multi-question
-Questionnaire cannot be expressed by one tap, so it keeps the written-reply flow
-and the message says so; a keyboard that could not express the answer would be a
-trap rather than a shortcut. The `/chats`, `/agents`, `/models` and `/projects`
-listings each carry one button per entry. In every case the text form still
-works, so nothing depends on the buttons rendering.
+Buttons are offered for **every** question that has options. A Questionnaire is
+asked **one question at a time**: DeskPilot sends question 1 with its options as
+buttons, the operator taps, question 2 follows, and only when the last is answered
+is the whole thing serialized and handed to the bridge - the same single answer
+string the browser wizard submits after its own last step. Answering step by step
+is a phone affordance, not a second contract.
+
+This exists because the two halves of DeskPilot contradicted each other for a
+month. `Initialize-DpQuestionnaireTool` tells the model *"Use ONE call to bundle
+all related questions; do not ask them one at a time"*, while Intercom rendered a
+keyboard **only** for a lone question - so the affordance was unreachable for
+precisely the shape DeskPilot asks the model to produce, and every real
+Questionnaire arrived as a wall of numbered text to type a reply to.
+
+- A **single-choice** question ends the step on one tap.
+- A **multi-select** question toggles, and its `Done` button closes the step.
+  Feedback rides on the tap acknowledgement as a Telegram toast, because
+  re-sending the message per tap would cost a call and a queue slot each time and
+  editing it needs a message id the outbound queue does not track.
+- A **free-text** question has no keyboard and is answered by replying.
+- Typed text is mapped onto the options first - by the printed number, or an exact
+  label - so the old habit of replying "2" still works. A question that does not
+  permit free text refuses anything that matches no option, because the browser
+  wizard would have refused to submit it too.
+
+The `/chats`, `/agents`, `/models` and `/projects` listings each carry one button
+per entry. In every case the text form still works, so nothing depends on the
+buttons rendering.
 
 Three constraints shape the design:
 
@@ -211,8 +232,8 @@ Three constraints shape the design:
 - **Old buttons never disappear.** Telegram leaves them on screen indefinitely, so
   an option tap must carry the nonce of the question *currently* waiting
   (`PendingQuestion.token`). Without it, a tap on a question answered hours ago
-  would answer whatever is waiting now. The nonce is minted with the keyboard and
-  cleared if the keyboard did not ship.
+  would answer whatever is waiting now. **Each step of an interview mints its own
+  nonce**, so a tap on question 1 cannot answer question 2 either.
 - **A tap must be acknowledged.** Telegram shows the button as loading until
   `answerCallbackQuery` lands, so it is queued ahead of the reply and bypasses the
   hourly cap - it is a protocol obligation, not a notification. Bare Bot API calls
@@ -322,6 +343,8 @@ Pure, unit-testable helpers:
   command, or a rejection, with every bound applied.
 - `Format-DpIntercomMessage` — structured fields become Telegram-safe text
   chunks of at most 4096 characters.
+- `ConvertTo-DpQuestionnaireAnswer` — collected answers become the single string
+  the Ask-User bridge takes, in the browser wizard's own wire format.
 - `Test-DpIntercomProject` — is the selected Project remote-controllable?
 
 State and transport:
@@ -333,6 +356,9 @@ State and transport:
 - `Update-DpIntercomState` — the pump: reap, dispatch, drain, heartbeat, watch
   for a stall. Never throws into the accept loop.
 - `Invoke-DpIntercomCommand` — executes one normalized command.
+- `Send-DpIntercomQuestionStep` — sends the one question an interview is on, with
+  its keyboard and a fresh nonce.
+- `Move-DpIntercomInterview` — advances to the next question, or submits.
 - `Read-DpIntercomSecret` / `Save-DpIntercomSecret` — the protected token at
   rest.
 - `Get-DpIntercomPayload` — the API projection, with the token removed.

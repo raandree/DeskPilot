@@ -31,17 +31,19 @@ function Invoke-DpIntercomCallback {
     # Telegram shows the button as loading until this lands, so it is queued first
     # and bypasses the hourly cap: it is a protocol obligation, not a notification.
     $callbackId = [string](Get-DpPropertyValue -InputObject $Command -Name @('callbackId') -Default '')
+    $ack = $null
     if ($callbackId) {
-        $intercom.Outbound.Enqueue(@{
-                kind      = 'callback-ack'
-                text      = 'Acknowledged a button tap.'
-                capture   = ''
-                edit      = $false
-                plainOnly = $true
-                keyboard  = $null
-                operation = 'answerCallbackQuery'
-                payload   = @{ callback_query_id = $callbackId }
-            })
+        $ack = @{
+            kind      = 'callback-ack'
+            text      = 'Acknowledged a button tap.'
+            capture   = ''
+            edit      = $false
+            plainOnly = $true
+            keyboard  = $null
+            operation = 'answerCallbackQuery'
+            payload   = @{ callback_query_id = $callbackId }
+        }
+        $intercom.Outbound.Enqueue($ack)
     }
 
     $parts = ([string]$Command.text) -split '\|'
@@ -56,13 +58,55 @@ function Invoke-DpIntercomCallback {
                 ) -Kind 'notice'
                 return
             }
+
+            $questions = @($pending.questions)
+            $step = [int]$pending.step
+            if ($step -lt 0 -or $step -ge $questions.Count) { return }
+            $question = $questions[$step]
+            $multiSelect = [bool]$pending.multiSelect
+
+            # 'Done' closes a multi-select step; every other payload is an index.
+            if ($parts[2] -eq 'd') {
+                if (-not $multiSelect) { return }
+                if (@($question.selectedOptions).Count -eq 0) {
+                    $null = Send-DpIntercomMessage -Title 'Pick at least one before Done.' -Kind 'notice'
+                    return
+                }
+                $null = Move-DpIntercomInterview
+                return
+            }
+
             $options = @(Get-DpPropertyValue -InputObject $pending -Name @('options') -Default @())
             $index = -1
             if (-not [int]::TryParse($parts[2], [ref]$index) -or $index -lt 0 -or $index -ge $options.Count) {
                 $null = Send-DpIntercomMessage -Title 'I did not recognise that choice.' -Line @('Reply to the question with your answer instead.') -Kind 'notice'
                 return
             }
-            $null = Submit-DpIntercomAnswer -Answer ([string]$options[$index])
+            $label = [string]$options[$index]
+
+            if ($multiSelect) {
+                # The toast on the tap acknowledgement is the feedback: re-sending
+                # the message per tap would cost a Telegram call and a queue slot
+                # each time, and editing it needs a message id this queue does not
+                # track. Safe to fill in here - the pump drains the queue on a later
+                # tick, and the accept loop is single-threaded.
+                $selected = [System.Collections.Generic.List[string]]::new()
+                foreach ($item in @($question.selectedOptions)) { $selected.Add([string]$item) }
+                if ($selected.Contains($label)) {
+                    $null = $selected.Remove($label)
+                    if ($ack) { $ack.payload.text = "Removed: $label" }
+                }
+                else {
+                    $selected.Add($label)
+                    if ($ack) { $ack.payload.text = "Added: $label" }
+                }
+                $question.selectedOptions = @($selected.ToArray())
+                return
+            }
+
+            $question.selectedOptions = @($label)
+            $question.freeText = ''
+            $null = Move-DpIntercomInterview
         }
 
         'k' {

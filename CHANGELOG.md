@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Questions you can tap through instead of typing at.** When the agent needs
+  input it now asks **one question at a time**, with its choices as buttons: tap
+  an answer and the next question arrives. A question that takes several answers
+  toggles them on and off and finishes with **Done**; a question with no choices
+  is still answered by replying. You can also still reply with a number — "2"
+  picks the second choice, and "1,3" picks two.
+
+  Before this, buttons appeared **only** when the agent happened to ask exactly
+  one question, which almost never happened: DeskPilot tells the agent to bundle
+  everything it needs into a single request, so a real set of questions arrived as
+  a wall of numbered text you had to read and reply to — six questions in one
+  message, on a phone. The two halves of DeskPilot had contradicted each other
+  since the feature shipped.
+
 - **Let a Telegram group reach Intercom, not just your own chat.** Adding the bot
   to a group used to be a dead end: every message from it was counted, rejected
   and thrown away, with only a line in the Status box to say why. **Settings ›
