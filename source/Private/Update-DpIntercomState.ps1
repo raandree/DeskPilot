@@ -17,6 +17,12 @@ function Update-DpIntercomState {
         Only the accept-loop caller passes -AllowTurn. Starting a Turn is the last
         thing this function does, so a command that arrives mid-Turn is queued
         rather than re-entering Invoke-DpTurn.
+
+        It is also re-entrant: the Turn it starts calls Invoke-DpPendingRequest,
+        which calls this function again. Every override of the ambient reply
+        target therefore saves and restores the previous value rather than
+        clearing it - a nested tick that reset it to empty would silently
+        redirect the rest of a running Turn to the operator's own chat.
     .PARAMETER AllowTurn
         Permit the queued prompt to run. Only the accept loop may pass this.
     .OUTPUTS
@@ -228,9 +234,12 @@ function Update-DpIntercomState {
                             if ($isPairing) { Add-DpIntercomPairingCandidate -Command $command }
                             else {
                                 # Answer where you were asked, for this command only.
+                                # Restores rather than clears: this tick may be
+                                # nested inside a Turn that owns the target.
+                                $callerChat = $intercom.ReplyChatId
                                 $intercom.ReplyChatId = [string]$command.chatId
                                 try { Invoke-DpIntercomCommand -Command $command }
-                                finally { $intercom.ReplyChatId = $null }
+                                finally { $intercom.ReplyChatId = $callerChat }
                             }
                         }
                     }
@@ -286,6 +295,7 @@ function Update-DpIntercomState {
         # Advance a file the operator sent. It becomes the queued prompt once it
         # has landed on disk. It spans pump ticks, so it carries the chat it came
         # from rather than relying on the dispatch that started it.
+        $callerChat = $intercom.ReplyChatId
         $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom.Download -Name @('chatId') -Default '')
         try { Update-DpIntercomDownload } catch {
             $intercom.Counters.errors++
@@ -293,7 +303,7 @@ function Update-DpIntercomState {
             $intercom.Download.stage = ''
             $intercom.Download.task = $null
         }
-        finally { $intercom.ReplyChatId = $null }
+        finally { $intercom.ReplyChatId = $callerChat }
 
         $now = [DateTime]::UtcNow
 
@@ -356,14 +366,17 @@ function Update-DpIntercomState {
             $intercom.QueuedPrompt = $null
             $intercom.QueuedImage = $null
             # The Turn reports back where it was asked for, which the queued
-            # prompt has carried since the dispatch that accepted it.
+            # prompt has carried since the dispatch that accepted it. The Turn
+            # calls this function again through Invoke-DpPendingRequest, so this
+            # target has to survive every nested tick until the Turn ends.
+            $callerChat = $intercom.ReplyChatId
             $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom -Name @('QueuedChatId') -Default '')
             $intercom.QueuedChatId = $null
             try {
                 if ($image) { Invoke-DpIntercomTurn -Prompt $prompt -Image $image }
                 else { Invoke-DpIntercomTurn -Prompt $prompt }
             }
-            finally { $intercom.ReplyChatId = $null }
+            finally { $intercom.ReplyChatId = $callerChat }
         }
     }
     catch {

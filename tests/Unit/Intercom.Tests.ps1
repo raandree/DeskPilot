@@ -1475,6 +1475,39 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
             $kinds | Should -Not -Contain 'stalled'
         }
     }
+
+    Context 'nested inside a running Turn' {
+        BeforeEach {
+            # Invoke-DpPendingRequest calls this function from inside the Turn the
+            # reply target belongs to, so the pump is re-entrant.
+            Mock Invoke-DpTelegramRequest { $null }
+            $script:DeskPilot.Settings.intercom.enabled = $true
+            $script:DeskPilot.Settings.intercom.chatId = '111'
+            $script:DeskPilot.Intercom.TokenConfigured = $true
+            $script:DeskPilot.Intercom.Running = $true
+            $script:DeskPilot.Intercom.Priming = $false
+            $script:DeskPilot.Intercom.LastHeartbeatUtc = [DateTime]::UtcNow
+            $script:DeskPilot.Intercom.ReplyChatId = '-1004455397827'
+        }
+
+        It 'leaves the reply target the caller owns alone' {
+            Update-DpIntercomState
+
+            $script:DeskPilot.Intercom.ReplyChatId | Should -Be '-1004455397827'
+        }
+
+        It 'still addresses the group after a nested tick has run' {
+            # The symptom this guards: the acknowledgement reached the group, then
+            # a nested tick cleared the target and the agent's question - sent
+            # later in the same Turn - arrived in the operator's private chat.
+            Update-DpIntercomState
+
+            $null = Send-DpIntercomMessage -Title 'The agent needs your input' -Kind 'question' -Capture 'question'
+
+            $question = @(@($script:DeskPilot.Intercom.Outbound.ToArray()) | Where-Object { $_.kind -eq 'question' })
+            $question[0].chatId | Should -Be '-1004455397827'
+        }
+    }
 }
 
 Describe 'Submit-DpIntercomAnswer' -Tag 'Unit' {

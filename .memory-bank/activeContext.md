@@ -125,6 +125,29 @@ every path that must clear stale routing state, since failing to enumerate one
 Fixed during the review: `CHANGELOG.md` had `### Fixed` before `### Added` and a
 duplicate `### Added` under one release heading, against Keep a Changelog order.
 
+**Follow-up — a group Turn answered privately (2026-09-02).** Reported from two
+screenshots: the acknowledgement in the group at 5:44, the agent's question in
+the private bot chat at 5:49. That split *is* the diagnosis — the ack is sent
+during dispatch, the question minutes later inside the Turn. The pump is
+**re-entrant** (`Update-DpIntercomState` → `Invoke-DpIntercomTurn` →
+`Invoke-DpTurn` → `Invoke-DpPendingRequest` → `Update-DpIntercomState`), and the
+nested tick's `finally { $intercom.ReplyChatId = $null }` in the download block
+ran on every non-pairing tick, wiping the target the outer Turn owned.
+
+It was not only misrouting: `PendingQuestion.chatId` comes from the same ambient
+value, so the nonce was recorded against the private chat and a reply in the group
+would have been read as a new prompt — the Turn would have stayed blocked, which
+is the "hang" all over again by a different route.
+
+Fixed by capturing the caller's value and restoring *that* at all three override
+sites; the disable transition still nulls, correctly, because nothing is running.
+Red-first was proved, not assumed: the committed pump was swapped back in under a
+`try`/`finally`, the two new tests ran **0 passed / 2 failed**, and the fixed file
+was restored and re-counted. Gate **1372/1372**.
+
+No CHANGELOG entry — the `[Unreleased]` Added entry already promises "It replies
+wherever it was asked", which was false when written and is now true.
+
 ## Previous focus — opening a file with the OS program
 
 **A file DeskPilot cannot show opens in the program the computer already uses

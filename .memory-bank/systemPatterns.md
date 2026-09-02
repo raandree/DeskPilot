@@ -415,6 +415,18 @@ source: repository evidence
   copy, because the dispatch that set it is long gone by the time it completes.
   The live status message is the deliberate exception: there is one of it and one
   `message_id` for it, so it cannot follow the conversation around.
+- **Ambient state plus a re-entrant pump means save and restore, never clear.**
+  `Update-DpIntercomState` calls `Invoke-DpIntercomTurn`, whose Turn calls
+  `Invoke-DpPendingRequest`, which calls `Update-DpIntercomState` again. A nested
+  tick that reset the ambient reply target to empty in its `finally` silently
+  redirected the rest of a running Turn: the acknowledgement reached the group
+  because it was sent during dispatch, and the agent's question - sent minutes
+  later inside the Turn - arrived in the operator's private chat. It also recorded
+  the answer nonce against the wrong chat, so replying in the group would have
+  been read as a new prompt. Every override of ambient state in this pump captures
+  the previous value and restores *that*. The tell is structural, not behavioural:
+  if a function can appear twice on its own call stack, its `finally` may not
+  assume it owns the value it is resetting.
 - **A per-chat message id is not a nonce until it is paired with its chat.**
   Telegram numbers messages per chat, so once two chats are allow-listed an
   unrelated reply in one can carry the same id as the question pending in the

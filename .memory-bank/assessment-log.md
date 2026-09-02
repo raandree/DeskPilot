@@ -36,6 +36,19 @@ FIND-004 and FIND-005 share one structural fix: resolve and **re-validate** the
 target chat against the live allow-list inside `Send-DpIntercomMessage`, instead
 of enumerating every place that has to clear stale routing state.
 
+**Gap in this assessment, found in use the same day.** The review reasoned about
+`ReplyChatId` as ambient state (FIND-005) but never asked whether the pump that
+owns it is re-entrant. It is: `Update-DpIntercomState` → `Invoke-DpIntercomTurn` →
+`Invoke-DpTurn` → `Invoke-DpPendingRequest` → `Update-DpIntercomState`. Nested
+ticks cleared the target to `$null` in their `finally`, so a group Turn's
+acknowledgement arrived in the group and its question arrived privately, and the
+answer nonce was recorded against the wrong chat. Fixed by save-and-restore at all
+three override sites, with a red-first regression pair. **Lesson for the next
+review: when a finding is about ambient or dynamically scoped state, check the
+call graph for re-entrancy before rating it, because the severity depends on it.**
+The re-validation recommended above would have contained the blast radius but not
+prevented the misrouting.
+
 **Lethal trifecta:** all three legs are present and leg 2 widened materially.
 Private data = the Project's files and git credentials; untrusted content = repo
 contents the agent reads *plus* messages from an externally-managed group
