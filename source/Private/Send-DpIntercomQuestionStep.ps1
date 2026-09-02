@@ -32,7 +32,6 @@ function Send-DpIntercomQuestionStep {
     $question = $questions[$step]
     $optionLabels = @(@($question.options) | ForEach-Object { [string]$_.label })
     $multiSelect = [bool]$question.multiSelect
-    $allowFreeform = [bool]$question.allowFreeformInput
     $selected = @($question.selectedOptions)
 
     $token = [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -46,6 +45,10 @@ function Send-DpIntercomQuestionStep {
                 $label = $(if ($multiSelect -and $selected -contains $_) { "* $_" } else { $_ })
                 @{ label = $label; data = "q|$token|$index" }
             })
+        # An escape hatch on every option list, because a set of choices that does
+        # not cover the answer is worse on a phone than anywhere else - there is no
+        # window to go and argue in.
+        $choices += @{ label = 'Something else - type it'; data = "q|$token|f" }
         if ($multiSelect) { $choices += @{ label = 'Done'; data = "q|$token|d" } }
     }
 
@@ -55,6 +58,8 @@ function Send-DpIntercomQuestionStep {
     $pending.token = $token
     $pending.options = @($optionLabels)
     $pending.multiSelect = $multiSelect
+    # A fresh step is answered by tapping until the operator says otherwise.
+    $pending.awaitingFreeText = $false
     # Each step is its own message, so the reply nonce moves with it.
     $pending.messageId = 0
 
@@ -64,7 +69,7 @@ function Send-DpIntercomQuestionStep {
         $lines.Add('Tap every answer that applies, then tap Done.')
     }
     elseif ($keyboard) {
-        $lines.Add($(if ($allowFreeform) { 'Tap an answer below, or reply to this message with your own.' } else { 'Tap an answer below.' }))
+        $lines.Add('Tap an answer below, or reply to this message with your own.')
     }
     else {
         $lines.Add('Reply to this message to answer.')

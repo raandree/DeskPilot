@@ -50,8 +50,12 @@ function Submit-DpIntercomAnswer {
     $labels = @(@($question.options) | ForEach-Object { [string]$_.label })
     $text = ([string]$Answer).Trim()
 
+    # After 'Something else' the words are the answer, so mapping them onto the
+    # options would turn a literal "2" into the second choice.
+    $verbatim = [bool](Get-DpPropertyValue -InputObject $pending -Name @('awaitingFreeText') -Default $false)
+
     $picked = [System.Collections.Generic.List[string]]::new()
-    if ($labels.Count -gt 0) {
+    if ($labels.Count -gt 0 -and -not $verbatim) {
         foreach ($piece in @($text -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) {
             $number = 0
             if ([int]::TryParse($piece, [ref]$number) -and $number -ge 1 -and $number -le $labels.Count) {
@@ -73,14 +77,16 @@ function Submit-DpIntercomAnswer {
         $question.selectedOptions = @($picked.ToArray())
         $question.freeText = ''
     }
-    elseif ([bool]$question.allowFreeformInput -and $text) {
-        $question.selectedOptions = @()
+    elseif ($text -and ($verbatim -or [bool]$question.allowFreeformInput)) {
+        # A multi-select keeps what was already ticked: "these two, plus this".
+        # A single-choice question is either/or, as it is in the browser.
+        if (-not [bool]$question.multiSelect) { $question.selectedOptions = @() }
         $question.freeText = $text
     }
     else {
         $lines = [System.Collections.Generic.List[string]]::new()
         $lines.Add('That did not match any of the choices for this question.')
-        $lines.Add('Tap one of the buttons, or reply with its number.')
+        $lines.Add('Tap one of the buttons, reply with its number, or tap "Something else - type it".')
         $number = 0
         foreach ($label in $labels) { $number++; $lines.Add("  $number) $label") }
         $null = Send-DpIntercomMessage -Title 'I need one of the choices.' -Line @($lines.ToArray()) -Kind 'notice'

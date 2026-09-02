@@ -214,10 +214,20 @@ Questionnaire arrived as a wall of numbered text to type a reply to.
   re-sending the message per tap would cost a call and a queue slot each time and
   editing it needs a message id the outbound queue does not track.
 - A **free-text** question has no keyboard and is answered by replying.
+- Every list of options also carries **`Something else - type it`**. Tapping it
+  makes the next reply the answer, taken verbatim - so a literal "2" stays "2"
+  rather than selecting the second choice. This is a deliberate divergence from
+  the browser wizard, which honours `allowFreeformInput` strictly:
+  `ConvertTo-DpQuestionnaire` defaults that flag to **false** for any question
+  that has options, so without the escape hatch most option questions would force
+  a wrong answer, and a phone is the worst place to be cornered by one. The
+  buttons stay live after it is tapped, so changing one's mind costs nothing. A
+  multi-select keeps what was already ticked and adds the words to it; a
+  single-choice question is either/or, as it is in the browser.
 - Typed text is mapped onto the options first - by the printed number, or an exact
-  label - so the old habit of replying "2" still works. A question that does not
-  permit free text refuses anything that matches no option, because the browser
-  wizard would have refused to submit it too.
+  label - so the old habit of replying "2" still works. Words that match no option
+  are refused with the list and a pointer to the escape hatch, rather than sent as
+  an answer the browser would not have produced.
 
 The `/chats`, `/agents`, `/models` and `/projects` listings each carry one button
 per entry. In every case the text form still works, so nothing depends on the

@@ -246,10 +246,13 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
 
         Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $questionnaire
 
-        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 2
+        # One per option, plus the way out when none of them fit.
+        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 3
         # The nonce ties those buttons to this question and nothing else.
         $script:captured['Keyboard'].inline_keyboard[0][0].callback_data |
             Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|0"
+        $script:captured['Keyboard'].inline_keyboard[2][0].callback_data |
+            Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|f"
         ($script:captured['Line'] -join ' ') | Should -Match 'Tap an answer'
     }
 
@@ -264,7 +267,7 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
 
         Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire (ConvertTo-DpQuestionnaire -InputObject $raw)
 
-        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 3
+        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 4
         $script:captured['Keyboard'].inline_keyboard[0][0].text | Should -Be '47'
         # Each button must carry its own index, or every option answers the first.
         @(0..2) | ForEach-Object {
@@ -284,10 +287,11 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         $script:captured | Should -Not -BeNullOrEmpty
         $script:captured['HasKeyboard'] | Should -BeTrue
         $rows = @($script:captured['Keyboard'].inline_keyboard)
-        # One button per option, then the one that closes the step.
-        $rows.Count | Should -Be 3
-        $rows[2][0].text | Should -Be 'Done'
-        $rows[2][0].callback_data | Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|d"
+        # One per option, then the way out, then the one that closes the step.
+        $rows.Count | Should -Be 4
+        $rows[2][0].text | Should -Be 'Something else - type it'
+        $rows[3][0].text | Should -Be 'Done'
+        $rows[3][0].callback_data | Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|d"
         ($script:captured['Line'] -join ' ') | Should -Match 'then tap Done'
     }
 
@@ -309,7 +313,7 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         $script:captured['HasKeyboard'] | Should -BeTrue
         ($script:captured['Line'] -join ' ') | Should -Match 'Question 1 of 2'
         # Only the first question ships; the rest wait their turn.
-        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 1
+        @($script:captured['Keyboard'].inline_keyboard).Count | Should -Be 2
         $script:DeskPilot.Intercom.PendingQuestion.step | Should -Be 0
         @($script:DeskPilot.Intercom.PendingQuestion.questions).Count | Should -Be 2
     }

@@ -76,6 +76,17 @@ function Invoke-DpIntercomCallback {
                 return
             }
 
+            # 'Something else': the next reply is taken as written, and this
+            # message becomes the one to reply to. The nonce is left alone, so the
+            # buttons already on screen still work if they change their mind.
+            if ($parts[2] -eq 'f') {
+                $pending.awaitingFreeText = $true
+                $null = Send-DpIntercomMessage -Title 'Go ahead - reply to this message with your answer.' -Line @(
+                    [string]$question.question
+                ) -Kind 'question' -Capture 'question'
+                return
+            }
+
             $options = @(Get-DpPropertyValue -InputObject $pending -Name @('options') -Default @())
             $index = -1
             if (-not [int]::TryParse($parts[2], [ref]$index) -or $index -lt 0 -or $index -ge $options.Count) {
@@ -106,6 +117,7 @@ function Invoke-DpIntercomCallback {
 
             $question.selectedOptions = @($label)
             $question.freeText = ''
+            $pending.awaitingFreeText = $false
             $null = Move-DpIntercomInterview
         }
 

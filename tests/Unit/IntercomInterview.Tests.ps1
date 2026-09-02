@@ -209,4 +209,53 @@ Describe 'Intercom step-through interview' -Tag 'Unit' {
         $script:DeskPilot.Intercom.PendingQuestion.step | Should -Be 1
         @($script:sent)[-1].Title | Should -Be 'That question has moved on.'
     }
+
+    It 'offers a way out when none of the choices fit' {
+        # ConvertTo-DpQuestionnaire defaults allowFreeformInput to false whenever a
+        # question has options, so without this most option questions would refuse
+        # typing outright and the operator would have to pick something wrong.
+        Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $script:threeQuestions
+
+        $rows = @(@($script:sent)[-1].Keyboard.inline_keyboard)
+        $rows[-1][0].text | Should -Be 'Something else - type it'
+        $rows[-1][0].callback_data | Should -Be "q|$($script:DeskPilot.Intercom.PendingQuestion.token)|f"
+    }
+
+    It 'takes the words verbatim after Something else, even when they look like a number' {
+        Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $script:threeQuestions
+
+        Invoke-TestTap -Choice 'f'
+        $script:DeskPilot.Intercom.PendingQuestion.awaitingFreeText | Should -BeTrue
+        $null = Submit-DpIntercomAnswer -Answer '2'
+
+        # Without the verbatim flag this would have picked the second option.
+        $script:DeskPilot.Intercom.PendingQuestion.questions[0].freeText | Should -Be '2'
+        @($script:DeskPilot.Intercom.PendingQuestion.questions[0].selectedOptions) | Should -BeNullOrEmpty
+        $script:DeskPilot.Intercom.PendingQuestion.step | Should -Be 1
+    }
+
+    It 'still honours the buttons after Something else was tapped' {
+        # The nonce is deliberately left alone, so changing their mind works.
+        Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $script:threeQuestions
+
+        Invoke-TestTap -Choice 'f'
+        Invoke-TestTap -Choice '1'
+
+        @($script:DeskPilot.Intercom.PendingQuestion.questions[0].selectedOptions) | Should -Be @('Spike')
+        $script:DeskPilot.Intercom.PendingQuestion.step | Should -Be 1
+    }
+
+    It 'keeps what a multi-select already had when words are added to it' {
+        Send-DpIntercomQuestion -RequestId 'r1' -ConversationId 'c1' -Questionnaire $script:threeQuestions
+        Invoke-TestTap -Choice '0'
+        $null = Submit-DpIntercomAnswer -Answer 'anything'
+
+        Invoke-TestTap -Choice '0'                               # tick Slow
+        Invoke-TestTap -Choice 'f'
+        $null = Submit-DpIntercomAnswer -Answer 'licensing, probably'
+
+        $parsed = $script:submitted | ConvertFrom-Json
+        @($parsed.answers[2].selectedOptions) | Should -Be @('Slow')
+        $parsed.answers[2].freeText | Should -Be 'licensing, probably'
+    }
 }

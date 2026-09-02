@@ -133,6 +133,11 @@ replying to it. Replying with a number works too — "2" picks the second choice
 "1,3" picks two — and `/stop` abandons the whole set if you would rather deal
 with it at the machine.
 
+**When none of the choices fit.** Every list of options ends with **Something
+else - type it**. Tap it and reply with whatever you actually mean; your words go
+to the agent exactly as written. The buttons keep working after you tap it, so
+changing your mind costs nothing.
+
 To turn it off again, clear the tick. Anything the group had queued or was being
 asked is dropped rather than delivered to a chat that is no longer trusted.
 

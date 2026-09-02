@@ -82,6 +82,7 @@ function Send-DpIntercomQuestion {
         token          = ''
         options        = @()
         multiSelect    = $false
+        awaitingFreeText = $false
     }
 
     if (-not (Send-DpIntercomQuestionStep)) { $intercom.PendingQuestion = $null }

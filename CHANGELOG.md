@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message, on a phone. The two halves of DeskPilot had contradicted each other
   since the feature shipped.
 
+  Every list of choices also ends with **Something else - type it**, for when none
+  of them is what you mean. Your words reach the agent exactly as written, and the
+  buttons keep working in case you change your mind.
+
 - **Let a Telegram group reach Intercom, not just your own chat.** Adding the bot
   to a group used to be a dead end: every message from it was counted, rejected
   and thrown away, with only a line in the Status box to say why. **Settings ›
