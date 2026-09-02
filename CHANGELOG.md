@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Document the recommended Prompt File execution order.** The Prompt File
+  folder now explains the default ten-feature sequence, hard prerequisite
+  gates, optional packaging and localization timing, and when the historical
+  Intercom remediation Prompt File still applies.
+
 - **Compare Microsoft Scout and choose two more feature briefs.** The
   competitive landscape now covers Scout's documented file, shell, browser,
   Microsoft 365, approval, autonomous-work, sub-agent, Memory, Skill, and

@@ -58,7 +58,9 @@ source: repository evidence
   one concrete DeskPilot use case, then names the controlling repository context,
   required behavior, safety boundary, test-first proof, Definition of Done, and
   non-goals. Split features when they have independent dependencies or rollback
-  paths. Put prerequisites in a hard gate: a later capability must stop at a
+  paths. Keep the dependency-aware invocation order in `.github/prompts/README.md`
+  and update it whenever a Prompt File or prerequisite changes. Put prerequisites
+  in a hard gate: a later capability must stop at a
   design record when the controls it depends on are absent. This lets selecting a
   Prompt File start grounded discovery without silently selecting adjacent work,
   waiving architecture constraints, or turning research into a roadmap promise.
