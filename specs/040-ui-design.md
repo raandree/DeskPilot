@@ -381,6 +381,37 @@ step at a time; the footer has previous/next controls and `current / total`.
   JSON answer string, and resumes the same Turn. Collapse preserves state; close
   stops the Turn. Plain `ask_user` text remains a one-step free-text fallback.
 
+### 8. Diagnostics
+
+Opened from the `Diagnostics` icon in the sidebar footer or from the command
+palette. It is a full-height modal in the established design language, not a raw
+developer console.
+
+- The first band shows one overall state, the last self-check time, and two
+  explicit actions: **Run self-check** and **Create support bundle**. While the
+  self-check runs, its button is disabled and reads **Checking...**. A completed
+  export prints the exact archive path below the actions.
+- **Versions** reports DeskPilot, PowerShell, Engine, Git, and the operating
+  system. **Resolved paths** reports the absolute DeskPilot data and Engine
+  module paths plus the active Project name and folder leaf.
+- **Self-check** is a two-column grid of compact dependency cards. Each card has
+  exactly one state (`Healthy`, `Needs attention`, `Unavailable`, or
+  `Not configured`), a bounded explanation, and at most one **Next:** action.
+  The overall state and cards use the existing green, amber, red, and muted
+  tokens rather than a new palette.
+- **Host Server log** is secondary, below the status cards. It shows timestamp,
+  component/event id, and a redacted summary. Its retention line states current
+  and maximum entry/byte counts and that restart clears it. **Clear log** is an
+  explicit action.
+- The SPA polls `GET /api/diagnostics?after=<sequence>` every two seconds only
+  while the modal is open. It merges by sequence and keeps at most 500 rows in
+  the DOM. Closing the modal cancels the timer; one request must finish before
+  the next is scheduled, so polling cannot overlap.
+- At 700 px and below, the modal takes the viewport, overview and check grids
+  become one column, actions wrap, and each log summary moves below its time and
+  source. Stable grid tracks and overflow wrapping keep long paths and actions
+  inside the viewport.
+
 ## States
 
 | State | Cue |

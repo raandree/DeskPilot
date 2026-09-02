@@ -28,6 +28,10 @@ function Invoke-DpRequest {
         $isApi = $path.StartsWith('/api/')
 
         if ($isApi) {
+            if (-not (Test-DpRequestOrigin -Headers $Request.Headers)) {
+                Write-DpResponse -Stream $Stream -Status 403 -Json @{ error = @{ code = 'forbidden_origin'; message = 'API requests must come from the DeskPilot loopback origin.' } }
+                return
+            }
             $token = $Request.Headers['X-DeskPilot-Token']
             if (-not $token) { $token = $Request.Query['t'] }
             if (-not $script:DeskPilot.Token -or $token -ne $script:DeskPilot.Token) {
@@ -70,7 +74,13 @@ function Invoke-DpRequest {
         Invoke-DpRouteHandler -Name $match.Route.Name -RouteParams $match.Params -Body $body -Stream $Stream -Request $Request
     }
     catch {
-        $message = "$_"
+        $message = Protect-DpDiagnosticText -Text "$($_.Exception.Message)"
+        $diagnostics = Get-DpPropertyValue -InputObject $script:DeskPilot -Name @('Diagnostics') -Default $null
+        $diagnosticLog = Get-DpPropertyValue -InputObject $diagnostics -Name @('Log') -Default $null
+        if ($diagnosticLog) {
+            Add-DpDiagnosticLog -Log $diagnosticLog -Severity 'error' `
+                -Component 'http' -EventId 'request.failed' -Summary $message
+        }
         try { Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'server_error'; message = $message } } } catch { $null = $_ }
     }
 }

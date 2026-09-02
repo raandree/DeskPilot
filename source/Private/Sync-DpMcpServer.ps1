@@ -143,5 +143,12 @@ function Sync-DpMcpServer {
     $ownedNames = @($applied.Values | ForEach-Object { $_.names } | Where-Object { $_ })
     & $detach @(& $liveName | Where-Object { $ownedNames -notcontains $_ })
 
-    $results.ToArray()
+    $finalResults = $results.ToArray()
+    $script:DeskPilot.Mcp.LastObserved = @{
+        checkedUtc = [datetime]::UtcNow.ToString('o')
+        available  = $true
+        issue      = ''
+        rows       = @($finalResults)
+    }
+    $finalResults
 }

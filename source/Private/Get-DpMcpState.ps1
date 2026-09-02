@@ -40,8 +40,16 @@ function Get-DpMcpState {
     $applied = if ($script:DeskPilot.ContainsKey('Mcp') -and $script:DeskPilot.Mcp) { $script:DeskPilot.Mcp.Rows } else { @{} }
 
     $live = @()
+    $inspectionAvailable = $supported
+    $inspectionIssue = ''
     if ($supported) {
-        try { $live = @(Invoke-DpEngineCommand -Command 'Get-ShpMcpServer') } catch { $live = @() }
+        try { $live = @(Invoke-DpEngineCommand -Command 'Get-ShpMcpServer') }
+        catch {
+            $inspectionError = $_
+            $live = @()
+            $inspectionAvailable = $false
+            $inspectionIssue = Protect-DpDiagnosticText -Text $inspectionError.Exception.Message -MaxLength 240
+        }
     }
 
     $failures = @{}
@@ -69,7 +77,7 @@ function Get-DpMcpState {
         }
     }
 
-    @{
+    $payload = @{
         supported = $supported
         # The Permission, reported separately from the rows: it withholds every
         # attached server's tools for a Turn without detaching anything, so a panel
@@ -77,4 +85,20 @@ function Get-DpMcpState {
         enabled   = [bool]$Settings.permissions.mcp
         servers   = @($servers)
     }
+    if ($script:DeskPilot.ContainsKey('Mcp') -and $script:DeskPilot.Mcp) {
+        $script:DeskPilot.Mcp.LastObserved = @{
+            checkedUtc = [datetime]::UtcNow.ToString('o')
+            available  = $inspectionAvailable
+            issue      = $inspectionIssue
+            rows       = @($payload.servers | ForEach-Object {
+                    @{
+                        id      = $_.id
+                        ok      = [string]::IsNullOrWhiteSpace([string]$_.error)
+                        error   = $_.error
+                        servers = @($_.attached)
+                    }
+                })
+        }
+    }
+    $payload
 }

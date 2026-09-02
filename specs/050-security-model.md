@@ -48,6 +48,7 @@ flowchart LR
 | T12 | The opt-in **CopilotAtelier setup** downloads and executes a remote script with the user's privileges. | The source is a **fixed first-party URL** (`raandree/CopilotAtelier`, the same owner as DeskPilot) fetched over HTTPS — never a user-supplied URL, so there is no request-forgery/injection surface. It is strictly **opt-in and consent-gated**: the SPA shows a dialog spelling out exactly what the script changes (the `~/.copilot` junctions, VS Code `settings.json`/`keybindings.json`, and the `COPILOT_ALLOW_ALL` user env var) before anything is downloaded or run, so it is never one click. The script then runs in a **visible console the user drives**, so its own safety prompts work and DeskPilot never answers them on the user's behalf; on non-Windows the script is not run (only the files are fetched). Loopback + session-token gated like all `/api/*`. |
 | T13 | The **self-update** installs modules from the PowerShell Gallery with the user's privileges, reloads the Engine, and can relaunch the host. | The module names are **fixed and first-party** (`DeskPilot`, `ShellPilot`) — never user-supplied — so there is no injection/typosquat surface, and installs go to the **CurrentUser** scope (no elevation). It is strictly **consent-gated**: the background check only *reports* availability; nothing installs until the user clicks **Update now**, and nothing relaunches until the user clicks **Restart DeskPilot**. Previews are installed only when the user opted in (`updateIncludePrereleases`). The Engine reload re-imports ShellPilot in the Engine Runspace only (which runs no DeskPilot code; the token stays on disk); the DeskPilot host is never re-imported in-process (that would repoint route handlers to an uninitialised module scope), so it is applied by a clean relaunch. The relaunch spawns the **current** PowerShell executable running a fixed command (`Import-Module DeskPilot -Force; Start-DeskPilot`) — no user input in the command line. Both `install` and `restart` refuse mid-Turn (`409 busy`) and are loopback + session-token gated like all `/api/*`; `409 already_installing` guards concurrent installs. |
 | T14 | A crafted Message request supplies an arbitrary local path as a native Vision image, bypassing File Permission. | `POST /api/uploads` records each successfully written file's normalized path and MIME type in a per-launch Attachment registry. `images` accepts only absolute, existing paths in that registry whose recorded type starts with `image/`; `Resolve-DpAttachmentPath` rejects unregistered, relative, missing, and non-image inputs before `Invoke-Shp -Image` receives them (`400 invalid_attachment`). Because eligibility is tied to the upload event rather than the currently selected Project, a legitimate pending Attachment survives a Project switch without widening access to other local files. The endpoint remains loopback, origin, and session-token gated. |
+| T15 | Diagnostics or a support bundle leaks user content, credentials, paths, or unbounded process data. | Live and export records are constructed from field allow-lists; live state is never serialized. The Host Server log redacts known token/auth/credentialed-URL shapes at append time and is capped at 500 entries / 1 MiB. The self-check receives an allow-listed snapshot, runs off the accept loop, calls no Model/Engine/network endpoint, writes nothing, and time-bounds each probe. The support bundle contains only three generated text records, substitutes path purpose + leaf for every absolute path, caps input at 2 MiB and ZIP output at 3 MiB, chooses a new direct-child destination under the data directory, and refuses traversal, overwrite, reparse points, and concurrent creation. All routes retain loopback Host, same-origin, and session-token controls. |
 
 ## Turn transcript (`turnTranscript`, off by default)
 
@@ -77,6 +78,53 @@ an uncontrolled second copy of the user's data:
   route like any other, so it is loopback-bound and session-token gated; the file
   name is built from sanitised ids, so a crafted id cannot address a file
   elsewhere on disk.
+
+## Diagnostics and support bundle
+
+The Diagnostics surface is local evidence, not telemetry. Nothing is uploaded,
+and no archive exists until the user presses **Create support bundle**.
+
+**Redaction is structural first.** `New-DpDiagnosticSnapshot` and
+`New-DpSupportBundleRecord` create fresh records with fixed fields. They do not
+copy Settings or runtime objects and then search for bad keys. Consequently,
+unknown future fields are excluded by default. The records include version
+strings, state, bounded explanations/actions, counts, Permission/feature enabled
+states, and MCP/Intercom configuration shape. They exclude:
+
+- prompts, answers, reasoning, and Message history
+- file contents, diffs, Attachments, and raw Tool arguments
+- tokens, cookies, authorization headers, and credentialed URLs
+- environment-variable values (MCP rows contribute only counts, never values)
+
+**The Host Server log is transient.** It is a synchronized in-memory ring,
+bounded at 500 entries and 1 MiB. A record has timestamp, severity, component,
+event id, and a summary capped at 500 characters. The append boundary applies
+the existing Intercom secret filter plus Host token, authorization-value,
+credentialed-URL, secret-query, cookie, and common GitHub-token redaction. It is
+cleared on request and restart and is not written to disk automatically.
+
+**The self-check has no agent authority.** It runs from an allow-listed snapshot
+in a background job. Its only active probes are local path existence and
+`git --version`, each in a stoppable PowerShell instance with a 1.5-second
+default deadline. It calls no Model, no Engine command, and no network endpoint,
+so it cannot consume Copilot credits or start a Tool. A timeout, exception, or
+missing observation is `degraded` or `unavailable`, never success.
+
+**Archive creation is confined.** `New-DpSupportBundle` writes generated strings
+directly to three ZIP entries (`summary.md`, `diagnostics.json`, and
+`host-log.jsonl`) without a staging directory. The client cannot choose the
+destination. It must be a new direct child of `<DataDir>/support-bundles`; the
+data and output directories must not be reparse points. `FileMode.CreateNew`, a
+random temporary name, and a no-overwrite final move close collision races. The
+uncompressed input is capped at 2 MiB and the archive at 3 MiB. A transient
+`Exporting` gate refuses a second request.
+
+**Absolute-path exception.** The local, token-gated Diagnostics view retains two
+absolute paths: the resolved DeskPilot data directory and Engine module path.
+Both are explicit diagnostic requirements. The support bundle carries only
+`{ purpose, leaf }` for them; the Project is represented by its display name and
+folder leaf. The archive therefore remains shareable without disclosing the
+user's directory layout.
 
 ## Permissions model
 

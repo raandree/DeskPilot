@@ -117,14 +117,20 @@ The Hermes memory idea researched after the compaction batch: an agent that
   action plus a full view/edit/clear surface in Settings back it up. Reuses the
   auto-title / compaction pattern; no Engine change.
 
+### Phase 2.9 — Diagnostics and support bundle
+
+- ~~**Diagnostics, live Host Server log, and redacted support bundle.**~~
+  **Done** — a calm Diagnostics modal reports DeskPilot, PowerShell, Engine, Git,
+  operating-system, path, Project, authentication, MCP, Intercom, and Update
+  state. A deterministic background self-check uses only bounded local read
+  probes and consumes no Copilot credits. A synchronized 500-entry / 1 MiB log
+  ring is polled only while the modal is open and clears on request or restart.
+  An explicit action creates one allow-listed, path-minimized support ZIP under
+  the data directory, capped at 2 MiB input / 3 MiB archive and protected from
+  traversal, reparse redirection, overwrite, and concurrent export.
+
 ### Deliberately deferred (constraint or Engine bound)
 
-- **System / diagnostics screen with live logs + update/restart** (Hermes's
-  *System* screen). The status/version/active-session parts overlap the existing
-  Settings → Engine panel and `/api/health`; the genuinely new parts — a live
-  server **log stream** and in-app **update / restart** — need a logging ring
-  buffer threaded through the Host Server and a self-update path, a larger,
-  separate track. Spec it before building.
 - **External memory providers** (Hermes's *Memory Provider* plugins — Honcho,
   Mem0, Hindsight, etc.). DeskPilot now has its own bounded, built-in persistent
   memory (Phase 2.8); pluggable external backends are a larger, later track that

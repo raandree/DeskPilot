@@ -10,6 +10,7 @@ import {
     statusGlyph,
     statusLabel,
 } from './diff.js';
+import { diagnosticStateMeta, mergeDiagnosticEntries } from './diagnostics.js';
 import { markdownToSpeech, renderMarkdown } from './markdown.js';
 import {
     createQuestionnaireState,
@@ -170,6 +171,9 @@ const state = {
     // GET /api/mcp: the configured MCP servers paired with what the Engine is
     // actually running. Null until the Settings drawer first opens.
     mcp: null,
+    // Read-only Host Server status plus bounded log entries fetched only while
+    // the Diagnostics modal is open.
+    diagnostics: null,
 };
 
 const PERMISSIONS = [
@@ -7273,6 +7277,236 @@ function closeSettings() {
     $('settings-backdrop').classList.add('hidden');
 }
 
+// ===== Diagnostics =====
+const DIAGNOSTIC_POLL_MS = 2000;
+const DIAGNOSTIC_CLIENT_LOG_CAP = 500;
+let diagnosticsOpen = false;
+let diagnosticCursor = 0;
+let diagnosticPollTimer = null;
+let diagnosticPollBusy = false;
+
+function appendDiagnosticFact(container, label, value, path = false) {
+    const row = el('diagnostics-fact');
+    const key = el('diagnostics-fact-label');
+    const text = el(path ? 'diagnostics-fact-value path' : 'diagnostics-fact-value');
+    key.textContent = label;
+    text.textContent = value || 'Unavailable';
+    row.append(key, text);
+    container.appendChild(row);
+}
+
+function renderDiagnostics() {
+    const data = state.diagnostics;
+    if (!data) return;
+    const validDiagnosticStates = ['healthy', 'degraded', 'unavailable', 'not configured'];
+    const overallState = validDiagnosticStates.includes(data.overallState) ? data.overallState : 'unavailable';
+    const overallMeta = diagnosticStateMeta(overallState);
+    const summary = $('diagnostics-summary');
+    summary.className = `diagnostics-summary ${overallMeta.className}`;
+    summary.replaceChildren();
+    const mark = el('diagnostics-state-mark');
+    mark.textContent = overallMeta.glyph;
+    const copy = el('diagnostics-summary-copy');
+    const title = el('diagnostics-summary-title');
+    title.textContent = data.selfCheck && data.selfCheck.checking ? 'Self-check running' : overallMeta.label;
+    const when = el('muted tiny');
+    when.textContent = data.selfCheck && data.selfCheck.lastRunUtc
+        ? `Last checked ${new Date(data.selfCheck.lastRunUtc).toLocaleString()}`
+        : 'No self-check has completed yet';
+    copy.append(title, when);
+    summary.append(mark, copy);
+
+    const versions = $('diagnostics-versions');
+    versions.replaceChildren();
+    const versionFields = [
+        ['DeskPilot', 'deskPilot'],
+        ['PowerShell', 'powerShell'],
+        ['Engine', 'engine'],
+        ['Git', 'git'],
+        ['Operating system', 'operatingSystem'],
+    ];
+    for (const [label, key] of versionFields) appendDiagnosticFact(versions, label, data.versions && data.versions[key]);
+
+    const paths = $('diagnostics-paths');
+    paths.replaceChildren();
+    appendDiagnosticFact(paths, 'DeskPilot data', data.paths && data.paths.data && data.paths.data.path, true);
+    appendDiagnosticFact(paths, 'Engine module', data.paths && data.paths.module && data.paths.module.path, true);
+    appendDiagnosticFact(paths, 'Active Project', data.project && data.project.configured
+        ? `${data.project.name || 'Selected'} (${data.project.folderLeaf || 'folder'})`
+        : 'Not configured');
+
+    const checks = $('diagnostics-checks');
+    checks.replaceChildren();
+    const checkItems = (data.selfCheck && data.selfCheck.checks) || [];
+    if (!checkItems.length) {
+        const empty = el('diagnostics-empty');
+        empty.textContent = 'Run the self-check to inspect local dependencies.';
+        checks.appendChild(empty);
+    } else {
+        for (const check of checkItems) {
+            const meta = diagnosticStateMeta(check.state);
+            const card = el(`diagnostics-check ${meta.className}`);
+            const head = el('diagnostics-check-head');
+            const stateMark = el('diagnostics-check-mark');
+            stateMark.textContent = meta.glyph;
+            const label = el('diagnostics-check-label');
+            label.textContent = check.label || check.id || 'Check';
+            const badge = el('diagnostics-state-label');
+            badge.textContent = meta.label;
+            head.append(stateMark, label, badge);
+            const explanation = el('diagnostics-check-explanation');
+            explanation.textContent = check.explanation || '';
+            card.append(head, explanation);
+            if (check.action) {
+                const action = el('diagnostics-check-action');
+                action.textContent = `Next: ${check.action}`;
+                card.appendChild(action);
+            }
+            checks.appendChild(card);
+        }
+    }
+
+    const log = $('diagnostics-log');
+    log.replaceChildren();
+    const entries = (data.logs && data.logs.entries) || [];
+    if (!entries.length) {
+        const empty = el('diagnostics-empty');
+        empty.textContent = 'No Host Server events are retained.';
+        log.appendChild(empty);
+    } else {
+        for (const entry of entries) {
+            const row = el(`diagnostics-log-row severity-${entry.severity || 'information'}`);
+            const time = el('diagnostics-log-time');
+            time.textContent = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : '';
+            const source = el('diagnostics-log-source');
+            source.textContent = `${entry.component || 'host'} / ${entry.eventId || 'event'}`;
+            const text = el('diagnostics-log-summary');
+            text.textContent = entry.summary || '';
+            row.append(time, source, text);
+            log.appendChild(row);
+        }
+        log.scrollTop = log.scrollHeight;
+    }
+    const retention = data.logs && data.logs.retention;
+    $('diagnostics-retention').textContent = retention
+        ? `${data.logs.count || 0} of ${retention.maxEntries} entries / ${Number(data.logs.bytes || 0).toLocaleString()} of ${Number(retention.maxBytes || 0).toLocaleString()} bytes / cleared on restart`
+        : '';
+
+    const checkButton = $('diagnostics-check');
+    checkButton.disabled = !!(data.selfCheck && data.selfCheck.checking);
+    checkButton.textContent = checkButton.disabled ? 'Checking...' : 'Run self-check';
+    const lastExport = data.supportBundle && data.supportBundle.lastExport;
+    if (lastExport && lastExport.path && !$('diagnostics-export-result').textContent) {
+        $('diagnostics-export-result').textContent = lastExport.path;
+    }
+}
+
+function scheduleDiagnosticPoll() {
+    clearTimeout(diagnosticPollTimer);
+    diagnosticPollTimer = null;
+    if (!diagnosticsOpen) return;
+    diagnosticPollTimer = setTimeout(() => {
+        if (diagnosticsOpen) refreshDiagnostics();
+    }, DIAGNOSTIC_POLL_MS);
+}
+
+async function refreshDiagnostics({ reset = false } = {}) {
+    if (!diagnosticsOpen || diagnosticPollBusy) return;
+    diagnosticPollBusy = true;
+    const cursor = reset ? 0 : diagnosticCursor;
+    try {
+        const data = await api('GET', '/api/diagnostics?after=' + encodeURIComponent(cursor));
+        const previousEntries = reset || !state.diagnostics || (data.logs && data.logs.count === 0)
+            ? []
+            : ((state.diagnostics.logs && state.diagnostics.logs.entries) || []);
+        data.logs.entries = mergeDiagnosticEntries(
+            previousEntries,
+            (data.logs && data.logs.entries) || [],
+            DIAGNOSTIC_CLIENT_LOG_CAP,
+        ).slice(-DIAGNOSTIC_CLIENT_LOG_CAP);
+        state.diagnostics = data;
+        diagnosticCursor = Number(data.logs && data.logs.latestSequence) || diagnosticCursor;
+        renderDiagnostics();
+    } catch (error) {
+        const summary = $('diagnostics-summary');
+        summary.className = 'diagnostics-summary is-unavailable';
+        summary.textContent = error.message || 'Diagnostics are unavailable.';
+    } finally {
+        diagnosticPollBusy = false;
+        scheduleDiagnosticPoll();
+    }
+}
+
+function openDiagnostics() {
+    diagnosticsOpen = true;
+    diagnosticCursor = 0;
+    $('diagnostics-backdrop').classList.remove('hidden');
+    $('diagnostics-modal').classList.remove('hidden');
+    $('diagnostics-export-result').textContent = '';
+    refreshDiagnostics({ reset: true });
+    $('diagnostics-check').focus();
+}
+
+function closeDiagnostics() {
+    diagnosticsOpen = false;
+    clearTimeout(diagnosticPollTimer);
+    diagnosticPollTimer = null;
+    $('diagnostics-modal').classList.add('hidden');
+    $('diagnostics-backdrop').classList.add('hidden');
+}
+
+async function runDiagnosticSelfCheck() {
+    const button = $('diagnostics-check');
+    button.disabled = true;
+    button.textContent = 'Checking...';
+    try {
+        state.diagnostics = await api('POST', '/api/diagnostics/check', {});
+        diagnosticCursor = Number(state.diagnostics.logs && state.diagnostics.logs.latestSequence) || diagnosticCursor;
+        renderDiagnostics();
+    } catch (error) {
+        toast(error.message || 'Could not start the self-check.');
+    } finally {
+        scheduleDiagnosticPoll();
+    }
+}
+
+async function exportSupportBundle() {
+    const button = $('diagnostics-export');
+    const result = $('diagnostics-export-result');
+    button.disabled = true;
+    result.textContent = 'Creating support bundle...';
+    try {
+        const r = await api('POST', '/api/diagnostics/support-bundle', {});
+        $('diagnostics-export-result').textContent = r.path;
+        toast('Support bundle created.');
+    } catch (error) {
+        result.textContent = error.message || 'Could not create the support bundle.';
+    } finally {
+        button.disabled = false;
+        scheduleDiagnosticPoll();
+    }
+}
+
+async function clearDiagnosticLog() {
+    const button = $('diagnostics-clear');
+    button.disabled = true;
+    try {
+        const result = await api('POST', '/api/diagnostics/log/clear', {});
+        diagnosticCursor = Number(result.latestSequence) || diagnosticCursor;
+        if (state.diagnostics && state.diagnostics.logs) {
+            state.diagnostics.logs.entries = [];
+            state.diagnostics.logs.count = 0;
+            state.diagnostics.logs.bytes = 0;
+        }
+        renderDiagnostics();
+    } catch (error) {
+        toast(error.message || 'Could not clear the Host Server log.');
+    } finally {
+        button.disabled = false;
+        scheduleDiagnosticPoll();
+    }
+}
+
 // Wire the Settings drawer's tab strip. Every panel stays in the DOM (only the
 // active one is shown) so the field handlers keep binding by id; here we just
 // toggle which tab button/panel is active. Keyboard follows the WAI-ARIA
@@ -8149,6 +8383,7 @@ function paletteCommands() {
         { label: 'New conversation', hint: 'Ctrl+Shift+O', run: () => newConversation() },
         { label: 'Go to home screen', run: () => goHome() },
         { label: 'Search conversations', run: () => { $('conv-search').focus(); } },
+        { label: 'Open diagnostics', run: () => openDiagnostics() },
         { label: 'Open settings', run: () => openSettings() },
         { label: 'Open customizations', run: () => openCustomizations() },
         { label: 'Toggle light / dark theme', run: () => toggleTheme() },
@@ -8253,8 +8488,17 @@ function wireGlobal() {
     $('dispatch-queue-add').onclick = () => dispatchEnqueue('queue');
     $('dispatch-steer').onclick = () => dispatchEnqueue('steer');
     $('btn-settings').onclick = () => openSettings();
+    $('btn-diagnostics').onclick = () => openDiagnostics();
     $('settings-close').onclick = () => closeSettings();
     $('settings-backdrop').onclick = () => closeSettings();
+    $('diagnostics-close').onclick = () => closeDiagnostics();
+    $('diagnostics-backdrop').onclick = () => closeDiagnostics();
+    $('diagnostics-check').onclick = () => runDiagnosticSelfCheck();
+    $('diagnostics-export').onclick = () => exportSupportBundle();
+    $('diagnostics-clear').onclick = () => clearDiagnosticLog();
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && diagnosticsOpen) closeDiagnostics();
+    });
     $('btn-permissions').onclick = (e) => {
         e.stopPropagation();
         const pop = $('permissions-popover');

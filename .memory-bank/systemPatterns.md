@@ -35,6 +35,35 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **A diagnostic snapshot is a new object, never a cleaned live object.** Copy
+  only approved version, path-purpose, count, enabled-state, and health fields
+  into `New-DpDiagnosticSnapshot` / `New-DpSupportBundleRecord`. Unknown future
+  fields then fail closed by being absent. Prompts, Messages, reasoning, file
+  contents, diffs, Attachments, Tool arguments, tokens, cookies, authorization
+  headers, and environment values have no serialization path to redact later.
+- **Local diagnosis and shareable diagnosis have different path budgets.** The
+  token-gated Diagnostics view may retain the two absolute paths it exists to
+  verify: DeskPilot data and Engine module. A Support bundle replaces known
+  roots with `<purpose:leaf>` and any remaining Windows/UNC/POSIX absolute path
+  with `<path:leaf>`. Document every absolute-path exception; never let a local
+  convenience silently become a shareable disclosure.
+- **A read-only probe still gets two clocks.** The whole Self-check runs off the
+  single accept loop in a background job, and each local dependency probe runs
+  in a stoppable PowerShell instance with its own deadline. A timeout, exception,
+  or absent observation is `degraded`/`unavailable`, never success. Model,
+  Engine, network, and write commands are absent from the worker by construction.
+- **A live Host surface polls by cursor and owns bounds on both sides.** The Host
+  Server log assigns monotonic sequences under one lock and evicts oldest entries
+  until both its count and encoded-byte ceilings hold. The SPA requests only
+  entries after its cursor, merges/deduplicates them into its own fixed-capacity
+  list, schedules the next request only after the previous one finishes, and
+  stops polling when the surface closes. A clear keeps the sequence monotonic.
+- **A support archive is generated content, not a copied directory.** Write the
+  three allow-listed strings directly into a ZIP under a server-chosen direct
+  child of `<DataDir>/support-bundles`; use `CreateNew`, a same-directory random
+  temporary name, and a no-overwrite move. Check data/output reparse points and
+  input/output byte ceilings, and hold a transient export gate. No staging tree
+  means no file can be swapped into the archive between enumeration and write.
 - **Pre-execution visibility is not an approval boundary.** A structured Tool
   event emitted before dispatch can drive Activity and can stop a retry from
   repeating side effects, but it cannot authorize or deny execution unless the

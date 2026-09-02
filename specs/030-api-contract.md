@@ -46,6 +46,153 @@ short-circuits straight to `done { "authenticated": true }`. Events:
 | `done` | `{ "authenticated": true }` |
 | `error` | `{ "message": "…" }` |
 
+## Diagnostics
+
+Every Diagnostics route uses the same loopback bind, loopback Host and
+same-origin validation, and per-launch session-token gate as the rest of
+`/api/*`.
+
+### `GET /api/diagnostics?after=<sequence>`
+
+Returns current versions and state, the latest completed self-check, and only
+Host Server log entries with a sequence greater than `after`. Omit `after` for
+the retained ring. A negative or non-integer cursor returns `400 bad_cursor`.
+
+```json
+{
+  "overallState": "degraded",
+  "versions": {
+    "deskPilot": "0.6.0",
+    "powerShell": "7.6.3",
+    "engine": "0.4.0",
+    "git": "2.51.0.windows.1",
+    "operatingSystem": "Microsoft Windows 11"
+  },
+  "paths": {
+    "data": {
+      "purpose": "DeskPilot data",
+      "leaf": "DeskPilot",
+      "path": "C:/Users/me/AppData/Local/DeskPilot",
+      "absolute": true
+    },
+    "module": {
+      "purpose": "Engine module",
+      "leaf": "ShellPilot.psd1",
+      "path": "C:/Users/me/Documents/PowerShell/Modules/ShellPilot/0.4.0/ShellPilot.psd1",
+      "absolute": true
+    }
+  },
+  "project": {
+    "configured": true,
+    "name": "Reports",
+    "folderLeaf": "Reports"
+  },
+  "selfCheck": {
+    "checking": false,
+    "startedUtc": "2026-09-02T20:00:00Z",
+    "lastRunUtc": "2026-09-02T20:00:01Z",
+    "checks": [
+      {
+        "id": "git",
+        "label": "Git",
+        "state": "healthy",
+        "explanation": "Git is available.",
+        "action": "",
+        "version": "2.51.0.windows.1"
+      }
+    ]
+  },
+  "logs": {
+    "entries": [
+      {
+        "sequence": 12,
+        "timestamp": "2026-09-02T20:00:01Z",
+        "severity": "information",
+        "component": "diagnostics",
+        "eventId": "self-check.completed",
+        "summary": "The self-check completed with state 'degraded'.",
+        "bytes": 184
+      }
+    ],
+    "count": 12,
+    "bytes": 2410,
+    "latestSequence": 12,
+    "retention": {
+      "maxEntries": 500,
+      "maxBytes": 1048576,
+      "persistent": false,
+      "clearedOnRestart": true
+    }
+  }
+}
+```
+
+Every dependency uses exactly one state: `healthy`, `degraded`, `unavailable`,
+or `not configured`. Each check has an explanation capped at 300 characters and
+one safe next action capped at 200 characters. `unavailable` means the
+dependency could not be inspected; it is never reported as success.
+
+The two `path` values above are the only absolute paths Diagnostics returns.
+They remain because the resolved data and Engine module paths are explicitly
+diagnostic. A support bundle replaces both with purpose plus leaf name.
+
+### `POST /api/diagnostics/check`
+
+Starts a deterministic read-only self-check in a background job and returns
+`202` with the Diagnostics payload immediately. Poll `GET /api/diagnostics`
+until `selfCheck.checking` becomes `false`. `409 check_running` means a check is
+already active; `500 check_failed` means the job could not be started.
+
+The check validates configuration facts, local paths, and `git --version`. It
+uses the Host Server's allow-listed observations for Engine authentication, MCP
+servers, Intercom, and Update state. It does not start a Model Turn, call the
+Engine, spend Copilot credits, mutate user data, or make a network request.
+Each local probe has a 1.5-second default deadline and reports `degraded` on
+timeout or failure.
+
+### `POST /api/diagnostics/log/clear`
+
+Clears the in-memory Host Server log and returns the removed count plus the
+monotonic sequence cursor. Sequence numbers are not reused, so an existing
+polling cursor remains valid. The ring is also cleared on Host Server restart
+and is never persisted automatically.
+
+```json
+{ "cleared": 24, "latestSequence": 24 }
+```
+
+### `POST /api/diagnostics/support-bundle`
+
+Creates a support bundle only on this explicit request and returns its exact
+destination. The SPA displays that path.
+
+```json
+{
+  "ok": true,
+  "path": "C:/Users/me/AppData/Local/DeskPilot/support-bundles/DeskPilot-support-20260902-200001-a1b2c3d4.zip",
+  "name": "DeskPilot-support-20260902-200001-a1b2c3d4.zip",
+  "createdUtc": "2026-09-02T20:00:01Z",
+  "bytes": 18342,
+  "uncompressedBytes": 52911,
+  "entries": 3
+}
+```
+
+The archive contains exactly `summary.md`, `diagnostics.json`, and
+`host-log.jsonl`. Structured records are built from field allow-lists. The
+archive excludes prompts, answers, reasoning, Message history, file contents,
+diffs, Attachments, raw Tool arguments, tokens, cookies, authorization headers,
+credentialed URLs, and environment-variable values. Configuration is represented
+only by shape, counts, Permission states, feature enabled states, and MCP/
+Intercom configured-state metadata.
+
+The uncompressed UTF-8 input is capped at 2 MiB and the ZIP at 3 MiB. The Host
+Server chooses a new collision-safe name under `<DataDir>/support-bundles`;
+clients cannot supply a destination. It refuses traversal, reparse-point
+redirection, overwrite, and a concurrent export (`409 export_running`). Other
+creation failures return `400` for a refused destination/bound or `500` for an
+I/O failure.
+
 ## Models
 
 ### `GET /api/models`

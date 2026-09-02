@@ -63,6 +63,7 @@
                     <span class="bolt">⚡</span> <span id="usage-session-credits">0</span><span class="usage-chip-sep">/</span><span id="usage-alltime-credits" class="usage-chip-alltime">0</span> <span class="usage-chip-unit">cr</span>
                 </button>
                 <button id="btn-customizations" class="icon-btn" title="Customizations — agents, skills, instructions, prompts" aria-label="Customizations">🧩</button>
+                <button id="btn-diagnostics" class="icon-btn" title="Diagnostics" aria-label="Open diagnostics">◉</button>
                 <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
             </div>
             <div id="app-version" class="app-version" title="DeskPilot version" aria-label="DeskPilot version"></div>
@@ -246,6 +247,50 @@
         </div>
         <div class="drawer-body" id="settings-body"></div>
     </aside>
+
+    <!-- Read-only health, self-check, live Host Server log, and support bundle -->
+    <div id="diagnostics-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="diagnostics-modal" class="modal diagnostics-modal hidden" role="dialog" aria-modal="true"
+        aria-labelledby="diagnostics-title">
+        <div class="modal-head">
+            <h2 id="diagnostics-title">Diagnostics</h2>
+            <button id="diagnostics-close" class="icon-btn" type="button" aria-label="Close diagnostics">✕</button>
+        </div>
+        <div class="diagnostics-body">
+            <section class="diagnostics-hero" aria-live="polite">
+                <div id="diagnostics-summary" class="diagnostics-summary"></div>
+                <div class="diagnostics-actions">
+                    <button id="diagnostics-check" class="btn btn-primary" type="button">Run self-check</button>
+                    <button id="diagnostics-export" class="btn" type="button">Create support bundle</button>
+                </div>
+                <div id="diagnostics-export-result" class="diagnostics-export-result muted tiny" aria-live="polite"></div>
+            </section>
+            <div class="diagnostics-overview">
+                <section>
+                    <h3>Versions</h3>
+                    <div id="diagnostics-versions" class="diagnostics-facts"></div>
+                </section>
+                <section>
+                    <h3>Resolved paths</h3>
+                    <div id="diagnostics-paths" class="diagnostics-facts"></div>
+                </section>
+            </div>
+            <section class="diagnostics-section">
+                <h3>Self-check</h3>
+                <div id="diagnostics-checks" class="diagnostics-check-grid"></div>
+            </section>
+            <section class="diagnostics-section diagnostics-log-section">
+                <div class="diagnostics-section-head">
+                    <div>
+                        <h3>Host Server log</h3>
+                        <div id="diagnostics-retention" class="muted tiny"></div>
+                    </div>
+                    <button id="diagnostics-clear" class="btn btn-small" type="button">Clear log</button>
+                </div>
+                <div id="diagnostics-log" class="diagnostics-log" role="log" aria-live="polite"></div>
+            </section>
+        </div>
+    </div>
 
     <!-- Folder picker -->
     <div id="folder-backdrop" class="backdrop folder-backdrop hidden"></div>

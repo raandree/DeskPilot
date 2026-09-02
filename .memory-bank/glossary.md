@@ -39,6 +39,10 @@ synonym.
 | Vision | The Engine's native image input (`Invoke-Shp -Image`), which inlines an image Attachment into the Turn's request so a Model can see it. Bounded by a byte budget because the image is encoded into the request body. | image input, multimodal, OCR, image upload (that is the Attachment) |
 | Artifact | A previewable code block in an assistant Message — `html` or `svg` — that DeskPilot can render in a sandboxed frame. | canvas, widget, embed, component |
 | Usage | The token counts, estimated USD cost, and Copilot credits reported for a Turn. | stats, metrics (loosely) |
+| Diagnostics | The read-only surface that reports versions, resolved paths, Project and dependency state, the latest Self-check, and the transient Host Server log. | system screen, debug console, health dashboard |
+| Self-check | The deterministic, read-only Diagnostics action that inspects configuration and local dependencies without calling a Model, invoking the Engine, mutating user data, using the network, or consuming Copilot credits. | diagnosis, scan, health check, repair |
+| Host Server log | The fixed-capacity, byte-bounded, redacted in-memory event ring owned by one Host Server launch and cleared on request or restart. | console, trace, audit log, log file |
+| Support bundle | The bounded ZIP explicitly generated from allow-listed Diagnostics fields and Host Server log entries for safe sharing; never uploaded automatically. | diagnostic dump, crash dump, telemetry package, export (bare) |
 | Save | Recording the Project's uncommitted files as one Git commit, so the work becomes part of the Project's history and can be sent to the server. DeskPilot's user-facing name for a commit. | commit (in UI copy), checkpoint (that is the pre-Turn restore point), backup, snapshot (that is the pre-Turn snapshot), stage |
 | Save Message | The one-line description recorded with a Save. Prefilled from the change set, optionally written by the Model on request, and always editable before the Save happens. | commit message (in UI copy), comment, note, caption |
 | Branch | A git branch inside a Project's repository. | fork (a fork is a separate repo), ref (loosely) |
@@ -168,6 +172,16 @@ synonym.
   Compact action. The Conversation **Details** popover is a lighter read-only
   metadata card. Keep the three distinct. "Session" stays forbidden as a synonym
   for the Conversation *thread*; **Session Info** is only the name of this panel.
+- **Diagnostics vs. Activity vs. the Host Server log.** **Diagnostics** reports
+  DeskPilot and dependency state. **Activity** records Tools used in one Turn.
+  The **Host Server log** records bounded, redacted Host events for the current
+  launch. None is a synonym for another, and the Host Server log is not a file.
+- **Self-check vs. a Model diagnosis.** A **Self-check** is deterministic local
+  inspection and spends no Copilot credits. A Model may explain a result only in
+  a separate, explicit Turn; that explanation is not a Self-check result.
+- **Support bundle vs. settings backup.** A **Support bundle** is generated
+  diagnostic evidence with path and content minimization. A settings backup is a
+  restorable copy of Settings. Neither may be described as the other.
 - **Context Window: measured vs. estimated.** The occupancy figure is the exact
   `promptTokens` the Engine reported for the last Turn; the per-component
   breakdown (Messages vs. System + tools) is a client-side estimate

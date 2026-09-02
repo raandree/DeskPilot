@@ -61,6 +61,11 @@ work without driving the tool stack themselves.
   prompt that asks the agent to sort it out — you read it, then send it.
 - **Honest cost.** Token usage, estimated USD cost, and Copilot credits after
   every turn.
+- **Diagnostics you can safely share.** One calm view reports versions,
+  resolved paths, Project, Engine sign-in, MCP, Intercom, and Update state. Its
+  deterministic self-check uses no Model and no Copilot credits; an explicit
+  action creates a bounded support bundle that excludes prompts, Messages, file
+  contents, Tool arguments, credentials, and environment values.
 - **Your house rules.** Point it at folders of Skills and Instructions — the
   same files VS Code Copilot uses — and the agent discovers them.
 - **Calm, build-free UI.** A static single-page app served locally. No npm, no
@@ -174,6 +179,21 @@ sandbox the agent.
 
 See [specs/050-security-model.md](specs/050-security-model.md) for the full
 threat model.
+
+## Diagnostics and support
+
+Open **Diagnostics** from the sidebar footer or the command palette. The live
+view shows the resolved data and Engine module paths, current dependency state,
+the last self-check, and a bounded Host Server log. **Run self-check** performs
+local read-only probes without starting a Model Turn or consuming Copilot
+credits.
+
+**Create support bundle** writes one ZIP under the DeskPilot data directory and
+shows its exact path. The bundle contains a readable summary, structured
+diagnostics, and redacted Host Server events. It is generated only when pressed,
+is never uploaded, and excludes user content and secret values by construction.
+See the [Diagnostics and support bundle guide](docs/diagnostics-support-bundle.md)
+for states, retention, archive limits, and the complete exclusion list.
 
 ## Building and testing
 

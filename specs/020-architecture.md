@@ -367,6 +367,48 @@ wait on the same bridge:
 6. Stopping the Turn cancels the pending bridge wait before stopping the Engine
   pipeline, so Ask-User never makes Stop hang.
 
+## Diagnostics and support bundles
+
+Diagnostics is read-only except for two explicit housekeeping actions: clearing
+the transient Host Server log and creating a support bundle. It has four parts:
+
+1. `New-DpDiagnosticSnapshot` projects current Host Server state into an
+  allow-listed record. It carries versions, the two resolved diagnostic paths,
+  configuration counts, active Project metadata, and enabled/observed states
+  for the Engine, MCP servers, Intercom, and Updates. It never serializes
+  Settings, Conversations, Messages, Attachments, Tool arguments, or
+  environment values.
+2. `Start-DpDiagnosticCheck` sends that snapshot to a background PowerShell job
+  and returns immediately. `Update-DpDiagnosticCheckState` reaps it on an idle
+  accept-loop tick or a later status read. Each local path or executable probe
+  runs in its own PowerShell instance with a 1.5-second default deadline. A
+  timeout or exception becomes `degraded`; it is never guessed healthy. The
+  worker calls no Model, Engine command, or network endpoint and writes no user
+  data.
+3. The Host Server owns a synchronized in-memory ring with a capacity of 500
+  entries and 1 MiB of encoded entry data. Every entry has a monotonic sequence,
+  timestamp, severity, component, event id, and redacted summary. Append,
+  eviction, clear, and snapshot operations share one lock. The SPA polls by
+  sequence every two seconds only while Diagnostics is open; the request is a
+  bounded memory copy and remains serviceable through the existing mid-Turn
+  pending-request pump. The ring is cleared on request or Host Server restart
+  and is never silently persisted.
+4. `New-DpSupportBundle` writes `summary.md`, `diagnostics.json`, and
+  `host-log.jsonl` directly into one ZIP under
+  `<DataDir>/support-bundles`. There is no staging tree. Input is capped at 2
+  MiB and the final archive at 3 MiB. The destination must be a new direct child
+  of that folder; traversal, an existing target, and a reparse-point data or
+  output directory are refused. A transient export flag rejects concurrent
+  requests.
+
+The local Diagnostics response shows the absolute data and Engine module paths
+because resolving those two paths is itself a diagnostic requirement. The
+support bundle keeps only each path's purpose and leaf name. Export records are
+constructed from field allow-lists; they never contain prompts, answers,
+reasoning, Message history, file contents, diffs, Attachments, raw Tool
+arguments, tokens, cookies, authorization headers, credentialed URLs, or
+environment-variable values.
+
 ## Failure handling
 
 - Engine import or auth failure → `/api/health` reports it; UI shows a guided

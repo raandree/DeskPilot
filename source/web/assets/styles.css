@@ -3069,6 +3069,289 @@ button.tree-row {
     border-top: 1px solid var(--border);
 }
 
+/* ===== Diagnostics ===== */
+.diagnostics-modal {
+    width: min(960px, 94vw);
+    height: min(820px, 92vh);
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.diagnostics-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 24px 24px;
+}
+
+.diagnostics-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px 20px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.diagnostics-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.diagnostics-state-mark,
+.diagnostics-check-mark {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    font: 700 11px/1 var(--mono);
+}
+
+.diagnostics-summary-title {
+    color: var(--text);
+    font-size: 17px;
+    font-weight: 650;
+}
+
+.diagnostics-summary-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.diagnostics-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.diagnostics-export-result {
+    grid-column: 1 / -1;
+    min-height: 17px;
+    font-family: var(--mono);
+    overflow-wrap: anywhere;
+}
+
+.diagnostics-overview {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px;
+    padding: 22px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.diagnostics-overview h3,
+.diagnostics-section h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+}
+
+.diagnostics-facts {
+    display: grid;
+    gap: 8px;
+}
+
+.diagnostics-fact {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 12px;
+    align-items: baseline;
+}
+
+.diagnostics-fact-label {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.diagnostics-fact-value {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.diagnostics-fact-value.path {
+    font-family: var(--mono);
+    font-size: 12px;
+}
+
+.diagnostics-section {
+    padding: 22px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.diagnostics-check-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.diagnostics-check {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.diagnostics-check-head {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.diagnostics-check-mark {
+    width: 22px;
+    height: 22px;
+    font-size: 10px;
+}
+
+.diagnostics-check-label {
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.diagnostics-state-label {
+    color: var(--muted);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.diagnostics-check-explanation,
+.diagnostics-check-action {
+    margin: 8px 0 0 30px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.diagnostics-check-action {
+    color: var(--text);
+}
+
+.diagnostics-summary.is-healthy,
+.diagnostics-check.is-healthy .diagnostics-check-mark {
+    color: var(--ok, #2e7d5b);
+}
+
+.diagnostics-summary.is-degraded,
+.diagnostics-check.is-degraded .diagnostics-check-mark {
+    color: var(--warn, #b8860b);
+}
+
+.diagnostics-summary.is-unavailable,
+.diagnostics-check.is-unavailable .diagnostics-check-mark {
+    color: var(--danger, #b3261e);
+}
+
+.diagnostics-summary.is-not-configured,
+.diagnostics-check.is-not-configured .diagnostics-check-mark {
+    color: var(--muted);
+}
+
+.diagnostics-log-section {
+    border-bottom: none;
+}
+
+.diagnostics-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.diagnostics-log {
+    max-height: 260px;
+    overflow-y: auto;
+    margin-top: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+}
+
+.diagnostics-log-row {
+    display: grid;
+    grid-template-columns: 78px 160px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+}
+
+.diagnostics-log-row:last-child {
+    border-bottom: none;
+}
+
+.diagnostics-log-time,
+.diagnostics-log-source {
+    color: var(--muted);
+}
+
+.diagnostics-log-summary {
+    min-width: 0;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.diagnostics-log-row.severity-warning .diagnostics-log-source {
+    color: var(--warn, #b8860b);
+}
+
+.diagnostics-log-row.severity-error .diagnostics-log-source,
+.diagnostics-log-row.severity-critical .diagnostics-log-source {
+    color: var(--danger, #b3261e);
+}
+
+.diagnostics-empty {
+    grid-column: 1 / -1;
+    padding: 18px;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+@media (max-width: 700px) {
+    .diagnostics-modal {
+        width: 100vw;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .diagnostics-body {
+        padding-inline: 16px;
+    }
+
+    .diagnostics-hero,
+    .diagnostics-overview,
+    .diagnostics-check-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .diagnostics-actions {
+        justify-content: flex-start;
+    }
+
+    .diagnostics-log-row {
+        grid-template-columns: 72px minmax(0, 1fr);
+    }
+
+    .diagnostics-log-summary {
+        grid-column: 1 / -1;
+    }
+}
+
 .folder-name {
     flex: 1;
     min-width: 0;

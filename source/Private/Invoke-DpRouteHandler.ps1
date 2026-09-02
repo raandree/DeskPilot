@@ -47,6 +47,75 @@ function Invoke-DpRouteHandler {
                 engineModulePath = $state.Engine.ModulePath
             }
         }
+        'getDiagnostics' {
+            [long]$afterSequence = 0
+            $afterText = if ($Request -and $Request.Query -and $Request.Query.ContainsKey('after')) { [string]$Request.Query['after'] } else { '0' }
+            if (-not [long]::TryParse($afterText, [ref]$afterSequence) -or $afterSequence -lt 0) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_cursor'; message = 'The diagnostics log cursor must be a non-negative integer.' } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Json (Get-DpDiagnosticPayload -AfterSequence $afterSequence)
+        }
+        'runDiagnosticCheck' {
+            $started = Start-DpDiagnosticCheck
+            if ($started.alreadyRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'check_running'; message = 'A diagnostics self-check is already running.' } }
+                return
+            }
+            if (-not $started.started) {
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'check_failed'; message = $started.error } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Status 202 -Json (Get-DpDiagnosticPayload)
+        }
+        'clearDiagnosticLog' {
+            $removed = Clear-DpDiagnosticLog -Log $state.Diagnostics.Log
+            Write-DpResponse -Stream $Stream -Json @{
+                cleared = $removed
+                latestSequence = [long]$state.Diagnostics.Log.NextSequence
+            }
+        }
+        'exportSupportBundle' {
+            if ($state.Diagnostics.Exporting) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'export_running'; message = 'A support bundle is already being created.' } }
+                return
+            }
+            if (-not $state.DataDir) {
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'no_data_directory'; message = 'No DeskPilot data directory is available for the support bundle.' } }
+                return
+            }
+
+            $state.Diagnostics.Exporting = $true
+            try {
+                $bundle = New-DpSupportBundle -Directory $state.DataDir -Confirm:$false
+            }
+            finally {
+                $state.Diagnostics.Exporting = $false
+            }
+            if (-not $bundle.ok) {
+                $status = if ($bundle.code -in @('outside_destination', 'redirected_destination', 'already_exists', 'too_large', 'invalid_data_directory')) { 400 } else { 500 }
+                Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'error' -Component 'diagnostics' `
+                    -EventId 'support-bundle.failed' -Summary $bundle.error
+                Write-DpResponse -Stream $Stream -Status $status -Json @{ error = @{ code = $bundle.code; message = $bundle.error } }
+                return
+            }
+            $state.Diagnostics.LastExport = @{
+                path = [string]$bundle.path
+                createdUtc = [string]$bundle.createdUtc
+                bytes = [long]$bundle.bytes
+            }
+            Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' -Component 'diagnostics' `
+                -EventId 'support-bundle.created' -Summary "A redacted support bundle was created as '$($bundle.name)'."
+            Write-DpResponse -Stream $Stream -Status 201 -Json @{
+                ok = $true
+                path = $bundle.path
+                name = $bundle.name
+                createdUtc = $bundle.createdUtc
+                bytes = $bundle.bytes
+                uncompressedBytes = $bundle.uncompressedBytes
+                entries = $bundle.entries
+            }
+        }
         'authStatus' {
             Write-DpResponse -Stream $Stream -Json @{ authenticated = (Test-Path -LiteralPath $state.Engine.TokenPath) }
         }

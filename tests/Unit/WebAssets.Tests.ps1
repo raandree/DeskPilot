@@ -14,9 +14,70 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diagnostics.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
+    }
+
+    It 'provides a calm, bounded Diagnostics surface' {
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        foreach ($id in @(
+                'btn-diagnostics', 'diagnostics-backdrop', 'diagnostics-modal',
+                'diagnostics-close', 'diagnostics-summary', 'diagnostics-versions',
+                'diagnostics-paths', 'diagnostics-checks', 'diagnostics-log',
+                'diagnostics-retention', 'diagnostics-check',
+                'diagnostics-export', 'diagnostics-clear', 'diagnostics-export-result'
+            )) {
+            $html | Should -Match ([regex]::Escape("id=`"$id`""))
+        }
+        $html | Should -Match 'role="dialog"[^>]+aria-modal="true"[^>]+aria-labelledby="diagnostics-title"'
+        $html | Should -Match 'id="diagnostics-log"[^>]+role="log"'
+
+        $js | Should -Match ([regex]::Escape("from './diagnostics.js'"))
+        $js | Should -Match 'function openDiagnostics\('
+        $js | Should -Match 'function closeDiagnostics\('
+        $js | Should -Match 'async function refreshDiagnostics\('
+        $js | Should -Match 'async function runDiagnosticSelfCheck\('
+        $js | Should -Match 'async function exportSupportBundle\('
+        $js | Should -Match 'async function clearDiagnosticLog\('
+        $js | Should -Match ([regex]::Escape("api('GET', '/api/diagnostics?after="))
+        $js | Should -Match ([regex]::Escape("api('POST', '/api/diagnostics/check'"))
+        $js | Should -Match ([regex]::Escape("api('POST', '/api/diagnostics/support-bundle'"))
+        $js | Should -Match ([regex]::Escape("api('POST', '/api/diagnostics/log/clear'"))
+        $js | Should -Match 'DIAGNOSTIC_POLL_MS\s*=\s*2000'
+        $js | Should -Match '(?s)function scheduleDiagnosticPoll\(\).{0,500}diagnosticsOpen.{0,500}setTimeout'
+        $js | Should -Match 'diagnosticPollBusy'
+        $js | Should -Match 'slice\(-DIAGNOSTIC_CLIENT_LOG_CAP\)'
+        $js | Should -Match ([regex]::Escape('log.scrollTop = log.scrollHeight'))
+        $js | Should -Not -Match 'lastElementChild\.scrollIntoView'
+        $js | Should -Match 'diagnostics-export-result''\)\.textContent\s*=\s*r\.path'
+        $js | Should -Match "label: 'Open diagnostics'"
+
+        foreach ($stateName in 'healthy', 'degraded', 'unavailable', 'not configured') {
+            $js | Should -Match ([regex]::Escape("'$stateName'"))
+        }
+        $css | Should -Match '\.diagnostics-modal\s*\{'
+        $css | Should -Match '\.diagnostics-check-grid\s*\{'
+        $css | Should -Match '\.diagnostics-log\s*\{'
+        $css | Should -Match '@media \(max-width: 700px\)'
+    }
+
+    It 'keeps Diagnostics state mapping deterministic' {
+        $modulePath = Join-Path $script:webRoot 'assets' 'diagnostics.js'
+        $nodeScript = @'
+    import { pathToFileURL } from 'node:url';
+    const { diagnosticStateMeta, mergeDiagnosticEntries } = await import(pathToFileURL(process.argv[1]).href);
+const states = ['healthy', 'degraded', 'unavailable', 'not configured'];
+const classes = states.map((state) => diagnosticStateMeta(state).className);
+if (new Set(classes).size !== 4) throw new Error('diagnostic states do not map distinctly');
+const merged = mergeDiagnosticEntries([{ sequence: 1 }, { sequence: 2 }], [{ sequence: 2 }, { sequence: 3 }], 2);
+if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3) throw new Error('log merge is not bounded or ordered');
+'@
+        $output = & node --input-type=module --eval $nodeScript $modulePath 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
     }
 
     It 'sizes the files panel from a custom property so it can be dragged' {

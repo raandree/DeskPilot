@@ -93,6 +93,28 @@ function Initialize-DpEngine {
             else { $currentTokenName }
     }
 
+    $engineVersion = ''
+    if ($imported) {
+        $versionShell = [powershell]::Create()
+        $versionShell.Runspace = $runspace
+        try {
+            $null = $versionShell.AddScript(@'
+$m = Get-Module -Name ShellPilot | Select-Object -First 1
+if ($m) {
+    $value = $m.Version.ToString()
+    $label = [string]$m.PrivateData.PSData.Prerelease
+    if ($label) { "$value-$($label.TrimStart('-'))" } else { $value }
+}
+'@)
+            $versionResult = $versionShell.Invoke()
+            if (-not $versionShell.HadErrors -and $versionResult.Count -gt 0) {
+                $engineVersion = [string]($versionResult | Select-Object -First 1)
+            }
+        }
+        catch { $null = $_ }
+        finally { $versionShell.Dispose() }
+    }
+
     # MCP arrived in ShellPilot 0.4.0-preview0007, and DeskPilot resolves whatever
     # Engine the machine already has. Ask the imported Engine what it can do rather
     # than comparing version strings: a capability probe stays true across a rename
@@ -119,6 +141,7 @@ function Initialize-DpEngine {
         Imported         = $imported
         Installed        = $resolution.Installed
         ModulePath       = $resolved
+        Version          = $engineVersion
         ImportError      = $importError
         TokenPath        = $tokenPath
         UserPromptBridge = $userPromptBridge

@@ -29,7 +29,11 @@ function Hide-DpIntercomSecret {
     $redacted = $Text
 
     $token = $null
-    if ($script:DeskPilot -and $script:DeskPilot.Intercom) { $token = [string]$script:DeskPilot.Intercom.Token }
+    $intercom = if ($script:DeskPilot -is [System.Collections.IDictionary] -and $script:DeskPilot.Contains('Intercom')) {
+        $script:DeskPilot['Intercom']
+    }
+    else { $null }
+    if ($intercom) { $token = [string](Get-DpPropertyValue -InputObject $intercom -Name @('Token') -Default '') }
     if (-not [string]::IsNullOrWhiteSpace($token)) {
         $redacted = $redacted.Replace($token, '<token>')
     }

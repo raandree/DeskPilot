@@ -123,7 +123,7 @@ function Start-DeskPilot {
         # registration only for the life of the session and discovers nothing on its
         # own, so this map is how Sync-DpMcpServer knows which live server belongs to
         # which row - a row that names a configuration file can attach several.
-        Mcp             = @{ Rows = @{} }
+        Mcp             = @{ Rows = @{}; LastObserved = $null }
         WebRoot         = $webRootFull
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
@@ -133,6 +133,19 @@ function Start-DeskPilot {
         # this registry, so they survive Project switching without allowing a
         # crafted Message to nominate an arbitrary local file.
         Attachments     = [System.Collections.Generic.Dictionary[string, string]]::new($attachmentPathComparer)
+        # Transient, bounded diagnostics owned by this Host Server launch. The
+        # log and self-check result are deliberately not loaded from disk; only an
+        # explicit support-bundle export writes diagnostics under the data path.
+        Diagnostics     = @{
+            Log             = New-DpDiagnosticLog -MaxEntries 500 -MaxBytes 1048576
+            CheckJob        = $null
+            Checking        = $false
+            CheckStartedUtc = $null
+            LastCheck       = $null
+            LastCheckUtc    = $null
+            Exporting       = $false
+            LastExport      = $null
+        }
         # The accept loop's TcpListener, set once it is started below. The Turn
         # loop (Invoke-DpTurn) reads it through Invoke-DpPendingRequest to service
         # a concurrent POST /stop while it holds this single accept thread.
@@ -178,6 +191,10 @@ function Start-DeskPilot {
         StopRequested      = $false
         Routes          = @(
             @{ Method = 'GET'; Pattern = '/api/health'; Name = 'health' }
+            @{ Method = 'GET'; Pattern = '/api/diagnostics'; Name = 'getDiagnostics' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/check'; Name = 'runDiagnosticCheck' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/log/clear'; Name = 'clearDiagnosticLog' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/support-bundle'; Name = 'exportSupportBundle' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
             @{ Method = 'POST'; Pattern = '/api/auth/start'; Name = 'authStart' }
             @{ Method = 'GET'; Pattern = '/api/models'; Name = 'models' }
@@ -261,6 +278,13 @@ function Start-DeskPilot {
         )
     }
 
+    Add-DpDiagnosticLog -Log $script:DeskPilot.Diagnostics.Log -Severity 'information' `
+        -Component 'host' -EventId 'host.started' -Summary "DeskPilot $runningVersion initialized."
+    Add-DpDiagnosticLog -Log $script:DeskPilot.Diagnostics.Log `
+        -Severity $(if ($engine.Imported) { 'information' } else { 'error' }) `
+        -Component 'engine' -EventId $(if ($engine.Imported) { 'engine.loaded' } else { 'engine.unavailable' }) `
+        -Summary $(if ($engine.Imported) { "ShellPilot $($engine.Version) loaded." } else { $engine.ImportError })
+
     if ($engine.Installed) {
         Write-Host 'Engine downloaded from the PowerShell Gallery (CurrentUser scope).' -ForegroundColor Cyan
     }
@@ -343,6 +367,7 @@ function Start-DeskPilot {
                 # Reap a finished update check and re-trigger it when due, without
                 # ever blocking the accept loop (the Gallery call is off-thread).
                 try { Update-DpUpdateCheckState } catch { $null = $_ }
+                try { Update-DpDiagnosticCheckState } catch { $null = $_ }
                 # Advance Intercom. -AllowTurn is passed only here: this is the one
                 # caller with no Turn on the stack, so a prompt that arrived from
                 # the phone can safely start one.
@@ -357,6 +382,7 @@ function Start-DeskPilot {
     finally {
         $script:DeskPilot.Listener = $null
         if ($script:DeskPilot.UpdateJob) { $script:DeskPilot.UpdateJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.UpdateJob = $null }
+        if ($script:DeskPilot.Diagnostics.CheckJob) { $script:DeskPilot.Diagnostics.CheckJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.Diagnostics.CheckJob = $null }
         # Tell the phone we are going, so silence never has to be interpreted.
         try { Stop-DpIntercom -Confirm:$false } catch { $null = $_ }
         try { $listener.Stop() } catch { $null = $_ }

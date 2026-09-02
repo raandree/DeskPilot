@@ -522,6 +522,19 @@ Describe 'Get-DpMcpState' {
         Should -Invoke Invoke-DpEngineCommand -Times 0
     }
 
+    It 'records a failed live inspection as unavailable with a redacted reason' {
+        $script:DeskPilot.Token = 'session-secret'
+        $script:DeskPilot.Intercom = @{ Token = '' }
+        Mock Invoke-DpEngineCommand { throw 'MCP inspection failed. Bearer provider-secret session-secret' }
+
+        $null = Get-DpMcpState -Settings (Get-DpDefaultSettings)
+        $observation = $script:DeskPilot.Mcp.LastObserved
+
+        $observation.available | Should -BeFalse
+        $observation.issue | Should -Match 'MCP inspection failed'
+        $observation.issue | Should -Not -Match 'provider-secret|session-secret'
+    }
+
     It 'never emits an environment value' {
         $settings = Get-DpDefaultSettings
         $settings.mcpServers = @(ConvertTo-DpMcpServer -InputObject @{ id = 'mcp1'; name = 'files'; command = 'npx'; envKeys = @('GITHUB_TOKEN') })

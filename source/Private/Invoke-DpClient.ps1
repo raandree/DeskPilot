@@ -32,6 +32,15 @@
         $request = Receive-DpHttpRequest -Stream $netStream
         if ($request) { Invoke-DpRequest -Request $request -Stream $netStream }
     }
-    catch { $null = $_ }
+    catch {
+        $clientError = $_
+        $diagnostics = Get-DpPropertyValue -InputObject $script:DeskPilot -Name @('Diagnostics') -Default $null
+        $diagnosticLog = Get-DpPropertyValue -InputObject $diagnostics -Name @('Log') -Default $null
+        if ($diagnosticLog) {
+            Add-DpDiagnosticLog -Log $diagnosticLog -Severity 'warning' `
+                -Component 'http' -EventId 'client.failed' `
+                -Summary (Protect-DpDiagnosticText -Text $clientError.Exception.Message)
+        }
+    }
     finally { try { $Client.Close() } catch { $null = $_ } }
 }

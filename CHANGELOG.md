@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Diagnose a problem without spending a Copilot credit.** A new
+  **Diagnostics** view reports DeskPilot, PowerShell, Engine, Git and operating-
+  system versions; resolved data and module paths; Project, sign-in, MCP,
+  Intercom and Update state; and the last self-check. Every dependency is
+  **Healthy**, **Needs attention**, **Unavailable**, or **Not configured**, with
+  one short explanation and one safe next action. The self-check runs local,
+  read-only probes in the background, never starts a Model Turn, and treats a
+  failed or slow inspection as a problem rather than pretending it passed.
+
+  The same view carries a live, redacted Host Server log bounded at 500 entries
+  and 1 MiB. It polls only while open, can be cleared by hand, and disappears on
+  restart rather than becoming an unbounded log file.
+
+  **Create support bundle** explicitly writes one bounded ZIP and shows exactly
+  where it went. The archive contains a readable summary, structured diagnostics
+  and redacted Host events, built from field allow-lists rather than a cleaned-up
+  state dump. It excludes prompts, answers, reasoning, Message history, file
+  contents, diffs, Attachments, Tool arguments, credentials, cookies,
+  authorization headers and environment values; replaces absolute paths with
+  purpose plus leaf; and refuses traversal, link redirection, overwrite,
+  over-size data, or a concurrent export. Nothing is uploaded.
+
 - **Document the recommended Prompt File execution order.** The Prompt File
   folder now explains the default ten-feature sequence, hard prerequisite
   gates, optional packaging and localization timing, and when the historical
