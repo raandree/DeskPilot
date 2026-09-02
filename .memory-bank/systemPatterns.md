@@ -35,12 +35,6 @@ source: repository evidence
 
 ## Patterns to keep
 
-- **Separate evidence tiers in competitive research.** Use fetched vendor
-  documentation and vendor engineering publications for capability claims.
-  Treat supplied demonstrations and transcripts as secondary corroboration,
-  name the tier, and never promote a video-only observation into a documented
-  product fact. Preview capabilities remain dated decision input, not roadmap
-  commitments.
 - **Periodic and event-triggered work are separate trust boundaries.** A local
   time schedule has clock, collision, and unattended-Permission risks. An event
   trigger additionally accepts untrusted event identity, metadata, payload,
@@ -64,16 +58,6 @@ source: repository evidence
   design record when the controls it depends on are absent. This lets selecting a
   Prompt File start grounded discovery without silently selecting adjacent work,
   waiving architecture constraints, or turning research into a roadmap promise.
-- **Compare competitor breadth separately from DeskPilot product fit.** A
-  capability in another agent harness is evidence that a workflow exists, not
-  evidence that DeskPilot should copy it. Record whether DeskPilot ships,
-  partially supports, plans, defers, deliberately excludes, or has no evidence
-  for the capability; never turn "not found in reviewed sources" into a claim
-  of absence. Promote a candidate only when it serves knowledge workers and its
-  Permission boundary, single-active-Turn behavior, persistence, Intercom
-  behavior, and rollback path are understood. This keeps multi-provider breadth
-  and decorative surfaces from outranking approval, diagnostics, and other
-  capabilities that strengthen DeskPilot's stated product position.
 - **Context the model needs travels beside the user's message, never inside
   it.** Anything DeskPilot has to tell the Engine about a Turn — the files
   attached to it, and by the same argument anything added later — is composed by

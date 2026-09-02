@@ -14,14 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gates, optional packaging and localization timing, and when the historical
   Intercom remediation Prompt File still applies.
 
-- **Compare Microsoft Scout and choose two more feature briefs.** The
-  competitive landscape now covers Scout's documented file, shell, browser,
-  Microsoft 365, approval, autonomous-work, sub-agent, Memory, Skill, and
-  enterprise-governance surfaces. Two new selectable Prompt Files define a
-  read-only Microsoft 365 first slice and a confined local condition trigger;
-  neither is a roadmap commitment. Scout strengthens the existing priority on
-  per-call approval, Playwright browser automation, scheduled work, isolation,
-  and parallel Agents rather than displacing it.
+- **Add two more selectable feature briefs.** New Prompt Files define a
+  read-only Microsoft 365 first slice and a confined local condition trigger.
+  Neither is a roadmap commitment.
 
 - **Questions you can tap through instead of typing at.** When the agent needs
   input it now asks **one question at a time**, with its choices as buttons: tap
@@ -189,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Turn the competitive gaps into selectable implementation briefs.** Eight
+- **Add selectable implementation briefs.** Eight
   Prompt Files now let a maintainer choose per-call approval, diagnostics,
   scheduled work, Windows packaging, localization, isolated Tool execution,
   parallel Agents, or Playwright browser automation independently. The browser
@@ -199,13 +194,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   safety boundaries, tests, completion criteria, and non-goals. Higher-risk
   choices stop when their approval or isolation prerequisites are absent instead
   of treating selection as permission to weaken those boundaries.
-
-- **Refresh the competitive feature analysis.** The comparison now covers
-  Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue, Goose,
-  OpenCode, and Aider against DeskPilot's shipped behavior. It separates raw
-  harness breadth from product fit, links claims to primary sources, and ranks
-  approval, diagnostics, scheduled work, packaging/localization, and isolated
-  execution without turning the research into roadmap commitments.
 
 - **Attachments are shown as chips on your message, not typed into it.**
   Attaching files used to write a sentence into the prompt on your behalf — "I
@@ -334,9 +322,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **A way to measure whether any of this actually helped.** Everything above
-  claims to close a gap against VS Code Copilot; none of it proved anything. A
-  new parity eval harness under `tests/live/eval/` runs a corpus of tasks that
+- **A way to measure whether any of this actually helped.** A new live
+  evaluation harness under `tests/live/eval/` runs a corpus of tasks that
   were genuinely attempted — starting with the two failures that began this work
   — against a pinned copy of a real repository, and grades the result against
   facts rather than impressions: did it run the authoritative test gate, did it

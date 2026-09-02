@@ -23,8 +23,8 @@ setup.
 DeskPilot is the friendly front door. It looks and feels like a modern AI chat
 app with a deep-teal identity of its own: a conversation list on the left, a calm
 message thread in the centre, a composer at the bottom. Underneath, every
-message drives a real Copilot **agent** through the Engine, with the same tools
-VS Code Copilot has.
+message drives a real Copilot **agent** through the Engine, with its configured
+Tools.
 
 ## Who it is for
 

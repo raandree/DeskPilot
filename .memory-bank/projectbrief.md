@@ -54,7 +54,7 @@ keeps customizations across more than one machine.
 
 ## Non-goals
 
-- Not a replacement for VS Code Copilot for developers who already have it.
+- Not intended to replace developer-focused IDE workflows.
 - Not a multi-tenant hosted service (one local user per instance).
 - Not a re-implementation of Copilot endpoints — that is the Engine's job.
 

@@ -10,26 +10,11 @@ source: repository evidence
 
 ## Current focus
 
-**Microsoft Scout is now included in the competitive decision set
-(2026-09-02).** Official Microsoft Learn documentation establishes Scout as a
-Frontier-preview Windows/macOS desktop Autopilot spanning files, shell, browser,
-Microsoft 365, per-action approval, heartbeat, scheduled and condition-triggered
-automations, specialized parallel sub-agents, Memory, Skills, and enterprise
-policy. Microsoft's engineering account adds an untrusted container mediated by
-zero-trust identity, token, Tool, Model, policy, and network boundaries. The
-user-supplied hands-on transcript is retained as secondary corroboration, not as
-the source for unsupported claims. Scout reinforces the existing order:
-per-call approval first, then diagnostics, scheduled work, packaging and
-localization, and optional isolation. Two genuinely separate candidates now
-have Prompt Files: read-only Microsoft 365 work integration and confined local
-condition-triggered automation. Neither is a roadmap commitment.
-
-**Ten competitive-gap Prompt Files are ready for selection (2026-09-02).**
+**Ten feature Prompt Files are ready for selection (2026-09-02).**
 The five ranked gaps are expanded into independent implementation briefs, with
 packaging and localization split because their dependencies and rollback paths
-differ; the two original later bets and two Scout-derived candidates are also
-included. Every Prompt File opens with
-why the feature matters and a concrete DeskPilot use case, then pins required
+differ; later candidates are included too. Every Prompt File opens with why the
+feature matters and a concrete DeskPilot use case, then pins required
 context, behavior, safety boundaries, test-first proof, Definition of Done, and
 non-goals. Per-call approval remains the recommended first choice. Isolated Tool
 execution requires approval; parallel Agents require approval plus isolation;
@@ -39,17 +24,6 @@ lethal-trifecta path. DeskPilot currently has browser-based UI and the Engine's
 dependency. The browser prompt now explicitly chooses Playwright and covers its
 Node.js, managed-browser, offline, update, repair, and uninstall lifecycle. The
 Prompt Files are decision artifacts, not roadmap commitments.
-
-**Competitive harness research completed (2026-09-02).** Spec 100 now compares
-DeskPilot with Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue,
-Goose, OpenCode, and Aider using primary sources and explicit evidence states.
-The result is decision input, not a roadmap commitment. The strongest candidate
-is per-call approval, followed by diagnostics, scheduled work, packaging and
-localization, and optional isolated Tool execution. Parallel Agents and browser
-automation remain later bets because both amplify the current full-user-
-privilege execution model. Multi-provider support remains a deliberate non-goal
-while DeskPilot is Copilot-native. All external links passed MarkdownLinkCheck;
-no runtime code changed.
 
 **Previous focus — Intercom group access remains uncommitted.**
 
@@ -357,11 +331,9 @@ than silently re-inserting the margin. Gate **1349/1349**, 0 errors, 0 warnings.
 ## Previous focus — attachments are chips
 
 **Attachments are chips on the message, not a sentence inside it (2026-08-25,
-`ai/attachment-chips`).** Asked from two screenshots — DeskPilot's own bubble
-opening with "I attached 2 file(s) in the Workspace Folder: …" beside GitHub
-Copilot Chat's chips above the message — as "DP attaches files like on
-screenshot 1 to the chat. Can we rather do that like GHCP is doing it in
-screenshot 2?"
+`ai/attachment-chips`).** DeskPilot's own bubble opened with "I attached 2
+file(s) in the Workspace Folder: …" instead of rendering attachment chips above
+the message.
 
 The note was composed in `send()` and prepended to the prompt, so it was the
 user's message: read back in their own bubble, used as the conversation title
@@ -807,9 +779,8 @@ Engine gained MCP in ShellPilot **0.4.0-preview0007** (`Register-ShpMcpServer` /
 `Get-ShpMcpServer` / `Unregister-ShpMcpServer`, `Invoke-Shp -DisableMcp`,
 `Origin`/`Server` on `Get-ShpTool`, `McpEnabled`/`McpToolsAvailable`/
 `McpToolsCalled` on the result), which was the blocker recorded in
-[060-roadmap](../specs/060-roadmap.md) and gap 3 of
-[100-competitive-landscape](../specs/100-competitive-landscape.md). This is the
-DeskPilot half. Six decisions worth keeping.
+[060-roadmap](../specs/060-roadmap.md). This is the DeskPilot half. Six
+decisions worth keeping.
 
 **(1) DeskPilot owns the durable list because the Engine deliberately owns
 none.** An Engine registration lives only for the life of the session and the
@@ -861,10 +832,9 @@ arguments.
 ## Previous focus
 
 **The Activity panel now runs live, in order, and folds into one line
-(`ai/live-activity-feed`, 2026-08-12).** Asked for from three GHCP screenshots —
-you can see the files it touches as it touches them, then the whole run collapses
-to a clickable line — with a follow-up: "the same feature would be nice for
-fetching urls". The panel existed but only ever appeared at `done`, built from
+(`ai/live-activity-feed`, 2026-08-12).** The requested workflow shows files as
+they are touched, collapses the run to a clickable line, and applies the same
+behavior to fetched URLs. The panel existed but only ever appeared at `done`, built from
 the Engine's **unordered sets**, and the only thing named live was a file being
 written (the `file` frame, and only for `write_file`/`replace_in_file`). Every
 tool call now streams. `Get-DpStreamFrame` sends the whole `ToolCall` record
@@ -927,7 +897,7 @@ rejected key discards the entire `settings.json`. Sampler `build, test`
 prompt is on the Desktop (`ShellPilot-session-token-refresh.prompt.md`).
 
 **CI is green on all three runners (`ai/fix-cross-platform-path-tests`,
-2026-08-12).** The parity series shipped with a red CI: run `31565886477` passed
+2026-08-12).** The agent workflow series shipped with a red CI: run `31565886477` passed
 `windows-latest` and failed `ubuntu-latest` and `macos-latest` on the same six
 unit tests. Nothing in `source/` was wrong — two tests encoded Windows path
 semantics. `Get-DpTranscriptPath`'s Describe passed `'C:\data'` into `Join-Path`,
@@ -942,16 +912,13 @@ resolver was right and the assertion was wrong; it moved to its own
 `Get-DpSearchPatternError` normalises `\` to `/` and refuses `..` by shape on
 every platform. Windows `build, test`: **1124/1124**, 0 failed, 0 errors.
 
-## Previous focus — parity with VS Code Copilot
+## Previous focus — agent workflow improvements
 
-**Closing the measured gap to VS Code Copilot (`main`, 2026-08-11/12).** Asked
-for from screenshots of both harnesses running the *same*
-handoff prompt, same Model, same Agent: DeskPilot answered defensibly for 30.13
-credits and 9 tool actions against GHCP's 231.9 credits and dozens — but it
+**Closing observed agent workflow gaps (`main`, 2026-08-11/12).** DeskPilot
 skipped the authoritative `./build.ps1 -Tasks test` gate and never emitted a
-PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the plan
-lived in `C:\Users\install\Desktop\DeskPilot-Parity-Prompts` (ten prompts,
-00-README carries the evidence table). Eight have shipped — the series is
+PRE-FLIGHT banner. Diagnosis separated *shown less* from *did less*; the
+implementation plan contained ten prompts with an evidence table. Eight have
+shipped — the series is
 complete except for prompt 07's fix, which the user chose to leave unwritten.
 **All of it is on `main` as of 2026-08-12**: the five topic branches
 (`ai/parity-03-workspace-context`, `-04-search-tools`, `-05-edit-tool`,
@@ -1204,9 +1171,8 @@ fast-forwarded to `9dd0390` in one move and is **5 commits ahead of
 
 ## Previous focus — edits are visible while they happen
 
-**Edits are visible while they happen (`main`, 2026-08-11).** Asked for as "can
-we have a file edit info and summary like in ghcp?", against a screenshot of VS
-Code Copilot's per-edit lines and its `15 files changed +348 −88` bar. The
+**Edits are visible while they happen (`main`, 2026-08-11).** The requested
+workflow includes per-edit lines and a `15 files changed +348 −88` bar. The
 summary half already existed — the Changes card (FR-T10) has shipped counts,
 **Keep** and **Undo** since the Git Workbench. What did not exist was the *live*
 half: until `done`, the only thing that named the file being written was the

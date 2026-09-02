@@ -124,7 +124,7 @@ original `byte[]`; never convert the string back.
 
 **Symptom:** a Turn with photo Attachments dies at once with
 `Exception calling "EndInvoke" with "1" argument(s): "Request Entity Too Large"`.
-The same files work in VS Code Copilot Chat.
+The failure is specific to DeskPilot's unbudgeted Vision path.
 
 **Root cause:** the 413 is the Copilot chat-completions endpoint rejecting the
 request body, not DeskPilot's Host Server (which answers a JSON 413 instead of
@@ -198,8 +198,8 @@ its own does not help.
 
 ## "timestamp pending" is a missing clock, not a rendering bug (2026-08-12)
 
-**Symptom:** the same pre-flight instruction produces `[2026-08-12 08:14 UTC]`
-in VS Code Copilot Chat and `[2026-06-19 — timestamp pending]` in DeskPilot.
+**Symptom:** a pre-flight instruction produces
+`[2026-06-19 — timestamp pending]` in DeskPilot.
 
 **Root cause:** DeskPilot never tells the model what time it is. The system
 prompt is assembled in `New-DpTurnParameter.ps1` from the Agent persona, user
@@ -229,8 +229,8 @@ model-authored date in DeskPilot as unreliable.
 
 **Symptom:** the agent and the user run the same command in the same folder and
 get different answers, with nothing in the UI saying the environments differ.
-Measured case: `Invoke-Pester` in `V:\Git\CopilotAtelier` reported 1 failure
-under DeskPilot and 4 under VS Code Copilot.
+Measured case: `Invoke-Pester` in `V:\Git\CopilotAtelier` reported a misleading
+failure count under DeskPilot.
 
 **Root cause:** environment variables are **process**-global.
 `[runspacefactory]::CreateRunspace()` (`Initialize-DpEngine.ps1:28`) supplies no
