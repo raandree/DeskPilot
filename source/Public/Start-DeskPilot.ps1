@@ -75,6 +75,7 @@ function Start-DeskPilot {
     $persistedSettings = Import-DpSettings -Directory $dataDirFull
     $memoryStore = Import-DpMemoryStore -Directory $dataDirFull
     $changeStore = Import-DpChangeStore -Directory $dataDirFull
+    $scheduleStore = Import-DpScheduleStore -Directory $dataDirFull
 
     # The running module's full version, including any prerelease label. Module.Version
     # is a [System.Version], which cannot hold a '-preview0004' suffix; that label lives
@@ -112,6 +113,12 @@ function Start-DeskPilot {
         # list - which in practice means Intercom. The SPA polls it and reloads,
         # because the Host Server has no way to push (see spec 110).
         ConversationsRevision = 0
+        # Local scheduled work: the schedules themselves, the bounded run queue,
+        # and the claim of a run that was in flight. The pump
+        # (Update-DpScheduleState) runs on the accept loop's idle tick, so a
+        # scheduled Turn starts only when nothing else holds the Engine.
+        Schedules       = $scheduleStore
+        SchedulesRevision = 0
         # Remote control from a phone over a Telegram bot (spec 110). Inert until
         # it is enabled, a token is stored and a chat is allow-listed; the pump
         # (Update-DpIntercomState) runs on the accept loop's idle tick and from
@@ -251,6 +258,11 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/intercom/pair'; Name = 'pairIntercom' }
             @{ Method = 'GET'; Pattern = '/api/usage'; Name = 'usage' }
             @{ Method = 'POST'; Pattern = '/api/usage/reset'; Name = 'resetUsage' }
+            @{ Method = 'GET'; Pattern = '/api/schedules'; Name = 'getSchedules' }
+            @{ Method = 'POST'; Pattern = '/api/schedules'; Name = 'createSchedule' }
+            @{ Method = 'PUT'; Pattern = '/api/schedules/{id}'; Name = 'updateSchedule' }
+            @{ Method = 'DELETE'; Pattern = '/api/schedules/{id}'; Name = 'deleteSchedule' }
+            @{ Method = 'POST'; Pattern = '/api/schedules/{id}/run'; Name = 'runSchedule' }
             @{ Method = 'GET'; Pattern = '/api/update'; Name = 'getUpdate' }
             @{ Method = 'POST'; Pattern = '/api/update/check'; Name = 'checkUpdate' }
             @{ Method = 'POST'; Pattern = '/api/update/install'; Name = 'installUpdate' }
@@ -372,6 +384,9 @@ function Start-DeskPilot {
                 # caller with no Turn on the stack, so a prompt that arrived from
                 # the phone can safely start one.
                 try { Update-DpIntercomState -AllowTurn } catch { $null = $_ }
+                # Advance scheduled work, for the same reason and on the same terms:
+                # a due run may start here because nothing else holds the Engine.
+                try { Update-DpScheduleState -AllowTurn } catch { $null = $_ }
                 Start-Sleep -Milliseconds 50
                 continue
             }

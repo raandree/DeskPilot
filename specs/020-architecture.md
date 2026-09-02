@@ -409,6 +409,34 @@ reasoning, Message history, file contents, diffs, Attachments, raw Tool
 arguments, tokens, cookies, authorization headers, credentialed URLs, or
 environment-variable values.
 
+## Scheduled work
+
+One Engine Runspace and one active Turn is the whole concurrency model, so a
+schedule cannot be a second thread of execution - it is a producer of queued
+work that the existing single dispatcher drains.
+
+- `Import-DpScheduleStore` / `Save-DpScheduleStore` own `schedules.json`, which
+  holds the schedules, the bounded FIFO run queue, and the claim of the run in
+  flight. Every write is atomic (temp file plus forced move) and never throws.
+- `Get-DpScheduleNextRun` is pure: recurrence, local time of day, weekdays and
+  a time zone in, a UTC instant out. Both daylight-saving edges are decided
+  here - a deleted local time runs at the first instant after the gap, a
+  repeated one runs at the first of its two occurrences.
+- `Update-DpScheduleState` is the pump. It reports an unfinished claim exactly
+  once, expires stale queue entries, turns due occurrences into at most one
+  queued run per schedule, and starts the head of the queue. It is called from
+  the accept loop's idle tick with `-AllowTurn` (the one caller with no Turn on
+  the stack) and from the schedule routes without it. `-Now` is injectable, so
+  sleep, restart, and clock jumps are testable rather than observational.
+- `Invoke-DpScheduledTurn` revalidates the Project, Agent and Model, creates a
+  distinct unread Conversation, and calls `Invoke-DpTurn` with the stream
+  pointed at `Stream.Null` - the same path an Intercom Turn takes.
+- `Get-DpScopedSettings` builds the Turn's Settings. A scope may replace only
+  `workspaceFolder`, `selectedProjectId`, `selectedAgent` and `model`, and a
+  scoped Permission is **ANDed** with the live one, so an unattended Turn can
+  only ever hold less authority than the window. Global Settings are never
+  mutated for a run.
+
 ## Failure handling
 
 - Engine import or auth failure → `/api/health` reports it; UI shows a guided

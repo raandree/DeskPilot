@@ -117,6 +117,33 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-U4 | M | Let the user reset the lifetime counter manually; record the date it has counted since. |
 | FR-U5 | S | In the Usage panel, show the **tokens in / tokens out** split (prompt vs. completion) alongside the totals for both the session and lifetime counters, a **Top models** list (this session, ranked by tokens), and a 7-/14-/**30-day** credits-per-day chart. |
 
+### Localization
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-L1 | S | Ship **English** and **German** resources as static ES modules (`source/web/assets/locales/*.js`). No runtime fetch, no CDN, no build step. English is the source locale and the fallback: a key missing from a translation renders the English string and reports a development diagnostic, never the raw key. |
+| FR-L2 | S | Detect the language from `navigator.languages` on first run (a regional tag resolves to its base language) and offer a visible manual override in **Settings → General → Language**, including *Match my system*. The choice persists across launches in `localStorage` (`ad_lang`), like the theme and the voice language. |
+| FR-L3 | S | Interpolate values, choose plural forms, and format numbers, dates, relative times, currencies and lists through the browser's `Intl` APIs. |
+| FR-L4 | M | Localize Host Server errors through **stable error codes** plus client-side text. The API response shape and every `code` value are unchanged by the language. |
+| FR-L5 | M | Never translate file paths, Agent names, Model ids, Tool names, JSON fields, route names, persisted enum values, Model output, or Project content. Intercom command tokens stay stable. |
+| FR-L6 | M | Interpolate every value through DOM APIs (`textContent`, `setAttribute`). No localized string is ever assigned as HTML. |
+| FR-L7 | M | Complete both locales for every destructive-action warning and Permission explanation before the feature ships, keeping the security meaning intact rather than shortening it to fit a control. |
+| FR-L8 | S | Enforce the contract deterministically: identical key sets in both directions, identical placeholders per key, a plural partner for every plural key, and a **static scan of remaining unextracted strings that may only decrease**. |
+
+### Scheduled work
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-SW1 | S | Let the user create, edit, pause/resume, **Run now** and delete **local schedules** that run a stored prompt. Recurrence covers **daily**, **selected weekdays**, and **once**. A schedule persists its id, name, prompt, Project, recurrence, local time of day, time zone, enabled state, collision and catch-up policy, next run, and last outcome in `schedules.json`. At most 50 schedules. |
+| FR-SW2 | S | Compute the next run **deterministically in the schedule's own time zone** and show it before saving. A local time the spring-forward gap deletes runs at the first instant after the gap; a local time the autumn overlap repeats runs at the **first** of the two occurrences, so the job runs once. |
+| FR-SW3 | M | Preserve **one active Turn**. A due occurrence enters a bounded FIFO queue (max 20, at most one entry per schedule) and starts only when nothing else holds the Engine. `queue` waits; `skip` records the clash and drops the occurrence. A second occurrence of an already-queued schedule **coalesces** rather than stacking. |
+| FR-SW4 | M | A run later than the schedule's **catch-up window** (default 120 minutes) is recorded as `missed`, not run hours late. A queued run that waits longer than its **expiry window** (default 60 minutes) is recorded as `expired`. |
+| FR-SW5 | M | Persist a **claim** before a run starts. After a restart, a claim with no completion is reported once as `interrupted` and **never repeated** - the run may already have written files. |
+| FR-SW6 | M | Revalidate the Project, Agent, and Model **at execution**. A missing dependency fails the run visibly; DeskPilot never substitutes another silently. |
+| FR-SW7 | M | Apply the **live** category Permissions, never increased. In the default `safe` permission mode an unattended run additionally loses **Terminal**, because per-call approval does not exist yet (see `specs/120`) and nobody is present to approve a command. `live` mode keeps the current Permissions and requires an explicit confirmation that says so. |
+| FR-SW8 | S | Run in a **distinct Conversation** titled after the schedule, left **unread** and title-locked, so a result can never appear inside an unrelated open Conversation. Activity, Usage, pending changes, Checkpoints, and Stop behave exactly as for an interactive Turn. |
+| FR-SW9 | S | Retain at most 20 run-history entries per schedule with outcome, detail, and the Conversation it produced. |
+
 ### Software updates
 
 | ID | Priority | Requirement |

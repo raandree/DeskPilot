@@ -1157,6 +1157,75 @@ Resets a counter to zero. Body: `{ "scope": "lifetime" | "session" }`
 (defaults to `lifetime`). Resetting `lifetime` also sets a new `sinceUtc` and
 rewrites `lifetime-usage.json`. Returns the same payload as `GET /api/usage`.
 
+## Scheduled work
+
+Local, time-based schedules that run a stored prompt (spec 010 FR-SW1..SW9).
+The dispatcher runs on the accept loop's idle tick (`Update-DpScheduleState
+-AllowTurn`), which is the one caller with no Turn on the stack; the routes below
+advance the pump **without** `-AllowTurn`, so no route ever starts a Turn inline
+on the single accept thread.
+
+A schedule object:
+
+```json
+{
+  "id": "sch-1a2b",
+  "name": "Weekday review",
+  "prompt": "Summarise the overnight reports.",
+  "recurrence": "daily | weekly | once",
+  "timeOfDay": "08:00",
+  "weekdays": [1, 2, 3, 4, 5],
+  "runAtUtc": null,
+  "timeZoneId": "W. Europe Standard Time",
+  "projectId": "p-1",
+  "agent": null,
+  "model": null,
+  "enabled": true,
+  "collisionPolicy": "queue | skip",
+  "permissionMode": "safe | live",
+  "catchUpMinutes": 120,
+  "expiryMinutes": 60,
+  "nextRunUtc": "2026-05-05T06:00:00Z",
+  "lastRun": { "outcome": "completed", "detail": "...", "atUtc": "...", "conversationId": "c-1" },
+  "history": [],
+  "queued": false
+}
+```
+
+`outcome` is one of `completed`, `failed`, `missed`, `skipped`, `coalesced`,
+`expired`, `interrupted`.
+
+### `GET /api/schedules`
+
+Returns `{ schedules, queueDepth, running, revision }`. `running` is the claim of
+a run in flight, or `null`. Reading also advances the pump, so `nextRunUtc` is
+the value the dispatcher will act on rather than a stale one from last launch.
+
+### `POST /api/schedules`
+
+Creates a schedule from the object above. The **id is always minted by the Host
+Server**; an id in the body is ignored, so a crafted request cannot overwrite an
+existing schedule through create. `201` with the full payload, `400
+bad_schedule` with the validation message, `409 too_many_schedules` past 50.
+
+### `PUT /api/schedules/{id}`
+
+Replaces the schedule named by the path. The body never renames the id. Run
+history and `createdUtc` are preserved, `nextRunUtc` is recomputed, and a run
+queued under the previous definition is dropped. `404` when it does not exist,
+`400 bad_schedule` on validation failure.
+
+### `DELETE /api/schedules/{id}`
+
+Removes the schedule and any run it had waiting. Conversations it already
+produced are kept. `404` when it does not exist.
+
+### `POST /api/schedules/{id}/run`
+
+**Queues** a manual run (`source: "manual"`); it does not run inline. `202` with
+the payload, `409 already_queued` when one is already waiting, `409 queue_full`
+at 20 pending, `404` when the schedule does not exist.
+
 ## Updates
 
 DeskPilot checks the PowerShell Gallery for a newer release in a background job

@@ -895,6 +895,98 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpUsagePayload)
         }
+        'getSchedules' {
+            # A read also advances the pump so a next-run time the browser shows is
+            # the one the dispatcher will act on, never a stale one from last launch.
+            try { Update-DpScheduleState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpSchedulePayload)
+        }
+        'createSchedule' {
+            if (@($state.Schedules.schedules).Count -ge 50) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'too_many_schedules'; message = 'DeskPilot keeps at most 50 schedules. Delete one first.' } }
+                return
+            }
+            try { $schedule = ConvertTo-DpSchedule -InputObject $Body }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_schedule'; message = "$_" } }
+                return
+            }
+            # A brand-new schedule gets its id here, never from the request, so a
+            # crafted body cannot overwrite an existing one through create.
+            $schedule.id = New-DpId -Prefix 'sch'
+            $state.Schedules.schedules = @(@($state.Schedules.schedules) + $schedule)
+            try { Update-DpScheduleState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Status 201 -Json (Get-DpSchedulePayload)
+        }
+        'updateSchedule' {
+            $scheduleId = [string]$RouteParams['id']
+            $existing = @($state.Schedules.schedules | Where-Object { $_.id -eq $scheduleId }) | Select-Object -First 1
+            if (-not $existing) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'That schedule does not exist.' } }
+                return
+            }
+            try { $schedule = ConvertTo-DpSchedule -InputObject $Body }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_schedule'; message = "$_" } }
+                return
+            }
+            # The path names the schedule; the body never renames it. Timing fields
+            # are recomputed, and the run history stays with the schedule.
+            $schedule.id = $scheduleId
+            $schedule.createdUtc = $existing.createdUtc
+            $schedule.updatedUtc = [datetime]::UtcNow.ToString('o')
+            $schedule.history = @($existing.history)
+            $schedule.lastRun = $existing.lastRun
+            $schedule.nextRunUtc = $null
+            $state.Schedules.schedules = @(@($state.Schedules.schedules) | ForEach-Object { if ($_.id -eq $scheduleId) { $schedule } else { $_ } })
+            # An edit invalidates a run queued under the old definition.
+            $state.Schedules.queue = @(@($state.Schedules.queue) | Where-Object { $_.scheduleId -ne $scheduleId })
+            try { Update-DpScheduleState } catch { $null = $_ }
+            Write-DpResponse -Stream $Stream -Json (Get-DpSchedulePayload)
+        }
+        'deleteSchedule' {
+            $scheduleId = [string]$RouteParams['id']
+            $before = @($state.Schedules.schedules).Count
+            $state.Schedules.schedules = @(@($state.Schedules.schedules) | Where-Object { $_.id -ne $scheduleId })
+            if (@($state.Schedules.schedules).Count -eq $before) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'That schedule does not exist.' } }
+                return
+            }
+            $state.Schedules.queue = @(@($state.Schedules.queue) | Where-Object { $_.scheduleId -ne $scheduleId })
+            $state.SchedulesRevision = [int]$state.SchedulesRevision + 1
+            if ($state.DataDir) { Save-DpScheduleStore -Store $state.Schedules -Directory $state.DataDir -Confirm:$false }
+            Write-DpResponse -Stream $Stream -Json (Get-DpSchedulePayload)
+        }
+        'runSchedule' {
+            # "Run now" queues, it does not run inline: this route is served on the
+            # single accept thread, and the queue is the only place that knows the
+            # Engine is free.
+            $scheduleId = [string]$RouteParams['id']
+            $schedule = @($state.Schedules.schedules | Where-Object { $_.id -eq $scheduleId }) | Select-Object -First 1
+            if (-not $schedule) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'That schedule does not exist.' } }
+                return
+            }
+            $pending = @($state.Schedules.queue | Where-Object { $_.scheduleId -eq $scheduleId })
+            if ($pending.Count -gt 0) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'already_queued'; message = 'A run for this schedule is already waiting.' } }
+                return
+            }
+            if (@($state.Schedules.queue).Count -ge 20) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'queue_full'; message = 'The run queue is full. Try again once it drains.' } }
+                return
+            }
+            $nowIso = [datetime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
+            $state.Schedules.queue = @(@($state.Schedules.queue) + @{
+                    scheduleId = $scheduleId
+                    dueUtc     = $nowIso
+                    queuedUtc  = $nowIso
+                    source     = 'manual'
+                })
+            $state.SchedulesRevision = [int]$state.SchedulesRevision + 1
+            if ($state.DataDir) { Save-DpScheduleStore -Store $state.Schedules -Directory $state.DataDir -Confirm:$false }
+            Write-DpResponse -Stream $Stream -Status 202 -Json (Get-DpSchedulePayload)
+        }
         'getUpdate' {
             Write-DpResponse -Stream $Stream -Json (Get-DpUpdatePayload)
         }

@@ -10,81 +10,93 @@ source: repository evidence
 
 ## Current focus
 
-**Diagnostics, live Host Server logs, deterministic Self-check, and a redacted
-Support bundle are implemented on `ai/competitive-landscape-2026`.** The user
-explicitly asked to work on the current branch. No branch was created or
-switched, and nothing was pushed.
+**Every Prompt File in `.github/prompts` has been taken to its own stopping
+point on `ai/competitive-landscape-2026`.** The user asked for the work on the
+current branch, offline, with no questions. No branch was created or switched,
+and nothing was pushed.
 
-The sidebar and command palette open a calm Diagnostics modal. It reports
-DeskPilot, PowerShell, Engine, Git, and operating-system versions; the resolved
-data and Engine module paths; active Project; Engine loading/authentication;
-MCP, Intercom, and Update state; and the latest Self-check. Every check is one
-of `healthy`, `degraded`, `unavailable`, or `not configured`, with a bounded
-explanation and at most one safe next action.
+Three prompts produced running code — scheduled work, Windows packaging,
+localization. Five stopped at a prerequisite gate their own text defines, and
+each left a decision record in `.memory-bank/decisions/` rather than a partial
+feature. Two were already complete before this session.
 
-## Runtime design
+## What each Prompt File produced
 
-- `New-DpDiagnosticSnapshot` creates an allow-listed state record. It never
-  serializes live Settings, Conversations, Messages, Attachments, Tool
-  arguments, credentials, cookies, authorization headers, or environment
-  values.
-- `Start-DpDiagnosticCheck` runs the worker in a background PowerShell job.
-  Each local path/Git probe has a stoppable 1.5-second default deadline. The
-  worker invokes no Model, Engine command, or network endpoint and writes no
-  user data, so it cannot consume Copilot credits.
-- The Host Server owns a synchronized in-memory ring capped at 500 entries and
-  1 MiB. Each record has sequence, timestamp, severity, component, event id,
-  and a redacted summary. Sequence remains monotonic across clear. The browser
-  polls by cursor every two seconds only while Diagnostics is open and keeps at
-  most 500 rows itself.
-- The support archive contains exactly `summary.md`, `diagnostics.json`, and
-  `host-log.jsonl`, generated directly into a ZIP with no staging tree. Input
-  is capped at 2 MiB and the final archive at 3 MiB. The destination is a new
-  direct child of `<DataDir>/support-bundles`; traversal, reparse points,
-  overwrite, over-size output, and concurrent export are refused.
+| Prompt | Outcome |
+| --- | --- |
+| Per-call approval | Already stopped at its Engine prerequisite (`specs/120`). Unchanged. |
+| Diagnostics & support bundle | Already shipped (`85f3f0d`). Unchanged. |
+| Scheduled work | **Implemented.** |
+| Isolated Tool execution | Gate unmet (no approval, and the Engine cannot route `run_command`). Decision 0001. |
+| Microsoft 365 | Contract recorded; blocked on an application registration that cannot exist offline. Decision 0002. |
+| Browser automation | Gate unmet on three counts. Decision 0003. |
+| Condition-triggered automation | Half the gate now open (scheduled dispatch exists), approval half still closed. Decision 0004. |
+| Parallel Agents | Gate unmet; the Engine has no delegation contract. Decision 0005. |
+| Windows packaging | **Implemented.** Decision 0006. |
+| Localization | **Implemented**, with a stated staged remainder and a ratchet. Decision 0007. |
+| Intercom findings (historical) | Not run. The repository records all seven findings as closed, and the Prompt File's own README says not to rerun it on a revision that contains the fixes. |
 
-## Security posture
+## Scheduled work
 
-Redaction is by construction. Support records copy only approved fields;
-unknown fields are absent. Known DeskPilot roots become `<purpose:leaf>` and
-other Windows, UNC, or POSIX absolute paths become `<path:leaf>`. The local
-Diagnostics response deliberately retains only two absolute paths: DeskPilot
-data and Engine module, because verifying those paths is the local diagnostic.
+A schedule is a *producer of queued work*, not a second thread. `schedules.json`
+holds the schedules, a bounded FIFO queue (20 deep, one entry per schedule) and
+the claim of the run in flight. `Update-DpScheduleState` runs on the accept
+loop's idle tick with `-AllowTurn` — the one caller with no Turn on the stack —
+and from the routes without it, so no route ever starts a Turn inline.
 
-All `/api/*` requests now require a loopback Host header and, when Origin is
-present, the same HTTP loopback host and port. This complements the existing
-loopback listener and per-launch session token. Error logging is StrictMode-safe
-even before Diagnostics or Intercom state is initialized.
+Decisions that carried it: an occurrence later than its catch-up window is
+`missed` rather than run late; a second occurrence `coalesces` into the one
+already waiting; a persisted claim makes a restart report `interrupted` instead
+of repeating work that may already have written files; and `Get-DpScopedSettings`
+**ANDs** a scoped Permission with the live one, so an unattended Turn is
+structurally incapable of holding more authority than the window. Default `safe`
+mode drops Terminal, because per-call approval does not exist and nobody is
+present to approve a command.
+
+## Packaging
+
+A portable, self-verifying ZIP rather than an MSI or MSIX. MSIX was rejected
+because an unsigned package cannot be installed at all and no signing
+credentials exist; MSI was rejected for its elevation posture and build
+dependency. The installer verifies the whole SHA-256 inventory **before** it
+copies anything, resolves the CurrentUser module path from `PSModulePath` under
+`$HOME`, and never touches the data directory. `packwin` is a separate workflow,
+so `build` and `test` are unchanged.
+
+## Localization
+
+Build-free ES-module catalogs, English as source and fallback, `Intl` for every
+format, the language in `localStorage` like the theme, and server errors
+localized by **stable error code** so the wire contract never changes with the
+language. The shell chrome, the whole scheduled-work surface and all the safety
+copy are complete in both locales. The long tail of strings built inside
+`app.js` is not, and a static scan test holds the count at ≤ 105 so it can only
+go down.
 
 ## Verification
 
-- Red-first Diagnostics tests cover count/byte retention, ordering, clear,
-  cursor polling, 200 concurrent appends, secret and Message exclusion, unknown
-  field exclusion, dependency-state mapping, probe failure/timeout, no Model or
-  network calls, no file mutation, asynchronous job/reaping, valid ZIP content,
-  collision/path/reparse/overwrite/size/concurrency defenses, StrictMode, and
-  Origin/session-token gating. Focused result: **48/48**.
-- WebAssets tests cover the modal, controls, four-state mapping, bounded polling,
-  safe destination display, responsive styles, and pure log merging:
-  **52/52**.
-- MCP observation integration: **67/67**; combined Diagnostics + MCP gate:
-  **115/115**.
-- AST: 28 changed PowerShell files, 0 parse errors. PSScriptAnalyzer: 0 new
-  findings; the one BOM warning on `Invoke-DpRouteHandler.ps1` reproduces on
-  `HEAD`. JavaScript syntax, editor diagnostics, diff whitespace, Markdown for
-  new/edited feature docs, and guide targets are clean.
-- Final frozen-source Sampler gate: **1484/1484**, 16 tasks, 0 errors, 0
-  warnings. The built package contains the Diagnostics asset, modal, 13
-  diagnostic functions, and three Support bundle functions.
-- Live loopback smoke on the final build: modal `200`, self-check start `202`,
-  10 completed checks with honest MCP `not configured`, and a bounded log. A
-  real 2,392-byte Support bundle contained exactly `summary.md`,
-  `diagnostics.json`, and `host-log.jsonl`, with neither the session token nor
-  the absolute data path.
+- Focused, red-first: schedules **50/50** (0 passed / 42 failed before the
+  implementation existed), packaging **17/17**, localization **13/13**, web
+  assets **53/53**.
+- Full Sampler `build, test`: **1568/1568**, 16 tasks, 0 errors, 0 warnings.
+- `packwin` ran end to end: a 19-file package plus its ZIP and SHA-256. The
+  artifact was unpacked **outside** the source tree and re-verified against its
+  own manifest — 0 problems, 12 SBOM components, no `.tmp`/`.bak`/`.pfx`.
+- AST: 0 parse errors across `source/`, `.build/` and `packaging/`.
+  PSScriptAnalyzer: no new findings (`PSUseSingularNouns` on a `*Settings`
+  function and the BOM warnings reproduce on `HEAD`).
+- `node --check` on `app.js` as an ES module: clean. The German catalog was
+  exercised under node against the real `Intl` (plural, number, date, list,
+  relative time).
+
+## Not verified
+
+No live loopback smoke of the schedule routes, and no clean-Windows install of
+the package — neither was reachable in this session. The packaging decision
+records both, with what was checked instead.
 
 ## Close-out
 
-Commit the complete change on the current branch with the required AI co-author
-trailer, and do not push. Because this change touches the shared API security
-boundary and generated support archives, recommend `review: on` for an
-independent security review.
+Committed on the current branch with the AI co-author trailer; not pushed.
+Because this change adds an unattended execution path and a release artifact,
+`review: on` is worth requesting for an independent security review.

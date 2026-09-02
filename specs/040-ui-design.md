@@ -412,6 +412,40 @@ developer console.
   source. Stable grid tracks and overflow wrapping keep long paths and actions
   inside the viewport.
 
+### Language
+
+**Settings → General → Language** offers *Match my system*, *English* and
+*Deutsch*. Changing it re-applies every marked string immediately and sets
+`<html lang>`, so screen readers and hyphenation follow. First run picks the
+language from the browser's ordered language list; the choice is remembered per
+machine.
+
+Static markup carries the keys: `data-i18n="key"` replaces the element's text and
+`data-i18n-attr="title:key,aria-label:key"` replaces attributes, both through DOM
+APIs. German runs longer than English, so controls that carry translated text
+wrap rather than truncate — safety copy is never shortened to fit.
+
+### Scheduled work (⏰ sidebar button, `Ctrl/Cmd+K` → *Open scheduled work*)
+
+A modal, not a dashboard: the main screen stays a chat window. It opens with one
+sentence stating what a schedule is and that an unattended run has no Terminal
+access by default, then a status line (`N run(s) waiting…`), then one row per
+schedule and the add/edit form below it.
+
+A row shows the name, the recurrence in plain words (*Every day at 08:00*,
+*Mon, Tue, Wed at 08:00*), the next run in the reader's own locale, whether a run
+is waiting, and the last outcome with its explanation. A `live`-permission
+schedule additionally carries a coloured line saying it runs with Terminal
+authority. Each row offers **Run now**, **Pause/Resume** (with `aria-pressed`),
+**Edit** and **Delete**; Delete and switching to `live` permissions both confirm
+and state the consequence.
+
+The form is ordinary labelled fields — name, prompt, repeats, time, weekday
+checkboxes, date (one-time only), Project, busy policy, permissions. Every value
+is written through `textContent` and DOM APIs, never concatenated HTML, because
+names and prompts are user text. `Escape` closes the modal; the backdrop does
+too.
+
 ## States
 
 | State | Cue |

@@ -215,6 +215,30 @@ The built module lands in `output/module/DeskPilot/<version>/`, with the version
 stamped from git by GitVersion. `Start-DeskPilot.ps1` builds automatically on
 first run.
 
+### Windows package
+
+```powershell
+./build.ps1 -Tasks packwin
+```
+
+Produces `output/package/DeskPilot-<version>.zip` (plus a `.sha256` beside it):
+the built module, `Install-DeskPilot.ps1`, `Uninstall-DeskPilot.ps1`, a
+`package-manifest.json` listing every file with its SHA-256, and a CycloneDX
+`sbom.json`.
+
+Installing needs no administrator rights. The installer verifies the whole
+inventory before it copies anything, so a truncated or altered download is
+refused while nothing is on disk:
+
+```powershell
+Expand-Archive DeskPilot-<version>.zip -DestinationPath .\DeskPilot
+.\DeskPilot\Install-DeskPilot.ps1
+```
+
+`Uninstall-DeskPilot.ps1` removes the module and the Start menu shortcut and
+**keeps** your conversations and settings; pass `-RemoveData` to delete them.
+`packwin` is a separate workflow, so `build` and `test` behave exactly as before.
+
 ## Roadmap
 
 Structured-output surfaces, a user-tool manager, and a WebView2 single-window

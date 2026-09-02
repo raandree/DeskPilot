@@ -29,6 +29,13 @@ BuildWorkflow:
     - build
     - package_module_nupkg
 
+  # Windows CurrentUser package: the built module plus its install/uninstall
+  # scripts, a hashed file inventory and an SBOM. Deliberately not part of
+  # 'build' or 'pack' so normal module build semantics are unchanged.
+  packwin:
+    - build
+    - pack_windows
+
   test:
     - Pester_Tests_Stop_On_Fail
     - Convert_Pester_Coverage

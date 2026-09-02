@@ -19,19 +19,19 @@
                 alt="DeskPilot — navigate with clarity" />
             <img class="auth-logo auth-logo-dark" src="/assets/logo-full-dark.png" alt=""
                 aria-hidden="true" />
-            <h1 id="auth-title">Connect to GitHub Copilot</h1>
-            <p id="auth-subtitle" class="muted">DeskPilot uses your GitHub Copilot account through the local ShellPilot engine.
+            <h1 id="auth-title" data-i18n="auth.title">Connect to GitHub Copilot</h1>
+            <p id="auth-subtitle" class="muted" data-i18n="auth.subtitle">DeskPilot uses your GitHub Copilot account through the local ShellPilot engine.
                 Sign in once to get started.</p>
             <div id="auth-engine" class="auth-engine hidden"></div>
             <div id="auth-steps" class="auth-steps hidden"></div>
             <div class="auth-actions">
-                <button id="auth-connect" class="btn btn-primary">Connect</button>
-                <button id="auth-recheck" class="btn">I've signed in elsewhere</button>
+                <button id="auth-connect" class="btn btn-primary" data-i18n="auth.connect">Connect</button>
+                <button id="auth-recheck" class="btn" data-i18n="auth.recheck">I've signed in elsewhere</button>
             </div>
             <p id="auth-error" class="error-text hidden"></p>
             <p class="muted tiny">Already signed in from a terminal with <code>Initialize-Shp</code>? Use
                 "I've signed in elsewhere" to continue.</p>
-            <p class="muted tiny">Nothing leaves your machine except the calls the engine already makes to GitHub.</p>
+            <p class="muted tiny" data-i18n="auth.hint.privacy">Nothing leaves your machine except the calls the engine already makes to GitHub.</p>
         </div>
     </div>
 
@@ -46,55 +46,63 @@
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-head">
                 <button id="btn-home" class="brand brand-home" type="button"
-                    title="DeskPilot home — close the current chat" aria-label="DeskPilot home">
+                    title="DeskPilot home — close the current chat" aria-label="DeskPilot home"
+                    data-i18n-attr="title:app.home.title,aria-label:app.home.aria">
                     <span class="brand-mark-img" aria-hidden="true"></span> DeskPilot
                 </button>
-                <button id="btn-new" class="btn btn-primary btn-block">+ New conversation</button>
+                <button id="btn-new" class="btn btn-primary btn-block" data-i18n="app.newConversation">+ New conversation</button>
             </div>
             <div class="conv-search-wrap">
                 <input id="conv-search" class="conv-search" type="search" spellcheck="false"
-                    placeholder="Search conversations…" aria-label="Search conversations" />
+                    placeholder="Search conversations…" aria-label="Search conversations"
+                    data-i18n-attr="placeholder:app.search.placeholder,aria-label:app.search.aria" />
             </div>
             <nav id="conversation-list" class="conversation-list" aria-label="Conversations"></nav>
             <button id="btn-show-archived" class="show-archived hidden" type="button"></button>
             <button id="btn-mark-all-read" class="mark-all-read hidden" type="button"></button>
             <div class="sidebar-foot">
-                <button id="usage-chip" class="usage-chip" title="Credits — this session / all-time">
+                <button id="usage-chip" class="usage-chip" title="Credits — this session / all-time"
+                    data-i18n-attr="title:nav.usage.title">
                     <span class="bolt">⚡</span> <span id="usage-session-credits">0</span><span class="usage-chip-sep">/</span><span id="usage-alltime-credits" class="usage-chip-alltime">0</span> <span class="usage-chip-unit">cr</span>
                 </button>
-                <button id="btn-customizations" class="icon-btn" title="Customizations — agents, skills, instructions, prompts" aria-label="Customizations">🧩</button>
-                <button id="btn-diagnostics" class="icon-btn" title="Diagnostics" aria-label="Open diagnostics">◉</button>
-                <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">⚙</button>
+                <button id="btn-customizations" class="icon-btn" title="Customizations — agents, skills, instructions, prompts" aria-label="Customizations" data-i18n-attr="title:nav.customizations.title,aria-label:nav.customizations">🧩</button>
+                <button id="btn-schedules" class="icon-btn" title="Scheduled work" aria-label="Open scheduled work" data-i18n-attr="title:nav.schedules.title,aria-label:nav.schedules">⏰</button>
+                <button id="btn-diagnostics" class="icon-btn" title="Diagnostics" aria-label="Open diagnostics" data-i18n-attr="title:nav.diagnostics.title,aria-label:nav.diagnostics">◉</button>
+                <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings" data-i18n-attr="title:nav.settings,aria-label:nav.settings">⚙</button>
             </div>
-            <div id="app-version" class="app-version" title="DeskPilot version" aria-label="DeskPilot version"></div>
+            <div id="app-version" class="app-version" title="DeskPilot version" aria-label="DeskPilot version" data-i18n-attr="title:nav.version.title,aria-label:nav.version.title"></div>
         </aside>
 
         <!-- Main -->
         <main class="main">
             <header class="topbar">
-                <button id="btn-sidebar" class="icon-btn only-mobile" aria-label="Toggle sidebar">☰</button>
-                <input id="conv-title" class="conv-title" aria-label="Conversation title" />
+                <button id="btn-sidebar" class="icon-btn only-mobile" aria-label="Toggle sidebar" data-i18n-attr="aria-label:topbar.sidebar">☰</button>
+                <input id="conv-title" class="conv-title" aria-label="Conversation title" data-i18n-attr="aria-label:topbar.title.aria" />
                 <div class="topbar-right">
                     <label class="model-picker">
-                        <span class="muted tiny">Model</span>
-                        <select id="model-select" aria-label="Model"></select>
+                        <span class="muted tiny" data-i18n="topbar.model">Model</span>
+                        <select id="model-select" aria-label="Model" data-i18n-attr="aria-label:topbar.model"></select>
                     </label>
                     <button id="btn-context" class="context-meter hidden" type="button"
-                        title="Context window usage" aria-label="Session info and context window"></button>
+                        title="Context window usage" aria-label="Session info and context window"
+                        data-i18n-attr="title:topbar.context.title,aria-label:topbar.context.aria"></button>
                     <button id="btn-intercom" class="intercom-chip hidden" type="button"
-                        title="Intercom — remote control from your phone" aria-label="Intercom status"></button>
+                        title="Intercom — remote control from your phone" aria-label="Intercom status"
+                        data-i18n-attr="title:topbar.intercom.title,aria-label:topbar.intercom.aria"></button>
                     <button id="btn-theme" class="icon-btn" title="Toggle light / dark mode"
-                        aria-label="Toggle light or dark mode">☾</button>
+                        aria-label="Toggle light or dark mode"
+                        data-i18n-attr="title:topbar.theme.title,aria-label:topbar.theme.aria">☾</button>
                     <button id="btn-files" class="icon-btn" title="Toggle the project files panel"
-                        aria-label="Toggle files" aria-expanded="false" disabled>☰ Files</button>
+                        aria-label="Toggle files" aria-expanded="false" disabled
+                        data-i18n="topbar.files" data-i18n-attr="title:topbar.files.title,aria-label:topbar.files.aria">☰ Files</button>
                 </div>
             </header>
 
             <section id="thread" class="thread" aria-live="polite">
                 <div id="empty-state" class="empty-state">
                     <span class="brand-mark-img brand-mark-img-xl" aria-hidden="true"></span>
-                    <h2>How can I help?</h2>
-                    <p class="muted">Ask a question, or give the agent a task. It can read and write files, run
+                    <h2 data-i18n="empty.heading">How can I help?</h2>
+                    <p class="muted" data-i18n="empty.body">Ask a question, or give the agent a task. It can read and write files, run
                         commands, and browse — with the permissions you allow.</p>
                     <div class="examples" id="examples"></div>
                 </div>
@@ -104,26 +112,26 @@
                 <div id="activity-hint" class="activity-hint hidden"></div>
                 <div class="composer">
                     <div class="composer-row">
-                        <button id="btn-permissions" class="chip" title="Tool permissions">
-                            <span class="dot" id="perm-dot"></span> Permissions
+                        <button id="btn-permissions" class="chip" title="Tool permissions" data-i18n-attr="title:composer.permissions.title">
+                            <span class="dot" id="perm-dot"></span> <span data-i18n="composer.permissions">Permissions</span>
                         </button>
                         <button id="btn-project" class="chip" title="Project — the working folder for new prompts"
-                            aria-haspopup="menu" aria-expanded="false">
+                            aria-haspopup="menu" aria-expanded="false" data-i18n-attr="title:composer.project.title">
                             📁 <span id="project-chip-label">No project</span> <span class="chip-caret">▾</span>
                         </button>
                         <button id="btn-agent" class="chip" title="Agent — the persona the assistant uses"
-                            aria-haspopup="menu" aria-expanded="false">
+                            aria-haspopup="menu" aria-expanded="false" data-i18n-attr="title:composer.agent.title">
                             🤖 <span id="agent-chip-label">No agent</span> <span class="chip-caret">▾</span>
                         </button>
-                        <button id="btn-attach" class="chip" title="Attach files">
+                        <button id="btn-attach" class="chip" title="Attach files" data-i18n="composer.attach" data-i18n-attr="title:composer.attach.title">
                             📎 Attach
                         </button>
                         <button id="btn-insert" class="chip" title="Insert a prompt file or reference a project file"
-                            aria-haspopup="menu" aria-expanded="false">
+                            aria-haspopup="menu" aria-expanded="false" data-i18n="composer.insert" data-i18n-attr="title:composer.insert.title">
                             ＋ Insert
                         </button>
                         <button id="btn-mic" class="chip hidden" title="Dictate (speech to text)"
-                            aria-pressed="false" aria-label="Dictate">
+                            aria-pressed="false" aria-label="Dictate" data-i18n="composer.dictate" data-i18n-attr="title:composer.dictate.title">
                             🎤 Dictate
                         </button>
                         <input id="file-input" type="file" multiple class="hidden" />
@@ -253,42 +261,99 @@
     <div id="diagnostics-modal" class="modal diagnostics-modal hidden" role="dialog" aria-modal="true"
         aria-labelledby="diagnostics-title">
         <div class="modal-head">
-            <h2 id="diagnostics-title">Diagnostics</h2>
-            <button id="diagnostics-close" class="icon-btn" type="button" aria-label="Close diagnostics">✕</button>
+            <h2 id="diagnostics-title" data-i18n="diagnostics.title">Diagnostics</h2>
+            <button id="diagnostics-close" class="icon-btn" type="button" aria-label="Close diagnostics" data-i18n-attr="aria-label:diagnostics.close">✕</button>
         </div>
         <div class="diagnostics-body">
             <section class="diagnostics-hero" aria-live="polite">
                 <div id="diagnostics-summary" class="diagnostics-summary"></div>
                 <div class="diagnostics-actions">
-                    <button id="diagnostics-check" class="btn btn-primary" type="button">Run self-check</button>
-                    <button id="diagnostics-export" class="btn" type="button">Create support bundle</button>
+                    <button id="diagnostics-check" class="btn btn-primary" type="button" data-i18n="diagnostics.selfCheck">Run self-check</button>
+                    <button id="diagnostics-export" class="btn" type="button" data-i18n="diagnostics.supportBundle">Create support bundle</button>
                 </div>
                 <div id="diagnostics-export-result" class="diagnostics-export-result muted tiny" aria-live="polite"></div>
             </section>
             <div class="diagnostics-overview">
                 <section>
-                    <h3>Versions</h3>
+                    <h3 data-i18n="diagnostics.versions">Versions</h3>
                     <div id="diagnostics-versions" class="diagnostics-facts"></div>
                 </section>
                 <section>
-                    <h3>Resolved paths</h3>
+                    <h3 data-i18n="diagnostics.paths">Resolved paths</h3>
                     <div id="diagnostics-paths" class="diagnostics-facts"></div>
                 </section>
             </div>
             <section class="diagnostics-section">
-                <h3>Self-check</h3>
+                <h3 data-i18n="diagnostics.checks">Self-check</h3>
                 <div id="diagnostics-checks" class="diagnostics-check-grid"></div>
             </section>
             <section class="diagnostics-section diagnostics-log-section">
                 <div class="diagnostics-section-head">
                     <div>
-                        <h3>Host Server log</h3>
+                        <h3 data-i18n="diagnostics.log">Host Server log</h3>
                         <div id="diagnostics-retention" class="muted tiny"></div>
                     </div>
-                    <button id="diagnostics-clear" class="btn btn-small" type="button">Clear log</button>
+                    <button id="diagnostics-clear" class="btn btn-small" type="button" data-i18n="diagnostics.clearLog">Clear log</button>
                 </div>
                 <div id="diagnostics-log" class="diagnostics-log" role="log" aria-live="polite"></div>
             </section>
+        </div>
+    </div>
+
+    <!-- Local scheduled work: recurring prompts, next run and last outcome -->
+    <div id="schedules-backdrop" class="backdrop folder-backdrop hidden"></div>
+    <div id="schedules-modal" class="modal schedules-modal hidden" role="dialog" aria-modal="true"
+        aria-labelledby="schedules-title">
+        <div class="modal-head">
+            <h2 id="schedules-title" data-i18n="schedules.title">Scheduled work</h2>
+            <button id="schedules-close" class="icon-btn" type="button" aria-label="Close scheduled work" data-i18n-attr="aria-label:schedules.close">✕</button>
+        </div>
+        <div class="schedules-body">
+            <p class="muted tiny" data-i18n="schedules.intro">A schedule runs its prompt in its own conversation when DeskPilot is running and
+                nothing else is using the agent. Terminal access is switched off for an unattended run unless you
+                choose otherwise, because nobody is at the machine to approve a command.</p>
+            <div id="schedules-status" class="muted tiny" aria-live="polite"></div>
+            <div id="schedules-list" class="schedules-list"></div>
+            <form id="schedule-form" class="schedule-form" autocomplete="off">
+                <h3 id="schedule-form-title" data-i18n="schedules.form.add">Add a schedule</h3>
+                <label class="field"><span data-i18n="schedules.name">Name</span>
+                    <input id="schedule-name" type="text" maxlength="80" required></label>
+                <label class="field"><span data-i18n="schedules.prompt">Prompt</span>
+                    <textarea id="schedule-prompt" rows="3" maxlength="8000" required></textarea></label>
+                <div class="schedule-form-row">
+                    <label class="field"><span data-i18n="schedules.repeats">Repeats</span>
+                        <select id="schedule-recurrence">
+                            <option value="daily" data-i18n="schedules.repeats.daily">Every day</option>
+                            <option value="weekly" data-i18n="schedules.repeats.weekly">Selected weekdays</option>
+                            <option value="once" data-i18n="schedules.repeats.once">Once</option>
+                        </select></label>
+                    <label class="field"><span data-i18n="schedules.time">At (local time)</span>
+                        <input id="schedule-time" type="time" value="08:00"></label>
+                    <label class="field schedule-once-field hidden"><span data-i18n="schedules.date">Date</span>
+                        <input id="schedule-date" type="date"></label>
+                </div>
+                <fieldset id="schedule-weekdays" class="schedule-weekdays hidden">
+                    <legend data-i18n="schedules.weekdays">Weekdays</legend>
+                </fieldset>
+                <div class="schedule-form-row">
+                    <label class="field"><span data-i18n="schedules.project">Project</span>
+                        <select id="schedule-project"></select></label>
+                    <label class="field"><span data-i18n="schedules.busy">If DeskPilot is busy</span>
+                        <select id="schedule-collision">
+                            <option value="queue" data-i18n="schedules.busy.queue">Wait and run when free</option>
+                            <option value="skip" data-i18n="schedules.busy.skip">Skip this run</option>
+                        </select></label>
+                    <label class="field"><span data-i18n="schedules.permissions">Permissions</span>
+                        <select id="schedule-permission">
+                            <option value="safe" data-i18n="schedules.permissions.safe">Safe — no terminal commands</option>
+                            <option value="live" data-i18n="schedules.permissions.live">Current permissions, including terminal</option>
+                        </select></label>
+                </div>
+                <div class="schedule-form-actions">
+                    <button id="schedule-save" class="btn btn-primary" type="submit" data-i18n="schedules.save.add">Add schedule</button>
+                    <button id="schedule-cancel" class="btn hidden" type="button" data-i18n="schedules.cancel">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 

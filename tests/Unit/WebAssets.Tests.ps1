@@ -14,9 +14,44 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diagnostics.js', 'diff.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diagnostics.js', 'diff.js', 'i18n.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
+        foreach ($name in 'en.js', 'de.js') {
+            Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' 'locales' $name) -PathType Leaf | Should -BeTrue
+        }
+    }
+
+    It 'provides an accessible scheduled-work surface that states the unattended permission boundary' {
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        foreach ($id in @(
+                'btn-schedules', 'schedules-backdrop', 'schedules-modal', 'schedules-close',
+                'schedules-status', 'schedules-list', 'schedule-form', 'schedule-name',
+                'schedule-prompt', 'schedule-recurrence', 'schedule-time', 'schedule-date',
+                'schedule-weekdays', 'schedule-project', 'schedule-collision',
+                'schedule-permission', 'schedule-save', 'schedule-cancel'
+            )) {
+            $html | Should -Match ([regex]::Escape("id=`"$id`""))
+        }
+        $html | Should -Match 'role="dialog"[^>]+aria-modal="true"[^>]+aria-labelledby="schedules-title"'
+        $html | Should -Match 'id="schedules-status"[^>]+aria-live="polite"'
+        # The default is the safe mode, and the panel says why it exists.
+        $html | Should -Match 'Terminal access is switched off for an unattended run'
+
+        $js | Should -Match 'function openSchedules\('
+        $js | Should -Match 'function renderSchedules\('
+        # A live-permission schedule is confirmed, not merely labelled.
+        $js | Should -Match "body\.permissionMode === 'live' && !window\.confirm"
+        $js | Should -Match ([regex]::Escape('$(''btn-schedules'').onclick'))
+        $js | Should -Match ([regex]::Escape('{ label: ''Open scheduled work'', run: () => openSchedules() }'))
+        # Schedule names and prompts are user text; they must never be concatenated into HTML.
+        $js | Should -Not -Match 'schedules-list.*innerHTML'
+
+        $css | Should -Match '\.schedules-modal\s*\{'
+        $css | Should -Match '\.schedule-row\s*\{'
     }
 
     It 'provides a calm, bounded Diagnostics surface' {

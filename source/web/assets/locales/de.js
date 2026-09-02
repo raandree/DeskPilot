@@ -1,0 +1,152 @@
+// Deutsche Ressourcen. Jeder Schlüssel aus en.js muss hier existieren; die Tests
+// prüfen das in beide Richtungen, ebenso wie die Platzhalter jedes Textes.
+//
+// Übersetzungsentscheidungen, die bewusst getroffen wurden:
+//   - "Engine" bleibt "Engine" (ShellPilot, die lokale Komponente), "Model"
+//     wird zu "Modell" (das Sprachmodell). Die beiden dürfen nicht verschmelzen.
+//   - Produktbegriffe aus dem Glossar bleiben erkennbar: "Projekt",
+//     "Unterhaltung", "Berechtigungen", "Intercom", "Agent", "Skill".
+//   - Sicherheitstexte (warn.*) sind vollständig übersetzt und nicht gekürzt.
+//     Eine Warnung, die in ein Steuerelement passt, aber die Folge verschweigt,
+//     ist keine Warnung.
+
+export const de = {
+    // Seitenleiste und Navigation
+    'app.newConversation': '+ Neue Unterhaltung',
+    'app.home.title': 'DeskPilot-Start — aktuelle Unterhaltung schließen',
+    'app.home.aria': 'DeskPilot-Start',
+    'app.search.placeholder': 'Unterhaltungen durchsuchen…',
+    'app.search.aria': 'Unterhaltungen durchsuchen',
+    'nav.customizations': 'Anpassungen',
+    'nav.customizations.title': 'Anpassungen — Agents, Skills, Instructions, Prompts',
+    'nav.schedules': 'Geplante Aufgaben öffnen',
+    'nav.schedules.title': 'Geplante Aufgaben',
+    'nav.diagnostics': 'Diagnose öffnen',
+    'nav.diagnostics.title': 'Diagnose',
+    'nav.settings': 'Einstellungen',
+    'nav.usage.title': 'Credits — diese Sitzung / insgesamt',
+    'nav.version.title': 'DeskPilot-Version',
+
+    // Kopfleiste
+    'topbar.sidebar': 'Seitenleiste ein-/ausblenden',
+    'topbar.title.aria': 'Titel der Unterhaltung',
+    'topbar.model': 'Modell',
+    'topbar.context.title': 'Auslastung des Kontextfensters',
+    'topbar.context.aria': 'Sitzungsinfo und Kontextfenster',
+    'topbar.intercom.title': 'Intercom — Fernsteuerung vom Telefon',
+    'topbar.intercom.aria': 'Intercom-Status',
+    'topbar.theme.title': 'Zwischen hellem und dunklem Modus wechseln',
+    'topbar.theme.aria': 'Hellen oder dunklen Modus umschalten',
+    'topbar.files': '☰ Dateien',
+    'topbar.files.title': 'Dateibereich des Projekts ein-/ausblenden',
+    'topbar.files.aria': 'Dateien ein-/ausblenden',
+
+    // Leerer Zustand
+    'empty.heading': 'Womit kann ich helfen?',
+    'empty.body': 'Stellen Sie eine Frage oder geben Sie dem Agent eine Aufgabe. Er kann Dateien lesen und schreiben, Befehle ausführen und im Web nachschlagen — im Rahmen der Berechtigungen, die Sie erteilen.',
+
+    // Eingabebereich
+    'composer.permissions': 'Berechtigungen',
+    'composer.permissions.title': 'Berechtigungen für Werkzeuge',
+    'composer.project.title': 'Projekt — der Arbeitsordner für neue Prompts',
+    'composer.project.none': 'Kein Projekt',
+    'composer.agent.title': 'Agent — die Rolle, die der Assistent einnimmt',
+    'composer.agent.none': 'Kein Agent',
+    'composer.attach': '📎 Anhängen',
+    'composer.attach.title': 'Dateien anhängen',
+    'composer.insert': '＋ Einfügen',
+    'composer.insert.title': 'Prompt-Datei einfügen oder Projektdatei referenzieren',
+    'composer.dictate': '🎤 Diktieren',
+    'composer.dictate.title': 'Diktieren (Sprache zu Text)',
+
+    // Anmeldung
+    'auth.title': 'Mit GitHub Copilot verbinden',
+    'auth.subtitle': 'DeskPilot nutzt Ihr GitHub-Copilot-Konto über die lokale ShellPilot-Engine. Melden Sie sich einmal an, um zu beginnen.',
+    'auth.connect': 'Verbinden',
+    'auth.recheck': 'Ich habe mich anderswo angemeldet',
+    'auth.hint.privacy': 'Außer den Aufrufen, die die Engine ohnehin an GitHub sendet, verlässt nichts Ihren Rechner.',
+
+    // Geplante Aufgaben
+    'schedules.title': 'Geplante Aufgaben',
+    'schedules.close': 'Geplante Aufgaben schließen',
+    'schedules.intro': 'Eine geplante Aufgabe führt ihren Prompt in einer eigenen Unterhaltung aus, sobald DeskPilot läuft und nichts anderes den Agent belegt. Für einen unbeaufsichtigten Lauf ist der Terminalzugriff abgeschaltet, sofern Sie es nicht anders wählen — denn es ist niemand am Rechner, der einen Befehl freigeben könnte.',
+    'schedules.empty': 'Noch keine geplanten Aufgaben.',
+    'schedules.queueEmpty': 'Es warten keine Läufe.',
+    'schedules.queue.one': '{count} Lauf wartet darauf, dass der Agent frei wird.',
+    'schedules.queue.other': '{count} Läufe warten darauf, dass der Agent frei wird.',
+    'schedules.form.add': 'Geplante Aufgabe hinzufügen',
+    'schedules.form.edit': 'Geplante Aufgabe bearbeiten',
+    'schedules.name': 'Name',
+    'schedules.prompt': 'Prompt',
+    'schedules.repeats': 'Wiederholung',
+    'schedules.repeats.daily': 'Täglich',
+    'schedules.repeats.weekly': 'An ausgewählten Wochentagen',
+    'schedules.repeats.once': 'Einmalig',
+    'schedules.time': 'Um (Ortszeit)',
+    'schedules.date': 'Datum',
+    'schedules.weekdays': 'Wochentage',
+    'schedules.project': 'Projekt',
+    'schedules.busy': 'Wenn DeskPilot beschäftigt ist',
+    'schedules.busy.queue': 'Warten und ausführen, sobald frei',
+    'schedules.busy.skip': 'Diesen Lauf auslassen',
+    'schedules.permissions': 'Berechtigungen',
+    'schedules.permissions.safe': 'Sicher — keine Terminalbefehle',
+    'schedules.permissions.live': 'Aktuelle Berechtigungen, einschließlich Terminal',
+    'schedules.save.add': 'Aufgabe hinzufügen',
+    'schedules.save.edit': 'Aufgabe speichern',
+    'schedules.cancel': 'Abbrechen',
+    'schedules.runNow': 'Jetzt ausführen',
+    'schedules.pause': 'Pausieren',
+    'schedules.resume': 'Fortsetzen',
+    'schedules.edit': 'Bearbeiten',
+    'schedules.delete': 'Löschen',
+    'schedules.next': 'Nächster Lauf: {when}',
+    'schedules.paused': 'Pausiert',
+    'schedules.waiting': 'wartet auf Ausführung',
+    'schedules.last': 'Zuletzt: {outcome} — {detail}',
+    'schedules.everyDay': 'Täglich um {time}',
+    'schedules.onDays': '{days} um {time}',
+    'schedules.queued': 'Eingereiht. Der Lauf startet, sobald der Agent frei ist.',
+    'schedules.added': 'Geplante Aufgabe hinzugefügt.',
+    'schedules.saved': 'Geplante Aufgabe gespeichert.',
+
+    // Diagnose
+    'diagnostics.title': 'Diagnose',
+    'diagnostics.close': 'Diagnose schließen',
+    'diagnostics.selfCheck': 'Selbsttest ausführen',
+    'diagnostics.supportBundle': 'Supportpaket erstellen',
+    'diagnostics.versions': 'Versionen',
+    'diagnostics.paths': 'Aufgelöste Pfade',
+    'diagnostics.checks': 'Selbsttest',
+    'diagnostics.log': 'Protokoll des Host-Servers',
+    'diagnostics.clearLog': 'Protokoll leeren',
+
+    // Einstellungen
+    'settings.language': 'Sprache',
+    'settings.language.auto': 'Systemsprache verwenden',
+    'settings.language.en': 'English',
+    'settings.language.de': 'Deutsch',
+
+    // Sicherheitstexte. Bedeutung vor Kürze.
+    'warn.schedule.live': 'Diese geplante Aufgabe läuft unbeaufsichtigt mit Ihren aktuellen Berechtigungen, einschließlich Terminalbefehlen, und niemand ist da, um sie freizugeben. Fortfahren?',
+    'warn.schedule.delete': 'Geplante Aufgabe „{name}“ löschen? Bereits erstellte Unterhaltungen bleiben erhalten.',
+    'warn.conversation.delete': 'Diese Unterhaltung löschen? Das lässt sich nicht rückgängig machen.',
+    'warn.changes.discard': 'Alle aufgeführten Änderungen verwerfen? Eine Datei, die der Agent erstellt und die Sie nie gespeichert haben, wird gelöscht — es gibt nirgends eine weitere Kopie davon.',
+    'warn.update.install': 'Dieses Update installieren? DeskPilot und die Engine werden auf Ihrem Rechner ersetzt, und DeskPilot startet zum Abschluss neu.',
+    'warn.terminal.enable': 'Der Terminalzugriff erlaubt dem Agent, Befehle auf diesem Computer auszuführen — auch solche, die Dateien verändern oder löschen. Schalten Sie ihn nur ein, wenn Sie wissen, worum Sie bitten.',
+
+    // Serverfehler nach stabilem Code. Der Wire-Vertrag ändert sich nie mit der
+    // Sprache, nur der angezeigte Text.
+    'error.busy': 'DeskPilot arbeitet gerade. Versuchen Sie es erneut, sobald der Vorgang beendet ist.',
+    'error.not_found': 'Dieses Element existiert nicht mehr.',
+    'error.bad_schedule': 'Diese geplante Aufgabe ist ungültig: {message}',
+    'error.already_queued': 'Für diese geplante Aufgabe wartet bereits ein Lauf.',
+    'error.queue_full': 'Die Warteschlange ist voll. Versuchen Sie es erneut, sobald sie abgearbeitet ist.',
+    'error.too_many_schedules': 'DeskPilot verwaltet höchstens 50 geplante Aufgaben. Löschen Sie zuerst eine.',
+    'error.auth_required': 'Ihre Anmeldung ist abgelaufen. Melden Sie sich erneut an, um fortzufahren.',
+    'error.engine_unavailable': 'Die Engine ist nicht verfügbar. Sehen Sie in der Diagnose nach.',
+    'error.too_large': 'Diese Datei ist zu groß zum Senden.',
+    'error.executable': 'DeskPilot öffnet niemals ein Programm oder Skript außerhalb von sich selbst.',
+    'error.no_workspace': 'Wählen Sie zuerst ein Projekt.',
+    'error.unknown': 'Etwas ist schiefgegangen.',
+};

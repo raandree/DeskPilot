@@ -11,6 +11,15 @@ import {
     statusLabel,
 } from './diff.js';
 import { diagnosticStateMeta, mergeDiagnosticEntries } from './diagnostics.js';
+import {
+    CATALOGS,
+    applyTranslations,
+    createTranslator,
+    formatDateTime,
+    formatNumber,
+    formatRelativeTime,
+    resolveLocale,
+} from './i18n.js';
 import { markdownToSpeech, renderMarkdown } from './markdown.js';
 import {
     createQuestionnaireState,
@@ -234,6 +243,40 @@ function applySendKeyHint() {
         : 'Message DeskPilot\u2026  (Ctrl+Enter to send, Enter for a new line)';
 }
 
+// ===== Language =====
+// The chosen language is a per-machine display preference, like the theme and
+// the voice language: it shapes no Turn and the Host Server gains nothing from
+// knowing it, so it lives in localStorage and needs no server round-trip.
+// Server errors stay localizable because the wire contract carries a stable
+// error CODE and the text is chosen here.
+let locale = 'en';
+let tr = createTranslator('en');
+
+function applyLanguage() {
+    const stored = localStorage.getItem('ad_lang') || 'auto';
+    locale = resolveLocale(stored, navigator.languages || [navigator.language], Object.keys(CATALOGS));
+    tr = createTranslator(locale, {
+        onMissing: (key, loc) => console.warn(`[i18n] missing key "${key}" for locale "${loc}"`),
+    });
+    document.documentElement.lang = locale;
+    applyTranslations(document, tr);
+}
+
+function setLanguage(value) {
+    localStorage.setItem('ad_lang', value);
+    applyLanguage();
+    const schedules = $('schedules-modal');
+    if (schedules && !schedules.classList.contains('hidden')) renderSchedules();
+}
+
+/** Localized text for a Host Server error, by its stable code. */
+function errorText(error) {
+    const code = (error && error.code) || 'unknown';
+    const key = `error.${code}`;
+    const text = tr(key, { message: (error && error.message) || '' });
+    return text === key ? ((error && error.message) || tr('error.unknown')) : text;
+}
+
 function applyTheme() {
     const t = localStorage.getItem('ad_theme') || 'system';
     document.documentElement.dataset.theme = t;
@@ -267,6 +310,7 @@ if (window.matchMedia) {
 
 // ===== Init =====
 async function init() {
+    applyLanguage();
     applyTheme();
     applySendKeyHint();
     wireGlobal();
@@ -6750,6 +6794,13 @@ function openSettings() {
         <p class="hint">A voice marked <em>Natural</em> or <em>Online</em> is a modern one; a <em>Desktop</em> voice is the old robotic set Windows ships with. Automatic already prefers the best one installed.</p>
       </div>
       <div class="field">
+        <label data-i18n="settings.language">Language</label>
+        <select id="set-language">
+          ${['auto', 'en', 'de'].map((code) => `<option value="${code}" ${(localStorage.getItem('ad_lang') || 'auto') === code ? 'selected' : ''}>${tr(`settings.language.${code}`)}</option>`).join('')}
+        </select>
+        <p class="hint">DeskPilot follows your system language on first run. Your agent's answers and your project files are never translated.</p>
+      </div>
+      <div class="field">
         <label>Theme</label>
         <select id="set-theme">
           ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
@@ -7115,6 +7166,7 @@ function openSettings() {
         save({ responseRetryCount: v });
     };
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
+    $('set-language').onchange = (e) => setLanguage(e.target.value);
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };
     $('set-voicelang').onchange = (e) => {
         localStorage.setItem('ad_voicelang', e.target.value);
@@ -7504,6 +7556,283 @@ async function clearDiagnosticLog() {
     } finally {
         button.disabled = false;
         scheduleDiagnosticPoll();
+    }
+}
+
+// ===== Scheduled work =====
+// One prompt, one clock, one conversation of its own. The list is read from the
+// Host Server on open and after every change; there is no polling, because a
+// schedule that fires while the panel is shut is reported by its conversation
+// turning up unread in the sidebar.
+const SCHEDULE_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+let scheduleEditId = null;
+
+function openSchedules() {
+    $('schedules-backdrop').classList.remove('hidden');
+    $('schedules-modal').classList.remove('hidden');
+    resetScheduleForm();
+    refreshSchedules();
+    $('schedule-name').focus();
+}
+
+function closeSchedules() {
+    $('schedules-modal').classList.add('hidden');
+    $('schedules-backdrop').classList.add('hidden');
+}
+
+async function refreshSchedules() {
+    try {
+        state.schedules = await api('GET', '/api/schedules');
+        renderSchedules();
+    } catch (error) {
+        $('schedules-status').textContent = error.message || 'Schedules are unavailable.';
+    }
+}
+
+function formatScheduleWhen(s) {
+    if (s.recurrence === 'once') return tr('schedules.repeats.once');
+    if (s.recurrence === 'weekly') {
+        const days = (s.weekdays || []).map((d) => SCHEDULE_WEEKDAYS[d]).join(', ');
+        return tr('schedules.onDays', { days, time: s.timeOfDay });
+    }
+    return tr('schedules.everyDay', { time: s.timeOfDay });
+}
+
+function formatScheduleInstant(iso) {
+    if (!iso) return '—';
+    const when = new Date(iso);
+    if (Number.isNaN(when.getTime())) return '—';
+    return formatDateTime(locale, when);
+}
+
+function renderSchedules() {
+    const list = $('schedules-list');
+    list.textContent = '';
+    const data = state.schedules || { schedules: [], queueDepth: 0 };
+    const status = $('schedules-status');
+    status.textContent = data.queueDepth
+        ? tr('schedules.queue', { count: data.queueDepth })
+        : tr('schedules.queueEmpty');
+
+    if (!data.schedules.length) {
+        const empty = document.createElement('p');
+        empty.className = 'muted tiny';
+        empty.textContent = tr('schedules.empty');
+        list.appendChild(empty);
+        return;
+    }
+
+    for (const s of data.schedules) {
+        const row = document.createElement('div');
+        row.className = 'schedule-row' + (s.enabled ? '' : ' is-off');
+
+        const main = document.createElement('div');
+        main.className = 'schedule-main';
+        const name = document.createElement('div');
+        name.className = 'schedule-name';
+        name.textContent = s.name;
+        const when = document.createElement('div');
+        when.className = 'muted tiny';
+        const nextText = s.enabled ? tr('schedules.next', { when: formatScheduleInstant(s.nextRunUtc) }) : tr('schedules.paused');
+        when.textContent = `${formatScheduleWhen(s)} · ${nextText}${s.queued ? ' · ' + tr('schedules.waiting') : ''}`;
+        main.append(name, when);
+        if (s.lastRun) {
+            const last = document.createElement('div');
+            last.className = 'muted tiny';
+            last.textContent = tr('schedules.last', { outcome: s.lastRun.outcome, detail: s.lastRun.detail || '' });
+            main.appendChild(last);
+        }
+        if (s.permissionMode === 'live') {
+            const warn = document.createElement('div');
+            warn.className = 'schedule-warn tiny';
+            warn.textContent = tr('schedules.permissions.live');
+            main.appendChild(warn);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'schedule-actions';
+        const runBtn = document.createElement('button');
+        runBtn.type = 'button';
+        runBtn.className = 'btn btn-small';
+        runBtn.textContent = tr('schedules.runNow');
+        runBtn.onclick = () => runScheduleNow(s.id);
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'btn btn-small';
+        toggleBtn.textContent = s.enabled ? tr('schedules.pause') : tr('schedules.resume');
+        toggleBtn.setAttribute('aria-pressed', s.enabled ? 'false' : 'true');
+        toggleBtn.onclick = () => saveSchedule({ ...s, enabled: !s.enabled }, s.id);
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'btn btn-small';
+        editBtn.textContent = tr('schedules.edit');
+        editBtn.onclick = () => fillScheduleForm(s);
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn btn-small';
+        delBtn.textContent = tr('schedules.delete');
+        delBtn.onclick = () => deleteSchedule(s);
+        actions.append(runBtn, toggleBtn, editBtn, delBtn);
+
+        row.append(main, actions);
+        list.appendChild(row);
+    }
+}
+
+function scheduleProjectOptions(selectedId) {
+    const select = $('schedule-project');
+    select.textContent = '';
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = tr('composer.project.none');
+    select.appendChild(none);
+    for (const p of (state.settings && state.settings.projects) || []) {
+        const option = document.createElement('option');
+        option.value = p.id;
+        option.textContent = p.name;
+        select.appendChild(option);
+    }
+    select.value = selectedId || '';
+}
+
+function scheduleWeekdayBoxes(selected) {
+    const set = $('schedule-weekdays');
+    Array.from(set.querySelectorAll('label')).forEach((el) => el.remove());
+    SCHEDULE_WEEKDAYS.forEach((label, index) => {
+        const wrap = document.createElement('label');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = String(index);
+        box.checked = (selected || []).includes(index);
+        const text = document.createElement('span');
+        text.textContent = label;
+        wrap.append(box, text);
+        set.appendChild(wrap);
+    });
+}
+
+function syncScheduleRecurrenceFields() {
+    const recurrence = $('schedule-recurrence').value;
+    $('schedule-weekdays').classList.toggle('hidden', recurrence !== 'weekly');
+    Array.from(document.querySelectorAll('.schedule-once-field')).forEach((el) => {
+        el.classList.toggle('hidden', recurrence !== 'once');
+    });
+}
+
+function resetScheduleForm() {
+    scheduleEditId = null;
+    $('schedule-form-title').textContent = tr('schedules.form.add');
+    $('schedule-save').textContent = tr('schedules.save.add');
+    $('schedule-cancel').classList.add('hidden');
+    $('schedule-name').value = '';
+    $('schedule-prompt').value = '';
+    $('schedule-recurrence').value = 'daily';
+    $('schedule-time').value = '08:00';
+    $('schedule-date').value = new Date().toISOString().slice(0, 10);
+    $('schedule-collision').value = 'queue';
+    $('schedule-permission').value = 'safe';
+    scheduleProjectOptions((state.settings && state.settings.selectedProjectId) || '');
+    scheduleWeekdayBoxes([1, 2, 3, 4, 5]);
+    syncScheduleRecurrenceFields();
+}
+
+function fillScheduleForm(s) {
+    scheduleEditId = s.id;
+    $('schedule-form-title').textContent = tr('schedules.form.edit');
+    $('schedule-save').textContent = tr('schedules.save.edit');
+    $('schedule-cancel').classList.remove('hidden');
+    $('schedule-name').value = s.name;
+    $('schedule-prompt').value = s.prompt;
+    $('schedule-recurrence').value = s.recurrence;
+    $('schedule-time').value = s.timeOfDay || '08:00';
+    if (s.runAtUtc) {
+        const when = new Date(s.runAtUtc);
+        if (!Number.isNaN(when.getTime())) {
+            $('schedule-date').value = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;
+            $('schedule-time').value = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+        }
+    }
+    $('schedule-collision').value = s.collisionPolicy;
+    $('schedule-permission').value = s.permissionMode;
+    scheduleProjectOptions(s.projectId || '');
+    scheduleWeekdayBoxes(s.weekdays || []);
+    syncScheduleRecurrenceFields();
+    $('schedule-name').focus();
+}
+
+function readScheduleForm() {
+    const recurrence = $('schedule-recurrence').value;
+    const time = $('schedule-time').value || '08:00';
+    const body = {
+        name: $('schedule-name').value.trim(),
+        prompt: $('schedule-prompt').value.trim(),
+        recurrence,
+        timeOfDay: time,
+        projectId: $('schedule-project').value || null,
+        collisionPolicy: $('schedule-collision').value,
+        permissionMode: $('schedule-permission').value,
+        enabled: true,
+    };
+    if (recurrence === 'weekly') {
+        body.weekdays = Array.from($('schedule-weekdays').querySelectorAll('input:checked')).map((b) => Number(b.value));
+    }
+    if (recurrence === 'once') {
+        // The form is local time; the wire contract is a UTC instant.
+        const [hour, minute] = time.split(':').map(Number);
+        const [year, month, day] = ($('schedule-date').value || '').split('-').map(Number);
+        if (year && month && day) body.runAtUtc = new Date(year, month - 1, day, hour, minute, 0).toISOString();
+    }
+    return body;
+}
+
+async function saveSchedule(body, id) {
+    if (body.permissionMode === 'live' && !window.confirm(tr('warn.schedule.live'))) {
+        return;
+    }
+    try {
+        state.schedules = id
+            ? await api('PUT', `/api/schedules/${encodeURIComponent(id)}`, body)
+            : await api('POST', '/api/schedules', body);
+        resetScheduleForm();
+        renderSchedules();
+        toast(id ? tr('schedules.saved') : tr('schedules.added'));
+    } catch (error) {
+        toast(errorText(error));
+    }
+}
+
+async function submitScheduleForm(event) {
+    event.preventDefault();
+    const body = readScheduleForm();
+    if (!body.name || !body.prompt) {
+        toast('A schedule needs a name and a prompt.');
+        return;
+    }
+    if (body.recurrence === 'weekly' && !(body.weekdays || []).length) {
+        toast('Choose at least one weekday.');
+        return;
+    }
+    await saveSchedule(body, scheduleEditId);
+}
+
+async function runScheduleNow(id) {
+    try {
+        state.schedules = await api('POST', `/api/schedules/${encodeURIComponent(id)}/run`, {});
+        renderSchedules();
+        toast(tr('schedules.queued'));
+    } catch (error) {
+        toast(errorText(error));
+    }
+}
+
+async function deleteSchedule(s) {
+    if (!window.confirm(tr('warn.schedule.delete', { name: s.name }))) return;
+    try {
+        state.schedules = await api('DELETE', `/api/schedules/${encodeURIComponent(s.id)}`);
+        if (scheduleEditId === s.id) resetScheduleForm();
+        renderSchedules();
+    } catch (error) {
+        toast(errorText(error));
     }
 }
 
@@ -8384,6 +8713,7 @@ function paletteCommands() {
         { label: 'Go to home screen', run: () => goHome() },
         { label: 'Search conversations', run: () => { $('conv-search').focus(); } },
         { label: 'Open diagnostics', run: () => openDiagnostics() },
+        { label: 'Open scheduled work', run: () => openSchedules() },
         { label: 'Open settings', run: () => openSettings() },
         { label: 'Open customizations', run: () => openCustomizations() },
         { label: 'Toggle light / dark theme', run: () => toggleTheme() },
@@ -8496,6 +8826,15 @@ function wireGlobal() {
     $('diagnostics-check').onclick = () => runDiagnosticSelfCheck();
     $('diagnostics-export').onclick = () => exportSupportBundle();
     $('diagnostics-clear').onclick = () => clearDiagnosticLog();
+    $('btn-schedules').onclick = () => openSchedules();
+    $('schedules-close').onclick = () => closeSchedules();
+    $('schedules-backdrop').onclick = () => closeSchedules();
+    $('schedule-form').addEventListener('submit', (event) => submitScheduleForm(event));
+    $('schedule-cancel').onclick = () => resetScheduleForm();
+    $('schedule-recurrence').addEventListener('change', () => syncScheduleRecurrenceFields());
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !$('schedules-modal').classList.contains('hidden')) closeSchedules();
+    });
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && diagnosticsOpen) closeDiagnostics();
     });

@@ -23,6 +23,10 @@ function Invoke-DpTurn {
         user's own message text.
     .PARAMETER Stream
         The network stream to write SSE frames to.
+    .PARAMETER Scope
+        Bounded Settings overrides for an unattended Turn (a scheduled run in a
+        Project other than the one the window has open). Applied through
+        Get-DpScopedSettings, which can only narrow Permissions, never widen them.
     #>
     [CmdletBinding()]
     param(
@@ -40,7 +44,10 @@ function Invoke-DpTurn {
         [object[]]$Attachment = @(),
 
         [Parameter(Mandatory)]
-        [System.IO.Stream]$Stream
+        [System.IO.Stream]$Stream,
+
+        [AllowNull()]
+        [hashtable]$Scope
     )
 
     $writer = New-DpSseWriter -Stream $Stream
@@ -53,6 +60,9 @@ function Invoke-DpTurn {
     $startTime = [DateTime]::UtcNow
     $assistantId = New-DpId -Prefix 'm'
     $settings = $script:DeskPilot.Settings
+    if ($PSBoundParameters.ContainsKey('Scope') -and $Scope -and $Scope.Count -gt 0) {
+        $settings = Get-DpScopedSettings -Settings $settings -Scope $Scope
+    }
     $shell = $null
     $userPromptBridge = $script:DeskPilot.Engine.UserPromptBridge
     $engineUsageBefore = $null

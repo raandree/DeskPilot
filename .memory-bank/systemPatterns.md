@@ -913,8 +913,46 @@ source: repository evidence
   parameter name fails the entire Turn, so a Permission whose switch may not
   exist has to be gated on the probe as well as on the Setting.
 
+- **A narrowed authority is an AND, not an assignment.** `Get-DpScopedSettings`
+  computes a scoped Permission as `live -and requested`. An unattended Turn — a
+  schedule today, a delegated child later — can then only ever hold less
+  authority than the window, and widening is impossible rather than merely
+  unintended. A scope that *assigns* the Permission would grant it the day the
+  user turns the category off.
+- **Queue the work; never add a second dispatcher.** There is one Engine
+  Runspace and one active Turn, so a new source of work (a schedule, later an
+  event trigger) produces queue entries and lets the existing single dispatcher
+  drain them on the accept loop's idle tick. `-AllowTurn` marks the one caller
+  with no Turn on its own call stack; every other caller does bookkeeping only.
+- **Claim before you run, so a restart can tell "never finished" from "never
+  started".** The claim is persisted *before* the work begins. An unfinished
+  claim on the next launch is reported once as interrupted and never repeated —
+  repeating it would re-run something that may already have written files.
+- **Decide the daylight-saving edges in a pure function, and test both.** A
+  local time the spring gap deletes runs at the first instant after the gap; a
+  local time the autumn overlap repeats runs at the first of its two
+  occurrences. Left to `ConvertTimeToUtc` alone, the first throws and the second
+  runs twice.
+- **Localize by error code, never by error text.** The API keeps returning
+  `{ code, message }` unchanged and the client maps the stable code to a
+  language. The wire contract is then independent of the reader's language, and
+  a code with no translation still falls back to the server's own message.
+- **A release artifact carries its own inventory and is verified before it is
+  used.** `package-manifest.json` lists every file with its SHA-256; the
+  installer checks all of it *before* copying anything, so a damaged payload is
+  refused while nothing is on disk. `Test-DpPackageInventory` also reports
+  *undeclared* files, which is what catches a build leftover.
+
 ## Anti-patterns to avoid
 
+- **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode
+  switch over a backend that does not restrict files or network, or an approval
+  dialog raised after the Tool already ran, converts an honest limitation into a
+  false promise. Decisions 0001 and 0003 stop at the gate for this reason.
+- **Inferring control from post-execution Activity.** A `ToolCall` progress
+  record proves what happened, not that it could have been prevented. Any
+  feature whose premise is "DeskPilot decides before the Tool runs" needs the
+  Engine contract in `specs/120`, not a reading of the Activity stream.
 - Parsing `Write-Host` color/ANSI to reconstruct semantics — brittle; prefer the
   structured result object for Activity and Usage.
 - Binding the Host Server to `0.0.0.0` — localhost only unless explicitly opted

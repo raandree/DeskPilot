@@ -141,9 +141,11 @@ The Hermes memory idea researched after the compaction batch: an agent that
 - **Knowledge base / RAG over a corpus.** Real vector RAG needs a vector DB,
   against the build-free constraint. The `#file` mention is the constraint-
   respecting middle ground for now; a pinned-reference set is a later candidate.
-- **Scheduled / recurring prompts.** Powerful for ops, but needs an idle
-  scheduler and conflicts with the single-active-Turn rule. Spec it before
-  building.
+- **Scheduled / recurring prompts.** **Shipped.** A local, time-based schedule
+  produces queued work that the existing single-active-Turn dispatcher drains on
+  the accept loop's idle tick, so no second scheduler or Runspace was needed.
+  Collision, catch-up, expiry, restart-claim and unattended-Permission policies
+  are specified in 010 (FR-SW1..SW9), 020, 030 and 050.
 - **Multi-Model side-by-side compare.** Conflicts with the single-Turn runspace
   model; lower priority for this audience.
 - **Mermaid / charting artifacts.** Rendering needs a JS library or a CDN,

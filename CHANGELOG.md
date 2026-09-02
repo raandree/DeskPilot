@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Let DeskPilot do routine work on a schedule.** A new **Scheduled work**
+  panel (⏰ in the sidebar, or the command palette) runs a saved prompt every
+  day, on chosen weekdays, or once at a set time. Each run gets its own
+  conversation, titled after the schedule and left unread, so a result can never
+  appear inside a chat you were reading.
+
+  It waits its turn rather than competing: a due run joins a bounded queue and
+  starts only when nothing else is using the agent, and a second occurrence of
+  the same schedule joins the one already waiting instead of stacking up. A run
+  DeskPilot was closed for is reported as missed rather than fired hours late; a
+  run that waited too long expires; and a run interrupted by a restart is
+  reported once and never silently repeated.
+
+  **An unattended run has less authority than you do, never more.** It uses your
+  current permissions minus terminal access, because nobody is at the machine to
+  approve a command. Keeping terminal access is possible, requires an explicit
+  confirmation that says exactly what it means, and is labelled on the schedule
+  afterwards. The project, agent and model a schedule names are re-checked when
+  it runs: a missing one fails visibly instead of quietly running somewhere else.
+
+- **Speak German.** DeskPilot now ships English and German resources and picks
+  your language from your system on first run, with **Settings → General →
+  Language** to override it. Numbers, dates, relative times, currencies, lists
+  and plurals follow the chosen language. Every destructive-action warning is
+  complete in both languages rather than shortened to fit. Your agent's answers,
+  your project files, file paths, model names and tool names are never
+  translated.
+
+- **Install DeskPilot without knowing what a PowerShell module is.** A new
+  `./build.ps1 -Tasks packwin` produces a Windows package containing the module,
+  an installer, an uninstaller, a file inventory with checksums, and a software
+  bill of materials. Installing needs no administrator rights, verifies the whole
+  package before copying anything, and adds a Start menu entry. Uninstalling
+  keeps your conversations and settings unless you explicitly ask for them to be
+  deleted.
+
 - **Diagnose a problem without spending a Copilot credit.** A new
   **Diagnostics** view reports DeskPilot, PowerShell, Engine, Git and operating-
   system versions; resolved data and module paths; Project, sign-in, MCP,

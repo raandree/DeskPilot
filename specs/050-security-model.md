@@ -126,6 +126,31 @@ Both are explicit diagnostic requirements. The support bundle carries only
 folder leaf. The archive therefore remains shareable without disclosing the
 user's directory layout.
 
+## Scheduled work
+
+A schedule runs while nobody is watching, so its authority is deliberately not
+the same as an interactive Turn's.
+
+- **Permissions are read live and can only be narrowed.** `Get-DpScopedSettings`
+  ANDs a scoped Permission with the live one; there is no code path by which a
+  stored schedule grants a Permission the window does not currently have.
+- **The default `safe` mode drops Terminal.** Per-call approval does not exist
+  yet (spec 120 records the Engine contract it needs), so there is nobody to
+  approve a command an unattended Agent proposes. `live` mode keeps the current
+  Permissions and is confirmed in a dialog that states exactly that.
+- **The stored prompt and everything the run reads are untrusted at execution.**
+  A schedule carries a prompt the user wrote; the Project content it then reads
+  is data, not instructions, exactly as for an interactive Turn.
+- **A run is claimed before it starts.** The claim is persisted, so a restart
+  reports an interrupted run once instead of repeating work that may already
+  have written files.
+- **No inbound surface is added.** Schedules are local wall-clock arithmetic on
+  the existing accept loop: no webhook, no listener, no external event source,
+  and nothing runs while DeskPilot is closed.
+- **A dependency is revalidated, never substituted.** A Project that has been
+  unregistered or a Model the account lost fails the run visibly rather than
+  quietly running the same prompt somewhere else.
+
 ## Permissions model
 
 Five Tool categories map 1:1 to Engine switches. A Permission **off** passes the

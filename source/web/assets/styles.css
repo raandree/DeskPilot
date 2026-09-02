@@ -3069,6 +3069,106 @@ button.tree-row {
     border-top: 1px solid var(--border);
 }
 
+/* ===== Scheduled work ===== */
+.schedules-modal {
+    width: min(880px, 94vw);
+    height: min(780px, 92vh);
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.schedules-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.schedules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.schedule-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+}
+
+.schedule-row.is-off {
+    opacity: 0.65;
+}
+
+.schedule-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.schedule-name {
+    font-weight: 600;
+}
+
+.schedule-warn {
+    color: var(--changed, #b45309);
+}
+
+.schedule-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.schedule-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.schedule-form-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.schedule-form-row .field {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+.schedule-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.schedule-weekdays label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.schedule-form-actions {
+    display: flex;
+    gap: 8px;
+}
+
 /* ===== Diagnostics ===== */
 .diagnostics-modal {
     width: min(960px, 94vw);
