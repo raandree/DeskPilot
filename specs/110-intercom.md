@@ -34,7 +34,10 @@ is a Skill.**
 | Never on the accept thread | The Host Server accepts on a single thread and handles requests inline, so a 25-second long-poll on that thread would freeze the whole UI — the same failure `Invoke-DpGitCommand` exists to prevent. Every Telegram call is an **`HttpClient` `Task`** started on one tick and reaped on a later one. The pump never waits. |
 | Where the pump runs | `Update-DpIntercomState` is called from **two** places: the accept loop's idle tick (so Intercom works between Turns) and `Invoke-DpPendingRequest` (so it works *during* a Turn, which is exactly when the agent asks a question). |
 | Authority | A remote message may only act on a Project whose **`intercom` flag is on**. Inside such a Project a remote Turn has the *same* Permissions as a local one — including `git push` — because the flag is the boundary. With no Project selected, or the flag off, every control command is refused with a plain sentence. |
-| Sender authentication | A hard **allow-list on `chat_id`**, exactly one value, configurable. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. |
+| Sender authentication | A hard **allow-list on `chat_id`**. The operator's own chat is always the primary one; a second, shared **group** chat can be added, and is refused unless *both* `allowGroupChat` is on and `groupChatId` is set. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. Two gates rather than one nullable id, because allow-listing a group is not the same kind of act as allow-listing a phone - see *Accepted risks*. |
+| Where a reply goes | **Answer where you were asked.** Every queued message carries the chat the interaction it belongs to came from, so work requested in the group is acknowledged, questioned and reported in the group rather than surfacing privately. A Turn started from the window, and every message DeskPilot sends on its own initiative, goes to the operator's chat. The live status message is the deliberate exception: there is exactly one of it, edited in place against a single `message_id`, and it belongs to the operator. |
+| Answering across two chats | Telegram message ids are **per-chat sequences**, so with two chats allow-listed an unrelated reply in one can carry the same id as the question pending in the other. The pending question therefore records the chat it was sent to, and a reply is only an answer when it replies to that message *in that chat*; anywhere else it is an ordinary prompt. |
+| Addressing a group message | Under Telegram's group privacy a plain instruction only reaches the bot if it **@mentions** it, so that mention is *addressing, not content* - the same reason `/command@BotName` already loses its suffix. A leading mention of the bot's own name is stripped before the text becomes a prompt, on a word boundary so `@bot2` is not read as `@bot`. Left in, it reached the agent as the first words of the work and became the Conversation title, which is derived from them. The name comes from one non-blocking `getMe` started on the enable transition; if it fails, nothing is stripped and the only cost is the noise. |
 | Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
 | Credential storage | The bot token lives in **`intercom.secret` in the data directory**, DPAPI-protected on Windows (`CurrentUser` scope) and mode-restricted elsewhere. It is never in `settings.json` (so a Settings backup cannot leak it), never returned by any route, and redacted from every log line and error message — the token is in the request URL, so an unredacted transport error would print it. |
 | Archived and deleted Conversations | A remote Turn is refused when the bound Conversation is archived or gone, through the same `Test-DpConversationWritable` the window's own routes use. Intercom used to fall back to "the most recent Conversation" when its binding had gone, which meant the work quietly happened somewhere the operator never chose. |
@@ -63,7 +66,7 @@ solved in layers, and the residual gap is stated rather than hidden.
 
 | Layer | Covers | Mechanism |
 | --- | --- | --- |
-| **1 — Stall watchdog** | A hung Engine Runspace, a deadlocked tool, an agent thinking forever | The Host Server stamps `LastActivityUtc` on every Engine Information record. While a Turn is running, if nothing has arrived for `stallMinutes` (default 5) a **single** "no activity" message is pushed — once per Turn, so it can never flood. |
+| **1 — Stall watchdog** | A hung Engine Runspace, a deadlocked tool, an agent thinking forever | The Host Server stamps `LastActivityUtc` on every Engine Information record. While a Turn is running, if nothing has arrived for `stallMinutes` (default 5) a **single** "no activity" message is pushed — once per Turn, so it can never flood. **A Turn parked on a forwarded question is not a stall**: DeskPilot knows exactly why nothing is happening, so it sends a reminder that names the wait instead of saying the agent "may be stuck" and offering `/stop` — which invited the operator to kill a job that was only waiting for them. Submitting the answer counts as activity and re-arms the watchdog, so a genuine stall afterwards is still reported. |
 | **2 — Live status message** | A dead host, a sleeping machine, a lost network, a Telegram outage | One Telegram message per enabled period, **edited in place** on every heartbeat, never re-sent. It carries an explicit `next check-in by <time>`. Telegram does not notify on an edit, so this costs zero notifications; when the machine dies the message freezes and its stated deadline goes into the past. Absence becomes a glanceable, self-dating fact instead of an ambiguous silence. |
 | **3 — Farewell** | A clean shutdown: Ctrl+C, a relaunch, closing the window | The accept loop's `finally` sends one "DeskPilot stopped" message before the listener is released. |
 | **4 — Stated limit** | Everything else | Sudden power loss, a hard kill, or a network drop cannot be reported by the machine itself. The getting-started guide and the Settings panel say so in plain words and tell the operator to read the status message's `next check-in by` time. |
@@ -86,6 +89,16 @@ Recorded as **accepted**, not mitigated, by explicit operator decision.
 - **A2 — No auto-disarm.** An unlocked stolen phone with Telegram open keeps
   full control until the bot token is revoked in BotFather from another device.
   There is no time-based or session-based expiry.
+- **A3 — A group shares the operator's authority.** With `allowGroupChat` on,
+  every member of that group holds exactly the control the operator does:
+  instructions, answers to the agent's questions, and work in an opted-in
+  Project including `git push`. Membership is Telegram's to change, so anyone an
+  admin adds later inherits it, and DeskPilot never learns that it happened.
+  There is no per-sender allow-list inside the group and no per-member
+  Permission - Intercom carries one authority, not accounts. Mitigation is
+  confined to making the consequence unmissable: the feature is off by default,
+  needs two separate switches, states the consequence where it is enabled, and
+  repeats it on every `/status` check-in.
 
 ## Non-goals
 
@@ -95,7 +108,11 @@ Permanent, and named here so they are refused in review:
   DeskPilot cannot see, interrupt, or answer for. Covering it needs a different
   mechanism entirely.
 - **No native mobile app.** Telegram is the client.
-- **No multi-user.** Exactly one allow-listed chat.
+- **No per-sender identity.** Intercom carries exactly one authority - the
+  operator's. A shared group chat may be allow-listed alongside the operator's
+  own, but that widens *who can exercise that one authority*; it does not create
+  users, roles or per-member Permissions, and DeskPilot never distinguishes one
+  group member from another.
 - **No headless DeskPilot.** Intercom lives and dies with the Host Server
   process; the window must be running.
 - **No hosted relay.** Nothing runs in someone else's cloud, so no external
@@ -105,11 +122,17 @@ Permanent, and named here so they are refused in review:
 
 ## Commands
 
-Every command requires the allow-listed chat. Commands that **run work** in a
+Every command requires an allow-listed chat. Commands that **run work** in a
 Project additionally require that Project's `intercom` flag; commands that only
 **navigate** DeskPilot do not, because they execute nothing. Without that split,
 `/chats` would be unusable in exactly the situation where the operator needs it -
 no Project open, or the wrong one.
+
+Telegram hides ordinary group messages from bots unless **Group Privacy** is
+turned off in BotFather, so in a group a bot with privacy on only ever sees
+`/commands`, replies to itself, and messages that @mention it. That is a
+Telegram-side setting DeskPilot cannot read or change, so it is stated in the
+Settings panel and the getting-started guide rather than detected.
 
 | Message | Effect | Needs an opted-in Project |
 | --- | --- | --- |
@@ -224,8 +247,9 @@ against whatever now sits at that position. A Model button carries the number fo
 the same reason: the id is the provider's string, not one DeskPilot bounds.
 
 Conversation titles are derived from prompts, so `/chats` sends that text to the
-Channel. It is metadata rather than content, and it goes only to the one
-allow-listed chat, but it is not covered by the `sendFinalAnswer` switch.
+Channel. It is metadata rather than content, and it goes only to an allow-listed
+chat, but it is not covered by the `sendFinalAnswer` switch - and when `/chats`
+is sent from an allow-listed group, that listing is read by everyone in it.
 
 ## Flows
 
@@ -268,7 +292,9 @@ Stored under `settings.intercom`; the bot token is **not** among them.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `false` | The single on/off switch |
-| `chatId` | `null` | The one allow-listed Telegram chat |
+| `chatId` | `null` | The operator's own allow-listed Telegram chat |
+| `allowGroupChat` | `false` | Whether a shared group chat is allow-listed as well |
+| `groupChatId` | `null` | That group's chat id, always negative, and inert while `allowGroupChat` is off |
 | `heartbeatMinutes` | `5` | How often the status message is refreshed |
 | `stallMinutes` | `5` | Silence inside a running Turn before the stall warning |
 | `questionTimeoutMinutes` | `60` | How long a forwarded question stays answerable |

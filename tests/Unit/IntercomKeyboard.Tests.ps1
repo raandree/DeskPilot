@@ -208,7 +208,7 @@ Describe 'Send-DpIntercomQuestion keyboards' -Tag 'Unit' {
         Mock Test-DpIntercomProject { @{ allowed = $true; reason = '' } }
 
         $script:DeskPilot = @{
-            Settings = @{ intercom = @{ questionTimeoutMinutes = 60 } }
+            Settings = @{ intercom = @{ questionTimeoutMinutes = 60; chatId = '111' } }
             Intercom = @{
                 Running         = $true
                 PendingQuestion = $null

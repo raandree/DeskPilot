@@ -34,6 +34,11 @@ function Submit-DpIntercomAnswer {
 
     $intercom.PendingQuestion = $null
     if ($accepted) {
+        # Answering is activity, and it arms the watchdog again: the reminder that
+        # fired while the question was waiting must not be the only warning this
+        # Turn ever gets, or a genuine stall after the answer goes unreported.
+        $intercom.LastActivityUtc = [DateTime]::UtcNow
+        $intercom.StallNotified = $false
         $null = Send-DpIntercomMessage -Title 'Got it - the agent is continuing.' -Kind 'ack'
     }
     else {

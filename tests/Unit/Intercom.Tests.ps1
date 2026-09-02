@@ -49,6 +49,108 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         $result.kind | Should -Be 'rejected'
     }
 
+    It 'rejects a group by default, because no group id is passed unless it is switched on' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1004455397827' -Text '/stop') -AllowedChatId '111'
+
+        $result.kind | Should -Be 'rejected'
+        $result.text | Should -BeNullOrEmpty
+    }
+
+    It 'accepts a group once it is allow-listed, without losing the operator chat' {
+        $group = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1004455397827' -Text 'build it') -AllowedChatId '111' -AllowedGroupChatId '-1004455397827'
+        $own = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '111' -Text 'build it') -AllowedChatId '111' -AllowedGroupChatId '-1004455397827'
+
+        $group.kind | Should -Be 'prompt'
+        # The command record carries the sender, which is how the reply finds its
+        # way back to the group instead of surfacing in the private chat.
+        $group.chatId | Should -Be '-1004455397827'
+        $own.kind | Should -Be 'prompt'
+        $own.chatId | Should -Be '111'
+    }
+
+    It 'still rejects a third chat when a group is allow-listed' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1009999999999') -AllowedChatId '111' -AllowedGroupChatId '-1004455397827'
+
+        $result.kind | Should -Be 'rejected'
+    }
+
+    It 'strips the @BotName Telegram appends to a command in a group' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1004455397827' -Text '/status@randre_deskpilot_bot') -AllowedChatId '111' -AllowedGroupChatId '-1004455397827'
+
+        $result.kind | Should -Be 'status'
+    }
+
+    It 'strips the mention that only exists to address the bot in a group' {
+        # With group privacy on, an @mention is the only way a plain instruction
+        # reaches the bot, so it is addressing - not the first words of the work.
+        $params = @{
+            Update             = New-TestUpdate -ChatId '-1004455397827' -Text '@Janis1bot this is the prompt for a new app'
+            AllowedChatId      = '111'
+            AllowedGroupChatId = '-1004455397827'
+            BotUsername        = 'Janis1bot'
+        }
+
+        $result = ConvertFrom-DpIntercomUpdate @params
+
+        $result.kind | Should -Be 'prompt'
+        $result.text | Should -Be 'this is the prompt for a new app'
+        # The Conversation title is derived from the prompt, so it must go too.
+        $result.preview | Should -Be 'this is the prompt for a new app'
+    }
+
+    It 'only strips its own name, and only on a word boundary' {
+        $other = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '@someoneelse do the thing') -AllowedChatId '111' -BotUsername 'Janis1bot'
+        $longer = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '@Janis1bot2 do the thing') -AllowedChatId '111' -BotUsername 'Janis1bot'
+
+        $other.text | Should -Be '@someoneelse do the thing'
+        $longer.text | Should -Be '@Janis1bot2 do the thing'
+    }
+
+    It 'runs a mentioned command as that command' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '@Janis1bot /status') -AllowedChatId '111' -BotUsername 'Janis1bot'
+
+        $result.kind | Should -Be 'status'
+    }
+
+    It 'does nothing for a message that is only a mention' {
+        $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '@Janis1bot') -AllowedChatId '111' -BotUsername 'Janis1bot'
+
+        $result.kind | Should -Be 'ignore'
+        $result.text | Should -BeNullOrEmpty
+    }
+
+    It 'does not let a reply in the group answer a question pending in the private chat' {
+        # Telegram message ids are per-chat sequences, so the same id exists in
+        # both chats. Without the chat check this would resolve as the answer.
+        $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes' -ReplyTo 42
+        $params = @{
+            Update                   = $update
+            AllowedChatId            = '111'
+            AllowedGroupChatId       = '-1004455397827'
+            PendingQuestionMessageId = 42
+            PendingQuestionChatId    = '111'
+        }
+
+        $result = ConvertFrom-DpIntercomUpdate @params
+
+        $result.kind | Should -Be 'prompt'
+    }
+
+    It 'accepts the answer when the reply comes from the chat the question was sent to' {
+        $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes' -ReplyTo 42
+        $params = @{
+            Update                   = $update
+            AllowedChatId            = '111'
+            AllowedGroupChatId       = '-1004455397827'
+            PendingQuestionMessageId = 42
+            PendingQuestionChatId    = '-1004455397827'
+        }
+
+        $result = ConvertFrom-DpIntercomUpdate @params
+
+        $result.kind | Should -Be 'answer'
+    }
+
     It 'treats plain text as a prompt' {
         $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text 'tidy the tests') -AllowedChatId '111'
 
@@ -990,6 +1092,32 @@ Describe 'Intercom Settings validation' -Tag 'Unit' {
         $script:current.ContainsKey('botToken') | Should -BeFalse
     }
 
+    It 'defaults group control to off with no group named' {
+        $script:current.intercom.allowGroupChat | Should -BeFalse
+        $script:current.intercom.groupChatId | Should -BeNullOrEmpty
+    }
+
+    It 'accepts a group chat id, which is always negative' {
+        $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ allowGroupChat = $true; groupChatId = '-1004455397827' } }
+
+        $merged.intercom.allowGroupChat | Should -BeTrue
+        $merged.intercom.groupChatId | Should -Be '-1004455397827'
+    }
+
+    It 'refuses a positive id in the group field' {
+        # A private chat allow-listed through the group door would bypass the
+        # warning that everyone in a group shares the operator's control.
+        { Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ groupChatId = '222' } } } |
+            Should -Throw -ExpectedMessage '*always starts with -*'
+    }
+
+    It 'refuses a group that is the same chat as the operator' {
+        $current = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ chatId = '-100777' } }
+
+        { Merge-DpSettings -Current $current -Patch @{ intercom = @{ groupChatId = '-100777' } } } |
+            Should -Throw -ExpectedMessage '*different chat*'
+    }
+
     It 'accepts a valid patch' {
         $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ enabled = $true; chatId = '-1001234567'; heartbeatMinutes = 10 } }
 
@@ -1109,6 +1237,30 @@ Describe 'Send-DpIntercomMessage' -Tag 'Unit' {
 
         Send-DpIntercomMessage -Title 'Done.' -Kind 'done' | Should -BeFalse
         $script:DeskPilot.Intercom.Outbound.Count | Should -Be 0
+    }
+
+    It 'addresses a message to the operator when nothing set a reply target' {
+        $null = Send-DpIntercomMessage -Title 'Done.' -Kind 'done'
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].chatId | Should -Be '111'
+    }
+
+    It 'answers in the group when the group is what asked' {
+        $script:DeskPilot.Intercom.ReplyChatId = '-1004455397827'
+
+        $null = Send-DpIntercomMessage -Title 'Done.' -Kind 'done'
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].chatId | Should -Be '-1004455397827'
+    }
+
+    It 'keeps the live status message on the operator chat even mid-group-reply' {
+        # There is one status message and one message id for it, so it cannot
+        # follow the conversation around.
+        $script:DeskPilot.Intercom.ReplyChatId = '-1004455397827'
+
+        $null = Send-DpIntercomMessage -Title 'Status' -Kind 'status' -Capture 'status'
+
+        @($script:DeskPilot.Intercom.Outbound.ToArray())[0].chatId | Should -Be '111'
     }
 }
 
@@ -1283,6 +1435,86 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
 
         Should -Invoke Invoke-DpIntercomTurn -Times 0
         $script:DeskPilot.Intercom.QueuedPrompt | Should -Be 'do the thing'
+    }
+
+    Context 'the stall watchdog' {
+        BeforeEach {
+            # Running already, so the enable transition and its welcome message are
+            # skipped; the heartbeat is stamped now so only the watchdog speaks.
+            Mock Invoke-DpTelegramRequest { $null }
+            $script:DeskPilot.Settings.intercom.enabled = $true
+            $script:DeskPilot.Settings.intercom.chatId = '111'
+            $script:DeskPilot.Intercom.TokenConfigured = $true
+            $script:DeskPilot.Intercom.Running = $true
+            $script:DeskPilot.Intercom.Priming = $false
+            $script:DeskPilot.Intercom.LastHeartbeatUtc = [DateTime]::UtcNow
+            $script:DeskPilot.TurnRunning = $true
+            $script:DeskPilot.Intercom.LastActivityUtc = [DateTime]::UtcNow.AddMinutes(-10)
+        }
+
+        It 'reports a Turn that has genuinely gone quiet' {
+            Update-DpIntercomState
+
+            $kinds = @(@($script:DeskPilot.Intercom.Outbound.ToArray()) | ForEach-Object { $_.kind })
+            $kinds | Should -Contain 'stalled'
+        }
+
+        It 'does not call a forwarded question a stall' {
+            # The Turn is parked on a question DeskPilot itself sent, so it knows
+            # why nothing is happening. Telling the operator it may be stuck and
+            # offering /stop invites them to kill a job waiting on them.
+            $script:DeskPilot.Intercom.PendingQuestion = @{
+                id = 'q1'; conversationId = 'c1'; messageId = 42; chatId = '111'
+                askedUtc = [DateTime]::UtcNow.AddMinutes(-10); token = ''; options = @()
+            }
+
+            Update-DpIntercomState
+
+            $kinds = @(@($script:DeskPilot.Intercom.Outbound.ToArray()) | ForEach-Object { $_.kind })
+            $kinds | Should -Contain 'awaiting-answer'
+            $kinds | Should -Not -Contain 'stalled'
+        }
+    }
+}
+
+Describe 'Submit-DpIntercomAnswer' -Tag 'Unit' {
+    BeforeEach {
+        $script:bridge = [pscustomobject]@{}
+        $script:bridge | Add-Member -MemberType ScriptMethod -Name 'SubmitAnswer' -Value { param($c, $i, $a) $true }
+        $script:DeskPilot = @{
+            Settings    = @{ intercom = @{ maxMessagesPerHour = 60; chatId = '111' } }
+            TurnRunning = $true
+            Engine      = @{ UserPromptBridge = $script:bridge }
+            Intercom    = @{
+                Outbound        = [System.Collections.Generic.Queue[hashtable]]::new()
+                RateWindow      = [System.Collections.Generic.List[DateTime]]::new()
+                Log             = [System.Collections.Generic.List[object]]::new()
+                Counters        = @{ received = 0; accepted = 0; rejected = 0; sent = 0; dropped = 0; errors = 0 }
+                Token           = ''
+                StallNotified   = $true
+                LastActivityUtc = [DateTime]::UtcNow.AddMinutes(-10)
+                PendingQuestion = @{ id = 'q1'; conversationId = 'c1'; messageId = 42; chatId = '111' }
+            }
+        }
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'arms the watchdog again so a real stall after the answer is still reported' {
+        # Otherwise the reminder sent while the question was waiting would be the
+        # only warning the Turn ever got.
+        Submit-DpIntercomAnswer -Answer 'the second one' | Should -BeTrue
+
+        $script:DeskPilot.Intercom.StallNotified | Should -BeFalse
+        $script:DeskPilot.Intercom.LastActivityUtc | Should -BeGreaterThan ([DateTime]::UtcNow.AddMinutes(-1))
+    }
+
+    It 'leaves the watchdog alone when the answer was not accepted' {
+        $script:DeskPilot.Intercom.PendingQuestion = $null
+
+        Submit-DpIntercomAnswer -Answer 'too late' | Should -BeFalse
+
+        $script:DeskPilot.Intercom.StallNotified | Should -BeTrue
     }
 }
 

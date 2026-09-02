@@ -68,6 +68,10 @@ function Invoke-DpIntercomCommand {
     $intercom.Counters.accepted++
     Add-DpIntercomLog -Direction 'in' -Kind $Command.kind -Detail $Command.text
 
+    # Where a Turn this command queues reports back to. Empty is the operator's
+    # own chat, which is also where a locally started Turn reports.
+    $commandChat = [string](Get-DpPropertyValue -InputObject $Command -Name @('chatId') -Default '')
+
     switch ($Command.kind) {
         'answer' {
             $null = Submit-DpIntercomAnswer -Answer ([string]$Command.text)
@@ -444,6 +448,7 @@ function Invoke-DpIntercomCommand {
                 $intercom.PendingQuestion = $null
             }
             $intercom.QueuedPrompt = [string]$Command.text
+            $intercom.QueuedChatId = $commandChat
             $null = Send-DpIntercomMessage -Title 'Stopping, then doing that instead.' -Kind 'ack'
         }
 
@@ -470,6 +475,7 @@ function Invoke-DpIntercomCommand {
             $intercom.ChatIndex = @()
             if ($hasWork) {
                 $intercom.QueuedPrompt = [string]$Command.text
+                $intercom.QueuedChatId = $commandChat
                 $null = Send-DpIntercomMessage -Title 'New conversation started. Working on it.' -Kind 'ack'
             }
             else {
@@ -492,6 +498,7 @@ function Invoke-DpIntercomCommand {
                 return
             }
             $intercom.QueuedPrompt = [string]$Command.text
+            $intercom.QueuedChatId = $commandChat
             if ($state.TurnRunning) {
                 $null = Send-DpIntercomMessage -Title 'Queued - it will run when the current job finishes.' -Kind 'ack'
             }

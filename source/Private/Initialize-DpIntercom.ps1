@@ -58,6 +58,11 @@ function Initialize-DpIntercom {
         ModelIndex       = @()
         ProjectIndex     = @()
         Offset           = 0
+        # This bot's own @name, learned once per session from getMe. A group
+        # message has to mention it to arrive at all under Telegram's group
+        # privacy, and that mention is addressing rather than instruction.
+        BotUsername      = ''
+        IdentityTask     = $null
         # The first poll only learns the newest update id and discards the
         # backlog: acting on a command the operator sent while DeskPilot was not
         # running would be a genuinely dangerous surprise on startup.
@@ -70,12 +75,21 @@ function Initialize-DpIntercom {
         # anything still queued behind it.
         Retry            = $null
         StatusMessageId  = 0
+        # The chat the reply to whatever is being handled right now belongs in.
+        # Empty means the operator's own chat; the pump stamps it with the sender
+        # for the duration of one command, so a message sent in the group is
+        # answered in the group instead of privately.
+        ReplyChatId      = $null
         # The forwarded Ask-User question awaiting a reply: its Telegram message id
         # is the nonce, so only a reply to that exact message is accepted.
         PendingQuestion  = $null
         # A prompt received from the phone, run by the pump's final step once the
         # Engine Runspace is free. This is also how /steer resumes after its stop.
         QueuedPrompt     = $null
+        # Which allow-listed chat that prompt came from, so the Turn it becomes
+        # reports back where it was asked for rather than always in the operator's
+        # own chat. It outlives the dispatch that set it, which ReplyChatId does not.
+        QueuedChatId     = $null
         # An image Attachment to hand the Engine's Vision input alongside it.
         QueuedImage      = $null
         # A file the operator sent, being fetched across two Telegram calls. Both
@@ -89,6 +103,7 @@ function Initialize-DpIntercom {
             mimeType   = ''
             isImage    = $false
             caption    = ''
+            chatId     = ''
             startedUtc = $null
         }
         LastActivityUtc  = [DateTime]::UtcNow
@@ -103,6 +118,7 @@ function Initialize-DpIntercom {
             startedUtc     = $null
             text           = ''
             reasoning      = ''
+            chatId         = $null
         }
         StallNotified    = $false
         LastHeartbeatUtc = $null

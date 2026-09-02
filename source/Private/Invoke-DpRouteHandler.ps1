@@ -1786,6 +1786,8 @@ function Invoke-DpRouteHandler {
             }
 
             if ($patch.Count -gt 0) {
+                $groupBefore = ''
+                if ([bool]$state.Settings.intercom.allowGroupChat) { $groupBefore = [string]$state.Settings.intercom.groupChatId }
                 try {
                     $merged = Merge-DpSettings -Current $state.Settings -Patch @{ intercom = $patch }
                     $state.Settings = $merged
@@ -1794,6 +1796,26 @@ function Invoke-DpRouteHandler {
                 catch {
                     Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_settings'; message = "$_" } }
                     return
+                }
+                $groupAfter = ''
+                if ([bool]$merged.intercom.allowGroupChat) { $groupAfter = [string]$merged.intercom.groupChatId }
+                if ($groupBefore -ne $groupAfter) {
+                    # Work a group asked for must not be reported back to it once it
+                    # is no longer allow-listed, so anything still bound to the old
+                    # one is dropped rather than delivered to a de-authorised chat.
+                    if ($groupBefore) {
+                        $pendingChat = ''
+                        if ($state.Intercom.PendingQuestion) {
+                            $pendingChat = [string](Get-DpPropertyValue -InputObject $state.Intercom.PendingQuestion -Name @('chatId') -Default '')
+                        }
+                        if ($pendingChat -eq $groupBefore) { $state.Intercom.PendingQuestion = $null }
+                        if ([string](Get-DpPropertyValue -InputObject $state.Intercom -Name @('QueuedChatId') -Default '') -eq $groupBefore) {
+                            $state.Intercom.QueuedPrompt = $null
+                            $state.Intercom.QueuedImage = $null
+                            $state.Intercom.QueuedChatId = $null
+                        }
+                    }
+                    Add-DpIntercomLog -Direction 'system' -Kind 'group' -Detail $(if ($groupAfter) { "Group $groupAfter can now send instructions. Everyone in that group has the same control you do." } else { 'Group control is off. Only your own chat can reach DeskPilot.' })
                 }
                 if ($patch.ContainsKey('chatId')) {
                     # A different allow-listed chat is a different link: close any
@@ -1848,9 +1870,12 @@ function Invoke-DpRouteHandler {
             }
 
             Add-DpIntercomLog -Direction 'out' -Kind 'test' -Detail 'Sent a test message.'
+            # This call already knows the bot's own @name, which the pump needs to
+            # strip an addressing mention off a group message.
+            $intercom.BotUsername = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
             Write-DpResponse -Stream $Stream -Json @{
                 ok      = $true
-                botName = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
+                botName = [string]$intercom.BotUsername
             }
         }
         'pairIntercom' {

@@ -66,6 +66,9 @@ function Start-DpIntercomDownload {
         $download.isImage = [bool]$Attachment.isImage
         $download.caption = $Caption
         $download.startedUtc = [DateTime]::UtcNow
+        # The download completes on a later pump tick, outside the dispatch that
+        # set the ambient reply target, so it has to carry its own chat.
+        $download.chatId = [string](Get-DpPropertyValue -InputObject $intercom -Name @('ReplyChatId') -Default '')
         Add-DpIntercomLog -Direction 'in' -Kind 'attachment' -Detail "Fetching $([string]$Attachment.fileName)."
         $null = Send-DpIntercomMessage -Title 'Fetching that file...' -Kind 'ack'
     }

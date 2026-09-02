@@ -97,6 +97,12 @@ function Send-DpIntercomQuestion {
         id             = $RequestId
         conversationId = $ConversationId
         messageId      = 0
+        # Telegram message ids are per-chat sequences, so an answer is only an
+        # answer when it replies to this message in the chat it was sent to.
+        chatId         = $(
+            $asked = [string](Get-DpPropertyValue -InputObject $intercom -Name @('ReplyChatId') -Default '')
+            if ($asked) { $asked } else { [string]$state.Settings.intercom.chatId }
+        )
         askedUtc       = [DateTime]::UtcNow
         token          = $token
         options        = @($options)

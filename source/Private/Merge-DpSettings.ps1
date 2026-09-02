@@ -193,12 +193,25 @@ function Merge-DpSettings {
                         'enabled' { $merged.intercom.enabled = [bool]$intercomValue }
                         'notifyOnDone' { $merged.intercom.notifyOnDone = [bool]$intercomValue }
                         'sendFinalAnswer' { $merged.intercom.sendFinalAnswer = [bool]$intercomValue }
+                        'allowGroupChat' { $merged.intercom.allowGroupChat = [bool]$intercomValue }
                         'chatId' {
                             $chat = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
                             if ($chat -and $chat -notmatch '^-?\d{1,20}$') {
                                 throw 'intercom.chatId must be a Telegram chat id (digits, optionally leading -).'
                             }
                             $merged.intercom.chatId = if ($chat) { $chat } else { $null }
+                        }
+                        'groupChatId' {
+                            # A group id is always negative. Requiring the sign here
+                            # stops a second private chat being allow-listed through
+                            # the group field, where the warning about shared control
+                            # would not apply and the operator would have no idea a
+                            # second person could drive the machine.
+                            $group = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
+                            if ($group -and $group -notmatch '^-\d{1,20}$') {
+                                throw 'intercom.groupChatId must be a Telegram group chat id, which always starts with -.'
+                            }
+                            $merged.intercom.groupChatId = if ($group) { $group } else { $null }
                         }
                         # The bot token is never a Setting: it lives in
                         # intercom.secret so a Settings backup cannot carry a
@@ -214,6 +227,11 @@ function Merge-DpSettings {
                             $merged.intercom[$intercomKey] = $number
                         }
                     }
+                }
+                # Cross-field, so it runs once both keys have been applied: a patch
+                # can carry either or both, and a hashtable has no key order.
+                if ($merged.intercom.groupChatId -and $merged.intercom.groupChatId -eq $merged.intercom.chatId) {
+                    throw 'intercom.groupChatId must be a different chat from intercom.chatId.'
                 }
             }
             'projects' {

@@ -34,10 +34,26 @@ function ConvertFrom-DpIntercomUpdate {
     .PARAMETER Update
         One element of the Telegram getUpdates result array.
     .PARAMETER AllowedChatId
-        The single allow-listed chat id. An empty value rejects everything.
+        The operator's own allow-listed chat id. An empty value allow-lists
+        nothing through this parameter.
+    .PARAMETER AllowedGroupChatId
+        An optional second allow-listed chat, the shared group. The caller passes
+        it only when the operator has switched group access on, so an empty value
+        here is the normal case and rejects every group message.
     .PARAMETER PendingQuestionMessageId
         The Telegram message id the pending question was sent as, or 0 when no
         question is waiting. A reply to this id is the only accepted answer.
+    .PARAMETER PendingQuestionChatId
+        The chat the pending question was sent to. Message ids are per-chat
+        sequences, so with two chats allow-listed an unrelated reply in one could
+        otherwise carry the same id as the question waiting in the other and be
+        read as its answer. Empty applies no chat constraint.
+    .PARAMETER BotUsername
+        This bot's own @name, without the @. When the message opens by mentioning
+        it, the mention is stripped: in a group with Telegram's group privacy on,
+        an @mention is the only way to reach the bot at all, so it is addressing
+        rather than content and must not reach the agent as part of the prompt.
+        Empty leaves the text untouched.
     .PARAMETER MaxTextLength
         The bound applied to any text carried out of this function.
     .OUTPUTS
@@ -53,11 +69,24 @@ function ConvertFrom-DpIntercomUpdate {
         [AllowNull()]
         [string]$AllowedChatId,
 
+        [AllowNull()]
+        [string]$AllowedGroupChatId,
+
         [long]$PendingQuestionMessageId = 0,
+
+        [AllowNull()]
+        [string]$PendingQuestionChatId,
+
+        [AllowNull()]
+        [string]$BotUsername,
 
         [ValidateRange(16, 100000)]
         [int]$MaxTextLength = 4000
     )
+
+    $allowedChats = @(@($AllowedChatId, $AllowedGroupChatId) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim() })
 
     $result = @{
         updateId         = 0
@@ -106,7 +135,7 @@ function ConvertFrom-DpIntercomUpdate {
 
         # The allow-list runs before the data is read, exactly as it does for a
         # message: a tap from any other chat is recorded and dropped.
-        if ([string]::IsNullOrWhiteSpace($AllowedChatId) -or $result.chatId -ne $AllowedChatId.Trim()) {
+        if ($allowedChats -notcontains $result.chatId) {
             $result.kind = 'rejected'
             $result.reason = "Button tap from chat '$($result.chatId)' is not allow-listed."
             return $result
@@ -148,7 +177,7 @@ function ConvertFrom-DpIntercomUpdate {
 
     # The allow-list runs before the text is read. An update from any other chat
     # is recorded and dropped; its content never reaches command parsing.
-    if ([string]::IsNullOrWhiteSpace($AllowedChatId) -or $result.chatId -ne $AllowedChatId.Trim()) {
+    if ($allowedChats -notcontains $result.chatId) {
         $result.kind = 'rejected'
         $result.reason = "Message from chat '$($result.chatId)' is not allow-listed."
         return $result
@@ -184,6 +213,32 @@ function ConvertFrom-DpIntercomUpdate {
     $text = $rawText.Trim()
     if ($text.Length -gt $MaxTextLength) { $text = $text.Substring(0, $MaxTextLength) }
 
+    # '@BotName some work' is how a group message reaches the bot at all when
+    # Telegram's group privacy is on, so the mention is addressing rather than
+    # instruction - the same reason '/command@BotName' already loses its suffix.
+    # Left in, it reaches the agent as the first words of the prompt and becomes
+    # the Conversation title, which is derived from them.
+    if (-not [string]::IsNullOrWhiteSpace($BotUsername)) {
+        $mention = '@' + $BotUsername.Trim().TrimStart('@')
+        if ($text.StartsWith($mention, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $remainder = $text.Substring($mention.Length)
+            # Only on a word boundary, so '@bot2' is not read as '@bot' plus '2'.
+            if ($remainder.Length -eq 0 -or [char]::IsWhiteSpace($remainder[0])) {
+                $text = $remainder.Trim()
+                # An attachment keeps the file name it already fell back to when
+                # the mention was the whole caption.
+                if ($text) {
+                    $result.preview = $(if ($text.Length -gt 60) { $text.Substring(0, 60) + '...' } else { $text })
+                }
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($text) -and -not $attachment) {
+        $result.reason = 'Message was only a mention, with nothing to do.'
+        return $result
+    }
+
     $replyTo = Get-DpPropertyValue -InputObject $message -Name @('reply_to_message') -Default $null
     if ($replyTo) {
         $result.replyToMessageId = [long](Get-DpPropertyValue -InputObject $replyTo -Name @('message_id') -Default 0)
@@ -201,7 +256,8 @@ function ConvertFrom-DpIntercomUpdate {
     if (-not $text.StartsWith('/')) {
         # A reply to the message that carried the pending question is the answer;
         # the nonce is the message id, so there is nothing for the user to type.
-        if ($PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId) {
+        $sameChat = [string]::IsNullOrWhiteSpace($PendingQuestionChatId) -or $result.chatId -eq $PendingQuestionChatId.Trim()
+        if ($PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId -and $sameChat) {
             $result.kind = 'answer'
         }
         else {

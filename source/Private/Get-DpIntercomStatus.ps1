@@ -54,6 +54,13 @@ function Get-DpIntercomStatus {
     $modelId = Get-DpIntercomModelId
     $lines.Add("Model: $(if ($modelId) { $modelId } else { 'default' })")
 
+    # Stated on every check-in rather than only at setup: a shared group means
+    # everyone in it can drive this machine, and that is not a fact anyone should
+    # have to remember from a settings screen they saw once.
+    if ([bool]$settings.intercom.allowGroupChat -and $settings.intercom.groupChatId) {
+        $lines.Add("Group control: on for chat $([string]$settings.intercom.groupChatId) - anyone in that group can send instructions.")
+    }
+
     if ($state.TurnRunning) {
         $quiet = [int]([DateTime]::UtcNow - $intercom.LastActivityUtc).TotalMinutes
         $lines.Add("Last agent activity: $(if ($quiet -lt 1) { 'just now' } else { "$quiet min ago" })")

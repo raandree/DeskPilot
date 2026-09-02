@@ -12,6 +12,12 @@ function Send-DpIntercomMessage {
         dropped and counted rather than queued forever. The live status message is
         exempt: it is an edit of one existing message, produces no notification,
         and is the mechanism the operator uses to detect a dead machine.
+
+        Each message is addressed to the chat the interaction it belongs to came
+        from, so an answer to something asked in the shared group lands in the
+        group rather than privately. The live status message is the exception:
+        there is exactly one of it, edited in place, and it belongs to the
+        operator's own chat.
     .PARAMETER Title
         The first line of the message.
     .PARAMETER Line
@@ -53,12 +59,21 @@ function Send-DpIntercomMessage {
     $intercom = $script:DeskPilot.Intercom
     if (-not $intercom) { return $false }
 
+    $isStatus = $Capture -eq 'status'
+
+    # Optional by design: no reply target means the operator's own chat, which is
+    # also where DeskPilot speaks on its own initiative.
+    $replyChat = [string](Get-DpPropertyValue -InputObject $intercom -Name @('ReplyChatId') -Default '')
+
+    $target = [string]$script:DeskPilot.Settings.intercom.chatId
+    if (-not $isStatus -and -not [string]::IsNullOrWhiteSpace($replyChat)) {
+        $target = $replyChat
+    }
+
     # There is nowhere to send to during pairing, when the operator has not yet
     # confirmed which chat is theirs. Queuing would only build a backlog that
     # arrives all at once the moment they do.
-    if ([string]::IsNullOrWhiteSpace([string]$script:DeskPilot.Settings.intercom.chatId)) { return $false }
-
-    $isStatus = $Capture -eq 'status'
+    if ([string]::IsNullOrWhiteSpace($target)) { return $false }
 
     if (-not $isStatus) {
         $cap = 60
@@ -89,6 +104,7 @@ function Send-DpIntercomMessage {
         $intercom.Outbound.Enqueue(@{
                 kind      = $Kind
                 text      = $part
+                chatId    = $target
                 capture   = $(if ($partIndex -eq 0) { $Capture } else { '' })
                 edit      = $isStatus
                 plainOnly = $false

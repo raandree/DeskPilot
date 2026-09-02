@@ -36,19 +36,28 @@ function Stop-DpIntercom {
 
     try {
         if ($intercom.Running -and $state.Settings.intercom -and $state.Settings.intercom.chatId) {
-            $payload = @{
-                chat_id                  = [string]$state.Settings.intercom.chatId
-                text                     = "DeskPilot has stopped on $([Environment]::MachineName).`nIntercom is off until it is started again."
-                disable_web_page_preview = $true
+            # Both allow-listed chats are told. A group that was watching the work
+            # would otherwise see silence, which is the one state Intercom exists
+            # to stop being ambiguous.
+            $targets = @([string]$state.Settings.intercom.chatId)
+            if ([bool]$state.Settings.intercom.allowGroupChat -and $state.Settings.intercom.groupChatId) {
+                $targets += [string]$state.Settings.intercom.groupChatId
             }
-            $requestParams = @{
-                Client    = $intercom.Client
-                Token     = $intercom.Token
-                Operation = 'sendMessage'
-                Payload   = $payload
+            foreach ($target in $targets) {
+                $payload = @{
+                    chat_id                  = $target
+                    text                     = "DeskPilot has stopped on $([Environment]::MachineName).`nIntercom is off until it is started again."
+                    disable_web_page_preview = $true
+                }
+                $requestParams = @{
+                    Client    = $intercom.Client
+                    Token     = $intercom.Token
+                    Operation = 'sendMessage'
+                    Payload   = $payload
+                }
+                $task = Invoke-DpTelegramRequest @requestParams
+                $null = $task.Wait([TimeSpan]::FromSeconds($TimeoutSeconds))
             }
-            $task = Invoke-DpTelegramRequest @requestParams
-            $null = $task.Wait([TimeSpan]::FromSeconds($TimeoutSeconds))
         }
     }
     catch { $null = $_ }

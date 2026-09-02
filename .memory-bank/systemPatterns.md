@@ -398,6 +398,29 @@ source: repository evidence
   confirms the bot exists and turns it into a free oracle for anyone probing it.
   The rejection is counted and logged loudly instead - a rejection is a possible
   attack, and the panel shows it in red.
+- **Widening who may act needs its own switch, not a nullable field.** Intercom's
+  group chat is gated on `allowGroupChat` *and* `groupChatId`, even though the id
+  alone would be sufficient to express "off". A group hands the operator's whole
+  authority to a membership Telegram controls, so the act of allowing one has to
+  be a decision the operator makes on purpose and can see they made; a field that
+  quietly starts working when it stops being empty is not that. The consequence is
+  stated where it is enabled and repeated on every `/status` check-in, because a
+  warning read once at setup is not a control.
+- **Answer where you were asked.** With more than one allow-listed chat, every
+  queued message carries the chat its interaction came from, so work requested in
+  a shared group is acknowledged and reported there instead of surfacing in the
+  operator's private chat. The ambient target is set by the pump around each
+  dispatch and restored in a `finally`; anything that outlives one tick - a queued
+  prompt, a two-call attachment download, a pending question - carries its own
+  copy, because the dispatch that set it is long gone by the time it completes.
+  The live status message is the deliberate exception: there is one of it and one
+  `message_id` for it, so it cannot follow the conversation around.
+- **A per-chat message id is not a nonce until it is paired with its chat.**
+  Telegram numbers messages per chat, so once two chats are allow-listed an
+  unrelated reply in one can carry the same id as the question pending in the
+  other. The pending question records the chat it was sent to, and a reply is only
+  an answer in that chat. Widening an allow-list silently invalidates every
+  identifier that was only unique because the list had one entry.
 - **A credential in the request URL is a credential in every error string.** The
   Telegram bot token travels in the path, so an unredacted transport error would
   print it into the audit log, a route response, or the console. Every Intercom

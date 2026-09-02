@@ -7,7 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A job waiting for your answer no longer looks like a job that has hung.** The
+  stall watchdog announced *"The agent has gone quiet — it may be running
+  something long, or it may be stuck. Send /stop to end it"* five minutes after
+  the agent asked a question, which is exactly the wrong advice: DeskPilot knew
+  precisely why nothing was happening, and `/stop` would have killed a job that
+  was only waiting for a reply. A Turn parked on a question now gets a reminder
+  that says so and points at the question message. Answering counts as activity
+  and re-arms the watchdog, so a real stall afterwards is still reported.
+
+- **The bot's own @mention no longer ends up inside your instruction.** In a
+  Telegram group you have to write `@yourbot do the thing` for the message to
+  reach the bot at all, and that mention was being handed to the agent as the
+  first words of the work — and used as the conversation title, since the title
+  is taken from the prompt. It is now stripped, on a word boundary, the same way
+  `/status@yourbot` already loses its suffix.
+
 ### Added
+
+- **Let a Telegram group reach Intercom, not just your own chat.** Adding the bot
+  to a group used to be a dead end: every message from it was counted, rejected
+  and thrown away, with only a line in the Status box to say why. **Settings ›
+  Intercom** now has **Also accept messages from a Telegram group** and a box for
+  the group's id, and DeskPilot accepts both chats at once. It replies wherever it
+  was asked — something sent in the group is acknowledged, questioned and reported
+  in the group, while your private chat stays private and keeps the check-in
+  status message.
+
+  **This is off by default and needs two switches, because everyone in that group
+  gets exactly the control you have** — instructions, answers to the agent's
+  questions, and work in any project you opted in, including `git push`. Telegram
+  decides who is in the group, so anyone added later inherits it. The consequence
+  is stated where you turn it on, and repeated on every `/status` check-in.
+  Turning it back off drops anything the group had queued or was being asked,
+  rather than delivering it to a chat that is no longer trusted.
+
+  The panel also tells you what Telegram will not: a bot in a group sees nothing
+  but `/commands`, replies to itself and @mentions until **Group Privacy** is
+  turned off in @BotFather and the bot is re-added — which looks exactly like
+  DeskPilot ignoring you.
 
 - **A full-screen file viewer.** The viewer opens at a comfortable reading width,
   but a wide table, a long diff or a large screenshot wants the whole window. The

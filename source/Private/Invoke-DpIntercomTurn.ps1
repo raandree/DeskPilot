@@ -15,6 +15,10 @@ function Invoke-DpIntercomTurn {
         The outcome message is composed from structured fields DeskPilot owns. The
         agent's answer text is included only when sendFinalAnswer is on, and is
         bounded and split by Format-DpIntercomMessage.
+
+        Every message it produces goes to whichever allow-listed chat the pump has
+        addressed it to, so work asked for in the shared group is reported in the
+        shared group rather than privately.
     .PARAMETER Prompt
         The prompt received from the phone.
     .PARAMETER Image
@@ -86,6 +90,7 @@ function Invoke-DpIntercomTurn {
     $intercom.RemoteTurn.startedUtc = [DateTime]::UtcNow
     $intercom.RemoteTurn.text = ''
     $intercom.RemoteTurn.reasoning = ''
+    $intercom.RemoteTurn.chatId = [string](Get-DpPropertyValue -InputObject $intercom -Name @('ReplyChatId') -Default '')
 
     Add-DpIntercomLog -Direction 'system' -Kind 'turn-start' -Detail $Prompt
 

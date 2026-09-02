@@ -87,6 +87,47 @@ see those attempts in the **Status** box. DeskPilot never adopts a chat on its
 own: the click has to happen at the machine, so nobody who guesses your bot's
 username can link themselves.
 
+## Optional — also allow a Telegram group
+
+Skip this unless you want other people to drive DeskPilot. It is off by default
+and stays off until you turn on **two** separate switches.
+
+> **Everyone in that group controls this machine.** They can send instructions,
+> answer the agent's questions, and run work in any project you have opted in —
+> including `git push`. Telegram decides who is in the group, not DeskPilot, so
+> anyone an admin adds later gets the same control, and DeskPilot never learns
+> it happened. There is no way to allow only *some* members.
+
+1. Add your bot to the group the normal Telegram way.
+2. **Turn Group Privacy off.** By default Telegram hides ordinary group messages
+   from bots, so your bot would only ever see `/commands`, replies to itself, and
+   messages that @mention it. In **@BotFather**: `/mybots` → your bot →
+   **Bot Settings** → **Group Privacy** → **Turn off**. Then remove the bot from
+   the group and add it back — the change only applies from the moment it rejoins.
+3. Send any message in the group. DeskPilot rejects it and writes the group's id
+   into the **Status** box, on a line like
+   `Message from chat '-1001234567890' is not allow-listed.`
+4. On the **Intercom** tab, tick **Also accept messages from a Telegram group**
+   and paste that id — including the leading minus sign — into the box below it.
+
+Your own chat keeps working exactly as before. DeskPilot replies wherever it was
+asked: something sent in the group is acknowledged and reported in the group, and
+your private chat stays private. The check-in status message and DeskPilot's own
+notices stay in your chat.
+
+**Addressing the bot in a group.** If you left Group Privacy on, start the message
+with `@yourbot` — that mention is how it reaches the bot at all. DeskPilot removes
+it before the agent sees the work, so the instruction and the conversation title
+read as if you had typed them in your own chat.
+
+**Answering a question in a group.** Use Telegram's **reply** on the question
+message itself, or tap one of its buttons. A new message in the group is a new
+instruction, not an answer — so if the agent is waiting, replying is the only
+thing that unblocks it.
+
+To turn it off again, clear the tick. Anything the group had queued or was being
+asked is dropped rather than delivered to a chat that is no longer trusted.
+
 ## Step 4 — Check it works
 
 Click **Send a test message**. A message should arrive on your phone within a
@@ -223,8 +264,10 @@ only ever look like silence. The check-in time is how you tell the difference.
 - **It does not cover VS Code.** Jobs you started with Copilot inside VS Code
   run in a different program that DeskPilot cannot see, interrupt, or answer for.
   Only jobs running in DeskPilot are covered.
-- **It is one person only.** Exactly one Telegram chat, and no way to add a
-  second.
+- **It does not know who is who.** It carries your authority and only yours. You
+  can allow a Telegram group alongside your own chat, but then everyone in that
+  group has exactly the control you do — there is no way to allow only some of
+  them, and no per-person permissions.
 - **It does not survive DeskPilot closing.** No background service is installed
   and nothing keeps running when you close the window.
 - **It has no timed lock-out.** If your phone is lost or stolen while unlocked,

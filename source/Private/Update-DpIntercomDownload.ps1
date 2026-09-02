@@ -123,6 +123,7 @@ function Update-DpIntercomDownload {
     $caption = [string]$download.caption
     if ([string]::IsNullOrWhiteSpace($caption)) { $caption = 'Have a look at this file and tell me what it is.' }
     $intercom.QueuedPrompt = "$caption`n`n[Attached file: $saved]"
+    $intercom.QueuedChatId = [string](Get-DpPropertyValue -InputObject $download -Name @('chatId') -Default '')
     $intercom.QueuedImage = $(if ($download.isImage) { $saved } else { $null })
 
     $null = Send-DpIntercomMessage -Title 'Got the file. Working on it.' -Line @(

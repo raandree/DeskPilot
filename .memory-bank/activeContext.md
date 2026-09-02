@@ -10,6 +10,96 @@ source: repository evidence
 
 ## Current focus
 
+**A Telegram group can reach Intercom alongside the operator's own chat
+(2026-09-02, uncommitted on `main`).** Reported from a Status panel reading
+`Received 15 · accepted 3 · rejected 12`, with twelve
+`Message from chat '-1004455397827' is not allow-listed.` lines: the bot had
+been added to a group and everything sent there was counted and dropped.
+
+Spec 110 named **No multi-user. Exactly one allow-listed chat.** a *permanent*
+non-goal, so the scope and the sender-trust model went to the operator rather
+than being assumed. They chose **additional** (both chats accepted, not a
+replacement) and **anyone in the group**. The non-goal is now *No per-sender
+identity* — Intercom still carries exactly one authority; what changed is who
+may exercise it — and the widening is recorded as accepted risk **A3**.
+
+Five decisions. **(1) Two switches, not a nullable id.** `allowGroupChat`
+(`$false`) gates `groupChatId` (`$null`), and either alone accepts nothing. A
+group hands the operator's whole authority to a membership Telegram controls, so
+allowing one must be a visible act rather than a field that starts working when
+it stops being empty; the consequence is stated where it is enabled and repeated
+on every `/status` check-in. **(2) The group field refuses a positive id**
+(`^-\d{1,20}$`) and one equal to `chatId`, cross-checked *after* the key loop
+because a patch may carry both keys and a hashtable has no order — otherwise a
+second private chat could be allow-listed through the group door, where the
+shared-control warning does not apply. **(3) Answer where you were asked.**
+`Intercom.ReplyChatId` is the ambient target, `Send-DpIntercomMessage` stamps it
+onto every queued record and the pump sends to `$record.chatId`, so all 109 call
+sites are untouched. The pump sets it around each dispatch and restores it in a
+`finally`; anything that outlives one tick carries its own copy — `QueuedChatId`
+for a queued prompt, `Download.chatId` for the two-call attachment fetch,
+`PendingQuestion.chatId` for a forwarded question. The live status message is
+forced to the operator's chat, because there is one of it and one
+`StatusMessageId`. **(4) The answer nonce is chat-scoped now.** Telegram numbers
+messages per chat, so once two chats are allow-listed an unrelated reply in one
+can carry the same `message_id` as the question pending in the other;
+`PendingQuestionChatId` makes a reply an answer only in the chat the question
+went to. Widening an allow-list silently invalidates every identifier that was
+unique only because the list had one entry. **(5) Turning the group off drops
+what it left behind** — a pending question or queued prompt bound to the old
+group is discarded in the PUT handler rather than delivered to a chat that is no
+longer trusted.
+
+The new addressing fields are read through `Get-DpPropertyValue`: an absent
+value has a defined meaning (the operator's chat), and `Send-DpIntercomMessage`
+sits on the path that reports a finished job, where a StrictMode missing-key
+throw loses the result — the same failure the codebase already learned once in
+`Invoke-DpIntercomTurn`.
+
+Also surfaced what Telegram will not: a bot in a group sees only `/commands`,
+replies to itself and @mentions until **Group Privacy** is turned off in
+BotFather *and the bot is removed and re-added*. That is a Telegram-side setting
+DeskPilot cannot read, and its symptom is indistinguishable from DeskPilot
+ignoring the operator, so it is stated in the Settings panel and the
+getting-started guide.
+
+Verified: AST parse clean across `source/Private`, `node --check` clean on
+`app.js`, PSScriptAnalyzer no new findings, full Unit suite **1352/1352**, 0
+failed — including 13 new tests covering the default-off gate, both chats being
+accepted at once, the cross-chat nonce, the two id validations, and the three
+routing cases.
+
+**Follow-up — "the agent hangs when sending prompts via the group"
+(2026-09-02).** The log said otherwise: `Received 1 · accepted 1 · rejected 0`,
+a question forwarded at 3:21:30 as a numbered list of six, and a stall warning at
+3:26:30. The Turn was not hung, it was **parked on an Ask-User question** — and
+the watchdog told the operator *"it may be running something long, or it may be
+stuck. Send /stop to end it"*. DeskPilot knew exactly why nothing was happening,
+and the advice it gave would have killed a job that was only waiting for a reply.
+That message *is* the reported hang. The watchdog now branches: a Turn with a
+`PendingQuestion` gets a reminder that names the wait and points at the question
+message, and `Submit-DpIntercomAnswer` stamps `LastActivityUtc` and clears
+`StallNotified`, so answering re-arms the one-shot warning and a genuine stall
+afterwards is still reported rather than swallowed by the reminder.
+
+Second defect, visible in the same log: the Turn started with
+`@Janis1bot this is the prompt for a new app: ...`. Under Telegram's group
+privacy an @mention is **the only way a plain instruction reaches the bot**, so
+it is addressing rather than content — exactly the reason `/command@BotName`
+already loses its suffix — yet it reached the agent as the first words of the
+work and became the Conversation title, which is derived from them. It is now
+stripped on a word boundary (`@bot2` is not `@bot`), and a message that is only a
+mention is ignored rather than run as an empty prompt. The name comes from one
+non-blocking `getMe` started on the enable transition and reaped like every other
+Telegram call; the test route, which already called `getMe` and threw the
+username away, now caches it too. A failed lookup costs only the noise.
+
+Verified: full Sampler `build, test` — **1370 tests, 0 failures, 0 errors**, 16
+tasks, 0 warnings. The watchdog pair is not vacuous: the sibling case asserts a
+genuinely quiet Turn still produces `stalled`, so the branch is provably reached.
+
+## Previous focus — opening a file with the OS program
+
 **A file DeskPilot cannot show opens in the program the computer already uses
 for it (2026-08-31, uncommitted on `main`).** Asked as "files in the right file
 pane should be openable with the program that is assigned to the file type by

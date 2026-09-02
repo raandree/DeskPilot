@@ -37,6 +37,12 @@ function Update-DpIntercomState {
     $settings = $state.Settings.intercom
     $chatId = if ($settings) { [string]$settings.chatId } else { '' }
 
+    # The shared group is allow-listed only when the operator has switched it on
+    # and named it. Two gates rather than one null check, because everyone in that
+    # group - now and whoever is added later - gets the operator's own control.
+    $groupChatId = ''
+    if ($settings -and [bool]$settings.allowGroupChat) { $groupChatId = [string]$settings.groupChatId }
+
     # A pairing window lets the poller run before a chat is allow-listed, purely
     # so the operator can discover their own chat id. It expires on its own: an
     # allow-list that is open indefinitely is not an allow-list.
@@ -67,6 +73,12 @@ function Update-DpIntercomState {
             $intercom.Priming = -not $isPairing
             $intercom.LastError = ''
             Add-DpIntercomLog -Direction 'system' -Kind 'enabled' -Detail $(if ($isPairing) { 'Listening for a pairing message.' } else { 'Intercom is on.' })
+            # One attempt per session. A failure only costs the mention strip, so
+            # it is not worth retrying against an endpoint the poll is also failing.
+            if ([string]::IsNullOrWhiteSpace($intercom.BotUsername) -and -not $intercom.IdentityTask) {
+                try { $intercom.IdentityTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe' }
+                catch { $intercom.IdentityTask = $null }
+            }
             $null = Send-DpIntercomMessage -Title 'DeskPilot Intercom is on.' -Line @(
                 "Machine: $([Environment]::MachineName)",
                 'Send /help for the command list.'
@@ -77,11 +89,22 @@ function Update-DpIntercomState {
             $intercom.PollTask = $null
             $intercom.PendingQuestion = $null
             $intercom.QueuedPrompt = $null
+            $intercom.QueuedChatId = $null
+            $intercom.ReplyChatId = $null
             $intercom.Outbound.Clear()
             $intercom.StatusMessageId = 0
             Add-DpIntercomLog -Direction 'system' -Kind 'disabled' -Detail 'Intercom is off.'
         }
         if (-not $intercom.Running) { return }
+
+        # Reap the identity lookup started on the enable transition.
+        if ($intercom.IdentityTask -and $intercom.IdentityTask.IsCompleted) {
+            $identity = Receive-DpTelegramResponse -Task $intercom.IdentityTask
+            $intercom.IdentityTask = $null
+            if ($identity.ok) {
+                $intercom.BotUsername = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
+            }
+        }
 
         # 2. Reap a finished send, capturing the message id when the record asked
         #    for it (the question nonce, or the live status message).
@@ -136,8 +159,9 @@ function Update-DpIntercomState {
             else {
                 $useEdit = $record.edit -and $intercom.StatusMessageId -gt 0
                 $operation = if ($useEdit) { 'editMessageText' } else { 'sendMessage' }
+                $recordChat = [string](Get-DpPropertyValue -InputObject $record -Name @('chatId') -Default '')
                 $payload = @{
-                    chat_id                  = $chatId
+                    chat_id                  = $(if ($recordChat) { $recordChat } else { $chatId })
                     text                     = [string]$record.text
                     disable_web_page_preview = $true
                 }
@@ -184,18 +208,30 @@ function Update-DpIntercomState {
                         }
                         else {
                             $pendingMessageId = 0
-                            if ($intercom.PendingQuestion) { $pendingMessageId = [long]$intercom.PendingQuestion.messageId }
+                            $pendingChatId = ''
+                            if ($intercom.PendingQuestion) {
+                                $pendingMessageId = [long]$intercom.PendingQuestion.messageId
+                                $pendingChatId = [string](Get-DpPropertyValue -InputObject $intercom.PendingQuestion -Name @('chatId') -Default '')
+                            }
                             $commandParams = @{
                                 Update                   = $update
                                 AllowedChatId            = $chatId
+                                AllowedGroupChatId       = $groupChatId
                                 PendingQuestionMessageId = $pendingMessageId
+                                PendingQuestionChatId    = $pendingChatId
+                                BotUsername              = [string](Get-DpPropertyValue -InputObject $intercom -Name @('BotUsername') -Default '')
                             }
                             $command = ConvertFrom-DpIntercomUpdate @commandParams
                             # While pairing, chatId is empty, so every command comes
                             # back 'rejected' and nothing executes. Keep the sender
                             # as a candidate for the operator to confirm.
                             if ($isPairing) { Add-DpIntercomPairingCandidate -Command $command }
-                            else { Invoke-DpIntercomCommand -Command $command }
+                            else {
+                                # Answer where you were asked, for this command only.
+                                $intercom.ReplyChatId = [string]$command.chatId
+                                try { Invoke-DpIntercomCommand -Command $command }
+                                finally { $intercom.ReplyChatId = $null }
+                            }
                         }
                     }
                     catch {
@@ -248,13 +284,16 @@ function Update-DpIntercomState {
         if ($isPairing) { return }
 
         # Advance a file the operator sent. It becomes the queued prompt once it
-        # has landed on disk.
+        # has landed on disk. It spans pump ticks, so it carries the chat it came
+        # from rather than relying on the dispatch that started it.
+        $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom.Download -Name @('chatId') -Default '')
         try { Update-DpIntercomDownload } catch {
             $intercom.Counters.errors++
             Add-DpIntercomLog -Direction 'in' -Kind 'attachment-error' -Detail (Hide-DpIntercomSecret -Text "$_") -Accepted $false
             $intercom.Download.stage = ''
             $intercom.Download.task = $null
         }
+        finally { $intercom.ReplyChatId = $null }
 
         $now = [DateTime]::UtcNow
 
@@ -278,11 +317,25 @@ function Update-DpIntercomState {
         if ($state.TurnRunning -and -not $intercom.StallNotified -and
             ($now - $intercom.LastActivityUtc).TotalMinutes -ge $stallMinutes) {
             $intercom.StallNotified = $true
-            $null = Send-DpIntercomMessage -Title 'The agent has gone quiet.' -Line @(
-                "No activity for $stallMinutes minutes.",
-                'It may be running something long, or it may be stuck.',
-                'Send /stop to end it, or /status for details.'
-            ) -Kind 'stalled'
+            if ($intercom.PendingQuestion) {
+                # Not a stall. The Turn is parked on a question DeskPilot itself
+                # forwarded, so it knows exactly why nothing is happening -
+                # telling the operator it 'may be stuck' and offering /stop invites
+                # them to kill a job that is only waiting for them, which is what
+                # a hang looks like from a phone.
+                $null = Send-DpIntercomMessage -Title 'Still waiting for your answer.' -Line @(
+                    "The agent asked you something $stallMinutes minutes ago and cannot continue until you reply.",
+                    'Answer by replying to the question message itself - not to this one - or by tapping one of its buttons.',
+                    'Send /stop if you would rather abandon the job.'
+                ) -Kind 'awaiting-answer'
+            }
+            else {
+                $null = Send-DpIntercomMessage -Title 'The agent has gone quiet.' -Line @(
+                    "No activity for $stallMinutes minutes.",
+                    'It may be running something long, or it may be stuck.',
+                    'Send /stop to end it, or /status for details.'
+                ) -Kind 'stalled'
+            }
         }
 
         # 8. Expire a forwarded question nobody answered.
@@ -302,8 +355,15 @@ function Update-DpIntercomState {
             $image = [string]$intercom.QueuedImage
             $intercom.QueuedPrompt = $null
             $intercom.QueuedImage = $null
-            if ($image) { Invoke-DpIntercomTurn -Prompt $prompt -Image $image }
-            else { Invoke-DpIntercomTurn -Prompt $prompt }
+            # The Turn reports back where it was asked for, which the queued
+            # prompt has carried since the dispatch that accepted it.
+            $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom -Name @('QueuedChatId') -Default '')
+            $intercom.QueuedChatId = $null
+            try {
+                if ($image) { Invoke-DpIntercomTurn -Prompt $prompt -Image $image }
+                else { Invoke-DpIntercomTurn -Prompt $prompt }
+            }
+            finally { $intercom.ReplyChatId = $null }
         }
     }
     catch {
