@@ -816,6 +816,12 @@ The `tasks` event is emitted only when the `taskTracking` Setting is on. The
 live frames originate from structured progress events on the Engine
 Runspace's Information stream; see [020-architecture.md](020-architecture.md#in-turn-task-list).
 
+There is no approval event or approval endpoint. An `activity` event reports
+intent and cannot suspend or authorize Engine dispatch. The approval wire
+contract is intentionally deferred until the Engine satisfies
+[the pre-dispatch contract](120-per-call-approval-engine-contract.md); defining
+routes first would create an approval UI with no enforceable execution gate.
+
 Client stops a Turn with `POST /api/conversations/{id}/stop` → `202`. The single
 accept thread services this request mid-Turn (the streaming loop pumps pending
 connections), so the cancel flag is set while the Turn is still running; the Turn

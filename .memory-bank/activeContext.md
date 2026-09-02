@@ -10,20 +10,24 @@ source: repository evidence
 
 ## Current focus
 
-**Ten feature Prompt Files are ready for selection (2026-09-02).**
-The five ranked gaps are expanded into independent implementation briefs, with
-packaging and localization split because their dependencies and rollback paths
-differ; later candidates are included too. Every Prompt File opens with why the
-feature matters and a concrete DeskPilot use case, then pins required
-context, behavior, safety boundaries, test-first proof, Definition of Done, and
-non-goals. Per-call approval remains the recommended first choice. Isolated Tool
-execution requires approval; parallel Agents require approval plus isolation;
-Playwright browser automation requires both plus one named workflow and a broken
-lethal-trifecta path. DeskPilot currently has browser-based UI and the Engine's
-`fetch_url` Browsing Tool, but no interactive page control or Playwright
-dependency. The browser prompt now explicitly chooses Playwright and covers its
-Node.js, managed-browser, offline, update, repair, and uninstall lifecycle. The
-Prompt Files are decision artifacts, not roadmap commitments.
+**Per-call approval is blocked on an Engine contract (2026-09-02).** The
+selected Prompt File required the work to stop rather than simulate approval
+after a Tool executes. ShellPilot 0.3.1 emits a pre-dispatch progress record but
+offers no decision channel. Installed ShellPilot 0.4.0 adds `ShouldProcess`
+immediately before mutating built-in, MCP, and User Tool dispatch, but it is an
+interactive PowerShell-host boundary: DeskPilot receives no correlated callback,
+MCP annotation provenance, safe summary fields, or action fingerprint. Raw MCP
+argument JSON is used as the confirmation target.
+
+The smallest upstream prerequisite is recorded in
+`specs/120-per-call-approval-engine-contract.md`: optional
+`Invoke-Shp -ToolCallApprover`, called after parse and policy evaluation but
+before `ShouldProcess` and dispatch, with immutable Tool identity/class,
+arguments, fingerprint, MCP annotation validity/provenance, and policy result.
+It must fail closed, return denial as a recoverable Tool result, preserve Engine
+policy authority, and remain cancellable. DeskPilot approval routes, UI, and
+state must not be added until an integration test proves denial prevents a real
+side effect and cancellation cannot dispatch afterwards.
 
 **Previous focus — Intercom group access remains uncommitted.**
 

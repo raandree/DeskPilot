@@ -35,6 +35,15 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Pre-execution visibility is not an approval boundary.** A structured Tool
+  event emitted before dispatch can drive Activity and can stop a retry from
+  repeating side effects, but it cannot authorize or deny execution unless the
+  Engine waits for a correlated Host decision. `ShouldProcess` is also
+  insufficient as a product protocol when it supplies raw display text instead
+  of immutable Tool identity, class, call id, action fingerprint, validated MCP
+  annotation provenance, and a cancellable decision channel. When that contract
+  is absent, stop at a design record: never race dispatch with Stop and never
+  present an after-the-fact prompt as approval.
 - **Periodic and event-triggered work are separate trust boundaries.** A local
   time schedule has clock, collision, and unattended-Permission risks. An event
   trigger additionally accepts untrusted event identity, metadata, payload,

@@ -28,7 +28,7 @@ flowchart LR
 
 | # | Threat | Mitigation |
 | --- | --- | --- |
-| T1 | A prompt (or prompt-injected web content) makes the agent delete/overwrite files or run destructive commands. | Permissions are explicit and default-reviewable; File/Terminal flagged as powerful in the UI; Workspace Folder scopes the default working directory; Activity shows exactly what happened; destructive-ops guidance (below). |
+| T1 | A prompt (or prompt-injected web content) makes the agent delete/overwrite files or run destructive commands. | Permissions are explicit category controls; File/Terminal are flagged as powerful in the UI; Workspace Folder scopes the default working directory; Activity shows intent and the final record. Per-call approval is not yet an enforceable mitigation and is blocked on the Engine contract below. |
 | T2 | The Host Server is reachable from the network. | Bind `127.0.0.1` only; refuse non-loopback binds unless an explicit `-Bind`+token opt-in is given; document loudly. |
 | T3 | Another local process calls the API (CSRF/port-scan). | Require a per-launch **session token** (random, printed by the launcher and embedded in the served `index.html`) on every `/api/*` call; check `Origin`/`Host` headers; reject cross-origin. |
 | T4 | The cached Copilot OAuth token is read by another user on a shared machine. | Inherited Engine behaviour (clear-text at the Engine's default token dot-file in the home directory, `~/.shellpilot-token`; historically `~/.copilot-demo-token`); DeskPilot documents it, derives the path from the Engine rather than hardcoding it, and recommends single-user machines; encrypted storage tracked upstream. |
@@ -104,6 +104,26 @@ Permission changes: `Set-DpWorkspaceTool` removes `search_files`, `search_text`
 and `replace_in_file` when File is off and re-registers them when it is on,
 exactly as `Set-DpQuestionnaireTool` does for `ask_questions` and Ask-User.
 Without that, a Permission the UI reports as off would still be in force.
+
+### Per-call approval blocker
+
+DeskPilot does not claim per-call approval for Terminal commands, outside-Project
+writes, or mutating MCP calls. `ShpProgress` and `tool.call` are observation
+channels: neither accepts a decision. Stop cancels the whole Turn and can race
+dispatch, so it is not an approval mechanism.
+
+ShellPilot 0.4.0 places `ShouldProcess` before mutating built-in, MCP, and User
+Tool dispatch. That boundary is not sufficient for DeskPilot because it exposes
+an interactive PowerShell host prompt rather than a correlated callback, gives
+the host raw MCP argument JSON, and does not provide trustworthy MCP annotation
+provenance. DeskPilot must not imitate approval after execution or treat every
+MCP call as safe.
+
+The smallest acceptable upstream change is the fail-closed, cancellable
+pre-dispatch callback in
+[120-per-call-approval-engine-contract.md](120-per-call-approval-engine-contract.md).
+Until its integration gate passes, category Permissions and explicit user
+actions are the available controls; Activity is visibility, not authorization.
 
 ## Workspace Tools (`search_files`, `search_text`, `replace_in_file`)
 
@@ -196,8 +216,9 @@ Mirroring the AgenticOperatingModel's guardrail theme:
 - Docs recommend: work in a dedicated Workspace Folder, keep it under version
   control (so changes are diffable and revertible), and review Activity before
   trusting results.
-- v2 candidate: a confirm-before-run gate for Terminal commands and file writes
-  outside the Workspace Folder.
+- Confirm-before-run for every Terminal command, outside-Project write, and
+  mutating MCP call is blocked on the Engine's pre-dispatch callback. See
+  [120-per-call-approval-engine-contract.md](120-per-call-approval-engine-contract.md).
 
 ## Localhost & session token
 

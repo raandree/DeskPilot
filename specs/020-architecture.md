@@ -243,6 +243,14 @@ next prompt. Permissions map to Engine switches:
 | askUser | `-DisableUserPrompts` |
 | userTools | `-DisableUserTools` |
 
+Permissions remain category-level availability controls. Per-call approval for
+risky actions is not implemented: the Host Server can observe a structured
+Tool-call record before dispatch, but that record has no response channel.
+ShellPilot 0.4.0's `ShouldProcess` checks are interactive PowerShell host
+prompts and do not carry the correlated, redacted metadata DeskPilot needs.
+Implementation is blocked on the pre-dispatch callback defined in
+[120-per-call-approval-engine-contract.md](120-per-call-approval-engine-contract.md).
+
 The `taskTracking` Setting is **not** a Permission. When on (default), the
 Host Server passes `-EnableTodoList` to `Invoke-Shp`; when off, the Task List
 tool is not offered to the model and live `tasks` events are ignored.
