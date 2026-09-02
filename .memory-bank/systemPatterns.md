@@ -35,6 +35,16 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Compare competitor breadth separately from DeskPilot product fit.** A
+  capability in another agent harness is evidence that a workflow exists, not
+  evidence that DeskPilot should copy it. Record whether DeskPilot ships,
+  partially supports, plans, defers, deliberately excludes, or has no evidence
+  for the capability; never turn "not found in reviewed sources" into a claim
+  of absence. Promote a candidate only when it serves knowledge workers and its
+  Permission boundary, single-active-Turn behavior, persistence, Intercom
+  behavior, and rollback path are understood. This keeps multi-provider breadth
+  and decorative surfaces from outranking approval, diagnostics, and other
+  capabilities that strengthen DeskPilot's stated product position.
 - **Context the model needs travels beside the user's message, never inside
   it.** Anything DeskPilot has to tell the Engine about a Turn — the files
   attached to it, and by the same argument anything added later — is composed by

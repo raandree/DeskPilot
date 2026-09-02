@@ -175,6 +175,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refresh the competitive feature analysis.** The comparison now covers
+  Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue, Goose,
+  OpenCode, and Aider against DeskPilot's shipped behavior. It separates raw
+  harness breadth from product fit, links claims to primary sources, and ranks
+  approval, diagnostics, scheduled work, packaging/localization, and isolated
+  execution without turning the research into roadmap commitments.
+
 - **Attachments are shown as chips on your message, not typed into it.**
   Attaching files used to write a sentence into the prompt on your behalf — "I
   attached 2 file(s) in the Workspace Folder: …" — which you then read back in

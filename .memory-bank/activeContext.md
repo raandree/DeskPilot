@@ -10,6 +10,19 @@ source: repository evidence
 
 ## Current focus
 
+**Competitive harness research completed (2026-09-02).** Spec 100 now compares
+DeskPilot with Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue,
+Goose, OpenCode, and Aider using primary sources and explicit evidence states.
+The result is decision input, not a roadmap commitment. The strongest candidate
+is per-call approval, followed by diagnostics, scheduled work, packaging and
+localization, and optional isolated Tool execution. Parallel Agents and browser
+automation remain later bets because both amplify the current full-user-
+privilege execution model. Multi-provider support remains a deliberate non-goal
+while DeskPilot is Copilot-native. All external links passed MarkdownLinkCheck;
+no runtime code changed.
+
+**Previous focus — Intercom group access remains uncommitted.**
+
 **A Telegram group can reach Intercom alongside the operator's own chat
 (2026-09-02, uncommitted on `main`).** Reported from a Status panel reading
 `Received 15 · accepted 3 · rejected 12`, with twelve
