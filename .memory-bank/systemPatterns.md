@@ -35,6 +35,13 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Browsing and browser automation are separate Tool authorities.** The Engine's
+  Browsing Tool retrieves page content through `fetch_url`; it does not grant DOM
+  inspection, clicks, field entry, downloads, authentication changes, or other
+  live-page actions. Interactive Playwright work therefore gets a separate Tool,
+  Permission, Activity vocabulary, approval policy, dependency lifecycle, and
+  security boundary. Never infer automation authority from Browsing being on or
+  from DeskPilot itself running in a browser.
 - **A feature Prompt File carries its decision boundary, not just its desired
   outcome.** A candidate implementation prompt starts with product usefulness and
   one concrete DeskPilot use case, then names the controlling repository context,

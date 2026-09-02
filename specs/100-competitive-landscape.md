@@ -44,7 +44,7 @@ acceptance criteria, and rollback paths.
 | Localization | Choose to ship maintainable English and German UI and safety text without a frontend build step. | [Implement localization](../.github/prompts/implement-localization.prompt.md) |
 | Isolated Tool execution | Choose after per-call approval; this is an architectural security boundary, not a UI-only feature. | [Implement isolated Tool execution](../.github/prompts/implement-isolated-tool-execution.prompt.md) |
 | Parallel Agents | Later bet; requires approval and isolation plus separate child state and reviewable file integration. | [Implement parallel Agents](../.github/prompts/implement-parallel-agents.prompt.md) |
-| Browser automation | Later bet; requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
+| Playwright browser automation | Later bet; DeskPilot currently fetches URLs but cannot control a page. Requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement Playwright browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
 
 Selecting a Prompt File starts implementation discovery; it does not waive its
 prerequisite or decision gates.
@@ -92,7 +92,7 @@ repository implementation and tests.
 | OS-level isolation or remote execution | Absent by design today | The security model explicitly does not claim a sandbox. |
 | Scheduled work | Deferred | Requires an idle scheduler and a policy for collisions with an active Turn. |
 | Parallel Agents | Absent | One Engine Runspace and one active Turn. |
-| Browser/computer automation | Partial | Browsing and URL fetch exist; interactive page or desktop control does not. |
+| Browser/computer automation | Partial | Browsing and `fetch_url` can read page content; Playwright, interactive page control, and desktop control are absent. |
 | Multi-provider/local Models | Deliberate non-goal | DeskPilot delegates Model access and entitlement to GitHub Copilot. |
 
 ## Market capability matrix
@@ -238,13 +238,16 @@ an isolated Project state, a bounded Permission set, separate Usage, and a
 reviewable merge result. Adding concurrency to the current shared Engine
 Runspace would weaken the product's strongest trust guarantees.
 
-### Browser and computer automation
+### Playwright browser automation and computer control
 
 Hermes has interactive browser and desktop-control Tool sets, while Cline and
 OpenHands expose browser workflows. This could unlock form entry and line-of-
 business web work for DeskPilot's audience. It also combines untrusted web
-content, local data, and outbound actions. Require a concrete user workflow,
-domain isolation, and per-action approval before adding it.
+content, local data, and outbound actions. DeskPilot currently has only URL
+fetching through the Engine's Browsing Tool and has no Playwright dependency.
+Use Playwright for the first browser-only slice, but require a concrete user
+workflow, domain isolation, and per-action approval before adding it. Treat
+general desktop control as a separate later decision.
 
 ## Deliberate non-goals
 

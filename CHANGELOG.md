@@ -178,11 +178,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Turn the competitive gaps into selectable implementation briefs.** Eight
   Prompt Files now let a maintainer choose per-call approval, diagnostics,
   scheduled work, Windows packaging, localization, isolated Tool execution,
-  parallel Agents, or browser automation independently. Each explains why the
-  feature helps, gives a DeskPilot use case, and defines its behavior, safety
-  boundaries, tests, completion criteria, and non-goals. Higher-risk choices
-  stop when their approval or isolation prerequisites are absent instead of
-  treating selection as permission to weaken those boundaries.
+  parallel Agents, or Playwright browser automation independently. The browser
+  brief distinguishes today's read-only URL fetch from interactive page control
+  and covers Playwright's runtime and managed-browser lifecycle. Each explains
+  why the feature helps, gives a DeskPilot use case, and defines its behavior,
+  safety boundaries, tests, completion criteria, and non-goals. Higher-risk
+  choices stop when their approval or isolation prerequisites are absent instead
+  of treating selection as permission to weaken those boundaries.
 
 - **Refresh the competitive feature analysis.** The comparison now covers
   Hermes Agent, Hermes One, OpenHands, Cline, Roo Code, Continue, Goose,

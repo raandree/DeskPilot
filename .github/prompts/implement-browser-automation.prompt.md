@@ -1,9 +1,9 @@
 ---
-description: "Implement contained browser automation for one DeskPilot workflow"
+description: "Implement contained Playwright browser automation for one DeskPilot workflow"
 agent: "software-engineer"
 ---
 
-# Implement browser automation
+# Implement Playwright browser automation
 
 ## Why this feature is useful
 
@@ -11,6 +11,8 @@ Many knowledge-worker tasks end in a web application rather than a file. Browser
 automation can carry DeskPilot's reviewed work into those systems, but it also
 combines untrusted pages, private local data, and outbound actions. The first
 slice must prove one workflow while breaking that attack path by architecture.
+DeskPilot's current Browsing Tool can fetch and read a URL; it cannot interact
+with a live page, inspect its DOM, click controls, fill fields, or use Playwright.
 
 ## Use case
 
@@ -23,8 +25,9 @@ cookies or local files.
 ## Objective
 
 Implement browser-only automation for one named, testable workflow and one
-allow-listed domain set using a proven browser automation library. Do not add
-general desktop control in the first slice.
+allow-listed domain set using Playwright. Do not add general desktop control in
+the first slice. Keep the existing Browsing Tool for read-only URL fetches;
+Playwright automation is a separate Tool and Permission surface.
 
 ## Prerequisite gate
 
@@ -39,14 +42,19 @@ Read `specs/020-architecture.md`, `specs/030-api-contract.md`,
 `specs/040-ui-design.md`, `specs/050-security-model.md`, and the Permission,
 Activity, Attachment, Artifact, transcript, and external-content patterns in
 `.memory-bank/systemPatterns.md`. Inspect current Browsing Tools and dependencies.
-Select a maintained automation library rather than implementing browser protocols
-directly, and record the dependency, browser lifecycle, update, and rollback
-decision before implementation.
+Verify the current `fetch_url` boundary and absence of a Playwright dependency.
+Record a decision for the Playwright language binding, Node.js runtime ownership,
+browser-binary download and update policy, install size, offline behavior,
+process lifecycle, and rollback before implementation. Prefer the official
+Playwright package and APIs over direct browser-protocol code.
 
 ## Required behavior
 
 - Use a dedicated, isolated browser profile with no personal cookies, extensions,
   password store, history, downloads, or ambient single sign-on by default.
+- Pin a supported Playwright version and its compatible browser build. Detect a
+  missing or mismatched browser before starting a Turn. Installation and repair
+  require explicit user consent; never download executable content silently.
 - Constrain top-level navigation, frames, redirects, pop-ups, downloads, uploads,
   and requests to an explicit domain and scheme allow-list.
 - Separate page content from trusted instructions. Treat DOM text, accessibility
@@ -108,6 +116,8 @@ Build a local hostile test site before production integration. Cover at least:
   bundles, or Message history.
 - Browser/library unavailable, crash, timeout, changed page, and partial action
   states fail visibly without unsafe retry.
+- Playwright/package and browser-version mismatch, missing browser binary,
+  interrupted installation, offline startup, and repair behavior.
 
 Run a live proof only against a test or staging target with non-sensitive data.
 
@@ -118,6 +128,8 @@ Run a live proof only against a test or staging target with non-sensitive data.
 - Add a separate Browser Automation Permission, off by default. Browsing Permission
   must not imply interactive automation authority.
 - Add Diagnostics for browser/library version, profile state, and orphan cleanup.
+- Document the Playwright and browser-binary installation, verification, update,
+  disk use, offline, repair, and uninstall lifecycle.
 - Complete an independent agent-security review and resolve every Blocker and
   Major finding before release.
 - Run focused tests, the hostile-site suite, the full Sampler gate, and browser
@@ -129,6 +141,8 @@ Run a live proof only against a test or staging target with non-sensitive data.
 
 - General desktop, keyboard, mouse, or screen control.
 - Reusing the user's everyday browser profile.
+- Driving an arbitrary locally installed browser outside Playwright's managed
+  compatibility contract.
 - CAPTCHA bypass or unattended credential entry.
 - Arbitrary-domain browsing with private data access.
 - A generic record-and-replay system before one workflow is proven.
