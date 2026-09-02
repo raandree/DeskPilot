@@ -10,10 +10,25 @@ source: repository evidence
 
 ## Current focus
 
-**Eight competitive-gap Prompt Files are ready for selection (2026-09-02).**
-The five ranked gaps are now expanded into independent implementation briefs,
-with packaging and localization split because their dependencies and rollback
-paths differ; the two later bets are included too. Every Prompt File opens with
+**Microsoft Scout is now included in the competitive decision set
+(2026-09-02).** Official Microsoft Learn documentation establishes Scout as a
+Frontier-preview Windows/macOS desktop Autopilot spanning files, shell, browser,
+Microsoft 365, per-action approval, heartbeat, scheduled and condition-triggered
+automations, specialized parallel sub-agents, Memory, Skills, and enterprise
+policy. Microsoft's engineering account adds an untrusted container mediated by
+zero-trust identity, token, Tool, Model, policy, and network boundaries. The
+user-supplied hands-on transcript is retained as secondary corroboration, not as
+the source for unsupported claims. Scout reinforces the existing order:
+per-call approval first, then diagnostics, scheduled work, packaging and
+localization, and optional isolation. Two genuinely separate candidates now
+have Prompt Files: read-only Microsoft 365 work integration and confined local
+condition-triggered automation. Neither is a roadmap commitment.
+
+**Ten competitive-gap Prompt Files are ready for selection (2026-09-02).**
+The five ranked gaps are expanded into independent implementation briefs, with
+packaging and localization split because their dependencies and rollback paths
+differ; the two original later bets and two Scout-derived candidates are also
+included. Every Prompt File opens with
 why the feature matters and a concrete DeskPilot use case, then pins required
 context, behavior, safety boundaries, test-first proof, Definition of Done, and
 non-goals. Per-call approval remains the recommended first choice. Isolated Tool

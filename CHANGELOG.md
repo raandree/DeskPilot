@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compare Microsoft Scout and choose two more feature briefs.** The
+  competitive landscape now covers Scout's documented file, shell, browser,
+  Microsoft 365, approval, autonomous-work, sub-agent, Memory, Skill, and
+  enterprise-governance surfaces. Two new selectable Prompt Files define a
+  read-only Microsoft 365 first slice and a confined local condition trigger;
+  neither is a roadmap commitment. Scout strengthens the existing priority on
+  per-call approval, Playwright browser automation, scheduled work, isolation,
+  and parallel Agents rather than displacing it.
+
 - **Questions you can tap through instead of typing at.** When the agent needs
   input it now asks **one question at a time**, with its choices as buttons: tap
   an answer and the next question arrives. A question that takes several answers

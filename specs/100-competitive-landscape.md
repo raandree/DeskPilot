@@ -25,6 +25,11 @@ The next features with the strongest evidence are:
 5. **Optional isolated execution**, after approval is shipped: first a remote
     or container-backed Terminal boundary, not a new agent runtime.
 
+Microsoft Scout reinforces this order rather than replacing it. Its most useful
+additional candidates are a read-only Microsoft 365 connection and local
+condition-triggered automation. Both should follow approval; neither requires
+DeskPilot to copy Scout's enterprise deployment model.
+
 Parallel Agents and browser/computer automation are later bets. Both increase
 the value of DeskPilot, but also multiply the consequences of its current
 full-user-privilege execution model.
@@ -45,6 +50,8 @@ acceptance criteria, and rollback paths.
 | Isolated Tool execution | Choose after per-call approval; this is an architectural security boundary, not a UI-only feature. | [Implement isolated Tool execution](../.github/prompts/implement-isolated-tool-execution.prompt.md) |
 | Parallel Agents | Later bet; requires approval and isolation plus separate child state and reviewable file integration. | [Implement parallel Agents](../.github/prompts/implement-parallel-agents.prompt.md) |
 | Playwright browser automation | Later bet; DeskPilot currently fetches URLs but cannot control a page. Requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement Playwright browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
+| Microsoft 365 work integration | New Scout-derived candidate; begin read-only with delegated identity, least privilege, provenance, and no send/share actions. | [Implement Microsoft 365 work integration](../.github/prompts/implement-microsoft-365-integration.prompt.md) |
+| Condition-triggered automation | New Scout-derived candidate after approval and scheduled work; begin with one confined local file event, not a webhook. | [Implement condition-triggered automation](../.github/prompts/implement-event-triggered-automation.prompt.md) |
 
 Selecting a Prompt File starts implementation discovery; it does not waive its
 prerequisite or decision gates.
@@ -64,6 +71,10 @@ terminal coding agents:
 - **Goose** and **OpenCode** show portable, multi-provider local harnesses.
 - **Aider** is a useful reference for focused Git-native editing rather than
    broad orchestration.
+- **Microsoft Scout** shows an enterprise-governed desktop Autopilot spanning
+   local files, shell, browser, Microsoft 365, and unattended work. It is a
+   preview product, not a public harness repository, so Microsoft Learn and
+   Microsoft engineering publications are the primary evidence.
 
 Continue is included as an influential reference, but its repository states
 that it is read-only and no longer actively maintained.
@@ -114,6 +125,36 @@ sources.
 | Goose | Desktop, CLI and API | NE | Primarily local; remote isolation not evidenced | NE | NE | 70+ MCP extensions and ACP | 15+ providers/local Models |
 | OpenCode | TUI, desktop, web and IDE | Per-agent permissions | Server/API surface; sandbox not evidenced | NE | Build, Plan and general subagent | MCP, Skills, plugins and custom Tools | Multi-provider/local Models |
 | Aider | Terminal and browser UI | Interactive pair workflow | Docker option | NE | NE | Conventions and scripting | Multi-provider/local Models |
+| Microsoft Scout | Windows/macOS desktop | Per-action, three-tier shell, sensitive paths | Zero-trust container/runtime mediation | Heartbeat, schedules and conditions | Parallel specialized sub-agents | MCP, Skills and Microsoft 365 | GitHub Copilot catalog |
+
+## Microsoft Scout detailed comparison
+
+Microsoft's preview documentation describes Scout as a desktop AI application
+for Windows 11 and macOS 12 or later. It reads and writes files, runs shell
+commands, controls a browser, connects to Microsoft 365, and works in the
+background. The evidence below separates documented capability from product
+positioning and from the user-supplied hands-on transcript.
+
+| Capability | Scout evidence | DeskPilot implication |
+| --- | --- | --- |
+| Files, shell, code and web research | Microsoft Learn documents workspace and approved external-folder access, shell commands, code changes, builds, tests, and cited web research. | DeskPilot has the core local Tool surface; preserve its stronger non-expert change review. |
+| Per-action approval | Microsoft Learn documents auto-approve, prompt and deny tiers, exact command/content previews, sensitive paths, and admin-enforced prompts for non-read actions. | Strengthens per-call approval as the first candidate. Category Permissions alone are not equivalent. |
+| Browser automation | Microsoft Learn documents navigation, clicks, form entry, uploads, screenshots, page snapshots, console logs, and network inspection; the admin policy can block browser origins. | Strengthens the Playwright candidate and its separate Permission, egress policy, and hostile-site tests. |
+| Autonomous work | Heartbeat repeats one prompt every 15–120 minutes in work hours. Automations run on schedules or conditions, support one-shot runs, and retain history. Background modes use stricter Permissions and skip actions that need approval. | Scheduled work remains one candidate. Condition-triggered automation is a separate later candidate because it adds an event trust boundary. |
+| Parallel delegation | Scout launches Explore, Task, Code review, Research, and General-purpose sub-agents in isolated contexts and can run them in parallel. | Strengthens the existing parallel-Agents brief, but does not remove its isolation and file-integration prerequisites. |
+| Microsoft 365 and Work IQ | Microsoft Learn documents Outlook, calendar, Teams, To Do, meeting transcripts and rooms, SharePoint Lists, inbox rules, OneDrive/SharePoint files and sharing, plus cross-service Work IQ queries. Mutating shared actions require approval. | Adds a read-only Microsoft 365 candidate. DeskPilot should not call a Graph-only connection Work IQ or begin with outbound mutations. |
+| Memory and history | Scout proactively stores provenance-bearing memories, searches past sessions, supports restore, and stores session/memory data in OneDrive. | DeskPilot already has Agent Memory, session search, Compact, Auto-compaction, Checkpoints, and local Conversation history. Scout's provenance and aging model are useful refinements, not a new top-level gap. |
+| Skills, MCP and documents | Scout discovers `SKILL.md`, ships Office/Loop/web-artifact Skills, supports MCP, and offers concurrent Co-Create editors. | DeskPilot already has Skills, MCP, Attachments, Artifacts, and file review. Bundled document Skills and live co-editing are possible later UX investments, below the safety gaps. |
+| Models and context | Scout inherits the GitHub Copilot Model catalog and exposes per-message Model choice, reasoning effort, context size, and conversation compaction. | Broad parity is already strong; DeskPilot remains intentionally Copilot-native. |
+| Enterprise governance | Frontier enrollment, Intune policy, organization attestation, Microsoft 365 and GitHub Copilot licensing, model/provider blocks, disabled Tool servers, workspace confinement, and browser-egress blocks are documented. | Relevant for managed deployment, but not an immediate requirement for DeskPilot's current local, single-user scope. Adopt the policy ideas at user level before enterprise administration. |
+| Runtime security | Microsoft states the agent container is untrusted and every Tool call, Model request, and network hop is mediated by a zero-trust runtime with identity, tokens, and policy outside the container. External content is tagged as untrusted; Microsoft also warns that GitHub Copilot processing can fall outside Microsoft 365 protections. | Strengthens optional isolated Tool execution and explicit data-flow disclosure. Content tagging is defense in depth, not a substitute for breaking unsafe data paths. |
+| Availability | Scout is an experimental Frontier preview. Sign-in requires organization enrollment, Intune enablement and attestation, Microsoft 365 access, and GitHub Copilot Business or Enterprise. | Do not benchmark onboarding or maturity as if Scout were generally available. |
+
+The supplied Shane Young transcript demonstrates the preview UI for approvals,
+Playwright, package installation, generated scripts, Skills, MCP, automations,
+heartbeat, Memory, Model selection, and Work IQ. Those observations agree with
+Microsoft Learn, but the transcript remains secondary evidence and is not used
+to establish capabilities that the fetched Microsoft sources do not document.
 
 ## Where DeskPilot is ahead
 
@@ -249,6 +290,26 @@ Use Playwright for the first browser-only slice, but require a concrete user
 workflow, domain isolation, and per-action approval before adding it. Treat
 general desktop control as a separate later decision.
 
+### Microsoft 365 work integration
+
+Scout's most product-specific advantage is joining local work to Outlook,
+calendar, Teams, To Do, OneDrive, SharePoint, and cross-service Work IQ queries.
+This fits DeskPilot's knowledge-worker audience, but it creates a private-data
+boundary and an outbound-action surface. Start with one read-only briefing
+workflow, delegated least-privilege access, visible provenance, explicit account
+state, and complete disconnect/revocation. Sending, posting, sharing, calendar
+changes, and background access require per-call approval and separate decisions.
+
+### Condition-triggered automation
+
+Scout distinguishes periodic heartbeat from discrete schedule- or
+condition-triggered automations. DeskPilot's scheduled-work brief deliberately
+starts with local time-based schedules and excludes events. Keep that boundary.
+After safe scheduled dispatch exists, consider one confined local Project file
+event with debounce, stable-write detection, deduplication, bounded backlog, and
+untrusted-event handling. Webhooks, mailbox polling, and cloud events remain
+separate inbound trust decisions.
+
 ## Deliberate non-goals
 
 - **Provider marketplace.** Multi-provider support is table stakes for general
@@ -281,6 +342,12 @@ general desktop control as a separate later decision.
    [permissions](https://opencode.ai/docs/permissions/)
 - [Aider repository](https://github.com/Aider-AI/aider) and
    [documentation](https://aider.chat/docs/)
+- [Microsoft Scout overview](https://learn.microsoft.com/en-us/microsoft-scout/overview),
+  [user guide](https://learn.microsoft.com/en-us/microsoft-scout/use-microsoft-scout),
+  [Microsoft 365 guide](https://learn.microsoft.com/en-us/microsoft-scout/work-with-microsoft-365),
+  [Responsible AI FAQ](https://learn.microsoft.com/en-us/microsoft-scout/microsoft-scout-responsible-ai-faq),
+  [admin controls](https://learn.microsoft.com/en-us/microsoft-scout/manage-group-policy),
+  and [Microsoft engineering account](https://commandline.microsoft.com/project-lobster-openclaw-personal-ai-assistant-enterprise-secure/)
 
 ## Decision gate
 

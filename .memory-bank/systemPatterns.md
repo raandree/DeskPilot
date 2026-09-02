@@ -35,6 +35,17 @@ source: repository evidence
 
 ## Patterns to keep
 
+- **Separate evidence tiers in competitive research.** Use fetched vendor
+  documentation and vendor engineering publications for capability claims.
+  Treat supplied demonstrations and transcripts as secondary corroboration,
+  name the tier, and never promote a video-only observation into a documented
+  product fact. Preview capabilities remain dated decision input, not roadmap
+  commitments.
+- **Periodic and event-triggered work are separate trust boundaries.** A local
+  time schedule has clock, collision, and unattended-Permission risks. An event
+  trigger additionally accepts untrusted event identity, metadata, payload,
+  replay, and burst behavior. Build the scheduled single-Turn dispatcher first;
+  add one confined local event before considering webhooks, mail, or cloud buses.
 - **Browsing and browser automation are separate Tool authorities.** The Engine's
   Browsing Tool retrieves page content through `fetch_url`; it does not grant DOM
   inspection, clicks, field entry, downloads, authentication changes, or other
