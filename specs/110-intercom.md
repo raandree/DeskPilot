@@ -33,9 +33,9 @@ is a Skill.**
 | Transport | **Long-polling `getUpdates`, outbound only.** No inbound port, no webhook, no tunnel, no public endpoint — the same rule that keeps the Host Server on `127.0.0.1`. Long-polling also *is* the adaptive cadence: a message is delivered the moment it arrives, and an idle hour costs three requests a minute with no payload. |
 | Never on the accept thread | The Host Server accepts on a single thread and handles requests inline, so a 25-second long-poll on that thread would freeze the whole UI — the same failure `Invoke-DpGitCommand` exists to prevent. Every Telegram call is an **`HttpClient` `Task`** started on one tick and reaped on a later one. The pump never waits. |
 | Where the pump runs | `Update-DpIntercomState` is called from **two** places: the accept loop's idle tick (so Intercom works between Turns) and `Invoke-DpPendingRequest` (so it works *during* a Turn, which is exactly when the agent asks a question). |
-| Authority | A remote message may only act on a Project whose **`intercom` flag is on**. Inside such a Project a remote Turn has the *same* Permissions as a local one — including `git push` — because the flag is the boundary. With no Project selected, or the flag off, every control command is refused with a plain sentence. |
+| Authority | A remote message may only act on a Project whose **`intercom` flag is on**. Inside such a Project a remote Turn has the *same* Permissions as a local one - including `git push` - because the flag is the boundary. A message from an allow-listed **group** must additionally clear that Project's **`intercomGroup` flag**, which defaults off even for a Project the operator's own phone already drives. Without the second flag the boundary could not express *"me, but not the group"*: the first was ticked when the operator was the only possible caller, so allow-listing a group would retroactively hand every opted-in Project to a membership Telegram controls, with no re-confirmation. Switching `allowGroupChat` on names the Projects already carrying the second flag and requires an explicit confirm - the flag is the control, the disclosure is what stops the control being granted unread. With no Project selected, or either flag off for the caller, every control command is refused with a plain sentence. |
 | Sender authentication | A hard **allow-list on `chat_id`**. The operator's own chat is always the primary one; **shared group chats** can be added alongside it, and are refused unless *both* `allowGroupChat` is on and `groupChatIds` holds at least one id. Up to ten, so the allow-list stays bounded. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. Two gates rather than one list, because allow-listing a group is not the same kind of act as allow-listing a phone - see *Accepted risks*. |
-| Where a reply goes | **Answer where you were asked.** Every queued message carries the chat the interaction it belongs to came from, so work requested in the group is acknowledged, questioned and reported in the group rather than surfacing privately. A Turn started from the window, and every message DeskPilot sends on its own initiative, goes to the operator's chat. The live status message is the deliberate exception: there is exactly one of it, edited in place against a single `message_id`, and it belongs to the operator. |
+| Where a reply goes | **Answer where you were asked.** Every queued message carries the chat the interaction it belongs to came from, so work requested in the group is acknowledged, questioned and reported in the group rather than surfacing privately. That target is **re-validated against the live allow-list at the moment of sending**, and falls back to the operator's chat when it no longer passes: the target is stamped before a message is classified and outlives a single tick in three separate carriers, so *"never answer a caller you just rejected"* has to be a property of the addressing layer rather than of one early `return`. It also makes stale routing state harmless instead of requiring every clearing path to be enumerated correctly - failing to enumerate one *is* the bug. A Turn started from the window, and every message DeskPilot sends on its own initiative, goes to the operator's chat. The live status message is the deliberate exception: there is exactly one of it, edited in place against a single `message_id`, and it belongs to the operator. |
 | Answering across two chats | Telegram message ids are **per-chat sequences**, so with two chats allow-listed an unrelated reply in one can carry the same id as the question pending in the other. The pending question therefore records the chat it was sent to, and a reply is only an answer when it replies to that message *in that chat*; anywhere else it is an ordinary prompt. |
 | Addressing a group message | Under Telegram's group privacy a plain instruction only reaches the bot if it **@mentions** it, so that mention is *addressing, not content* - the same reason `/command@BotName` already loses its suffix. A leading mention of the bot's own name is stripped before the text becomes a prompt, on a word boundary so `@bot2` is not read as `@bot`. Left in, it reached the agent as the first words of the work and became the Conversation title, which is derived from them. The name comes from one non-blocking `getMe` started on the enable transition; if it fails, nothing is stripped and the only cost is the noise. |
 | Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
@@ -55,7 +55,7 @@ is a Skill.**
 | Watching a remote Turn from the window | A Turn started from the phone has no browser request to stream over, and the single-threaded accept loop rules out a long-lived SSE channel - it would hold the only thread the Host Server has. The running answer and reasoning are buffered on `Intercom.RemoteTurn` and the SPA polls `GET /api/intercom/turn`, marking the Conversation with a working badge and rendering the answer as it is written. When the Turn ends the buffer is discarded and the recorded Message replaces it, because only the Message carries the Activity, Usage and Task List. |
 | Deleting a Conversation | The one irreversible thing Intercom can do, from the device where a mistyped number is most likely, so `/delete <n>` warns and only `/delete <n> confirm` acts. `/archive <n>` is offered in the same breath as the reversible alternative. |
 | Rate limiting | A rolling one-hour window caps outbound messages (`maxMessagesPerHour`, default 60). Over the cap, messages are dropped and counted, not queued forever. |
-| Audit | Every accepted message, every rejected message, and every outbound message is recorded in a bounded in-memory log with a UTC timestamp, exposed by `GET /api/intercom`. A rejection is a possible attack and is recorded as loudly as an acceptance. |
+| Audit | Every accepted message, every rejected message, and every outbound message is recorded in a bounded in-memory log with a UTC timestamp, **the chat it came from and the sender's Telegram display name**. A rejection is a possible attack and is recorded as loudly as an acceptance. Once more than one chat can reach DeskPilot, *what happened* is only half an audit trail: after a bad `/undo` the log has to answer *who*. The name is untrusted - Telegram reports whatever it was told - so it is a label beside the chat id, not an identity. Exposed by `GET /api/intercom`. |
 | Disable | One Settings toggle. Turning it off drops the in-flight poll, clears the pending question, and sends a final "Intercom off" message. |
 
 ## Failure detection (resolves F2)
@@ -89,16 +89,25 @@ Recorded as **accepted**, not mitigated, by explicit operator decision.
 - **A2 — No auto-disarm.** An unlocked stolen phone with Telegram open keeps
   full control until the bot token is revoked in BotFather from another device.
   There is no time-based or session-based expiry.
-- **A3 — A group shares the operator's authority.** With `allowGroupChat` on,
-  every member of every allow-listed group holds exactly the control the operator
-  does: instructions, answers to the agent's questions, and work in an opted-in
-  Project including `git push`. Membership is Telegram's to change, so anyone an
-  admin adds later inherits it, and DeskPilot never learns that it happened.
-  There is no per-sender allow-list inside a group and no per-member
-  Permission - Intercom carries one authority, not accounts. Mitigation is
-  confined to making the consequence unmissable: the feature is off by default,
-  needs two separate switches, is capped at ten groups, states the consequence
-  where it is enabled, and repeats it on every `/status` check-in.
+- **A3 - a group shares the operator's authority inside the Projects chosen for
+  it.** With `allowGroupChat` on, every member of every allow-listed group holds
+  exactly the control the operator does *within a Project carrying
+  `intercomGroup`*: instructions, answers to the agent's questions, and work in
+  it including `git push`. Membership is Telegram's to change, so anyone an admin
+  adds later inherits it, and DeskPilot never learns that it happened. There is
+  no per-sender allow-list inside a group and no per-member Permission - Intercom
+  carries one authority, not accounts.
+
+  What is **not** accepted, and is now controlled: the group reaching a Project
+  the operator opted in for their own phone. The second flag defaults off, so
+  widening the allow-list grants nothing until a Project is deliberately shared,
+  and `/undo` and `/delete` are refused from a group outright. That narrows the
+  trifecta's second leg to a set the operator names, rather than breaking it -
+  inside a shared Project all three legs are still present, and the residual risk
+  is confined to making the consequence unmissable: off by default, two switches,
+  a per-Project grant, a named-Projects confirmation when group access is
+  switched on, a cap of ten groups, and the consequence repeated on every
+  `/status` check-in.
 
 ## Non-goals
 
@@ -110,9 +119,11 @@ Permanent, and named here so they are refused in review:
 - **No native mobile app.** Telegram is the client.
 - **No per-sender identity.** Intercom carries exactly one authority - the
   operator's. A shared group chat may be allow-listed alongside the operator's
-  own, but that widens *who can exercise that one authority*; it does not create
-  users, roles or per-member Permissions, and DeskPilot never distinguishes one
-  group member from another.
+  own, and a Project chooses whether that group may work in it, but both widen
+  *who can exercise that one authority*; they do not create users, roles or
+  per-member Permissions, and DeskPilot never distinguishes one group member from
+  another. The audit log records the sender's Telegram display name so an action
+  can be traced after the fact - that is attribution, not authentication.
 - **No headless DeskPilot.** Intercom lives and dies with the Host Server
   process; the window must be running.
 - **No hosted relay.** Nothing runs in someone else's cloud, so no external
@@ -122,11 +133,25 @@ Permanent, and named here so they are refused in review:
 
 ## Commands
 
-Every command requires an allow-listed chat. Commands that **run work** in a
-Project additionally require that Project's `intercom` flag; commands that only
-**navigate** DeskPilot do not, because they execute nothing. Without that split,
-`/chats` would be unusable in exactly the situation where the operator needs it -
-no Project open, or the wrong one.
+Every command requires an allow-listed chat. Beyond that the table has three
+answers, not two, because "does this run work in a Project?" turned out not to be
+the only question worth asking.
+
+Commands that **run work** in a Project require that Project's `intercom` flag,
+and its `intercomGroup` flag as well when the caller is a group. Commands that
+only **navigate** DeskPilot require neither, because they execute nothing;
+without that split, `/chats` would be unusable in exactly the situation where the
+operator needs it - no Project open, or the wrong one.
+
+And two commands are **the operator's alone**, whatever Project is open. `/undo`
+rewrites files on disk and `/delete` destroys a Conversation for good, and both
+act on the operator's own history and Checkpoints rather than on the group's
+work - so the Project flag is the wrong gate for them: it says *where* work may
+happen, not *whose* Conversation this is. Gated on the Project instead, they
+would have been reachable by any group member in any opted-in Project, which is
+exactly what they were. `/archive` is deliberately left open to a group:
+`/unarchive` undoes it, it writes nothing to disk, and the Conversation list is
+already readable by the group through `/chats`.
 
 Telegram hides ordinary group messages from bots unless **Group Privacy** is
 turned off in BotFather, so in a group a bot with privacy on only ever sees
@@ -151,12 +176,12 @@ Settings panel and the getting-started guide rather than detected.
 | `/project new <path>` | Registers a folder as a Project and selects it, creating the folder when only its last segment is missing | Yes |
 | `/archive <n>` | Archives it, rebinding if it was the bound one | No |
 | `/unarchive <n>` | Brings an archived one back | No |
-| `/delete <n>` | Warns; `/delete <n> confirm` removes it | No |
+| `/delete <n>` | Warns; `/delete <n> confirm` removes it | No - but the operator's own chat only |
 | `/new` | Creates a Conversation and binds Intercom to it | No |
 | `/new <text>` | The same, then runs `<text>` | Yes |
 | `/stop` | Cancels the running Turn | No |
 | `/steer <text>` | Cancels the running Turn, then runs `<text>` | Yes |
-| `/undo` | Warns; `/undo confirm` restores the bound Conversation's most recent **Checkpoint** (see [030-api-contract.md](030-api-contract.md)) - dropping that prompt and everything after it, and putting back the files those Turns wrote. Refused while a Turn is running or on an archived Conversation. The discarded prompt is sent back so it can be reworded and resent | No |
+| `/undo` | Warns; `/undo confirm` restores the bound Conversation's most recent **Checkpoint** (see [030-api-contract.md](030-api-contract.md)) - dropping that prompt and everything after it, and putting back the files those Turns wrote. Refused while a Turn is running or on an archived Conversation. The discarded prompt is sent back so it can be reworded and resent | No - but the operator's own chat only |
 | `/help` | The command list | No |
 
 `/undo` is the only Intercom command that rewrites files on disk, and a phone is
@@ -334,14 +359,18 @@ Stored under `settings.intercom`; the bot token is **not** among them.
 | `sendFinalAnswer` | `true` | Include the answer text, split across messages |
 
 A Project carries `intercom` (default `false`): whether it may be remotely
-controlled at all.
+controlled at all. It also carries `intercomGroup` (default `false`): whether an
+allow-listed group may control it, checked in addition to the first flag and
+never instead of it. Turning `intercom` off clears `intercomGroup`, so a Project
+the phone cannot reach cannot appear in the list of Projects a group is about to
+be given.
 
 ## API
 
 | Route | Purpose |
 | --- | --- |
 | `GET /api/intercom` | Status, counters, audit log, and whether a token is configured. Never the token. |
-| `PUT /api/intercom` | Patch the Settings above and, write-only, set or clear `botToken`. |
+| `PUT /api/intercom` | Patch the Settings above and, write-only, set or clear `botToken`. Switching `allowGroupChat` on is refused with **409 `confirm_group_projects`** and the names of the Projects it would cover, until the same request carries `confirmGroupProjects: true`. |
 | `POST /api/intercom/test` | Verify the token with `getMe` and send one test message to the allow-listed chat. |
 | `POST /api/intercom/pair` | Open (or, with `{ stop: true }`, close) the five-minute pairing window. Refused with no token, and refused while a chat is already linked. |
 
@@ -355,7 +384,11 @@ Pure, unit-testable helpers:
   chunks of at most 4096 characters.
 - `ConvertTo-DpQuestionnaireAnswer` — collected answers become the single string
   the Ask-User bridge takes, in the browser wizard's own wire format.
-- `Test-DpIntercomProject` — is the selected Project remote-controllable?
+- `Test-DpIntercomProject` — is the selected Project remote-controllable, for the
+  chat that asked?
+- `Test-DpIntercomChat` — is this chat allow-listed, and is it the operator's own
+  or a group? One place answers both, read from Settings on every call so a
+  de-authorised chat fails even when a stale id survived upstream.
 
 State and transport:
 
@@ -371,8 +404,10 @@ State and transport:
 - `Move-DpIntercomInterview` — advances to the next question, or submits.
 - `Read-DpIntercomSecret` / `Save-DpIntercomSecret` — the protected token at
   rest.
+- `Clear-DpIntercomDownload` — abandons an attachment fetch whose chat lost its
+  authority mid-flight.
 - `Get-DpIntercomPayload` — the API projection, with the token removed.
-- `Add-DpIntercomLog` — the bounded audit ring.
+- `Add-DpIntercomLog` — the bounded audit ring, with chat and sender.
 
 ## See Also
 

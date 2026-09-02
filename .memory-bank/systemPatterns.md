@@ -397,9 +397,43 @@ source: repository evidence
 - **Never answer a caller you just rejected.** Replying to a non-allow-listed chat
   confirms the bot exists and turns it into a free oracle for anyone probing it.
   The rejection is counted and logged loudly instead - a rejection is a possible
-  attack, and the panel shows it in red.
+  attack, and the panel shows it in red. This is a property of the **addressing
+  layer**, not of any one early `return`: `Send-DpIntercomMessage` re-validates its
+  resolved target against the live allow-list at the moment of sending and falls
+  back to the operator's chat. The alternative was enumerating every place that
+  stores a chat id and has to clear it - and failing to enumerate one *is* the
+  bug, which is exactly how two of them were missed.
+- **Widening an allow-list silently re-scopes every gate calibrated for one
+  caller.** The per-Project `intercom` flag was ticked when the operator was the
+  only possible caller, so allow-listing a group would have handed every opted-in
+  Project - `git push` included - to a membership Telegram controls, with no
+  re-confirmation. A wider caller needs its **own** grant (`intercomGroup`,
+  default off even for a Project the phone already drives), not an inherited one.
+  The same widening also invalidated a nonce that had been unique only because the
+  list had one entry. When an allow-list grows, re-audit every decision that was
+  correct only because it had one member.
+- **A disclosure is not a control, and a control still needs a disclosure.**
+  Switching group access on is refused with `409 confirm_group_projects` and the
+  names of the Projects it would cover until the request repeats itself with
+  `confirmGroupProjects: true`. The per-Project flag is what actually constrains
+  the group; the 409 only stops that grant being made unread. Shipping the warning
+  alone would have left the authority exactly as wide as it was.
+- **"Where may work happen" is not "whose is this".** `/undo` and `/delete` were
+  gated on nothing because they run no work in a Project, and the Project flag
+  would have been the wrong gate anyway - it would still have left them reachable
+  by any group member in any opted-in Project. They act on the operator's own
+  history and Checkpoints, so they are gated on the **primary chat**. The gate for
+  `/undo` lives inside `Restore-DpIntercomCheckpoint`, the function that rewrites
+  files, rather than only at its single current caller. `/archive` is left open:
+  `/unarchive` undoes it.
+- **An audit log that cannot name a person is half a log.** With one allow-listed
+  chat, *what happened* was the whole story. With several, `Add-DpIntercomLog`
+  records the chat and the sender on every inbound line - data
+  `ConvertFrom-DpIntercomUpdate` had computed and thrown away since day one. It is
+  attribution, not authentication: Telegram reports whatever it was told, so the
+  name is bounded, redacted and rendered beside the chat id rather than trusted.
 - **Widening who may act needs its own switch, not a nullable field.** Intercom's
-  group chat is gated on `allowGroupChat` *and* `groupChatId`, even though the id
+  group chat is gated on `allowGroupChat` *and* `groupChatIds`, even though the ids
   alone would be sufficient to express "off". A group hands the operator's whole
   authority to a membership Telegram controls, so the act of allowing one has to
   be a decision the operator makes on purpose and can see they made; a field that
@@ -490,6 +524,13 @@ source: repository evidence
   `Get-DpPropertyValue`; direct member access is only for fields the producer
   always writes. This shipped: a remote Turn ran, answered, and then reported
   nothing, because the outcome push threw after the work was done.
+- **A new function inherits the failure mode of the path that calls it.**
+  `Test-DpIntercomChat` read `$Settings.intercom` directly, which is fine in
+  isolation - and fatal once `Send-DpIntercomMessage` calls it, because that sits
+  on the path reporting a finished job. Ten existing tests went red with
+  `PropertyNotFoundException`. Before adding a call into a shared path, adopt that
+  path's rules; here that means every optional read goes through
+  `Get-DpPropertyValue`, whatever the new function looks like on its own.
 - **Tests that skip strict mode validate different code than production.** The
   unit tests dot-source `source/Private` without `Prefix.ps1`, so a missing key
   quietly returned `$null` in the suite and threw for the user.

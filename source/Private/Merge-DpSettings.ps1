@@ -195,8 +195,8 @@ function Merge-DpSettings {
                         foreach ($piece in (([string]$entry) -split '[,;]')) {
                             $id = $piece.Trim()
                             if (-not $id) { continue }
-                            if ($id -notmatch '^-\d{1,20}$') {
-                                throw "intercom.groupChatIds takes Telegram group chat ids, which always start with -. '$id' is not one."
+                            if ($id -notmatch '^-\d{1,19}$' -or -not [long]::TryParse($id, [ref]$null)) {
+                                throw "intercom.groupChatIds takes Telegram group chat ids, which always start with - and fit a 64-bit integer. '$id' is not one."
                             }
                             if (-not $ids.Contains($id)) { $ids.Add($id) }
                         }
@@ -216,8 +216,12 @@ function Merge-DpSettings {
                         'allowGroupChat' { $merged.intercom.allowGroupChat = [bool]$intercomValue }
                         'chatId' {
                             $chat = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
-                            if ($chat -and $chat -notmatch '^-?\d{1,20}$') {
-                                throw 'intercom.chatId must be a Telegram chat id (digits, optionally leading -).'
+                            # A Telegram chat id is an int64, so the digit count is
+                            # not the bound - the range is. Both id keys are checked
+                            # the same way, so a value one accepts the other cannot
+                            # reject.
+                            if ($chat -and ($chat -notmatch '^-?\d{1,19}$' -or -not [long]::TryParse($chat, [ref]$null))) {
+                                throw 'intercom.chatId must be a Telegram chat id: digits, optionally leading -, within a 64-bit integer.'
                             }
                             $merged.intercom.chatId = if ($chat) { $chat } else { $null }
                         }

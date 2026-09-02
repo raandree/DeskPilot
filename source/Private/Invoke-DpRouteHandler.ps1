@@ -1749,14 +1749,21 @@ function Invoke-DpRouteHandler {
             }
 
             # botToken is write-only and never a Setting: it is split off here so it
-            # cannot reach settings.json, a Settings export, or any response.
+            # cannot reach settings.json, a Settings export, or any response. The
+            # group confirmation is split off for the same structural reason - it is
+            # an answer to this request, not a value to store.
             $patch = @{}
             $tokenSupplied = $false
             $token = ''
+            $groupConfirmed = $false
             foreach ($property in $Body.PSObject.Properties) {
                 if ($property.Name -eq 'botToken') {
                     $tokenSupplied = $true
                     $token = [string]$property.Value
+                    continue
+                }
+                if ($property.Name -eq 'confirmGroupProjects') {
+                    $groupConfirmed = [bool]$property.Value
                     continue
                 }
                 $patch[$property.Name] = $property.Value
@@ -1786,6 +1793,27 @@ function Invoke-DpRouteHandler {
             }
 
             if ($patch.Count -gt 0) {
+                # Switching group access on is the moment a set of Projects becomes
+                # reachable by a membership Telegram controls. The per-Project flag
+                # is the control; this is the disclosure, so the grant is never
+                # made without the list of what it covers being read first.
+                if ($patch.ContainsKey('allowGroupChat') -and [bool]$patch['allowGroupChat'] -and
+                    -not [bool]$state.Settings.intercom.allowGroupChat -and -not $groupConfirmed) {
+                    $shared = @(@($state.Settings.projects) |
+                            Where-Object { $_ -and [bool](Get-DpPropertyValue -InputObject $_ -Name @('intercomGroup') -Default $false) } |
+                            ForEach-Object { [string](Get-DpPropertyValue -InputObject $_ -Name @('name') -Default '') })
+                    if ($shared.Count -gt 0) {
+                        Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                            error = @{
+                                code     = 'confirm_group_projects'
+                                message  = "Everyone in an allow-listed group will be able to run work in $($shared.Count) project$(if ($shared.Count -ne 1) { 's' }) you have already shared with groups, with the same permissions you have - including git push."
+                                projects = @($shared)
+                            }
+                        }
+                        return
+                    }
+                }
+
                 $groupsBefore = @()
                 if ([bool]$state.Settings.intercom.allowGroupChat) { $groupsBefore = @($state.Settings.intercom.groupChatIds) }
                 try {
@@ -1815,6 +1843,11 @@ function Invoke-DpRouteHandler {
                             $state.Intercom.QueuedImage = $null
                             $state.Intercom.QueuedChatId = $null
                         }
+                        # An attachment fetch spans pump ticks and carries its own
+                        # chat, so it survives both other clears.
+                        if ($dropped -contains [string](Get-DpPropertyValue -InputObject $state.Intercom.Download -Name @('chatId') -Default '')) {
+                            Clear-DpIntercomDownload
+                        }
                     }
                     Add-DpIntercomLog -Direction 'system' -Kind 'group' -Detail $(if ($groupsAfter.Count -gt 0) { "Groups $($groupsAfter -join ', ') can now send instructions. Everyone in them has the same control you do." } else { 'Group control is off. Only your own chat can reach DeskPilot.' })
                 }
@@ -1822,11 +1855,17 @@ function Invoke-DpRouteHandler {
                     # A different allow-listed chat is a different link: close any
                     # pairing window, drop the in-flight poll, and let the pump run
                     # its enable transition again so the backlog is discarded and
-                    # the new chat gets the welcome message.
+                    # the new chat gets the welcome message. Everything bound to the
+                    # old chat goes with it - a queued prompt and an attachment fetch
+                    # each carry their own copy of it and would otherwise outlive it.
                     $state.Intercom.Running = $false
                     $state.Intercom.PollTask = $null
                     $state.Intercom.StatusMessageId = 0
                     $state.Intercom.PendingQuestion = $null
+                    $state.Intercom.QueuedPrompt = $null
+                    $state.Intercom.QueuedImage = $null
+                    $state.Intercom.QueuedChatId = $null
+                    Clear-DpIntercomDownload
                     $state.Intercom.Pairing.active = $false
                     $state.Intercom.Pairing.startedUtc = $null
                     $state.Intercom.Pairing.candidates.Clear()

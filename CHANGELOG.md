@@ -38,16 +38,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   **This is off by default and needs two switches, because everyone in those
   groups gets exactly the control you have** — instructions, answers to the agent's
-  questions, and work in any project you opted in, including `git push`. Telegram
-  decides who is in a group, so anyone added later inherits it. The consequence
-  is stated where you turn it on, and repeated on every `/status` check-in.
-  Turning a group back off drops anything it had queued or was being asked,
-  rather than delivering it to a chat that is no longer trusted.
+  questions, and work in any project you share with groups, including `git push`.
+  Telegram decides who is in a group, so anyone added later inherits it. The
+  consequence is stated where you turn it on, and repeated on every `/status`
+  check-in. Turning a group back off drops anything it had queued or was being
+  asked, rather than delivering it to a chat that is no longer trusted.
+
+  **A group reaches only the projects you choose for it.** Each project now has a
+  second tick, **also from a group chat**, next to **allow phone control** — and it
+  is off even for projects your own phone already drives. Without it, allow-listing
+  a group would have silently widened every project you had opted in when you were
+  the only person who could reach them. If any project is already shared when you
+  switch group access on, DeskPilot names them and asks you to confirm first.
+
+  **`/undo` and `/delete` never work from a group**, whichever project is open.
+  They rewrite files on disk and destroy a conversation for good, and they act on
+  your own history rather than on the group's work, so they stay with you.
+  `/archive` is still open to everyone, because `/unarchive` undoes it.
 
   The panel also tells you what Telegram will not: a bot in a group sees nothing
   but `/commands`, replies to itself and @mentions until **Group Privacy** is
   turned off in @BotFather and the bot is re-added — which looks exactly like
   DeskPilot ignoring you.
+
+- **The Intercom log says who, not just what.** Every line in the **Status** box
+  now names the chat a message came from and the sender Telegram reported, for
+  accepted and rejected messages alike. With more than one chat able to reach
+  DeskPilot, a log that records only the action cannot tell you afterwards who
+  took it. The name is whatever Telegram says it is; DeskPilot does not verify it.
 
 - **A full-screen file viewer.** The viewer opens at a comfortable reading width,
   but a wide table, a long diff or a large screenshot wants the whole window. The
@@ -188,6 +206,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A message is never sent to a chat that has lost its authority.** DeskPilot
+  replies wherever it was asked, and it now re-checks that chat against the
+  allow-list at the moment of sending rather than trusting the address it noted
+  down earlier. A reply bound to a group you have since switched off — or to an
+  attachment still being fetched for one — goes to your own chat instead, with a
+  line in the Status box saying so. Previously that depended on every place that
+  stores a chat remembering to clear it, and two of them did not.
+
 - **A job waiting for your answer no longer looks like a job that has hung.** The
   stall watchdog announced *"The agent has gone quiet — it may be running
   something long, or it may be stuck. Send /stop to end it"* five minutes after
@@ -202,7 +228,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reach the bot at all, and that mention was being handed to the agent as the
   first words of the work — and used as the conversation title, since the title
   is taken from the prompt. It is now stripped, on a word boundary, the same way
-  `/status@yourbot` already loses its suffix.
+  `/status@yourbot` already loses its suffix. If DeskPilot cannot ask Telegram for
+  its own name it now says so in the Status box, instead of leaving the mention in
+  place with no explanation anywhere.
 
 - **The end of a long answer is reachable again.** The thread could stop scrolling
   with a bar apparently already at the end while more of the answer was still

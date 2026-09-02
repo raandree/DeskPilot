@@ -13,10 +13,18 @@ function Restore-DpIntercomCheckpoint {
         first `/undo` only reports, and `/undo confirm` acts. The same two-step
         shape as `/delete`.
 
+        It is also the operator's alone. The gate lives here rather than only at
+        the dispatcher because this is the function that puts files back: a second
+        caller added later must not be able to reach the restore without passing
+        the chat it came from. The Project flag is the wrong gate for it - that
+        says where work may happen, not whose Checkpoints these are.
+
         The bound Conversation is authoritative: if it has gone, that is an error
         rather than an invitation to undo work somewhere the operator never chose.
     .PARAMETER Confirmed
         Perform the restore. Without it, report what would happen and stop.
+    .PARAMETER OriginChatId
+        The chat the command came from. Empty means the operator's own chat.
     .OUTPUTS
         None.
     #>
@@ -24,11 +32,23 @@ function Restore-DpIntercomCheckpoint {
     [OutputType([void])]
     [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Confirmation is the two-step /undo grammar; ShouldProcess cannot prompt over Telegram.')]
     param(
-        [switch]$Confirmed
+        [switch]$Confirmed,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$OriginChatId
     )
 
     $state = $script:DeskPilot
     $intercom = $state.Intercom
+
+    if ((Test-DpIntercomChat -ChatId $OriginChatId).group) {
+        $null = Send-DpIntercomMessage -Title 'Not from a group chat.' -Line @(
+            'Undo puts files back the way they were before an earlier instruction, from the operator''s own checkpoints.',
+            'Ask them to run /undo from their own chat with me, or at the machine.'
+        ) -Kind 'refused'
+        return
+    }
 
     if ($state.TurnRunning) {
         $null = Send-DpIntercomMessage -Title 'A job is running.' -Line @('Send /stop first, then /undo.') -Kind 'notice'

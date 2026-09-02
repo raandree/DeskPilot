@@ -5,10 +5,11 @@ function Get-DpIntercomProjectList {
     .DESCRIPTION
         Returns the registered Projects in the order Settings holds them, each with
         the number the operator types to select it, the one currently open, and
-        whether that Project has opted into remote control.
+        whether that Project has opted into remote control - and, separately, into
+        remote control from an allow-listed group.
 
-        The remote flag is reported rather than used as a filter: a Project that has
-        not opted in can still be switched to - switching executes nothing - and
+        The remote flags are reported rather than used as a filter: a Project that
+        has not opted in can still be switched to - switching executes nothing - and
         listing only the opted-in ones would hide the very Project the operator
         wants to be told about.
     .PARAMETER MaxItems
@@ -38,6 +39,7 @@ function Get-DpIntercomProjectList {
             path    = [string](Get-DpPropertyValue -InputObject $project -Name @('path') -Default '')
             current = ([string](Get-DpPropertyValue -InputObject $project -Name @('id') -Default '') -eq $selectedId)
             remote  = [bool](Get-DpPropertyValue -InputObject $project -Name @('intercom') -Default $false)
+            group   = [bool](Get-DpPropertyValue -InputObject $project -Name @('intercomGroup') -Default $false)
         }
     }
 }

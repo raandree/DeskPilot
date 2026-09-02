@@ -2614,11 +2614,23 @@ button.tree-row {
     min-width: 74px;
 }
 
+/* Who sent it, beside what it was: once more than one chat is allow-listed, a
+   row that names only the action cannot attribute it to anyone. Bounded, because
+   the sender name is whatever Telegram was told it was. */
+.intercom-who {
+    flex: none;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .project-remote {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     margin-top: 4px;
+    margin-right: 12px;
     color: var(--muted);
     cursor: pointer;
 }

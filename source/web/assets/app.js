@@ -65,6 +65,10 @@ async function api(method, path, body) {
         err.status = res.status;
         err.code = data && data.error && data.error.code;
         err.reauth = !!(data && data.error && data.error.reauth);
+        // Some refusals carry the facts the user has to read before they can be
+        // answered, so the parsed body travels with the error rather than only
+        // its message.
+        err.body = data;
         throw err;
     }
     return data;
@@ -3284,12 +3288,41 @@ function renderProjectsManager() {
         const remoteBox = document.createElement('input');
         remoteBox.type = 'checkbox';
         remoteBox.checked = p.intercom === true;
+        // A group is a wider caller than the phone this box was ticked for, so it
+        // is a second, separate grant. Turning phone control off drops it too — a
+        // project the phone cannot reach must not appear in the list of projects a
+        // group is about to be given.
+        const groupBox = document.createElement('input');
+        groupBox.type = 'checkbox';
+        groupBox.checked = p.intercomGroup === true;
+        groupBox.disabled = p.intercom !== true;
         remoteBox.onchange = () => {
-            const next = projects().map((x) => (x.id === p.id ? Object.assign({}, x, { intercom: remoteBox.checked }) : x));
+            const on = remoteBox.checked;
+            groupBox.disabled = !on;
+            if (!on) groupBox.checked = false;
+            const next = projects().map((x) => (x.id === p.id
+                ? Object.assign({}, x, { intercom: on, intercomGroup: on ? x.intercomGroup === true : false })
+                : x));
+            projectAction({ projects: next });
+        };
+        groupBox.onchange = () => {
+            if (groupBox.checked && !window.confirm(
+                `Let everyone in an allow-listed Telegram group run work in “${p.name}”?\n\n`
+                + 'They get the same permissions you do, including git push. Telegram decides who is in the group, '
+                + 'so anyone added later gets it too.')) {
+                groupBox.checked = false;
+                return;
+            }
+            const next = projects().map((x) => (x.id === p.id ? Object.assign({}, x, { intercomGroup: groupBox.checked }) : x));
             projectAction({ projects: next });
         };
         remote.append(remoteBox, document.createTextNode(' allow phone control'));
+        const group = document.createElement('label');
+        group.className = 'project-remote tiny';
+        group.title = 'Also let an allow-listed Telegram group run instructions in this project';
+        group.append(groupBox, document.createTextNode(' also from a group chat'));
         meta.appendChild(remote);
+        meta.appendChild(group);
         const actions = el('project-actions');
         if (!isSel) {
             const use = document.createElement('button');
@@ -4106,9 +4139,14 @@ function renderIntercomPanel() {
         const items = log.map((e) => {
             const when = new Date(e.utc).toLocaleTimeString();
             const arrow = e.direction === 'in' ? '←' : (e.direction === 'out' ? '→' : '·');
+            // Who, not just what: with more than one chat allow-listed, a line
+            // that names only the action cannot attribute it to anyone.
+            const who = [e.from, e.chatId].filter(Boolean).join(' ');
             return `<div class="intercom-log-row${e.accepted ? '' : ' rejected'}">` +
                 `<span class="tiny muted">${escapeHtml(when)}</span> <span class="intercom-arrow">${arrow}</span> ` +
-                `<span class="intercom-kind tiny">${escapeHtml(e.kind)}</span> <span class="tiny">${escapeHtml(e.detail || '')}</span></div>`;
+                `<span class="intercom-kind tiny">${escapeHtml(e.kind)}</span> ` +
+                (who ? `<span class="intercom-who tiny muted">${escapeHtml(who)}</span> ` : '') +
+                `<span class="tiny">${escapeHtml(e.detail || '')}</span></div>`;
         }).join('');
         rows.push(`<div class="intercom-log">${items}</div>`);
     }
@@ -7116,7 +7154,33 @@ function openSettings() {
     $('set-ic-group').onchange = async (e) => {
         const on = e.target.checked;
         $('set-ic-group-chat').disabled = !on;
-        await saveIntercom({ allowGroupChat: on });
+        // The Host Server refuses to switch this on while projects are already
+        // shared with groups until it has said which ones. That refusal is the
+        // disclosure, so it is answered here rather than suppressed.
+        try {
+            state.intercom = await api('PUT', '/api/intercom', { allowGroupChat: on });
+            updateIntercomChip();
+            renderIntercomPanel();
+        } catch (err) {
+            if (!err || err.code !== 'confirm_group_projects') {
+                toast((err && err.message) || 'Could not save Intercom settings.');
+                e.target.checked = !on;
+                $('set-ic-group-chat').disabled = on;
+                refreshIntercom();
+                return;
+            }
+            const names = asArray(err.body && err.body.error && err.body.error.projects);
+            const agreed = window.confirm(`${err.message}\n\n`
+                + names.map((n) => `• ${n}`).join('\n')
+                + '\n\nTelegram decides who is in a group, so anyone added later gets the same control.\n\n'
+                + 'Switch group access on?');
+            if (!agreed) {
+                e.target.checked = false;
+                $('set-ic-group-chat').disabled = true;
+                return;
+            }
+            await saveIntercom({ allowGroupChat: true, confirmGroupProjects: true });
+        }
         if (on && !$('set-ic-group-chat').value.trim()) {
             toast('Now enter one or more group ids below — nothing from a group is accepted until you do.');
         }

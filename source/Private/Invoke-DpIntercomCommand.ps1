@@ -33,14 +33,22 @@ function Invoke-DpIntercomCommand {
     $intercom = $state.Intercom
     $intercom.Counters.received++
 
+    # Who this came from, on every inbound log line. Telegram computes both for
+    # every message and they used to be discarded, which left a now-multi-user
+    # feature unable to attribute an action to a person after the fact.
+    $attribution = @{
+        ChatId = [string](Get-DpPropertyValue -InputObject $Command -Name @('chatId') -Default '')
+        From   = [string](Get-DpPropertyValue -InputObject $Command -Name @('fromName') -Default '')
+    }
+
     if ($Command.kind -eq 'rejected') {
         $intercom.Counters.rejected++
-        Add-DpIntercomLog -Direction 'in' -Kind 'rejected' -Detail $Command.reason -Accepted $false
+        Add-DpIntercomLog -Direction 'in' -Kind 'rejected' -Detail $Command.reason -Accepted $false @attribution
         return
     }
 
     if ($Command.kind -eq 'ignore') {
-        Add-DpIntercomLog -Direction 'in' -Kind 'ignored' -Detail $Command.reason -Accepted $false
+        Add-DpIntercomLog -Direction 'in' -Kind 'ignored' -Detail $Command.reason -Accepted $false @attribution
         if ($Command.reason -like 'Unknown command*') {
             $null = Send-DpIntercomMessage -Title 'Unknown command' -Line @($Command.reason) -Kind 'notice'
         }
@@ -48,7 +56,7 @@ function Invoke-DpIntercomCommand {
     }
 
     if ($Command.kind -eq 'edited') {
-        Add-DpIntercomLog -Direction 'in' -Kind 'edited' -Detail 'An edited message was acknowledged, not run.' -Accepted $false
+        Add-DpIntercomLog -Direction 'in' -Kind 'edited' -Detail 'An edited message was acknowledged, not run.' -Accepted $false @attribution
         # Almost nobody edits a message on purpose here. In Telegram Desktop and
         # Web, the up arrow in an empty input box opens the last message for
         # editing - a reflex for anyone with shell history habits - and the result
@@ -66,11 +74,11 @@ function Invoke-DpIntercomCommand {
     }
 
     $intercom.Counters.accepted++
-    Add-DpIntercomLog -Direction 'in' -Kind $Command.kind -Detail $Command.text
+    Add-DpIntercomLog -Direction 'in' -Kind $Command.kind -Detail $Command.text @attribution
 
     # Where a Turn this command queues reports back to. Empty is the operator's
     # own chat, which is also where a locally started Turn reports.
-    $commandChat = [string](Get-DpPropertyValue -InputObject $Command -Name @('chatId') -Default '')
+    $commandChat = [string]$attribution.ChatId
 
     switch ($Command.kind) {
         'answer' {
@@ -309,11 +317,15 @@ function Invoke-DpIntercomCommand {
             $intercom.ProjectIndex = @($projects | ForEach-Object { $_.id })
             # Whether a Project allows remote control is the fact that decides
             # whether the next instruction runs at all, so it is on every line
-            # rather than discovered through a refusal.
+            # rather than discovered through a refusal - and a group needs the
+            # second flag, so it is stated too when the listing went to one.
+            $fromGroup = (Test-DpIntercomChat -ChatId $commandChat).group
             $lines = @($projects | ForEach-Object {
                     '{0}. {1}{2}{3}' -f $_.number, $_.name,
                     $(if ($_.current) { '  <- current' } else { '' }),
-                    $(if ($_.remote) { '' } else { '  (remote control off)' })
+                    $(if (-not $_.remote) { '  (remote control off)' }
+                        elseif ($fromGroup -and -not $_.group) { '  (not shared with groups)' }
+                        else { '' })
                 })
             $listParams = @{
                 Title = 'Your projects'
@@ -401,6 +413,18 @@ function Invoke-DpIntercomCommand {
         }
 
         'delete' {
+            # Irreversible, and it destroys the operator's own history rather than
+            # the group's work, so it is theirs to run. The Project flag is the
+            # wrong gate here: it says where work may happen, not who owns a
+            # Conversation.
+            if ((Test-DpIntercomChat -ChatId $commandChat).group) {
+                $null = Send-DpIntercomMessage -Title 'Not from a group chat.' -Line @(
+                    'Deleting a conversation cannot be undone, and the conversations are the operator''s own.',
+                    'Ask them to delete it from their own chat with me, or at the machine.',
+                    'Send /archive 2 instead to hide one from the list - that is reversible.'
+                ) -Kind 'refused'
+                return
+            }
             $parts = ([string]$Command.text).Trim() -split '\s+', 2
             $choice = 0
             if (-not [int]::TryParse($parts[0], [ref]$choice)) {
@@ -429,7 +453,7 @@ function Invoke-DpIntercomCommand {
 
         'undo' {
             $confirmed = ([string]$Command.text).Trim().ToLowerInvariant() -eq 'confirm'
-            Restore-DpIntercomCheckpoint -Confirmed:$confirmed
+            Restore-DpIntercomCheckpoint -Confirmed:$confirmed -OriginChatId $commandChat
         }
 
         'steer' {
@@ -437,7 +461,7 @@ function Invoke-DpIntercomCommand {
                 $null = Send-DpIntercomMessage -Title 'Add the new instruction after /steer.' -Kind 'notice'
                 return
             }
-            $decision = Test-DpIntercomProject -Settings $state.Settings
+            $decision = Test-DpIntercomProject -Settings $state.Settings -OriginChatId $commandChat
             if (-not $decision.allowed) {
                 $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
                 return
@@ -461,7 +485,7 @@ function Invoke-DpIntercomCommand {
             # Project permission; only running work in the Project does.
             $hasWork = -not [string]::IsNullOrWhiteSpace($Command.text)
             if ($hasWork) {
-                $decision = Test-DpIntercomProject -Settings $state.Settings
+                $decision = Test-DpIntercomProject -Settings $state.Settings -OriginChatId $commandChat
                 if (-not $decision.allowed) {
                     $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
                     return
@@ -484,7 +508,7 @@ function Invoke-DpIntercomCommand {
         }
 
         'prompt' {
-            $decision = Test-DpIntercomProject -Settings $state.Settings
+            $decision = Test-DpIntercomProject -Settings $state.Settings -OriginChatId $commandChat
             if (-not $decision.allowed) {
                 $null = Send-DpIntercomMessage -Title 'I cannot do that from here.' -Line @($decision.reason) -Kind 'refused'
                 return

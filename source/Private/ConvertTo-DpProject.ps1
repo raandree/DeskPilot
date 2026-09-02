@@ -7,6 +7,10 @@ function ConvertTo-DpProject {
         returns a fresh hashtable with id, name and path. The path is required; an
         item with no path returns $null so the caller can drop it. A missing id is
         generated; a missing name defaults to the path's leaf folder name.
+
+        The two remote-control flags are normalised here too, both defaulting to
+        false, so a Project written before either existed loads as opted out rather
+        than as a StrictMode missing-key throw.
     .PARAMETER InputObject
         The Project-like object to normalise.
     .OUTPUTS
@@ -45,5 +49,12 @@ function ConvertTo-DpProject {
     # explicitly set: remote control is opted into per Project, never inherited.
     $intercom = [bool](& $read $InputObject 'intercom')
 
-    @{ id = $id; name = $name; path = $path; intercom = $intercom }
+    # And whether an allow-listed *group* may control it, which is a second, wider
+    # grant: everyone in the group holds it, and Telegram decides who that is. It
+    # defaults off even for a Project that already allows the operator's own phone,
+    # so switching group access on cannot silently widen a Project that was opted
+    # in when the operator was the only possible caller.
+    $intercomGroup = [bool](& $read $InputObject 'intercomGroup')
+
+    @{ id = $id; name = $name; path = $path; intercom = $intercom; intercomGroup = $intercomGroup }
 }

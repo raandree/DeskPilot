@@ -18,6 +18,14 @@ function Send-DpIntercomMessage {
         group rather than privately. The live status message is the exception:
         there is exactly one of it, edited in place, and it belongs to the
         operator's own chat.
+
+        That target is re-validated against the live allow-list here, at the
+        moment of sending. The ambient reply target is set by the pump before a
+        command is classified and outlives a single tick in three different
+        carriers, so "never answer a caller you just rejected" cannot rest on any
+        one early return upstream. A target that no longer passes is recorded and
+        the message falls back to the operator's own chat - the content still
+        reaches them, just never the chat that lost its authority.
     .PARAMETER Title
         The first line of the message.
     .PARAMETER Line
@@ -67,7 +75,17 @@ function Send-DpIntercomMessage {
 
     $target = [string]$script:DeskPilot.Settings.intercom.chatId
     if (-not $isStatus -and -not [string]::IsNullOrWhiteSpace($replyChat)) {
-        $target = $replyChat
+        # Re-checked against the allow-list as it stands now, not as it stood when
+        # the work was accepted. A group switched off mid-Turn, or a routing field
+        # nobody remembered to clear, ends here rather than in a de-authorised chat.
+        if ((Test-DpIntercomChat -ChatId $replyChat).allowed) {
+            $target = $replyChat
+        }
+        else {
+            $intercom.Counters.dropped++
+            Add-DpIntercomLog -Direction 'out' -Kind 'misrouted' -ChatId $replyChat -Accepted $false `
+                -Detail "A '$Kind' message was addressed to chat '$replyChat', which is no longer allow-listed. Sent to your own chat instead."
+        }
     }
 
     # There is nowhere to send to during pairing, when the operator has not yet

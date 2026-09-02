@@ -1221,7 +1221,16 @@ Describe 'Hide-DpIntercomSecret' -Tag 'Unit' {
 Describe 'Send-DpIntercomMessage' -Tag 'Unit' {
     BeforeEach {
         $script:DeskPilot = @{
-            Settings = @{ intercom = @{ maxMessagesPerHour = 2; chatId = '111' } }
+            Settings = @{
+                intercom = @{
+                    maxMessagesPerHour = 2
+                    chatId             = '111'
+                    # The group cases below can only arise once it is allow-listed:
+                    # the send re-validates its target against this list.
+                    allowGroupChat     = $true
+                    groupChatIds       = @('-1004455397827')
+                }
+            }
             Intercom = @{
                 Outbound    = [System.Collections.Generic.Queue[hashtable]]::new()
                 RateWindow  = [System.Collections.Generic.List[DateTime]]::new()
@@ -1519,6 +1528,10 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
             Mock Invoke-DpTelegramRequest { $null }
             $script:DeskPilot.Settings.intercom.enabled = $true
             $script:DeskPilot.Settings.intercom.chatId = '111'
+            # The group has to be allow-listed for a Turn to have been started from
+            # it in the first place, and the send re-validates its target.
+            $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+            $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
             $script:DeskPilot.Intercom.TokenConfigured = $true
             $script:DeskPilot.Intercom.Running = $true
             $script:DeskPilot.Intercom.Priming = $false

@@ -80,10 +80,17 @@ function Update-DpIntercomState {
             $intercom.LastError = ''
             Add-DpIntercomLog -Direction 'system' -Kind 'enabled' -Detail $(if ($isPairing) { 'Listening for a pairing message.' } else { 'Intercom is on.' })
             # One attempt per session. A failure only costs the mention strip, so
-            # it is not worth retrying against an endpoint the poll is also failing.
+            # it is not worth retrying against an endpoint the poll is also failing
+            # - but it is still recorded, because a symptom with no log line is how
+            # a Telegram-side problem gets blamed on DeskPilot ignoring the operator.
             if ([string]::IsNullOrWhiteSpace($intercom.BotUsername) -and -not $intercom.IdentityTask) {
                 try { $intercom.IdentityTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe' }
-                catch { $intercom.IdentityTask = $null }
+                catch {
+                    $intercom.IdentityTask = $null
+                    $intercom.Counters.errors++
+                    Add-DpIntercomLog -Direction 'system' -Kind 'identity-error' -Accepted $false `
+                        -Detail "I could not ask Telegram for my own name, so a leading @mention will stay in the prompt: $(Hide-DpIntercomSecret -Text "$_")"
+                }
             }
             $null = Send-DpIntercomMessage -Title 'DeskPilot Intercom is on.' -Line @(
                 "Machine: $([Environment]::MachineName)",
@@ -109,6 +116,11 @@ function Update-DpIntercomState {
             $intercom.IdentityTask = $null
             if ($identity.ok) {
                 $intercom.BotUsername = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
+            }
+            else {
+                $intercom.Counters.errors++
+                Add-DpIntercomLog -Direction 'system' -Kind 'identity-error' -Accepted $false `
+                    -Detail "Telegram did not tell me my own name, so a leading @mention will stay in the prompt: $($identity.error)"
             }
         }
 

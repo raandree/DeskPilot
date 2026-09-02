@@ -181,6 +181,67 @@ existing `settings.json` migrates on load — verified against the operator's re
 file rather than a fixture. De-authorisation is now a set difference, so removing
 one group of several drops only the work bound to that one.
 
+**All seven review findings closed (2026-09-02).** Verdict moves **CONDITIONAL →
+CLEARED for the branch**: `allowGroupChat` may now be switched on. It was not
+switched on during this work, and nothing was pushed. Per-finding evidence is in
+`.memory-bank/assessment-log.md` under the same entry.
+
+**FIND-002 was the design decision, and the operator chose both halves.** A
+per-Project **`intercomGroup`** flag, default off *even for a Project the
+operator's own phone already drives*, checked in `Test-DpIntercomProject` through
+a new `-OriginChatId`. Plus a server-side disclosure: `PUT /api/intercom` refuses
+to switch `allowGroupChat` on with **409 `confirm_group_projects`** and the names
+of the Projects it would cover, until the same request carries
+`confirmGroupProjects: true`. The flag is the control; the 409 only stops that
+control being granted unread. Spec 110's authority row and A3 now say so — the
+trifecta's second leg is *narrowed to a set the operator names*, not broken,
+because inside a shared Project all three legs remain.
+
+**FIND-001 turned on picking the right gate, not on adding one.** `/undo` and
+`/delete` are restricted to the **primary chat**. The Project flag answers "where
+may work happen"; these act on the operator's own history and Checkpoints, so
+gating them on it would still have left them reachable by any group member in any
+opted-in Project. `/undo`'s gate lives inside `Restore-DpIntercomCheckpoint` — the
+function that rewrites files — rather than only at its single current caller.
+`/archive` stays open to the group: `/unarchive` undoes it, it writes nothing to
+disk, and `/chats` already exposes the list.
+
+**FIND-004 and FIND-005 got the one structural fix.** `Send-DpIntercomMessage`
+re-validates its resolved target against the live allow-list through the new
+`Test-DpIntercomChat`, falling back to the operator's chat and recording a dropped
+`misrouted` message. Enumerating every place that stores a chat id was the
+alternative, and failing to enumerate one *is* the bug — which is how the queued
+prompt and the in-flight `Download` were both missed. The clearing logic was kept
+and completed anyway, as defence in depth, with `Clear-DpIntercomDownload`.
+
+Also closed: the audit log now carries the chat and sender on every inbound line
+(FIND-003) — data `ConvertFrom-DpIntercomUpdate` had computed and discarded since
+day one — surfaced through `Get-DpIntercomPayload` and rendered in the Status
+panel; both `getMe` paths log `identity-error` instead of swallowing (FIND-006);
+and both chat-id patterns are bounded by a real `[long]::TryParse` rather than a
+digit count (FIND-007), tightened together so one key cannot accept what the other
+rejects. No changelog entry for the last one — Telegram cannot issue a 20-digit id.
+
+**One defect was found by the suite, not by the tests written for it.**
+`Test-DpIntercomChat` read `$Settings.intercom` directly. Under StrictMode a
+missing key throws, and the function now sits on `Send-DpIntercomMessage` — the
+path that reports a finished job, which is the *same* failure this codebase has
+now learned three times. Ten existing tests went red with
+`PropertyNotFoundException`. The lesson recorded in `systemPatterns.md`: **a new
+function inherits the failure mode of the path that calls it**, so adopt that
+path's rules before wiring it in. Two existing fixtures were also corrected rather
+than worked around — they asserted group routing without allow-listing the group,
+which the re-validation now correctly refuses.
+
+Red-first was proved, not assumed: the 40 new tests in
+`tests/Unit/IntercomAuthority.Tests.ps1` ran against a detached worktree at
+`54baab6` and came back **11 passed / 29 failed**. The 11 passing are exactly the
+positive counterparts — `/delete` for the operator, `/archive` from the group, the
+status message pinned, a valid id accepted — which is what proves the refusals are
+not passing because the branch is unreachable. Gate: **1433 tests, 0 failures**,
+16 tasks, 0 warnings. PSScriptAnalyzer no new findings across all 13 changed
+production files, confirmed against the same baseline commit. `node --check` clean.
+
 ## Previous focus — opening a file with the OS program
 
 **A file DeskPilot cannot show opens in the program the computer already uses

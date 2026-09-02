@@ -93,10 +93,10 @@ Skip this unless you want other people to drive DeskPilot. It is off by default
 and stays off until you turn on **two** separate switches.
 
 > **Everyone in that group controls this machine.** They can send instructions,
-> answer the agent's questions, and run work in any project you have opted in —
-> including `git push`. Telegram decides who is in the group, not DeskPilot, so
-> anyone an admin adds later gets the same control, and DeskPilot never learns
-> it happened. There is no way to allow only *some* members.
+> answer the agent's questions, and run work in any project you have shared with
+> groups — including `git push`. Telegram decides who is in the group, not
+> DeskPilot, so anyone an admin adds later gets the same control, and DeskPilot
+> never learns it happened. There is no way to allow only *some* members.
 
 1. Add your bot to the group the normal Telegram way.
 2. **Turn Group Privacy off.** By default Telegram hides ordinary group messages
@@ -110,11 +110,30 @@ and stays off until you turn on **two** separate switches.
 4. On the **Intercom** tab, tick **Also accept messages from a Telegram group**
    and paste that id — including the leading minus sign — into the box below it.
    For more than one group, separate the ids with commas (up to ten).
+5. On the **Projects** tab, tick **also from a group chat** for each project the
+   group may work in. **A group can reach nothing until you do this**, even for a
+   project that already has **allow phone control** ticked — that switch was for
+   your own phone, and a group is a much wider set of people.
+
+If any project is already shared with groups when you turn the group switch on,
+DeskPilot lists them by name and asks you to confirm before the switch takes
+effect. Nothing is granted until you answer.
 
 Your own chat keeps working exactly as before. DeskPilot replies wherever it was
 asked: something sent in the group is acknowledged and reported in the group, and
 your private chat stays private. The check-in status message and DeskPilot's own
 notices stay in your chat.
+
+**Two commands a group can never run.** `/undo` rewrites files on disk and
+`/delete` destroys a conversation for good, and both act on *your* history rather
+than on the group's work — so they only work from your own chat. A group member
+who tries gets a plain refusal. `/archive` still works for everyone, because
+`/unarchive` undoes it.
+
+**Who did what.** The **Status** box now names the chat and sender beside every
+line it logs, so an accepted instruction or a rejected one can be traced back to
+a person after the fact. The name is whatever Telegram reports; DeskPilot does
+not verify it.
 
 **Addressing the bot in a group.** If you left Group Privacy on, start the message
 with `@yourbot` — that mention is how it reaches the bot at all. DeskPilot removes
@@ -159,6 +178,11 @@ Only projects with this ticked can be controlled from your phone. A project
 without it is invisible to Intercom: it will not run instructions for it, and it
 will not forward the agent's questions from it. If you keep sensitive work in a
 project, simply leave the tick off.
+
+Next to it is a second tick, **also from a group chat**. It is separate on
+purpose: the first switch says *you* may drive this project from your phone, and
+only the second says an allow-listed group may. Turning the first one off clears
+the second.
 
 ## Step 6 — Switch Intercom on
 
@@ -279,9 +303,10 @@ only ever look like silence. The check-in time is how you tell the difference.
   run in a different program that DeskPilot cannot see, interrupt, or answer for.
   Only jobs running in DeskPilot are covered.
 - **It does not know who is who.** It carries your authority and only yours. You
-  can allow a Telegram group alongside your own chat, but then everyone in that
-  group has exactly the control you do — there is no way to allow only some of
-  them, and no per-person permissions.
+  can allow a Telegram group alongside your own chat, and choose per project
+  whether the group may work in it — but inside a project it may work in,
+  everyone in that group has exactly the control you do. There is no way to allow
+  only some of them, and no per-person permissions.
 - **It does not survive DeskPilot closing.** No background service is installed
   and nothing keeps running when you close the window.
 - **It has no timed lock-out.** If your phone is lost or stolen while unlocked,
@@ -300,6 +325,8 @@ only ever look like silence. The check-in time is how you tell the difference.
 | **Telegram did not accept the token** | The token is wrong or has been revoked. Send `/token` to BotFather to get the current one |
 | **The test message was not delivered** | You have not messaged your bot yet. Open the bot chat in Telegram and tap **Start**, then test again |
 | **"I cannot do that from here"** | The open project does not have **allow phone control** ticked — step 5 |
+| **"not shared with group chats"** | The project allows *your* phone but not a group. Tick **also from a group chat** next to it on the **Projects** tab |
+| **"Not from a group chat"** | `/undo` and `/delete` only work from your own chat with the bot, because they act on your history rather than the group's work |
 | **Messages you sent before linking did nothing** | Expected. DeskPilot throws away anything that arrived while it was not listening, rather than acting on an hour-old instruction. Send it again |
 | **A rising "rejected" count** | Messages are arriving from a chat that is not yours. Nothing was executed, but it is worth knowing |
 | **You want it off, now** | Untick **Let me reach DeskPilot from my phone**. It stops immediately |

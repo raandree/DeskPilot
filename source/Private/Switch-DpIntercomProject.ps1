@@ -50,12 +50,21 @@ function Switch-DpIntercomProject {
     $lines = [System.Collections.Generic.List[string]]::new()
     $lines.Add("Project: $($project.name)")
     $lines.Add($project.path)
-    if ($project.remote) {
-        $lines.Add('Send an instruction whenever you are ready.')
-    }
-    else {
+    # The switch itself runs nothing, so the reply is where the operator learns
+    # whether the next instruction will - stated for the chat that asked, since a
+    # group needs the second flag and would otherwise read a yes meant for the
+    # operator's own phone.
+    $fromGroup = (Test-DpIntercomChat -ChatId ([string](Get-DpPropertyValue -InputObject $state.Intercom -Name @('ReplyChatId') -Default ''))).group
+    if (-not $project.remote) {
         $lines.Add("This project does not have 'allow phone control' ticked, so I cannot run anything in it from here.")
         $lines.Add('Tick it at the machine, in DeskPilot under Settings > Projects.')
+    }
+    elseif ($fromGroup -and -not $project.group) {
+        $lines.Add('This project is not shared with group chats, so I cannot run anything in it from here.')
+        $lines.Add("Only the operator's own chat can, until they tick 'also from a group chat' next to it under Settings > Projects.")
+    }
+    else {
+        $lines.Add('Send an instruction whenever you are ready.')
     }
     $null = Send-DpIntercomMessage -Title 'Switched project.' -Line @($lines.ToArray()) -Kind 'project'
 }
