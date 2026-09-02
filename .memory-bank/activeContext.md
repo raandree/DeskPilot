@@ -98,6 +98,33 @@ Verified: full Sampler `build, test` — **1370 tests, 0 failures, 0 errors**, 1
 tasks, 0 warnings. The watchdog pair is not vacuous: the sibling case asserts a
 genuinely quiet Turn still produces `stalled`, so the branch is provably reached.
 
+**Security review (2026-09-02) — verdict CONDITIONAL, seven findings open.**
+`ee0bdd7` is safe to hold on the branch because the feature is default-off, but
+**`allowGroupChat` must not be switched on** until the two High findings are
+closed. Full evidence and CVSS in `.memory-bank/assessment-log.md`; the work
+order is `.github/prompts/fix-intercom-group-findings.prompt.md`.
+
+The two that block: **`/undo` and `/delete` never call `Test-DpIntercomProject`**,
+so any group member can rewrite files on disk and destroy Conversations in any
+Project; and **the per-Project `intercom` flag cannot distinguish "me" from "the
+group"**, so ticking the box retroactively extends every opted-in Project,
+`git push` included, with no re-confirmation. Both were latent and harmless while
+the only caller was the operator — this commit is exactly what invalidates that
+assumption, which is the general lesson: *widening an allow-list silently
+re-scopes every gate that was calibrated for one caller.*
+
+Also open: the audit log records no sender for an accepted command (the data is
+computed and thrown away); work bound to a just-de-authorised chat is still
+delivered there; and `Send-DpIntercomMessage` does not re-validate its target, so
+the "never answer a caller you just rejected" invariant now rests on one early
+`return`. The last two share one structural fix — re-validate the resolved target
+against the live allow-list at enqueue time — which is preferable to enumerating
+every path that must clear stale routing state, since failing to enumerate one
+*is* the bug.
+
+Fixed during the review: `CHANGELOG.md` had `### Fixed` before `### Added` and a
+duplicate `### Added` under one release heading, against Keep a Changelog order.
+
 ## Previous focus — opening a file with the OS program
 
 **A file DeskPilot cannot show opens in the program the computer already uses

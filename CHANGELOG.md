@@ -7,24 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **A job waiting for your answer no longer looks like a job that has hung.** The
-  stall watchdog announced *"The agent has gone quiet — it may be running
-  something long, or it may be stuck. Send /stop to end it"* five minutes after
-  the agent asked a question, which is exactly the wrong advice: DeskPilot knew
-  precisely why nothing was happening, and `/stop` would have killed a job that
-  was only waiting for a reply. A Turn parked on a question now gets a reminder
-  that says so and points at the question message. Answering counts as activity
-  and re-arms the watchdog, so a real stall afterwards is still reported.
-
-- **The bot's own @mention no longer ends up inside your instruction.** In a
-  Telegram group you have to write `@yourbot do the thing` for the message to
-  reach the bot at all, and that mention was being handed to the agent as the
-  first words of the work — and used as the conversation title, since the title
-  is taken from the prompt. It is now stripped, on a word boundary, the same way
-  `/status@yourbot` already loses its suffix.
-
 ### Added
 
 - **Let a Telegram group reach Intercom, not just your own chat.** Adding the bot
@@ -187,6 +169,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always rendered in full at the end, below everything else.
 
 ### Fixed
+
+- **A job waiting for your answer no longer looks like a job that has hung.** The
+  stall watchdog announced *"The agent has gone quiet — it may be running
+  something long, or it may be stuck. Send /stop to end it"* five minutes after
+  the agent asked a question, which is exactly the wrong advice: DeskPilot knew
+  precisely why nothing was happening, and `/stop` would have killed a job that
+  was only waiting for a reply. A Turn parked on a question now gets a reminder
+  that says so and points at the question message. Answering counts as activity
+  and re-arms the watchdog, so a real stall afterwards is still reported.
+
+- **The bot's own @mention no longer ends up inside your instruction.** In a
+  Telegram group you have to write `@yourbot do the thing` for the message to
+  reach the bot at all, and that mention was being handed to the agent as the
+  first words of the work — and used as the conversation title, since the title
+  is taken from the prompt. It is now stripped, on a word boundary, the same way
+  `/status@yourbot` already loses its suffix.
 
 - **The end of a long answer is reachable again.** The thread could stop scrolling
   with a bar apparently already at the end while more of the answer was still
