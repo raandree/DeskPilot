@@ -7590,6 +7590,7 @@ async function refreshSchedules() {
 }
 
 function formatScheduleWhen(s) {
+    if (s.recurrence === 'onFileChange') return tr('schedules.onFile', { pattern: s.watchGlob || '' });
     if (s.recurrence === 'once') return tr('schedules.repeats.once');
     if (s.recurrence === 'weekly') {
         const days = (s.weekdays || []).map((d) => SCHEDULE_WEEKDAYS[d]).join(', ');
@@ -7633,7 +7634,9 @@ function renderSchedules() {
         name.textContent = s.name;
         const when = document.createElement('div');
         when.className = 'muted tiny';
-        const nextText = s.enabled ? tr('schedules.next', { when: formatScheduleInstant(s.nextRunUtc) }) : tr('schedules.paused');
+        const nextText = s.enabled
+            ? (s.recurrence === 'onFileChange' ? tr('schedules.watching') : tr('schedules.next', { when: formatScheduleInstant(s.nextRunUtc) }))
+            : tr('schedules.paused');
         when.textContent = `${formatScheduleWhen(s)} · ${nextText}${s.queued ? ' · ' + tr('schedules.waiting') : ''}`;
         main.append(name, when);
         if (s.lastRun) {
@@ -7713,10 +7716,22 @@ function scheduleWeekdayBoxes(selected) {
 
 function syncScheduleRecurrenceFields() {
     const recurrence = $('schedule-recurrence').value;
+    const trigger = recurrence === 'onFileChange';
     $('schedule-weekdays').classList.toggle('hidden', recurrence !== 'weekly');
     Array.from(document.querySelectorAll('.schedule-once-field')).forEach((el) => {
         el.classList.toggle('hidden', recurrence !== 'once');
     });
+    Array.from(document.querySelectorAll('.schedule-trigger-field')).forEach((el) => {
+        el.classList.toggle('hidden', !trigger);
+    });
+    Array.from(document.querySelectorAll('.schedule-clock-field')).forEach((el) => {
+        el.classList.toggle('hidden', trigger);
+    });
+    // A trigger cannot hold terminal authority, so the choice is removed rather
+    // than offered and then refused by the server.
+    const permission = $('schedule-permission');
+    if (trigger) permission.value = 'safe';
+    permission.disabled = trigger;
 }
 
 function resetScheduleForm() {
@@ -7729,6 +7744,7 @@ function resetScheduleForm() {
     $('schedule-recurrence').value = 'daily';
     $('schedule-time').value = '08:00';
     $('schedule-date').value = new Date().toISOString().slice(0, 10);
+    $('schedule-watch').value = '';
     $('schedule-collision').value = 'queue';
     $('schedule-permission').value = 'safe';
     scheduleProjectOptions((state.settings && state.settings.selectedProjectId) || '');
@@ -7754,6 +7770,7 @@ function fillScheduleForm(s) {
     }
     $('schedule-collision').value = s.collisionPolicy;
     $('schedule-permission').value = s.permissionMode;
+    $('schedule-watch').value = s.watchGlob || '';
     scheduleProjectOptions(s.projectId || '');
     scheduleWeekdayBoxes(s.weekdays || []);
     syncScheduleRecurrenceFields();
@@ -7781,6 +7798,10 @@ function readScheduleForm() {
         const [hour, minute] = time.split(':').map(Number);
         const [year, month, day] = ($('schedule-date').value || '').split('-').map(Number);
         if (year && month && day) body.runAtUtc = new Date(year, month - 1, day, hour, minute, 0).toISOString();
+    }
+    if (recurrence === 'onFileChange') {
+        body.watchGlob = $('schedule-watch').value.trim();
+        body.permissionMode = 'safe';
     }
     return body;
 }
@@ -7810,6 +7831,10 @@ async function submitScheduleForm(event) {
     }
     if (body.recurrence === 'weekly' && !(body.weekdays || []).length) {
         toast('Choose at least one weekday.');
+        return;
+    }
+    if (body.recurrence === 'onFileChange' && !body.watchGlob) {
+        toast(tr('schedules.watchGlob.required'));
         return;
     }
     await saveSchedule(body, scheduleEditId);

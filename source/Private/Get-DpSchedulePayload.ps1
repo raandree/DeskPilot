@@ -30,6 +30,8 @@ function Get-DpSchedulePayload {
                 timeOfDay       = [string]$schedule.timeOfDay
                 weekdays        = @($schedule.weekdays)
                 runAtUtc        = $schedule.runAtUtc
+                watchGlob       = $schedule.watchGlob
+                stabilitySeconds = [int]$schedule.stabilitySeconds
                 timeZoneId      = [string]$schedule.timeZoneId
                 projectId       = $schedule.projectId
                 agent           = $schedule.agent

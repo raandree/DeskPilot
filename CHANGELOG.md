@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Start work when a file arrives, not only when a clock strikes.** A schedule
+  can now be set to **When a file appears in the project** with a pattern such as
+  `incoming/*.csv`. DeskPilot waits until the file stops changing before it runs,
+  so a half-copied file is never handed to the agent, and it names the file to
+  the agent as something to look at rather than something to obey.
+
+  A file trigger always runs without terminal access, and the choice is removed
+  rather than offered: a schedule you set runs at a moment you picked, but a file
+  can be put there by anything, so DeskPilot will not let it run commands until
+  it can ask you to approve each one. Triggers share the same queue as timed
+  schedules — they wait their turn, several files arriving at once become one
+  run, and a file already handled is not handled again unless it changes.
+
 - **Let DeskPilot do routine work on a schedule.** A new **Scheduled work**
   panel (⏰ in the sidebar, or the command palette) runs a saved prompt every
   day, on chosen weekdays, or once at a set time. Each run gets its own

@@ -326,12 +326,18 @@
                             <option value="daily" data-i18n="schedules.repeats.daily">Every day</option>
                             <option value="weekly" data-i18n="schedules.repeats.weekly">Selected weekdays</option>
                             <option value="once" data-i18n="schedules.repeats.once">Once</option>
+                            <option value="onFileChange" data-i18n="schedules.repeats.onFileChange">When a file appears in the project</option>
                         </select></label>
-                    <label class="field"><span data-i18n="schedules.time">At (local time)</span>
+                    <label class="field schedule-clock-field"><span data-i18n="schedules.time">At (local time)</span>
                         <input id="schedule-time" type="time" value="08:00"></label>
                     <label class="field schedule-once-field hidden"><span data-i18n="schedules.date">Date</span>
                         <input id="schedule-date" type="date"></label>
+                    <label class="field schedule-trigger-field hidden"><span data-i18n="schedules.watchGlob">Files to watch</span>
+                        <input id="schedule-watch" type="text" maxlength="200" placeholder="incoming/*.csv"></label>
                 </div>
+                <p class="muted tiny schedule-trigger-field hidden" data-i18n="schedules.watchGlob.hint">The pattern is relative to the project
+                    folder. DeskPilot waits until the file stops changing before it runs, names the file to the agent, and
+                    treats its contents as data rather than instructions.</p>
                 <fieldset id="schedule-weekdays" class="schedule-weekdays hidden">
                     <legend data-i18n="schedules.weekdays">Weekdays</legend>
                 </fieldset>
@@ -349,6 +355,9 @@
                             <option value="live" data-i18n="schedules.permissions.live">Current permissions, including terminal</option>
                         </select></label>
                 </div>
+                <p class="muted tiny schedule-trigger-field hidden" data-i18n="schedules.trigger.safeOnly">A file trigger always runs in
+                    safe mode. It starts at a moment it did not choose, so it may not run terminal commands until DeskPilot
+                    can ask you to approve each one.</p>
                 <div class="schedule-form-actions">
                     <button id="schedule-save" class="btn btn-primary" type="submit" data-i18n="schedules.save.add">Add schedule</button>
                     <button id="schedule-cancel" class="btn hidden" type="button" data-i18n="schedules.cancel">Cancel</button>

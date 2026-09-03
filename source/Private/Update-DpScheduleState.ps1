@@ -112,6 +112,7 @@ function Update-DpScheduleState {
     # 3. Due occurrences.
     foreach ($schedule in @($store.schedules)) {
         if (-not $schedule.enabled) { continue }
+        if ($schedule.recurrence -eq 'onFileChange') { continue }
 
         $nextUtc = & $parseUtc $schedule.nextRunUtc
         if (-not $nextUtc) {
@@ -158,6 +159,61 @@ function Update-DpScheduleState {
             })
     }
 
+    # 3b. File triggers. Detection differs; everything after it - coalescing, the
+    # queue bound, the collision policy, the claim - is the same machinery, which
+    # is the whole reason a trigger is a schedule with a different clock.
+    foreach ($schedule in @($store.schedules)) {
+        if (-not $schedule.enabled -or $schedule.recurrence -ne 'onFileChange') { continue }
+
+        $project = @(@($state.Settings.projects) | Where-Object { [string]$_.id -eq [string]$schedule.projectId }) | Select-Object -First 1
+        if (-not $project) {
+            # Reported once rather than on every tick, so a deleted Project does not
+            # fill the run history with the same line.
+            if (-not $schedule.lastRun -or $schedule.lastRun.outcome -ne 'failed') {
+                & $record $schedule 'failed' 'The Project this trigger watches is no longer registered.' ''
+                $dirty = $true
+            }
+            continue
+        }
+
+        $detected = Get-DpAutomationEvent -Root ([string]$project.path) -Glob ([string]$schedule.watchGlob) `
+            -Seen $schedule.seen -Now $nowUtc -StabilitySeconds ([int]$schedule.stabilitySeconds) `
+            -MaxFileBytes ([long]$schedule.maxFileBytes)
+
+        if (($schedule.seen.Count -ne $detected.seen.Count) -or @($detected.events).Count -gt 0 -or @($detected.refused).Count -gt 0) {
+            $dirty = $true
+        }
+        $schedule.seen = $detected.seen
+
+        foreach ($refusal in @($detected.refused)) {
+            & $record $schedule 'skipped' "$($refusal.relativePath): $($refusal.reason)" ''
+        }
+
+        foreach ($event in @($detected.events)) {
+            $pending = @($store.queue | Where-Object { $_.scheduleId -eq $schedule.id })
+            if ($pending.Count -gt 0) {
+                & $record $schedule 'coalesced' "A run for this trigger was already waiting when '$($event.relativePath)' arrived." ''
+                continue
+            }
+            if (@($store.queue).Count -ge $maxQueue) {
+                & $record $schedule 'skipped' "The run queue is full ($maxQueue waiting), so '$($event.relativePath)' was dropped." ''
+                continue
+            }
+            if ($schedule.collisionPolicy -eq 'skip' -and ($state.TurnRunning -or @($store.queue).Count -gt 0)) {
+                & $record $schedule 'skipped' 'DeskPilot was busy and this trigger is set to skip a clash.' ''
+                continue
+            }
+
+            $store.queue = @(@($store.queue) + @{
+                    scheduleId  = [string]$schedule.id
+                    dueUtc      = $nowUtc.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
+                    queuedUtc   = $nowUtc.ToString("yyyy-MM-ddTHH:mm:ss'Z'")
+                    source      = 'trigger'
+                    triggerPath = [string]$event.relativePath
+                })
+        }
+    }
+
     # 4. Start the head of the queue.
     if ($AllowTurn -and -not $state.TurnRunning -and @($store.queue).Count -gt 0) {
         $entry = @($store.queue)[0]
@@ -170,7 +226,12 @@ function Update-DpScheduleState {
             if ($state.DataDir) { Save-DpScheduleStore -Store $store -Directory $state.DataDir -Confirm:$false }
 
             $result = $null
-            try { $result = Invoke-DpScheduledTurn -Schedule $schedule }
+            try {
+                $runParams = @{ Schedule = $schedule }
+                $triggerPath = [string](Get-DpPropertyValue -InputObject $entry -Name @('triggerPath') -Default '')
+                if (-not [string]::IsNullOrWhiteSpace($triggerPath)) { $runParams.TriggerPath = $triggerPath }
+                $result = Invoke-DpScheduledTurn @runParams
+            }
             catch { $result = @{ outcome = 'failed'; detail = "$_"; conversationId = '' } }
             finally { $store.claim = $null }
 

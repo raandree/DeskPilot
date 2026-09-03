@@ -35,7 +35,7 @@ function Get-DpScheduleNextRun {
     [OutputType([object])]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('once', 'daily', 'weekly')]
+        [ValidateSet('once', 'daily', 'weekly', 'onFileChange')]
         [string]$Recurrence,
 
         [AllowNull()]
@@ -58,6 +58,9 @@ function Get-DpScheduleNextRun {
     )
 
     $afterUtc = if ($After.Kind -eq [DateTimeKind]::Utc) { $After } else { $After.ToUniversalTime() }
+
+    # A file trigger has no clock; its next run is decided by Get-DpAutomationEvent.
+    if ($Recurrence -eq 'onFileChange') { return $null }
 
     if ($Recurrence -eq 'once') {
         if ($null -eq $RunAtUtc) { return $null }

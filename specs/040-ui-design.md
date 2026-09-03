@@ -441,10 +441,13 @@ authority. Each row offers **Run now**, **Pause/Resume** (with `aria-pressed`),
 and state the consequence.
 
 The form is ordinary labelled fields — name, prompt, repeats, time, weekday
-checkboxes, date (one-time only), Project, busy policy, permissions. Every value
-is written through `textContent` and DOM APIs, never concatenated HTML, because
-names and prompts are user text. `Escape` closes the modal; the backdrop does
-too.
+checkboxes, date (one-time only), Project, busy policy, permissions. Choosing
+**When a file appears in the project** swaps the clock fields for a watch pattern
+(`incoming/*.csv`), explains that DeskPilot waits for the file to stop changing
+and treats its contents as data, and **disables the permissions control**, since
+a trigger is always safe-mode. Every value is written through `textContent` and
+DOM APIs, never concatenated HTML, because names and prompts are user text.
+`Escape` closes the modal; the backdrop does too.
 
 ## States
 

@@ -40,10 +40,11 @@ function Import-DpScheduleStore {
             $scheduleId = [string](Get-DpPropertyValue -InputObject $entry -Name @('scheduleId') -Default '')
             if ([string]::IsNullOrWhiteSpace($scheduleId)) { continue }
             @{
-                scheduleId = $scheduleId
-                dueUtc     = ConvertTo-DpIsoString -Value (Get-DpPropertyValue -InputObject $entry -Name @('dueUtc') -Default $null)
-                queuedUtc  = ConvertTo-DpIsoString -Value (Get-DpPropertyValue -InputObject $entry -Name @('queuedUtc') -Default $null)
-                source     = [string](Get-DpPropertyValue -InputObject $entry -Name @('source') -Default 'schedule')
+                scheduleId  = $scheduleId
+                dueUtc      = ConvertTo-DpIsoString -Value (Get-DpPropertyValue -InputObject $entry -Name @('dueUtc') -Default $null)
+                queuedUtc   = ConvertTo-DpIsoString -Value (Get-DpPropertyValue -InputObject $entry -Name @('queuedUtc') -Default $null)
+                source      = [string](Get-DpPropertyValue -InputObject $entry -Name @('source') -Default 'schedule')
+                triggerPath = [string](Get-DpPropertyValue -InputObject $entry -Name @('triggerPath') -Default '')
             }
         })
 

@@ -1172,10 +1172,12 @@ A schedule object:
   "id": "sch-1a2b",
   "name": "Weekday review",
   "prompt": "Summarise the overnight reports.",
-  "recurrence": "daily | weekly | once",
+  "recurrence": "daily | weekly | once | onFileChange",
   "timeOfDay": "08:00",
   "weekdays": [1, 2, 3, 4, 5],
   "runAtUtc": null,
+  "watchGlob": null,
+  "stabilitySeconds": 3,
   "timeZoneId": "W. Europe Standard Time",
   "projectId": "p-1",
   "agent": null,
@@ -1194,6 +1196,14 @@ A schedule object:
 
 `outcome` is one of `completed`, `failed`, `missed`, `skipped`, `coalesced`,
 `expired`, `interrupted`.
+
+**File triggers.** `recurrence: "onFileChange"` replaces the clock with a
+Project-relative `watchGlob` (`incoming/*.csv`, `reports/**/*.pdf`). Such a
+schedule requires `projectId`, has no `timeOfDay`, `weekdays`, `runAtUtc` or
+`nextRunUtc`, and **must** carry `permissionMode: "safe"` — `live` is refused
+with `400 bad_schedule`. A `watchGlob` that is rooted (`/x`, `C:\x`, `//host`)
+or contains a `..` segment is refused the same way. A queued run created by a
+trigger carries `source: "trigger"` and the `triggerPath` that produced it.
 
 ### `GET /api/schedules`
 

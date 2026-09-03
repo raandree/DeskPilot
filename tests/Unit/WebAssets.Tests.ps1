@@ -54,6 +54,22 @@ Describe 'Web assets bundle' -Tag 'Unit' {
         $css | Should -Match '\.schedule-row\s*\{'
     }
 
+    It 'offers a file trigger that cannot be given terminal authority from the form' {
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+
+        $html | Should -Match 'id="schedule-watch"'
+        $html | Should -Match 'value="onFileChange"'
+        $html | Should -Match 'schedule-trigger-field'
+        # The safe-mode reason is stated where the choice is made, not only server-side.
+        $html | Should -Match 'may not run terminal commands until DeskPilot'
+
+        # The permission control is removed for a trigger rather than offered and refused.
+        $js | Should -Match ([regex]::Escape("if (trigger) permission.value = 'safe';"))
+        $js | Should -Match ([regex]::Escape('permission.disabled = trigger;'))
+        $js | Should -Match ([regex]::Escape("body.permissionMode = 'safe';"))
+    }
+
     It 'provides a calm, bounded Diagnostics surface' {
         $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw

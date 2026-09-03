@@ -151,6 +151,31 @@ the same as an interactive Turn's.
   unregistered or a Model the account lost fails the run visibly rather than
   quietly running the same prompt somewhere else.
 
+### File triggers
+
+A timed schedule fires at a moment the operator chose. A file trigger fires at a
+moment chosen by whatever wrote the file — a sync client, a colleague's share, a
+download — so it is deliberately given less latitude:
+
+- **Locked to the `safe` permission mode.** Terminal authority is unavailable to
+  a trigger until per-call approval exists (`specs/120`). The UI removes the
+  control and the API refuses the value; neither alone would be sufficient.
+- **The event is a path, never content.** The stored prompt is independent of the
+  file, and the Turn is told to treat the file's contents as data rather than
+  instructions. Nothing from the file reaches a command, a URL, or a Tool
+  argument.
+- **Confinement is checked twice, at different times.** The `watchGlob` is
+  refused at save time if it is rooted or contains `..`; the scan then prunes
+  reparse points instead of following them, so a junction planted inside the
+  Project cannot walk the watcher out of it.
+- **A partial write is not input.** A file must hold the same size and
+  last-write time across two observations at least `stabilitySeconds` apart
+  before it counts as complete.
+- **Bounded.** File size, files scanned per tick, queue depth and retained run
+  history are all capped; a file over the size bound is refused and reported
+  rather than truncated. A file already acted on does not fire again until its
+  content changes, and a deleted file is forgotten so the state cannot grow.
+
 ## Permissions model
 
 Five Tool categories map 1:1 to Engine switches. A Permission **off** passes the

@@ -243,10 +243,13 @@ Describe 'Markup coverage' -Tag 'Unit' {
 
         foreach ($match in [regex]::Matches($html, '(?s)<(button|label|legend|option|h1|h2|h3|p)\b([^>]*)>(.*?)</\1>')) {
             $attributes = $match.Groups[2].Value
-            $text = ($match.Groups[3].Value -replace '<[^>]+>', '' -replace '\s+', ' ').Trim()
+            if ($attributes -match 'data-i18n') { continue }
+            # A container whose visible text comes entirely from marked children is
+            # already extracted; counting it would report a gap that does not exist.
+            $inner = $match.Groups[3].Value -replace '(?s)<([a-zA-Z0-9]+)\b[^>]*data-i18n[^>]*>.*?</\1>', ''
+            $text = ($inner -replace '<[^>]+>', '' -replace '\s+', ' ').Trim()
             if (-not $text) { continue }
             if ($text -notmatch '[A-Za-z]{3}') { continue }
-            if ($attributes -match 'data-i18n') { continue }
             $unmarked.Add("$($match.Groups[1].Value): $text")
         }
         foreach ($match in [regex]::Matches($html, '<[^>]*\b(title|aria-label|placeholder)="([^"]+)"[^>]*>')) {
@@ -256,10 +259,10 @@ Describe 'Markup coverage' -Tag 'Unit' {
             $unmarked.Add("$($match.Groups[1].Value): $($match.Groups[2].Value)")
         }
 
-        # Baseline captured 2026-09-02: 105 strings in the shell markup still
-        # carry no key (the Settings drawer, the wizards and the Intercom panel
-        # are the bulk of them). Lower this whenever strings are extracted;
-        # never raise it. The ratchet is what stops localization rotting.
-        $unmarked.Count | Should -BeLessOrEqual 105 -Because ("unextracted strings:`n" + ($unmarked -join "`n"))
+        # Baseline lowered to 97 on 2026-09-03 (was 105): the scan no longer
+        # counts a container whose visible text comes entirely from marked
+        # children. Lower this whenever strings are extracted; never raise it.
+        # The ratchet is what stops localization rotting.
+        $unmarked.Count | Should -BeLessOrEqual 97 -Because ("unextracted strings:`n" + ($unmarked -join "`n"))
     }
 }

@@ -43,9 +43,9 @@ function ConvertTo-DpSchedule {
     if ([string]::IsNullOrWhiteSpace($prompt)) { throw 'A schedule needs a prompt.' }
     if ($prompt.Length -gt 8000) { throw 'A schedule prompt must be 8000 characters or fewer.' }
 
-    $recurrence = ([string](& $read 'recurrence' 'daily')).Trim().ToLowerInvariant()
-    if (@('once', 'daily', 'weekly') -notcontains $recurrence) {
-        throw "Invalid recurrence '$recurrence'. Allowed: once, daily, weekly."
+    $recurrence = ([string](& $read 'recurrence' 'daily')).Trim()
+    if (@('once', 'daily', 'weekly', 'onFileChange') -notcontains $recurrence) {
+        throw "Invalid recurrence '$recurrence'. Allowed: once, daily, weekly, onFileChange."
     }
 
     $timeOfDay = ([string](& $read 'timeOfDay' '')).Trim()
@@ -61,6 +61,11 @@ function ConvertTo-DpSchedule {
             [ref]$instant)
         if (-not $ok) { throw 'A one-time schedule needs a runAtUtc instant.' }
         $runAtUtc = [datetime]::SpecifyKind($instant, [DateTimeKind]::Utc).ToString('o')
+        $timeOfDay = ''
+    }
+    elseif ($recurrence -eq 'onFileChange') {
+        # A trigger has no clock. What it has instead is validated below, once the
+        # Project and the permission mode are known.
         $timeOfDay = ''
     }
     else {
@@ -129,27 +134,74 @@ function ConvertTo-DpSchedule {
         })
     if ($history.Count -gt 20) { $history = @($history[($history.Count - 20)..($history.Count - 1)]) }
 
+    $projectId = & $optional 'projectId'
+    $watchGlob = $null
+    $stabilitySeconds = 3
+    $maxFileBytes = 20971520
+    $seen = @{}
+
+    if ($recurrence -eq 'onFileChange') {
+        # A clock is chosen by the operator. A file appearing is chosen by whatever
+        # wrote it, which may not be the operator at all - so a trigger may not hold
+        # the authority per-call approval exists to gate (see specs/120).
+        if ($permissionMode -ne 'safe') {
+            throw 'A file trigger runs unattended at a moment it did not choose, so it needs per-call approval before it can use live Permissions. Use the safe permission mode.'
+        }
+        if (-not $projectId) { throw 'A file trigger needs a Project to watch.' }
+
+        $watchGlob = ([string](& $read 'watchGlob' '')).Trim().Replace('\', '/')
+        if ([string]::IsNullOrWhiteSpace($watchGlob)) { throw 'A file trigger needs a watchGlob pattern.' }
+        if ($watchGlob.Length -gt 200) { throw 'A watchGlob pattern must be 200 characters or fewer.' }
+        # Confinement is a property of the shape, checked before any path exists:
+        # rooted patterns and traversal segments are refused as a class.
+        if ($watchGlob.StartsWith('/') -or $watchGlob -match '^[A-Za-z]:' -or $watchGlob -match '^//') {
+            throw "The watchGlob pattern '$watchGlob' must be relative to the Project."
+        }
+        if (@($watchGlob -split '/') -contains '..') {
+            throw "The watchGlob pattern '$watchGlob' must stay inside the Project."
+        }
+
+        $stabilitySeconds = [int](& $read 'stabilitySeconds' 3)
+        if ($stabilitySeconds -lt 1 -or $stabilitySeconds -gt 3600) { throw 'stabilitySeconds must be between 1 and 3600.' }
+
+        $maxFileBytes = [long](& $read 'maxFileBytes' 20971520)
+        if ($maxFileBytes -lt 1 -or $maxFileBytes -gt 1073741824) { throw 'maxFileBytes must be between 1 and 1073741824.' }
+
+        # What this trigger has already acted on. Bounded, and pruned as files go.
+        $rawSeen = & $read 'seen' $null
+        if ($rawSeen -is [System.Collections.IDictionary]) {
+            foreach ($key in $rawSeen.Keys) { $seen[[string]$key] = [string]$rawSeen[$key] }
+        }
+        elseif ($rawSeen) {
+            foreach ($property in $rawSeen.PSObject.Properties) { $seen[[string]$property.Name] = [string]$property.Value }
+        }
+    }
+
     @{
-        id              = $id
-        name            = $name
-        prompt          = $prompt
-        recurrence      = $recurrence
-        timeOfDay       = $timeOfDay
-        weekdays        = @($weekdays)
-        runAtUtc        = $runAtUtc
-        timeZoneId      = $timeZoneId
-        projectId       = & $optional 'projectId'
-        agent           = & $optional 'agent'
-        model           = & $optional 'model'
-        enabled         = [bool](& $read 'enabled' $true)
-        collisionPolicy = $collisionPolicy
-        permissionMode  = $permissionMode
-        catchUpMinutes  = $catchUpMinutes
-        expiryMinutes   = $expiryMinutes
-        nextRunUtc      = ConvertTo-DpIsoString -Value (& $read 'nextRunUtc' $null)
-        lastRun         = $lastRun
-        history         = @($history)
-        createdUtc      = (ConvertTo-DpIsoString -Value (& $read 'createdUtc' $null)) ?? ([datetime]::UtcNow.ToString('o'))
-        updatedUtc      = (ConvertTo-DpIsoString -Value (& $read 'updatedUtc' $null)) ?? ([datetime]::UtcNow.ToString('o'))
+        id               = $id
+        name             = $name
+        prompt           = $prompt
+        recurrence       = $recurrence
+        timeOfDay        = $timeOfDay
+        weekdays         = @($weekdays)
+        runAtUtc         = $runAtUtc
+        timeZoneId       = $timeZoneId
+        watchGlob        = $watchGlob
+        stabilitySeconds = $stabilitySeconds
+        maxFileBytes     = $maxFileBytes
+        seen             = $seen
+        projectId        = $projectId
+        agent            = & $optional 'agent'
+        model            = & $optional 'model'
+        enabled          = [bool](& $read 'enabled' $true)
+        collisionPolicy  = $collisionPolicy
+        permissionMode   = $permissionMode
+        catchUpMinutes   = $catchUpMinutes
+        expiryMinutes    = $expiryMinutes
+        nextRunUtc       = ConvertTo-DpIsoString -Value (& $read 'nextRunUtc' $null)
+        lastRun          = $lastRun
+        history          = @($history)
+        createdUtc       = (ConvertTo-DpIsoString -Value (& $read 'createdUtc' $null)) ?? ([datetime]::UtcNow.ToString('o'))
+        updatedUtc       = (ConvertTo-DpIsoString -Value (& $read 'updatedUtc' $null)) ?? ([datetime]::UtcNow.ToString('o'))
     }
 }
