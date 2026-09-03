@@ -260,6 +260,47 @@ function Invoke-DpTurn {
         }
     }
 
+    # Publish a pending approval once, on the same drain as the Ask-User pump and
+    # for the same reason: GetPendingRequest marks it emitted, so this is safe to
+    # call every 10 ms. The Engine pipeline is parked inside the Tool while this
+    # runs, which is exactly the property that makes approval mean anything - the
+    # command has not been run when the card appears.
+    $emitApproval = {
+        $bridge = $script:DeskPilot.Engine.ApprovalBridge
+        if (-not $bridge) { return }
+        $pending = $bridge.GetPendingRequest()
+        if ($null -eq $pending) { return }
+
+        $request = $null
+        try { $request = $pending.Question | ConvertFrom-Json -ErrorAction Stop } catch { $request = $null }
+        if ($null -eq $request) { return }
+
+        # Remember it so a browser that reconnects mid-approval is re-served the
+        # card instead of facing a Turn that appears to have stalled.
+        $script:DeskPilot.PendingApproval = @{
+            id             = [string]$pending.Id
+            conversationId = [string]$pending.ConversationId
+            request        = $request
+        }
+
+        & $flush
+        $turnState.emitted = [int]$turnState.emitted + 1
+        $writer.Write((ConvertTo-DpSseFrame -EventName 'approval' -Data @{
+                    id      = [string]$pending.Id
+                    tool    = [string]$request.tool
+                    class   = [string]$request.class
+                    risk    = [string]$request.risk
+                    summary = $request.summary
+                }))
+        try {
+            Send-DpIntercomApproval -RequestId ([string]$pending.Id) -ConversationId ([string]$pending.ConversationId) -Request $request
+        }
+        catch {
+            $intercomApprovalError = $_
+            Write-Verbose "Could not forward the approval to Intercom: $intercomApprovalError"
+        }
+    }
+
     # Translate each Engine Information record into at most one SSE frame:
     # ShpProgress 'TodoList' records become live 'tasks' frames (and refresh the
     # Turn-local list), every tool call becomes a live 'activity' frame (and joins
@@ -354,6 +395,30 @@ function Invoke-DpTurn {
             Root     = [string]$settings.workspaceFolder
         }
         $null = Set-DpWorkspaceTool @workspaceToolParams
+
+        # DeskPilot's approval-gated run_command, paired with the -DisableTerminal
+        # that New-DpTurnParameter adds for the same condition. Re-registered every
+        # Turn so it carries this Turn's identifiers: the approval fingerprint is
+        # scoped to a Conversation and a Turn, which is what stops an answer being
+        # replayed against a later command.
+        $approvalActive = Test-DpApprovalActive -Settings $settings
+        $terminalToolParams = @{
+            Runspace       = $script:DeskPilot.Engine.Runspace
+            Enabled        = $approvalActive
+            TimeoutMinutes = [int]$settings.approvalTimeoutMinutes
+            Bridge         = $script:DeskPilot.Engine.ApprovalBridge
+            SafeCommand    = @(@(Get-DpSafeCommandList) + @($settings.safeCommands))
+            Context        = @{
+                conversationId   = [string]$Conversation.id
+                turnId           = [string]$assistantId
+                project          = [string]$settings.workspaceFolder
+                workingDirectory = [string](Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
+            }
+        }
+        $null = Set-DpTerminalTool @terminalToolParams
+        if ($approvalActive -and $script:DeskPilot.Engine.ApprovalBridge) {
+            $script:DeskPilot.Engine.ApprovalBridge.BeginTurn([string]$Conversation.id)
+        }
 
         $userMessage = @{
             id         = New-DpId -Prefix 'm'
@@ -550,6 +615,7 @@ function Invoke-DpTurn {
                     $lastIndex++
                 }
                 & $emitUserPrompt
+                & $emitApproval
                 # Write the coalesced text buffer for this batch, then either finish or
                 # yield briefly. A short 10 ms poll keeps streaming smooth (tokens reach
                 # the browser in ~10 ms bursts, not 40 ms) while Start-Sleep stays a
@@ -594,6 +660,7 @@ function Invoke-DpTurn {
             }
             while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
             & $emitUserPrompt
+            & $emitApproval
             & $flush
 
             if ($script:DeskPilot.CancelRequested) {
@@ -856,6 +923,15 @@ function Invoke-DpTurn {
     }
     finally {
         if ($userPromptBridge) { $userPromptBridge.EndTurn() }
+        # Cancel before EndTurn: a Turn can end while the Tool is still parked on
+        # an unanswered approval, and Cancel is what releases that thread. Ending
+        # the Turn without it would leave the Engine Runspace blocked and every
+        # later Turn queued behind a card nobody can answer any more.
+        if ($script:DeskPilot.Engine.ApprovalBridge) {
+            $script:DeskPilot.Engine.ApprovalBridge.Cancel()
+            $script:DeskPilot.Engine.ApprovalBridge.EndTurn()
+        }
+        $script:DeskPilot.PendingApproval = $null
         $script:DeskPilot.TurnRunning = $false
         $script:DeskPilot.CancelRequested = $false
         if ($shell) { try { $shell.Dispose() } catch { $null = $_ } }

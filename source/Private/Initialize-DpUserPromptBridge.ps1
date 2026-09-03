@@ -118,6 +118,15 @@ namespace DeskPilot
 
         public string RequestAnswer()
         {
+            return RequestAnswer(0);
+        }
+
+        // timeoutSeconds of 0 waits indefinitely, which is what Ask-User wants:
+        // a question the user has not answered is not a question that should
+        // expire. An approval does expire, because an unanswered one holds the
+        // single Engine Runspace and blocks every other queued run.
+        public string RequestAnswer(int timeoutSeconds)
+        {
             lock (syncRoot)
             {
                 if (!enabled)
@@ -143,12 +152,25 @@ namespace DeskPilot
                 answerReady.Reset();
             }
 
-            answerReady.Wait();
+            bool signalled;
+            if (timeoutSeconds > 0)
+            {
+                signalled = answerReady.Wait(TimeSpan.FromSeconds(timeoutSeconds));
+            }
+            else
+            {
+                answerReady.Wait();
+                signalled = true;
+            }
 
             lock (syncRoot)
             {
                 try
                 {
+                    if (!signalled)
+                    {
+                        throw new TimeoutException("The pending request expired before it was answered.");
+                    }
                     if (cancelled)
                     {
                         throw new OperationCanceledException("The pending Ask-User request was cancelled.");

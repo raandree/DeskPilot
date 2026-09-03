@@ -144,6 +144,30 @@ function Merge-DpSettings {
             }
             'memoryLearning' { $merged.memoryLearning = [bool]$value }
             'perCallApproval' { $merged.perCallApproval = [bool]$value }
+            'approvalTimeoutMinutes' {
+                $minutes = [int]$value
+                if ($minutes -lt 1 -or $minutes -gt 1440) {
+                    throw 'approvalTimeoutMinutes must be between 1 and 1440.'
+                }
+                $merged.approvalTimeoutMinutes = $minutes
+            }
+            'safeCommands' {
+                # A bad entry throws rather than being dropped: an entry silently
+                # discarded would report as remembered and then keep prompting,
+                # and one silently accepted would be a permanent hole.
+                $entries = @(foreach ($entry in @($value)) {
+                        if (-not $entry) { continue }
+                        $text = ([string](Get-DpPropertyValue -InputObject $entry -Name @('command') -Default '')).Trim()
+                        if ([string]::IsNullOrWhiteSpace($text)) { throw 'A safe command needs a command.' }
+                        if ($text.Length -gt 200) { throw 'A safe command must be 200 characters or fewer.' }
+                        if ($text -match '[;&|<>`\r\n]') { throw "The safe command '$text' contains a shell operator, which would let it carry a second command." }
+                        $mode = ([string](Get-DpPropertyValue -InputObject $entry -Name @('match') -Default 'exact')).Trim().ToLowerInvariant()
+                        if (@('exact', 'prefix') -notcontains $mode) { throw "Invalid match '$mode'. Allowed: exact, prefix." }
+                        @{ command = $text; match = $mode }
+                    })
+                if ($entries.Count -gt 200) { throw 'At most 200 safe commands can be added.' }
+                $merged.safeCommands = @($entries)
+            }
             'updateCheckIntervalMinutes' {
                 $minutes = [int]$value
                 if ($minutes -lt 1 -or $minutes -gt 1440) {
@@ -215,6 +239,7 @@ function Merge-DpSettings {
                         'notifyOnDone' { $merged.intercom.notifyOnDone = [bool]$intercomValue }
                         'sendFinalAnswer' { $merged.intercom.sendFinalAnswer = [bool]$intercomValue }
                         'allowGroupChat' { $merged.intercom.allowGroupChat = [bool]$intercomValue }
+                        'groupApproval' { $merged.intercom.groupApproval = [bool]$intercomValue }
                         'chatId' {
                             $chat = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }
                             # A Telegram chat id is an int64, so the digit count is

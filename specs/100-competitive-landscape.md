@@ -99,7 +99,7 @@ repository implementation and tests.
 | Memory and context management | Shipped | User Profile, Agent Memory, session search, Compact, and Auto-compaction. |
 | Customizations and MCP | Shipped | Agents, Skills, Instructions, Prompt Files, and durable MCP server configuration. |
 | Intercom | Shipped | Telegram Channel with Project authorization and explicit shared-group controls. |
-| Per-call approval | Planned | Phase 1 confirm-before-run gate; not implemented. |
+| Per-call approval | Shipped (Terminal) | Confirm-before-run gate on Terminal commands, risk-tiered against a safe-list. File writes and MCP calls are not yet gated. |
 | OS-level isolation or remote execution | Absent by design today | The security model explicitly does not claim a sandbox. |
 | Scheduled work | Deferred | Requires an idle scheduler and a policy for collisions with an active Turn. |
 | Parallel Agents | Absent | One Engine Runspace and one active Turn. |

@@ -1421,6 +1421,54 @@ button.tree-row {
     border-color: color-mix(in srgb, var(--ok) 70%, var(--border));
 }
 
+/* The approval card. Bordered in the warning colour rather than the accent:
+   this is the one card that asks the reader to look before they act, and it
+   should not be mistaken at a glance for the questionnaire beside it. */
+.approval-card {
+    border-color: color-mix(in srgb, var(--warn, #d08a00) 70%, var(--border));
+    padding: 16px 20px;
+    display: grid;
+    gap: 10px;
+}
+
+.approval-head {
+    font-weight: 600;
+}
+
+.approval-risk,
+.approval-where {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* The command is the thing being approved, so it wraps in full rather than
+   being clipped: an ellipsis here would hide the argument that matters. */
+.approval-command {
+    display: block;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--code-bg, rgba(127, 127, 127, 0.12));
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.approval-note {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.approval-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.approval-status:empty {
+    display: none;
+}
+
 .questionnaire-head {
     display: flex;
     align-items: center;

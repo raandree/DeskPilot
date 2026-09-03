@@ -449,6 +449,32 @@ a trigger is always safe-mode. Every value is written through `textContent` and
 DOM APIs, never concatenated HTML, because names and prompts are user text.
 `Escape` closes the modal; the backdrop does too.
 
+## Approval card
+
+When the agent proposes a Terminal command the safe-list does not cover, an
+approval card appears in the thread — in the same slot the Ask-User card uses,
+because it is the same kind of interruption: the Turn is parked and waiting on
+the reader.
+
+It is deliberately the plainest card in the app. A one-line risk statement, the
+**command exactly as it will run**, the folder it will run in, an optional note
+field, and two buttons: **Run it** and **No**. The command is written through
+`textContent` into a `<code>` block that wraps rather than truncates — an
+ellipsis would hide the trailing argument, which is usually where the danger is.
+The model's own explanation of why it wants the command is not shown at all; it
+is the party being checked.
+
+**No** is focused by default, so a reflexive `Enter` declines rather than
+approves. The card is bordered in the warning colour rather than the accent, so
+it is not mistaken at a glance for the questionnaire it sits beside. There is no
+"always allow this" control: widening the safe-list happens in Settings, because
+a button offered next to a prompt is the one a tired operator presses.
+
+After a decision the card disables its controls and states the outcome in place.
+A reload while a card is pending re-fetches it from
+`GET /api/conversations/{id}/approval`, so a browser refresh does not leave a
+Turn that looks stalled with no way to answer it.
+
 ## States
 
 | State | Cue |

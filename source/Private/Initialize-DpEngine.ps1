@@ -28,6 +28,11 @@ function Initialize-DpEngine {
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.Open()
     $userPromptBridge = Initialize-DpUserPromptBridge -Runspace $runspace
+    # Approvals get their own bridge instance. The rendezvous holds one question
+    # at a time, so sharing it would make an approval and an ask_questions call
+    # evict each other - and the eviction would land on whichever arrived second,
+    # silently. Same type, separate slot; the Tool never touches the Ask-User one.
+    $approvalBridge = New-Object -TypeName 'DeskPilot.UserPromptBridge'
 
     $importShell = [powershell]::Create()
     $importShell.Runspace = $runspace
@@ -145,6 +150,7 @@ if ($m) {
         ImportError      = $importError
         TokenPath        = $tokenPath
         UserPromptBridge = $userPromptBridge
+        ApprovalBridge   = $approvalBridge
         McpSupported     = $mcpSupported
     }
 }

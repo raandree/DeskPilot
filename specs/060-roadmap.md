@@ -35,10 +35,14 @@ task, see Activity and Usage — all from the window.
 - ~~File uploads (FR-C9).~~ **Done** — Upload button saves files to the Workspace
   Folder and the agent reads them through its existing File Tool; drag-and-drop
   and clipboard paste use the same Attachment flow.
-- **Blocked — per-call approval for risky actions.** Every Terminal command,
-  outside-Project write, and mutating MCP call needs approval while category
-  Permissions remain in force. DeskPilot must not simulate approval from an
-  Activity event after dispatch. Work resumes only after ShellPilot satisfies
+- ~~Per-call approval for Terminal commands.~~ **Done** (FR-PA1–FR-PA12).
+  DeskPilot passes `-DisableTerminal` and registers its own `run_command`, which
+  blocks before the side effect. A shipped safe-list of read-only commands runs
+  without asking; everything else prompts, with no Turn-wide grant.
+- **Blocked — per-call approval for the remaining risky actions.** Outside-Project
+  writes and mutating MCP calls still need approval while category Permissions
+  remain in force. DeskPilot must not simulate approval from an Activity event
+  after dispatch. Work resumes only after ShellPilot satisfies
   [the pre-dispatch Engine contract](120-per-call-approval-engine-contract.md).
 
 ## Phase 2 — Reach & richness

@@ -250,3 +250,16 @@ and tests are in place and verified.
   (ProjectUri→raandree/DeskPilot, real Author, IconUri, fuller description); add
   a `LICENSE` (MIT) file. WebView2/desktop shell parked as a decoupled,
   cross-platform-aware later track.
+
+- **2026-09-03 — Per-call approval for Terminal commands shipped** (223ecfe).
+  DeskPilot owns `run_command` and passes `-DisableTerminal`; the gate blocks
+  before the executor and delegates execution to the Engine's own
+  `Invoke-RunCommandTool`. Risk-tiered against a shipped allow-list that fails
+  closed; a shell operator disqualifies a command before matching. No Turn-wide
+  grant — the grant subsystem written the same morning was deleted. Timeout
+  defaults to 15 minutes so an unanswered request cannot hold the single Engine
+  Runspace. Window and Intercom private chat may both answer, first answer wins;
+  group approval is a third switch, defaulted off. Ships with`perCallApproval`
+  off. Signed-off design in `.memory-bank/topics/design-per-call-approval.md`,
+  decisions in `.memory-bank/decisions/0008-per-call-approval.md`. Gate:
+  1656 tests, 16 tasks, 0 errors, 0 warnings.

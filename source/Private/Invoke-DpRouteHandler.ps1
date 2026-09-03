@@ -1479,10 +1479,84 @@ function Invoke-DpRouteHandler {
 
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
         }
+        'getApproval' {
+            # What a reloaded browser asks to find out whether the Turn it rejoined
+            # is waiting on it. Returns the card, or an empty one when nothing is
+            # pending - never an error, because "nothing pending" is the normal case.
+            $pending = $state.PendingApproval
+            if (-not $pending -or [string]$pending.conversationId -ne [string]$RouteParams.id) {
+                Write-DpResponse -Stream $Stream -Json @{ pending = $false }
+                return
+            }
+
+            Write-DpResponse -Stream $Stream -Json @{
+                pending = $true
+                id      = [string]$pending.id
+                tool    = [string]$pending.request.tool
+                class   = [string]$pending.request.class
+                risk    = [string]$pending.request.risk
+                summary = $pending.request.summary
+            }
+        }
+        'submitApproval' {
+            $conversation = $state.Conversations[$RouteParams.id]
+            if (-not $conversation) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{
+                    error = @{ code = 'not_found'; message = 'Conversation not found.' }
+                }
+                return
+            }
+
+            $requestId = [string](Get-DpPropertyValue -InputObject $Body -Name @('requestId') -Default '')
+            $decision = ([string](Get-DpPropertyValue -InputObject $Body -Name @('decision') -Default '')).Trim().ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($requestId) -or @('approve', 'deny') -notcontains $decision) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{
+                    error = @{ code = 'bad_decision'; message = 'A requestId and a decision of approve or deny are required.' }
+                }
+                return
+            }
+
+            # The note steers the agent after a refusal, so it is bounded and
+            # trimmed like any other text that ends up in a prompt.
+            $note = ([string](Get-DpPropertyValue -InputObject $Body -Name @('note') -Default '')).Trim()
+            if ($note.Length -gt 500) { $note = $note.Substring(0, 500) }
+
+            $payload = @{ decision = $decision }
+            if ($note) { $payload.note = $note }
+
+            # SubmitAnswer checks the Conversation and request identifiers itself,
+            # so a replayed answer, one aimed at another Conversation, or one for a
+            # request that has already been answered authorises nothing.
+            $bridge = $state.Engine.ApprovalBridge
+            $accepted = $state.TurnRunning -and $bridge -and
+                $bridge.SubmitAnswer([string]$conversation.id, $requestId, ($payload | ConvertTo-Json -Compress))
+            if (-not $accepted) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                    error = @{ code = 'stale_approval'; message = 'That request is no longer waiting for a decision.' }
+                }
+                return
+            }
+
+            $state.PendingApproval = $null
+            # Every decision is recorded, approvals included. The log is not the
+            # control - the gate is - but a Turn that ran a command nobody in the
+            # room remembers approving needs to be answerable afterwards. The
+            # command itself is deliberately not in the summary: Protect-DpDiagnosticText
+            # redacts what it recognises, and a command line is exactly the kind of
+            # free text that carries a token it would not.
+            Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' `
+                -Component 'approval' -EventId "terminal.$decision" `
+                -Summary "A Terminal command was $(if ($decision -eq 'approve') { 'approved' } else { 'declined' }) in the DeskPilot window."
+            Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
+        }
         'stopTurn' {
             $state.CancelRequested = $true
             $bridge = $state.Engine.UserPromptBridge
             if ($bridge) { $bridge.Cancel() }
+            # A Turn parked on an approval is parked inside the Engine pipeline, so
+            # Stop has to release this bridge too or the pipeline never unwinds and
+            # the Stop button appears to do nothing.
+            if ($state.Engine.ApprovalBridge) { $state.Engine.ApprovalBridge.Cancel() }
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
         }
         'titleConversation' {
@@ -1975,9 +2049,23 @@ function Invoke-DpRouteHandler {
                     }
                 }
 
+                # Group approval is the stronger of the two grants: it hands the
+                # group the decision on a command DeskPilot has judged risky enough
+                # to stop for. Confirmed on its own, so switching group access on
+                # never carries it along.
+                if ($patch.ContainsKey('groupApproval') -and [bool]$patch['groupApproval'] -and
+                    -not [bool]$state.Settings.intercom.groupApproval -and -not $groupConfirmed) {
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                        error = @{
+                            code    = 'confirm_group_approval'
+                            message = 'Anyone in an allow-listed group will be able to approve a command DeskPilot stopped to ask about, and it will run on this computer with your permissions. They see the command, not what you would see in the window.'
+                        }
+                    }
+                    return
+                }
+
                 $groupsBefore = @()
-                if ([bool]$state.Settings.intercom.allowGroupChat) { $groupsBefore = @($state.Settings.intercom.groupChatIds) }
-                try {
+                if ([bool]$state.Settings.intercom.allowGroupChat) { $groupsBefore = @($state.Settings.intercom.groupChatIds) }                try {
                     $merged = Merge-DpSettings -Current $state.Settings -Patch @{ intercom = $patch }
                     $state.Settings = $merged
                     if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }

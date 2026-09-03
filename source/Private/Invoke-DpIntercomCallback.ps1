@@ -121,6 +121,43 @@ function Invoke-DpIntercomCallback {
             $null = Move-DpIntercomInterview
         }
 
+        'a' {
+            # A Terminal approval. The nonce is the whole check: Telegram leaves
+            # old buttons on screen forever, so a tap has to prove it belongs to
+            # the request currently waiting rather than to one already decided.
+            $pending = $intercom.PendingApproval
+            $token = if ($pending) { [string](Get-DpPropertyValue -InputObject $pending -Name @('token') -Default '') } else { '' }
+            if ($parts.Count -lt 3 -or -not $token -or $parts[1] -ne $token) {
+                $null = Send-DpIntercomMessage -Title 'That request has moved on.' -Line @(
+                    'Those buttons belong to a command that is no longer waiting.',
+                    'Send /status to see what is happening.'
+                ) -Kind 'notice'
+                return
+            }
+
+            $decision = if ($parts[2] -eq 'y') { 'approve' } else { 'deny' }
+            $bridge = $state.Engine.ApprovalBridge
+            # First answer wins, and the bridge is the one that decides which was
+            # first: it checks the identifiers and refuses a second submission, so
+            # the window and the phone cannot both authorise the same command.
+            $accepted = $state.TurnRunning -and $bridge -and
+                $bridge.SubmitAnswer([string]$pending.conversationId, [string]$pending.id, (@{ decision = $decision } | ConvertTo-Json -Compress))
+
+            $intercom.PendingApproval = $null
+            $state.PendingApproval = $null
+            if (-not $accepted) {
+                $null = Send-DpIntercomMessage -Title 'That request has moved on.' -Line @(
+                    'It was answered in the DeskPilot window, or it expired.'
+                ) -Kind 'notice'
+                return
+            }
+
+            if ($ack) { $ack.payload.text = $(if ($decision -eq 'approve') { 'Running it.' } else { 'Declined.' }) }
+            $null = Send-DpIntercomMessage -Kind 'notice' -Title $(
+                if ($decision -eq 'approve') { 'Approved - running it now.' } else { 'Declined. The agent will try something else.' }
+            )
+        }
+
         'k' {
             if ($parts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($parts[1])) { return }
             $conversation = $state.Conversations[[string]$parts[1]]

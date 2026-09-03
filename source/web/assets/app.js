@@ -2345,6 +2345,82 @@ function renderUserPrompt(node, request, conversationId) {
     renderStep();
 }
 
+// The approval card. The agent is parked inside the tool while this is on
+// screen, so nothing has run yet — which is the only reason the card means
+// anything. Deliberately plain: the command verbatim, where it would run, and
+// two buttons. The model's own account of why it wants this is not shown,
+// because the model is the thing being checked.
+function renderApproval(node, request, conversationId) {
+    if (!node || !request || !request.id) return;
+    const requestId = String(request.id);
+    if (Array.from(node.children).some((child) => child.dataset.approvalId === requestId)) return;
+
+    const summary = request.summary || {};
+    const card = el('user-prompt-card approval-card');
+    card.dataset.approvalId = requestId;
+    card.setAttribute('role', 'group');
+    card.setAttribute('aria-label', t('approval.title'));
+
+    const head = el('approval-head');
+    head.textContent = t('approval.title');
+
+    const risk = el('approval-risk');
+    risk.textContent = String(request.risk || t('approval.risk'));
+
+    // textContent, never innerHTML: the command is model-authored text and this
+    // is the one place the user is asked to read it exactly as it will run.
+    const command = el('approval-command', 'code');
+    command.textContent = String(summary.command || '');
+
+    const where = el('approval-where');
+    const dir = String(summary.workingDirectory || '');
+    if (dir) where.textContent = t('approval.in') + ' ' + dir;
+
+    const noteWrap = el('approval-note-wrap');
+    const note = el('approval-note', 'input');
+    note.type = 'text';
+    note.maxLength = 500;
+    note.placeholder = t('approval.notePlaceholder');
+    noteWrap.appendChild(note);
+
+    const status = el('approval-status');
+    const actions = el('approval-actions');
+    const approve = el('btn primary approval-approve', 'button');
+    approve.type = 'button';
+    approve.textContent = t('approval.approve');
+    const deny = el('btn approval-deny', 'button');
+    deny.type = 'button';
+    deny.textContent = t('approval.deny');
+    actions.append(deny, approve);
+
+    card.append(head, risk, command, where, noteWrap, status, actions);
+    node.appendChild(card);
+    scrollThread();
+    deny.focus();
+
+    const decide = async (decision) => {
+        card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
+        status.textContent = t('approval.sending');
+        status.classList.remove('error-text');
+        try {
+            await api('POST', `/api/conversations/${encodeURIComponent(conversationId)}/approval`, {
+                requestId,
+                decision,
+                note: note.value.trim(),
+            });
+            card.classList.add('answered');
+            status.textContent = decision === 'approve' ? t('approval.approved') : t('approval.denied');
+        } catch (error) {
+            card.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
+            status.textContent = errorText(error);
+            status.classList.add('error-text');
+        }
+    };
+
+    approve.onclick = () => decide('approve');
+    deny.onclick = () => decide('deny');
+}
+
 function renderUsage(node, m) {
     const u = m.usage || {};
     const bits = [];
@@ -2672,6 +2748,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [], attachment
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
+            approval: (d) => { if (!state.stopRequested) renderApproval(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => {
                 turnStopped = true;
                 state.stopRequested = true;
@@ -8273,6 +8350,7 @@ async function _streamRerun({ endpoint, body }) {
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
+            approval: (d) => { if (!state.stopRequested) renderApproval(wrap._refs.userPrompts, d, conversationId); },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
             stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
             done: (m) => { turnCompleted = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },

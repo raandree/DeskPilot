@@ -9,21 +9,29 @@ function Invoke-DpTerminalApprovalTool {
         from both the offered tool set and the dispatch switch, the Model has
         nothing to fall back to.
 
-        Approval blocks the call, it does not follow it. The function parks on the
-        approval bridge - the same rendezvous ask_questions uses - so no command
-        has run when the question reaches the user, and the Turn resumes exactly
-        where it stopped when the answer arrives.
+        Three properties, in the order they are enforced:
 
-        Execution itself is delegated to the Engine's own run_command
-        implementation through the injected executor. DeskPilot owns the gate; it
-        does not re-implement process spawning, deadlines, output caps and tree
-        kill, which the Engine already does carefully.
+        1. **The safe-list decides whether you are interrupted.** A command that
+           positively matches runs without a prompt. Everything else prompts,
+           including everything the list has never heard of - the tier fails
+           closed, so its errors land on the safe side.
+        2. **Approval blocks the call, it does not follow it.** The function
+           parks on the approval bridge, the same rendezvous ask_questions uses,
+           so no command has run when the question reaches the user.
+        3. **There is no Turn-wide grant.** Every command the safe-list does not
+           cover is answered on its own merits. Two identical risky commands in
+           one Turn ask twice. A class-wide grant would have silently authorised
+           every later risky command once one was approved.
 
-        A denial is a Tool result, never a failed Turn: the Model is told plainly
-        that the user declined so it can propose something else.
+        Execution is delegated to the Engine's own run_command through the
+        injected executor. DeskPilot owns the gate; it does not re-implement
+        process spawning, deadlines, output caps and tree kill.
 
-        This function is re-declared inside the Engine Runspace from its own
-        definition, so it may only call functions injected alongside it.
+        A denial is a Tool result, never a failed Turn, and carries the user's
+        optional note so a refusal can steer rather than dead-end.
+
+        Re-declared inside the Engine Runspace from its own definition, so it may
+        only call functions injected alongside it.
     .PARAMETER Command
         The command line the Model proposes to run.
     .PARAMETER WorkingDirectory
@@ -64,13 +72,26 @@ function Invoke-DpTerminalApprovalTool {
         return (& $refuse 'Terminal execution is not available in this session, so nothing was run.')
     }
 
+    $context = & $read 'DeskPilotApprovalContext'
+    $directory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { [string]$context.workingDirectory } else { $WorkingDirectory }
+
+    $run = {
+        $output = ''
+        try { $output = & $executor $Command $directory $TimeoutSeconds }
+        catch { return (& $refuse "The command was approved but did not run: $_") }
+        (@{ approved = $true; result = [string]$output } | ConvertTo-Json -Compress)
+    }
+
+    # An absent or corrupt list yields an empty list, so everything prompts.
+    $safeList = @(& $read 'DeskPilotSafeCommand')
+    if (Test-DpCommandSafe -Command $Command -SafeCommand $safeList) {
+        return (& $run)
+    }
+
     $bridge = & $read 'DeskPilotApprovalBridge'
     if ($null -eq $bridge -or -not $bridge.Enabled) {
         return (& $refuse 'DeskPilot cannot ask the user to approve this command right now, so it was not run.')
     }
-
-    $context = & $read 'DeskPilotApprovalContext'
-    $directory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { [string]$context.workingDirectory } else { $WorkingDirectory }
 
     $request = New-DpApprovalRequest -Tool 'run_command' -Class 'Terminal' `
         -Argument @{ command = $Command; workingDirectory = $directory } `
@@ -78,34 +99,30 @@ function Invoke-DpTerminalApprovalTool {
         -ConversationId ([string]$context.conversationId) `
         -TurnId ([string]$context.turnId)
 
-    $resolved = Resolve-DpApprovalGrant -State (& $read 'DeskPilotApprovalState') -Request $request
-    Set-Variable -Name 'DeskPilotApprovalState' -Scope Global -Value $resolved.state
+    $bridge.CaptureQuestion(($request | ConvertTo-Json -Depth 6 -Compress))
 
-    if (-not $resolved.approved) {
-        $bridge.CaptureQuestion(($request | ConvertTo-Json -Depth 6 -Compress))
+    $timeoutMinutes = [int](& $read 'DeskPilotApprovalTimeoutMinutes')
+    if ($timeoutMinutes -lt 1) { $timeoutMinutes = 15 }
 
-        $answerText = ''
-        try { $answerText = $bridge.RequestAnswer() }
-        catch { return (& $refuse 'The turn was stopped before this command was approved, so it was not run.') }
-
-        $answer = $null
-        try { $answer = $answerText | ConvertFrom-Json -ErrorAction Stop } catch { $answer = $null }
-
-        $decision = if ($answer -and $answer.PSObject.Properties['decision']) { [string]$answer.decision } else { 'deny' }
-        if ($decision -ne 'approve') {
-            return (& $refuse 'The user declined this command, so it was not run. Suggest a different approach, or explain why it is needed.')
-        }
-
-        $scope = if ($answer.PSObject.Properties['scope']) { [string]$answer.scope } else { 'once' }
-        if ($scope -eq 'turn') {
-            Set-Variable -Name 'DeskPilotApprovalState' -Scope Global `
-                -Value (Add-DpApprovalGrant -State (& $read 'DeskPilotApprovalState') -Request $request -Scope 'turn')
-        }
+    $answerText = ''
+    try { $answerText = $bridge.RequestAnswer($timeoutMinutes * 60) }
+    catch [System.TimeoutException] {
+        return (& $refuse "Nobody approved this command within $timeoutMinutes minute(s), so it was not run.")
+    }
+    catch {
+        return (& $refuse 'The turn was stopped before this command was approved, so it was not run.')
     }
 
-    $output = ''
-    try { $output = & $executor $Command $directory $TimeoutSeconds }
-    catch { return (& $refuse "The command was approved but did not run: $_") }
+    $answer = $null
+    try { $answer = $answerText | ConvertFrom-Json -ErrorAction Stop } catch { $answer = $null }
 
-    (@{ approved = $true; result = [string]$output } | ConvertTo-Json -Compress)
+    $decision = if ($answer -and $answer.PSObject.Properties['decision']) { [string]$answer.decision } else { 'deny' }
+    if ($decision -ne 'approve') {
+        $note = if ($answer -and $answer.PSObject.Properties['note']) { ([string]$answer.note).Trim() } else { '' }
+        $message = 'The user declined this command, so it was not run.'
+        $message += if ($note) { " They said: $note" } else { ' Suggest a different approach, or explain why it is needed.' }
+        return (& $refuse $message)
+    }
+
+    & $run
 }

@@ -135,6 +135,12 @@ function Start-DeskPilot {
         Token           = [guid]::NewGuid().ToString('N')
         TurnRunning     = $false
         CancelRequested = $false
+        # The approval card currently on screen, if any. Held here rather than only
+        # in the SSE stream because a browser reload drops the stream while the
+        # Engine stays parked inside the Tool: without this the Turn would look
+        # stalled with no way to answer it. Cleared when the decision arrives or the
+        # Turn ends.
+        PendingApproval = $null
         # Files accepted by POST /api/uploads during this Host Server launch,
         # mapped by normalized path to MIME type. Native Vision inputs must match
         # this registry, so they survive Project switching without allowing a
@@ -282,6 +288,8 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/edit'; Name = 'editTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/checkpoint'; Name = 'restoreCheckpoint' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/question'; Name = 'submitUserPrompt' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/approval'; Name = 'submitApproval' }
+            @{ Method = 'GET'; Pattern = '/api/conversations/{id}/approval'; Name = 'getApproval' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/stop'; Name = 'stopTurn' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/title'; Name = 'titleConversation' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/duplicate'; Name = 'duplicateConversation' }

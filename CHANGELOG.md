@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **DeskPilot asks before it runs a command.** When per-call approval is on, the
+  agent's own terminal is taken away and replaced by DeskPilot's, which stops and
+  asks you first. The card shows the command exactly as it will run, the folder
+  it will run in, and two buttons. Nothing has run when the card appears — the
+  agent is waiting inside the tool — so **No** actually prevents it, rather than
+  reporting it afterwards.
+
+  You are not asked about everything. Routine read-only commands — `git status`,
+  `git log`, `Get-ChildItem`, `ls`, `cat`, `--version` checks — run without
+  interrupting you. Everything else asks, including anything DeskPilot does not
+  recognise, and anything carrying a `;`, a pipe or a redirect, because those can
+  hide a second command behind a harmless-looking first one. You can add your own
+  commands to the list in settings; DeskPilot deliberately never offers to add
+  one from the card itself.
+
+  Approving is per command. There is no "allow everything for this turn", so two
+  risky commands ask twice. Declining is not a failure: the agent is told you
+  declined, and you can add a note telling it what to do instead. Your phone can
+  answer too, and whichever answers first wins; a group chat can only approve
+  when you switch that on separately. A request nobody answers is declined after
+  15 minutes so it cannot hold the agent up.
+
+  Off by default while the feature settles in.
+
 - **Start work when a file arrives, not only when a clock strikes.** A schedule
   can now be set to **When a file appears in the project** with a pattern such as
   `incoming/*.csv`. DeskPilot waits until the file stops changing before it runs,

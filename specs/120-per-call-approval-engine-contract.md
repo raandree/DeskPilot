@@ -6,9 +6,11 @@ to unblock it. No approval is simulated after a Tool has run.
 
 ## Status
 
-**Scoped, 2026-09-03.** The Engine contract below is still required for
-**MCP calls** and for gating the Engine's built-in File Tools in place. It is
-**not** required for Terminal.
+**Terminal shipped, 2026-09-03.** DeskPilot owns `run_command` and gates it; see
+`specs/050` for the security properties and `.memory-bank/decisions/0008` for the
+design decisions. The Engine contract below is still required for **MCP calls**
+and for gating the Engine's built-in File Tools in place. It is **not** required
+for Terminal.
 
 The original version of this record concluded that per-call approval as a whole
 was blocked on ShellPilot. That conclusion was too broad, and the correction

@@ -83,6 +83,10 @@ function Initialize-DpIntercom {
         # The forwarded Ask-User question awaiting a reply: its Telegram message id
         # is the nonce, so only a reply to that exact message is accepted.
         PendingQuestion  = $null
+        # The forwarded Terminal approval awaiting a decision. Separate from
+        # PendingQuestion because a Turn can be waiting on one of each, and the
+        # nonce here has to identify a command rather than a question.
+        PendingApproval  = $null
         # A prompt received from the phone, run by the pump's final step once the
         # Engine Runspace is free. This is also how /steer resumes after its stop.
         QueuedPrompt     = $null

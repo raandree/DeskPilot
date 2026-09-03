@@ -993,6 +993,39 @@ blank answer, `404` for an unknown Conversation, and `409 stale_question` when
 there is no matching pending question. Both the Conversation id and random
 question id must match, so a delayed response cannot answer another Turn.
 
+### `POST /api/conversations/{id}/approval`
+
+Decides one pending Terminal approval while the owned `run_command` Tool is
+blocking the active Turn. Body:
+`{ "requestId": "…", "decision": "approve" | "deny", "note": "use --dry-run first" }`.
+`note` is optional, trimmed and bounded to 500 characters; on a denial it is
+handed to the Agent so a refusal can steer rather than dead-end.
+
+Returns `202` with `{ "accepted": true }`, after which the Engine resumes inside
+the same Tool call and the original SSE response stays open. Returns
+`400 bad_decision` for a missing id or a decision outside the two allowed values,
+`404` for an unknown Conversation, and `409 stale_approval` when there is no
+matching pending request — which is also what a second answer receives, because
+the first answer wins. Both the Conversation id and the random request id must
+match, so a delayed or replayed response authorises nothing.
+
+Every decision is written to the diagnostics log **without the command text**;
+there is no durable on-disk approval log.
+
+### `GET /api/conversations/{id}/approval`
+
+What a reloaded browser asks to find out whether the Turn it rejoined is waiting
+on it. Returns `{ "pending": false }` when nothing is pending — never an error,
+because that is the normal case — or
+`{ "pending": true, "id": "…", "tool": "run_command", "class": "Terminal", "risk": "…", "summary": { "command": "…", "workingDirectory": "…", "project": "…" } }`.
+
+### SSE `approval` frame
+
+Emitted on the live Turn stream the moment a command needs a decision, carrying
+the same fields as the `GET` above. The Engine pipeline is parked inside the Tool
+while the frame is in flight, which is the property that makes the card mean
+anything: nothing has run when it appears.
+
 ### `POST /api/conversations/{id}/title`
 
 Generates a concise AI **title** for a new Conversation from its first prompt —

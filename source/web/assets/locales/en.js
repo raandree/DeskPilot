@@ -48,6 +48,18 @@ export const en = {
     'empty.heading': 'How can I help?',
     'empty.body': 'Ask a question, or give the agent a task. It can read and write files, run commands, and browse — with the permissions you allow.',
 
+    // Per-call approval. The agent is paused inside the tool while this is on
+    // screen, so the wording is present tense: nothing has run yet.
+    'approval.title': 'The agent wants to run a command',
+    'approval.risk': 'This runs on your computer with your permissions.',
+    'approval.in': 'In',
+    'approval.approve': 'Run it',
+    'approval.deny': 'No',
+    'approval.notePlaceholder': 'Optional: tell the agent why not, or what to do instead',
+    'approval.sending': 'Sending…',
+    'approval.approved': 'Approved — running it now.',
+    'approval.denied': 'Declined. The agent will try something else.',
+
     // Composer
     'composer.permissions': 'Permissions',
     'composer.permissions.title': 'Tool permissions',

@@ -45,6 +45,18 @@ export const de = {
     'empty.heading': 'Womit kann ich helfen?',
     'empty.body': 'Stellen Sie eine Frage oder geben Sie dem Agent eine Aufgabe. Er kann Dateien lesen und schreiben, Befehle ausführen und im Web nachschlagen — im Rahmen der Berechtigungen, die Sie erteilen.',
 
+    // Freigabe pro Aufruf. Der Agent wartet im Werkzeug, solange diese Karte zu
+    // sehen ist - es wurde also noch nichts ausgeführt.
+    'approval.title': 'Der Agent möchte einen Befehl ausführen',
+    'approval.risk': 'Das läuft auf Ihrem Rechner mit Ihren Rechten.',
+    'approval.in': 'In',
+    'approval.approve': 'Ausführen',
+    'approval.deny': 'Nein',
+    'approval.notePlaceholder': 'Optional: Sagen Sie dem Agent, warum nicht oder was er stattdessen tun soll',
+    'approval.sending': 'Wird gesendet\u2026',
+    'approval.approved': 'Freigegeben \u2014 wird jetzt ausgeführt.',
+    'approval.denied': 'Abgelehnt. Der Agent versucht etwas anderes.',
+
     // Eingabebereich
     'composer.permissions': 'Berechtigungen',
     'composer.permissions.title': 'Berechtigungen für Werkzeuge',

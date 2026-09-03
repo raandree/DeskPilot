@@ -69,12 +69,21 @@ function Get-DpDefaultSettings {
         # is only ever remembered when the user ticks the box in the question, and
         # an executable or script type is never accepted here.
         externalOpenTypes = @()
-        # Ask before every Terminal command. DeskPilot removes the Engine's own
-        # run_command (-DisableTerminal) and registers its own, which blocks on
-        # the same bridge ask_questions uses - so no command has run when the
-        # question appears. Off until the browser surface ships: with the Setting
-        # on and no way to answer, a Turn would park forever.
+        # Ask before every Terminal command the safe-list does not cover.
+        # DeskPilot removes the Engine's own run_command (-DisableTerminal) and
+        # registers its own, which blocks on the same bridge ask_questions uses -
+        # so no command has run when the question appears. Off until the browser
+        # surface ships: with the Setting on and no way to answer, a Turn would
+        # park until the timeout for every unrecognised command.
         perCallApproval   = $false
+        # An unanswered approval holds the single Engine Runspace, so it fails
+        # closed after this many minutes rather than blocking every queued run.
+        approvalTimeoutMinutes = 15
+        # Commands the user added to the shipped safe-list. Added only from
+        # Settings, never from an approval prompt: "add to safe list" beside a
+        # prompt is the button a tired user presses, and this is a security
+        # boundary. Each entry is { command, match } where match is exact or prefix.
+        safeCommands      = @()
         costBudgetUSD     = 0.0
         # A serious agentic task - audit a repository, run a build, diagnose what it
         # reports - routinely needs more than the Engine's own default of 25, and
@@ -123,6 +132,12 @@ function Get-DpDefaultSettings {
             chatId                 = $null
             allowGroupChat         = $false
             groupChatIds           = @()
+            # Whether a group may approve a Terminal command. A third switch, not a
+            # consequence of the second: letting a group instruct DeskPilot and
+            # letting a group authorise a command it has been warned about are
+            # different amounts of trust, and the phone gives the approver less to
+            # look at than the window does.
+            groupApproval          = $false
             heartbeatMinutes       = 5
             stallMinutes           = 5
             questionTimeoutMinutes = 60

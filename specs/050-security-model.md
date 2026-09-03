@@ -28,7 +28,7 @@ flowchart LR
 
 | # | Threat | Mitigation |
 | --- | --- | --- |
-| T1 | A prompt (or prompt-injected web content) makes the agent delete/overwrite files or run destructive commands. | Permissions are explicit category controls; File/Terminal are flagged as powerful in the UI; Workspace Folder scopes the default working directory; Activity shows intent and the final record. Per-call approval is not yet an enforceable mitigation and is blocked on the Engine contract below. |
+| T1 | A prompt (or prompt-injected web content) makes the agent delete/overwrite files or run destructive commands. | Permissions are explicit category controls; File/Terminal are flagged as powerful in the UI; Workspace Folder scopes the default working directory; Activity shows intent and the final record. **Per-call approval gates every Terminal command the safe-list does not recognise**, before it runs (see below). File writes and MCP calls remain ungated - `specs/120` records the Engine contract that would close them. |
 | T2 | The Host Server is reachable from the network. | Bind `127.0.0.1` only; refuse non-loopback binds unless an explicit `-Bind`+token opt-in is given; document loudly. |
 | T3 | Another local process calls the API (CSRF/port-scan). | Require a per-launch **session token** (random, printed by the launcher and embedded in the served `index.html`) on every `/api/*` call; check `Origin`/`Host` headers; reject cross-origin. |
 | T4 | The cached Copilot OAuth token is read by another user on a shared machine. | Inherited Engine behaviour (clear-text at the Engine's default token dot-file in the home directory, `~/.shellpilot-token`; historically `~/.copilot-demo-token`); DeskPilot documents it, derives the path from the Engine rather than hardcoding it, and recommends single-user machines; encrypted storage tracked upstream. |
@@ -140,17 +140,53 @@ asking the Engine to pause.
   before it calls the executor, so a pending question means nothing has run.
   Execution is then delegated to the Engine's own implementation: DeskPilot owns
   the decision, not process spawning, deadlines, output caps and tree kill.
+- **You are asked only about what is not recognised.** A shipped safe-list of
+  read-only commands runs without a prompt, so the gate spends the operator's
+  attention where it buys something. It is an allow-list and therefore fails
+  closed: an unrecognised command prompts, and a corrupt or missing list makes
+  everything prompt. A deny-list was rejected - it would be wrong forever about
+  everything it had not heard of, and evaded by `rm -r -f`, an alias or a
+  wrapper.
+- **A shell operator disqualifies a command outright.** `git status; rm -rf /`
+  opens with an allow-listed prefix, so the operator check runs before any
+  matching. `;`, `&`, `|`, `<`, `>`, a backtick, a newline, `$(`, `${` and
+  `%VAR%` are each a way to smuggle a second command past a check aimed at the
+  first. Prefix entries match on a token boundary, so `ls` cannot authorise
+  `lsof`, and entries whose trailing argument changes their meaning are `exact`
+  - `git branch` lists, `git branch -D main` destroys.
+- **The safe-list widens only from Settings.** "Always allow this" beside a
+  prompt is the button a tired operator presses, and this is a security
+  boundary. Additions are validated on merge and are never offered by the card.
 - **The summary is an allow-list.** Only the command, working directory and
   Project are carried. Tool arguments are exactly where a token or a file body
   would be, so a blacklist would have to be right about every future argument.
-  The command is bounded and marked when truncated.
+  The command is bounded and marked when truncated. The Model's own account of
+  why it wants the command is **not** shown: the Model is the party being
+  checked, and its reasons are attacker-reachable text.
 - **An answer is bound to one action.** The fingerprint covers Tool, class,
-  Conversation, Turn, command and working directory, so a grant cannot be
-  replayed against a different command, a different chat or a later Turn.
-  `once` is consumed on use; `turn` matches only the Tool class it was given
-  for; both die with the Turn.
-- **Denial is recoverable.** The Model is told the user declined, so it can
-  propose something else rather than the Turn failing.
+  Conversation, Turn, command and working directory, so an answer cannot be
+  replayed against a different command, a different chat or a later Turn. The
+  first answer wins; a second is refused.
+- **There is no Turn-wide grant.** Every command the safe-list does not cover is
+  answered on its own merits, so two identical risky commands prompt twice. A
+  class-wide grant would have silently authorised every later risky command once
+  one was approved - which is the property the gate exists to remove.
+- **An unanswered request is denied, not held.** The Engine has one Runspace,
+  so a parked approval blocks every queued run. It expires after
+  `approvalTimeoutMinutes` (default 15) and the bridge is released.
+- **Either surface may answer, on separate switches.** The window and the
+  Intercom private chat both receive the request. A group chat may answer only
+  when `intercom.groupApproval` is on - a third switch, defaulted off, gated by
+  its own re-confirmation, because letting a group instruct DeskPilot and
+  letting a group authorise a command it was warned about are different amounts
+  of trust.
+- **Denial is recoverable.** The Model is told the user declined and is given
+  their optional note, so a refusal steers rather than dead-ends.
+- **The log is not the control.** Every decision reaches the Activity trail and
+  the diagnostics log, without the command text. That is an audit trail, not a
+  gate: an unattended run still executes safe-list commands with nobody
+  watching, and logging that does not make it safer. It is an accepted risk,
+  bounded by what the safe-list is allowed to contain.
 - **Not yet covered.** MCP calls and the Engine's built-in file writes still run
   ungated - the Engine dispatches those itself. `specs/120` records the contract
   that would close them.
@@ -230,6 +266,14 @@ unregisters its file-reading and file-writing Tools by hand as the matching
 Permission changes: `Set-DpWorkspaceTool` removes `search_files`, `search_text`
 and `replace_in_file` when File is off and re-registers them when it is on,
 exactly as `Set-DpQuestionnaireTool` does for `ask_questions` and Ask-User.
+
+`Set-DpTerminalTool` is the same pattern with the mapping inverted: when
+per-call approval is active it registers DeskPilot's gated `run_command` **and**
+`-DisableTerminal` is passed, so the Permission that is on is served by an owned
+Tool rather than the built-in. Approval is active only when `perCallApproval`,
+Terminal and User Tools are all on. Terminal off keeps the Tool unavailable
+outright; User Tools off stands approval down instead of removing the terminal,
+because a withdrawn Permission must never be the thing that widens access.
 Without that, a Permission the UI reports as off would still be in force.
 
 ### Per-call approval blocker

@@ -32,6 +32,24 @@ source: repository evidence
    while it runs. Multi-client concurrency is explicitly out of scope for v1.
 6. **Static, build-free frontend.** The SPA is plain files the Host Server
    serves. No bundler, no npm — nothing for an end user to install.
+7. **Own the Tool to own the gate.** Where DeskPilot must decide before a side
+   effect, it disables the Engine's built-in and registers its own Tool in the
+   Runspace, then delegates execution back to the Engine. Terminal works this
+   way (`-DisableTerminal` + DeskPilot's `run_command`; decision 0008). An owned
+   Tool competing with a live built-in is a preference, not a boundary.
+
+### Decision index
+
+| # | Record |
+| --- | --- |
+| 0001 | Isolated Tool execution |
+| 0002 | M365 Copilot |
+| 0003 | Playwright |
+| 0004 | Condition-triggered automation |
+| 0005 | Parallel Agents |
+| 0006 | Windows packaging |
+| 0007 | Localization |
+| 0008 | Per-call approval for Terminal commands |
 
 ## Patterns to keep
 
@@ -986,6 +1004,15 @@ source: repository evidence
   registrations across runspaces, the process-global working directory, and
   "per-call approval is blocked on the Engine". A blocker shapes the roadmap, so
   it earns the same evidence bar as a bug fix.
+- **A confirmation prompt that fires on everything.** A gate that interrupts on
+  `git status` is a gate the user switches off, and a switched-off gate protects
+  nothing. Tier the interruption against an allow-list that fails closed, and
+  never offer to widen that list from the prompt itself — a button beside a
+  prompt is the one a tired operator presses.
+- **A grant that outlives the action it was given for.** "Allow for this Turn"
+  silently authorises every later command of that class once one is approved,
+  which is the property the gate exists to remove. The grant subsystem built for
+  decision 0008 was deleted on the day it was written for exactly this reason.
 - **Inferring control from post-execution Activity.** A `ToolCall` progress
   record proves what happened, not that it could have been prevented. Any
   feature whose premise is "DeskPilot decides before the Tool runs" needs the
