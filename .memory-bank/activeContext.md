@@ -10,58 +10,89 @@ source: repository evidence
 
 ## Current focus
 
-**The per-call approval boundary does not hold, and isolated execution is blocked
-behind it.** Isolated Terminal execution was re-attempted on 2026-09-03. Its
-prerequisite gate requires per-call approval to be *implemented and enforced*;
-verifying the second half against ShellPilot 0.4.0 disproved it.
+**Intercom's Something else Keyboard choice now waits for the operator's next
+message.** The callback already set `awaitingFreeText`, but the Intercom pump did
+not pass that state to `ConvertFrom-DpIntercomUpdate`. A message without
+Telegram's explicit Reply metadata was consequently classified as a new prompt
+and queued behind the Turn that was waiting for the answer.
 
-`Invoke-Shp -DisableTerminal` removes `run_command` from the tool definitions
-offered to the Model, but **not** from the Engine's dispatch switch. That switch
-matches `$tc.Name` against literal built-in clauses and reaches registered User
-Tools only through its `default`, so DeskPilot's own `run_command` is never
-invoked: the built-in matches first and runs the command with no approval card,
-no denial path and no bridge. `Register-ShpTool` does not reject the colliding
-name, and the offered tool list is not de-duplicated against the built-ins.
+The pump now forwards the state. The normalizer accepts the next ordinary
+message from the pending question's chat as its answer; another allow-listed chat
+still produces a prompt. The acknowledgement now asks the operator to type their
+answer in the next message rather than use Telegram's Reply action.
 
-Proof (module AST plus line references), the two-step fix, and the refreshed
-backend comparison are in `.memory-bank/decisions/0001-isolated-tool-execution.md`.
+## Evidence
 
-**Nothing shipped is at risk:** `perCallApproval` defaults off. The defect is the
-false promise behind the Setting, and it must not be switched on until fixed.
+- Red: the tap-then-type pump test expected `answer` and observed `prompt`.
+- Green: every `Intercom*.Tests.ps1` test passed, **294/294**.
+- Full Sampler: **1660/1663**. The three failures are inherited Terminal approval
+  registration tests rejecting installed ShellPilot 0.4.0 after the locally
+  staged 0.4.1 fix was removed; none is in an Intercom test.
+- All six touched PowerShell files parse. Production PSScriptAnalyzer is clean;
+  five existing unused-mock-parameter warnings remain in the two test files.
 
 ## Next step
 
-Fix the boundary before anything is built on top of it:
+Retry the exact live Telegram sequence: tap **Something else**, type an ordinary
+message without invoking Reply, and confirm that the waiting Questionnaire
+continues without a queued-Turn acknowledgement.
 
-1. Register the owned Terminal Tool under a name that is not a built-in, so it
-   lands in the dispatch `default` and actually runs.
-2. Close the built-in path with `Set-ShpToolPolicy`, which is evaluated before
-   the dispatch switch. Price the side effect: a policy is deny-by-default for
-   `Read` and `Write` too, so the intended file reach has to be stated with it.
-3. Prove it with a live Turn, not by asserting that a parameter was built.
+## Inherited approval work
 
-Isolated execution stays at its architecture decision until then, and needs one
-further decision of its own: the Docker/WSL2 dependency is unapproved, and the
-development machine currently has no container runtime, no WSL and Windows
-Sandbox disabled.
+**ShellPilot** (`D:\Git\ShellPilot`, branch `ai/enforce-disabled-tools`, commit
+`70bca37`, unpushed):
 
-## What shipped earlier (2026-09-03)
+- Dispatch refuses any built-in this call did not offer, reusing the existing
+  tool-policy denial path so the `tool.call` event, `ToolCallsDenied` and the
+  Model's result shape are unchanged. The offered set is derived from the
+  assembled tool list, so a tool added later cannot be offered under one
+  condition and dispatched under another.
+- `Register-ShpTool` refuses a built-in name, the way MCP attachment always has.
+- Suite: **1664 passing, 0 failed.**
 
-Per-call approval was implemented and committed (`3c3048e`, branch
-`ai/safety-and-automation`, unpushed): a tiered gate with a shipped read-only
-allow-list, a shell-operator disqualifier, no Turn-wide grant, and a dedicated
-approval bridge. Gate at the last run: **1656 tests passing, 16 tasks, 0 errors,
-0 warnings.** All of that machinery is correct and stays; only the Tool name and
-the missing built-in denial keep it from being reached.
+**DeskPilot** (branch `ai/isolated-execution-gate`):
 
-New files: `Get-DpSafeCommandList`, `Test-DpCommandSafe`, `Test-DpApprovalActive`,
-`Initialize-DpTerminalTool`, `Set-DpTerminalTool`, `Send-DpIntercomApproval`.
-Deleted: `New-DpApprovalState`, `Add-DpApprovalGrant`, `Resolve-DpApprovalGrant`.
+- The owned Tool is now **`run_terminal_command`**. `ConvertTo-DpActivityAction`
+  and `New-DpTranscriptRecord` know the new name; the workspace-tool steering
+  text names the terminal capability generically, because which Tool provides it
+  now depends on whether approval is active.
+- `Initialize-DpTerminalTool` probes the Engine for the dispatch refusal and
+  throws without it. A gate that cannot be honoured must not report as active.
+- Three Engine-backed registration tests plus one that proves the probe rejects
+  a real unfixed Engine. Gate: **1661 tests, 0 failures.**
+
+## Local dependency note
+
+The fix is unreleased. A build of it is staged as
+`output/RequiredModules/ShellPilot/0.4.1` - inside DeskPilot's own build output,
+which is gitignored and on DeskPilot's module path only. It is deliberately
+**not** in the user module path: putting it there made ShellPilot's own suite
+import it and fail 779 tests. The installed `0.4.0` stays where it is, and the
+capability-probe test asserts against it. Delete the staged folder to undo;
+`RequiredModules.psd1` should pin a released ShellPilot once the fix ships.
+
+The registration tests resolve the newest Engine that **has** the fix rather than
+the newest Engine, and skip with a stated reason when none is installed. A green
+run against an Engine that cannot honour the gate would be worse than a skip.
+
+## Approval work next step
+
+`perCallApproval` still ships **off**, and the reason has changed. It is no
+longer "the gate does not hold" - it does now. It is that a Turn parked for the
+full 15-minute timeout on someone's first unrecognised command is a poor first
+impression, and there is still no Settings UI for `safeCommands` and no SPA
+re-render of a pending approval on reload. Flipping the default is a product
+decision, separate from this security fix.
+
+Then, in order: a live-Turn proof of approval; optionally `Set-ShpToolPolicy` as
+a visible "Project scope" Setting - a real, zero-dependency reach restriction
+that must be labelled as scoping and never as isolation; and only then isolation,
+which stays blocked on an unapproved Docker/WSL2 dependency that is absent from
+this machine.
 
 ## Deliberate gaps, not oversights
 
-- **`perCallApproval` ships off.** Now doubly so: default-on would park a Turn on
-  the first unrecognised command *and* advertise a gate that is bypassed.
+- **`perCallApproval` ships off**, for the operating-experience reason above.
 - **There is no Settings UI for `safeCommands` or `approvalTimeoutMinutes`.**
   Both are accepted and validated by the API; neither has a control yet.
 - **A pending approval is not yet re-rendered by the SPA on reload.**
@@ -72,10 +103,8 @@ Deleted: `New-DpApprovalState`, `Add-DpApprovalGrant`, `Resolve-DpApprovalGrant`
 
 ## Still genuinely blocked
 
-MCP calls and the Engine built-in File Tools cannot be gated without the upstream
-contract in `specs/120`. Terminal was believed to be off that list; it is back on
-it in a weaker form — not needing an Engine change, but needing DeskPilot to stop
-colliding with the Engine's own dispatch.
+MCP calls and the Engine built-in File Tools cannot be gated in place without the
+upstream contract in `specs/120`. Terminal is genuinely off that list now.
 
 ## The lesson this session keeps re-teaching
 
@@ -84,5 +113,6 @@ within three days, and the newest one was written *by this repository, about its
 own security boundary, on the day it shipped*. A test that asserts DeskPilot
 built a parameter proves nothing about what the Engine does with it. A boundary
 is a claim about the other side; it earns the same evidence bar as a bug fix, and
-the evidence has to come from the other side. Recorded in `systemPatterns.md`
-under anti-patterns.
+the evidence has to come from the other side. The test that found this one
+asserts against a real Engine and would have failed on the day the boundary was
+written. Recorded in `systemPatterns.md` under anti-patterns.

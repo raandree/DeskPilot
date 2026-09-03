@@ -1,13 +1,12 @@
 function Invoke-DpTerminalApprovalTool {
     <#
     .SYNOPSIS
-        The DeskPilot-owned run_command Tool: asks before it acts.
+        DeskPilot's own terminal Tool: asks before it acts.
     .DESCRIPTION
-        Runs inside the Engine Runspace as a registered User Tool while
-        Invoke-Shp is given -DisableTerminal. That pairing is what makes this a
-        boundary rather than a preference: with the built-in run_command removed
-        from both the offered tool set and the dispatch switch, the Model has
-        nothing to fall back to.
+        Runs inside the Engine Runspace as a registered User Tool named
+        run_terminal_command, while Invoke-Shp is given -DisableTerminal. The
+        name matters: a User Tool called run_command would be shadowed by the
+        Engine's built-in dispatch clause and never invoked at all.
 
         Three properties, in the order they are enforced:
 
@@ -93,7 +92,7 @@ function Invoke-DpTerminalApprovalTool {
         return (& $refuse 'DeskPilot cannot ask the user to approve this command right now, so it was not run.')
     }
 
-    $request = New-DpApprovalRequest -Tool 'run_command' -Class 'Terminal' `
+    $request = New-DpApprovalRequest -Tool 'run_terminal_command' -Class 'Terminal' `
         -Argument @{ command = $Command; workingDirectory = $directory } `
         -ProjectName ([string]$context.project) `
         -ConversationId ([string]$context.conversationId) `

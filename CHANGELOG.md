@@ -31,15 +31,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when you switch that on separately. A request nobody answers is declined after
   15 minutes so it cannot hold the agent up.
 
-  Off by default while the feature settles in.
+  Off by default while the feature settles in — the reason is now the card's
+  operating experience, not the boundary. A turn parked for the full timeout on
+  someone's first unrecognised command is a bad first impression, so the default
+  flips in a later slice.
 
-  **Known issue, and the reason it must stay off.** The replacement terminal is
-  registered under the same name as the agent engine's built-in one, and the
-  engine reaches its own built-in first — so the command runs without ever
-  reaching the card. Taking the built-in away removes it from what the agent is
-  *offered*, but not from what the engine will *run*. Nothing is at risk while
-  the setting is off; do not switch it on until the replacement is renamed and
-  the built-in path is closed.
+### Fixed
+
+- **The approval gate now actually stops the command.** DeskPilot's replacement
+  terminal was registered under the same name as the agent engine's built-in
+  one, and the engine reaches its own built-in first — so a command ran without
+  ever reaching the card. Taking the built-in away removed it from what the
+  agent was *offered*, but not from what the engine would *run*.
+
+  DeskPilot's terminal is now a separate tool with its own name, so it is the
+  one that runs, and it requires an engine that refuses to run a tool the turn
+  disabled. If the engine cannot promise that, DeskPilot says so and stops
+  rather than showing you a gate that does not hold.
 
 - **Start work when a file arrives, not only when a clock strikes.** A schedule
   can now be set to **When a file appears in the project** with a pattern such as

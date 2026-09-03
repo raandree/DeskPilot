@@ -2,6 +2,41 @@
 
 Recurring issues and how they were resolved.
 
+## 779 phantom test failures from one reused terminal (2026-09-03)
+
+**Symptom:** after the ShellPilot dispatch fix, `./build.ps1 -Tasks test` in
+ShellPilot failed 779 tests with `Multiple script or manifest modules named
+'ShellPilot' are currently loaded`, `CommandNotFoundException` for private
+functions that plainly exist, `ParameterBindingException` for parameters that
+plainly exist, and price-table values from an older release. Every one of those
+files passed when run on its own.
+
+**Root cause: the terminal, not the code.** `build.ps1` prepends its repository's
+`output/module` and `output/RequiredModules` to `$env:PSModulePath` **in the
+current process**. Running DeskPilot's build and then ShellPilot's build in the
+same long-lived shell leaves DeskPilot's paths in front - and DeskPilot's
+`output/RequiredModules` contains its own pinned **ShellPilot 0.3.1**. So
+ShellPilot's suite imported 0.3.1 beside its freshly built copy. The giveaway was
+in the failure text all along: `Assert-Build:
+D:\Git\DeskPilot\output\RequiredModules\Sampler\...` - ShellPilot's build was
+running DeskPilot's Sampler.
+
+**Fix:** run each repository's gate in a **fresh `pwsh` process**. In a clean
+process both suites returned `EXIT=0` with zero failures.
+
+**The general rule:** `PSModulePath` is process state that Sampler mutates, so a
+gate result is only trustworthy from a shell that has built nothing else. Two
+Sampler repositories in one terminal is the same hazard as two concurrent builds,
+displaced in time - and it presents as a code regression, which is what makes it
+expensive.
+
+**Second lesson, same session:** staging an unreleased Engine into
+`~\Documents\PowerShell\Modules` put it on *every* consumer's path, including
+ShellPilot's own suite. `Update-ModuleManifest` had also part-rewritten that copy
+before failing on the version/folder mismatch. Stage a local dependency inside
+the consuming repository's own gitignored build output, and edit a manifest
+version with a targeted replacement rather than a cmdlet that rewrites the file.
+
 ## Intercom buttons "stopped working": nothing changed, two rules contradict (2026-09-02)
 
 **Symptom:** the operator reported that tappable answer buttons on the phone

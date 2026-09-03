@@ -1,12 +1,18 @@
 function Initialize-DpTerminalTool {
     <#
     .SYNOPSIS
-        Replaces the Engine's run_command with DeskPilot's gated one.
+        Registers DeskPilot's gated terminal Tool in place of the Engine's.
     .DESCRIPTION
         Half of the per-call approval boundary. The other half is
-        -DisableTerminal on the Turn, which removes the Engine's own run_command
-        from both the offered tool set and its dispatch switch. Registering this
-        Tool without that switch would leave two doors and gate one of them.
+        -DisableTerminal on the Turn, which stops the Engine offering its own
+        run_command and - from the build this probes for - stops it dispatching
+        one anyway.
+
+        The Tool is deliberately NOT named run_command. ShellPilot dispatches its
+        built-ins from literal switch clauses and reaches registered Tools only
+        through that switch's default, so a Tool sharing a built-in's name is
+        advertised to the Model and then never invoked while the built-in runs
+        the command ungated. The name is the boundary.
 
         What is registered is DeskPilot's Invoke-DpTerminalApprovalTool,
         re-declared inside the Engine Runspace from its own definition, exactly as
@@ -88,6 +94,16 @@ if (-not $engine) { throw 'ShellPilot is not loaded in the engine runspace.' }
 if (-not (& $engine { Get-Command -Name Invoke-RunCommandTool -CommandType Function -ErrorAction SilentlyContinue })) {
     throw 'This build of ShellPilot has no Invoke-RunCommandTool, so DeskPilot cannot run approved commands.'
 }
+# Approval only holds if the Engine refuses to dispatch a built-in it did not
+# offer. Without that, -DisableTerminal bounds what the Model is shown and
+# nothing about what runs, so a run_command call the Model makes from its own
+# priors or from a replayed history executes beside the gate. Probed from source
+# for the same reason as the check above: a missing capability must fail here,
+# loudly, rather than leave a gate that reports as active and is not. Failing to
+# find the marker refuses the boundary, which is the safe direction.
+if ((& $engine { (Get-Command -Name Invoke-Shp).Definition }) -notmatch 'offeredBuiltInTool') {
+    throw 'This build of ShellPilot still dispatches disabled built-in tools, so DeskPilot cannot guarantee that a command reaches the approval gate. Update ShellPilot, or switch per-call approval off.'
+}
 
 # Built here so it belongs to this runspace, and closes over the module so the
 # private Engine function stays reachable.
@@ -129,7 +145,7 @@ read the message, and either propose a different approach or explain why you nee
 this one. Do NOT re-propose the same command hoping for a different answer.
 "@
 
-Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_command' -Description $runDescription -Confirm:$false
+Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_terminal_command' -Description $runDescription -Confirm:$false
 '@)
 
     $shell = [powershell]::Create()

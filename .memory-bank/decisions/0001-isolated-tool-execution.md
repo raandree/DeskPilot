@@ -14,9 +14,21 @@ source: repository evidence
 The architecture decision below is recorded; no runtime code was written.
 
 The 2026-09-02 blockers were resolved by decision 0008. Re-verifying the gate on
-2026-09-03 found a different and worse one: the approval boundary 0008 believes
-it built is **not enforced by the Engine**. Isolation would fail through exactly
-the same hole, and would fail *silently* while the UI claimed containment.
+2026-09-03 found a different and worse one: the approval boundary 0008 believed
+it had built was **not enforced by the Engine**. Isolation would have failed
+through exactly the same hole, and would have failed *silently* while the UI
+claimed containment.
+
+> **Gate half-open, 2026-09-03.** The boundary defect below was fixed the same
+> day: ShellPilot refuses to dispatch a built-in a call did not offer and refuses
+> to register a Tool under a built-in's name, and DeskPilot's Tool is now
+> `run_terminal_command` behind a capability probe. Per-call approval is now
+> implemented **and** enforced, so this gate is met. Isolation remains blocked on
+> its *own* prerequisites: the Docker/WSL2 dependency is unapproved, and the
+> development machine has no container runtime, no WSL and Windows Sandbox
+> disabled, so no isolation claim can be proven against a backend today. The
+> finding below is kept in full because it is the evidence for prerequisite 6 and
+> for two anti-patterns.
 
 ## The gate
 
@@ -95,25 +107,29 @@ different route. Shipping it would be worse than shipping nothing.
 
 ## The fix this now depends on
 
-Two changes, both inside DeskPilot, neither requiring an Engine release:
+**Shipped 2026-09-03**, and not where this record expected. The root cause was
+upstream, so it was fixed upstream rather than worked around:
 
-1. **Register the owned Tool under a name that is not a built-in** (for example
-   `run_terminal_command`). A non-colliding name falls through to the `default`
-   clause and actually dispatches. Paired with `-DisableTerminal`, the built-in
-   is no longer advertised, so the Model is steered to the owned name by the only
-   terminal description it can see.
-2. **Close the built-in path rather than relying on the Model's choice.**
-   `Set-ShpToolPolicy` is evaluated *before* the dispatch switch (line 11711) and
-   a denial returns `{denied}` without executing (line 11730). A policy carrying
-   no `Shell` allow makes a stray `run_command` call — from training priors, or
-   replayed out of a stored history that predates the rename — fail closed
-   instead of running. Price the cost honestly: a policy is deny-by-default for
-   `Read` and `Write` too, so DeskPilot must state the file reach it intends in
-   the same breath. That is a design change, not a free switch.
+1. **ShellPilot refuses to dispatch a built-in the call did not offer.** The
+   offered set is derived from the assembled tool list, and the refusal reuses
+   the existing tool-policy denial path, so the `tool.call` event, the
+   `ToolCallsDenied` member and the model's result shape are unchanged. A
+   `run_command` named from training priors or a replayed history now fails
+   closed. This makes `-DisableTerminal` mean what every caller already believed
+   it meant, for every consumer of the module, not just DeskPilot.
+2. **`Register-ShpTool` refuses a built-in name.** MCP attachment had always been
+   refused a colliding name for exactly this reason; a local registration was
+   not, which is the more dangerous of the two because the caller believes it
+   replaced the built-in.
+3. **DeskPilot's Tool is `run_terminal_command`**, and registration probes the
+   Engine for the dispatch refusal, failing loudly without it. A gate that cannot
+   be honoured must not report as active.
 
-Step 1 converts the boundary from fictional to real-but-preference-shaped. Step 2
-is what makes it a boundary again. Both belong to decision 0008's slice, not this
-one.
+`Set-ShpToolPolicy` was the planned second step and proved unnecessary for
+closing the hole. It remains attractive on its own merits as a "Project scope"
+Setting \u2014 a real, zero-dependency reach restriction \u2014 but it is a separate slice
+with a real cost to price: a policy is deny-by-default for `Read` and `Write`
+too, so DeskPilot would have to state the file reach it intends.
 
 ## Backend comparison
 
@@ -146,14 +162,16 @@ belongs to the operator, not to this record.
 
 ## Prerequisite list
 
-1. **Fix the dispatch bypass** (the two steps above), so the owned Terminal Tool
-   is actually the code path a terminal call reaches.
-2. **Prove it end to end, not by parameter inspection.** One live Turn with
-   approval on, in which a command the safe-list does not cover produces a
-   pending approval and no execution. Until such a test exists, any statement
-   that a Tool is gated is an inference.
+1. ~~**Fix the dispatch bypass**, so the owned Terminal Tool is actually the code
+   path a terminal call reaches.~~ **Done 2026-09-03**, upstream in ShellPilot
+   plus the rename in DeskPilot.
+2. **Prove approval end to end with a live Turn.** Registration and dispatch are
+   now proved against a real Engine in `tests/Unit/TerminalApproval.Tests.ps1`,
+   including that the capability probe rejects an Engine without the fix. What is
+   still unproven is a real Model choosing the Tool and a real operator answering
+   the card.
 3. **Approve the dependency.** Docker Desktop plus WSL2, or an explicit decision
-   to ship no isolation.
+   to ship no isolation. Unchanged, and still the controlling blocker.
 4. A Diagnostics probe for backend presence, version and orphaned containers.
 5. A hostile-workload test corpus: a build script that reads `$HOME`, resolves
    cloud metadata, opens a socket, and follows a junction out of the mount.

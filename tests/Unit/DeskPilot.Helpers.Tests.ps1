@@ -6178,7 +6178,7 @@ Describe 'Initialize-DpWorkspaceTool' {
             # schema from parameter metadata and describes every property as "The
             # pattern parameter of Invoke-DpFileSearchTool".
             $fileTool = $registered | Where-Object { $_.Name -eq 'search_files' }
-            $fileTool.Description | Should -Match 'run_command'
+            $fileTool.Description | Should -Match 'terminal command'
             $fileTool.Description | Should -Match 'pattern \(string, required\)'
             $textTool = $registered | Where-Object { $_.Name -eq 'search_text' }
             $textTool.Description | Should -Match 'grep'

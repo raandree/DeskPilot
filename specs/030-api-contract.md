@@ -995,8 +995,8 @@ question id must match, so a delayed response cannot answer another Turn.
 
 ### `POST /api/conversations/{id}/approval`
 
-Decides one pending Terminal approval while the owned `run_command` Tool is
-blocking the active Turn. Body:
+Decides one pending Terminal approval while the owned `run_terminal_command`
+Tool is blocking the active Turn. Body:
 `{ "requestId": "…", "decision": "approve" | "deny", "note": "use --dry-run first" }`.
 `note` is optional, trimmed and bounded to 500 characters; on a denial it is
 handed to the Agent so a refusal can steer rather than dead-end.

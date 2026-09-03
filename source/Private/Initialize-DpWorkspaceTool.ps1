@@ -78,8 +78,9 @@ function Initialize-DpWorkspaceTool {
     [void]$builder.AppendLine(@'
 $fileDescription = @"
 Find files in the user's workspace folder by name or path. ALWAYS use this instead
-of run_command with dir, ls, Get-ChildItem or find: it is faster, it is confined to
-the workspace folder, it honours .gitignore, and it returns structured JSON.
+of a terminal command with dir, ls, Get-ChildItem or find: it is faster, it is
+confined to the workspace folder, it honours .gitignore, and it returns structured
+JSON.
 pattern (string, required): a glob relative to the workspace folder, for example
 "**/*.ps1", "source/Private/*.ps1" or "Invoke-DpTurn.ps1". "*" matches inside one
 path segment, "**" matches across segments, "?" matches one character. A pattern

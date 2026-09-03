@@ -36,12 +36,15 @@ source: repository evidence
    DeskPilot must decide before a side effect, it disables the Engine's built-in
    and registers its own Tool in the Runspace, then delegates execution back to
    the Engine. An owned Tool competing with a live built-in is a preference, not
-   a boundary. Terminal was built this way and **does not yet hold**: a User Tool
-   may not reuse a built-in's name, because ShellPilot dispatches built-ins from
-   literal `switch` clauses and User Tools only from that switch's `default`, so
-   the built-in wins the name and runs ungated (decisions 0001 and 0008).
-   Disabling a category removes what the Model is *offered*; proving it removes
-   what the Engine will *execute* is a separate measurement.
+   a boundary. Two things make it one, and both were missing until 2026-09-03:
+   the owned Tool must **not** reuse the built-in's name, because ShellPilot
+   dispatches built-ins from literal `switch` clauses and registered Tools only
+   from that switch's `default`; and the Engine must refuse to dispatch a
+   built-in the call did not offer, or a disabled tool still runs when the Model
+   names it. DeskPilot registers `run_terminal_command` and probes for that
+   refusal (decisions 0001 and 0008). Disabling a category removes what the
+   Model is *offered*; proving it removes what the Engine will *execute* is a
+   separate measurement.
 
 ### Decision index
 
@@ -1027,10 +1030,11 @@ source: repository evidence
   never let the test name carry the inference the assertion did not make.
 - **Giving an owned Tool a built-in's name.** ShellPilot dispatches its built-ins
   from literal `switch` clauses on the tool name and reaches User Tools only
-  through that switch's `default`, and `Register-ShpTool` does not reject the
-  collision. A same-named replacement is therefore registered, advertised, and
-  never invoked — the built-in wins silently, and the gate that was supposed to
-  wrap it never runs.
+  through that switch's `default`. A same-named replacement is therefore
+  registered, advertised, and never invoked — the built-in wins silently, and the
+  gate that was supposed to wrap it never runs. Fixed upstream on 2026-09-03:
+  `Register-ShpTool` now refuses a built-in name outright, so the mistake fails
+  at registration instead of at runtime.
 - **A confirmation prompt that fires on everything.** A gate that interrupts on
   `git status` is a gate the user switches off, and a switched-off gate protects
   nothing. Tier the interruption against an allow-list that fails closed, and

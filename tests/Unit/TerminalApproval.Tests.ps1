@@ -334,9 +334,12 @@ Describe 'Per-call approval wiring' -Tag 'Unit' {
         Test-DpApprovalActive -Settings $settings | Should -Be $Expected
     }
 
-    It 'passes -DisableTerminal so the Engine keeps no run_command of its own' {
-        # Without this the gated Tool would be one of two doors, and the model
-        # would be free to prefer the ungated one.
+    It 'passes -DisableTerminal so the Engine is not asked to run commands itself' {
+        # This proves only that DeskPilot builds the parameter. That the Engine
+        # then declines to run its own run_command is the Engine's behaviour and
+        # is proved against a real Engine in 'Terminal tool registration' below -
+        # an earlier version of this test carried the Engine claim in its name and
+        # asserted nothing of the kind, which is how the gap survived review.
         $params = New-DpTurnParameter -Prompt 'hi' -Settings (New-DpApprovalSettings)
 
         $params.ContainsKey('DisableTerminal') | Should -BeTrue
@@ -370,6 +373,162 @@ Describe 'Per-call approval wiring' -Tag 'Unit' {
         # Letting a group instruct DeskPilot and letting a group authorise a
         # command DeskPilot stopped for are separate amounts of trust.
         (Get-DpDefaultSettings).intercom.groupApproval | Should -BeFalse
+    }
+}
+
+Describe 'Terminal tool registration' -Tag 'Unit' {
+    # Against a real Engine, because the thing being proved is what the Engine
+    # does with the registration - not what DeskPilot asked for.
+    BeforeAll {
+        function script:Test-EngineEnforcesDisabledTool {
+            param($Module)
+            $rootModule = Join-Path $Module.ModuleBase 'ShellPilot.psm1'
+            (Test-Path -LiteralPath $rootModule) -and
+                ((Get-Content -LiteralPath $rootModule -Raw) -match 'offeredBuiltInTool')
+        }
+
+        # The gated Tool needs an Engine that refuses to dispatch a built-in the
+        # Turn disabled, so the newest Engine is not automatically the right one.
+        # Skipping when none is installed states the dependency instead of hiding
+        # it behind a green run against an Engine that cannot honour the gate.
+        $script:engineModule = Get-Module -ListAvailable ShellPilot |
+            Where-Object { Test-EngineEnforcesDisabledTool -Module $_ } |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+        function script:New-EngineRunspace {
+            $runspace = [runspacefactory]::CreateRunspace()
+            $runspace.Open()
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $script:engineModule.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.Dispose()
+            $runspace
+        }
+
+        function script:Get-RegisteredTool {
+            param($Runspace)
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $Runspace
+            $null = $probeShell.AddCommand('Get-ShpTool')
+            $registered = @($probeShell.Invoke())
+            $probeShell.Dispose()
+            @($registered)
+        }
+
+        function script:New-TerminalToolContext {
+            @{ conversationId = 'c-1'; turnId = 't-1'; project = 'Alpha'; workingDirectory = $TestDrive }
+        }
+    }
+
+    BeforeEach {
+        if (-not $script:engineModule) {
+            Set-ItResult -Skipped -Because 'no installed ShellPilot refuses to dispatch a disabled built-in, so the gate cannot be honoured or tested'
+        }
+    }
+
+    # The name is the whole boundary. ShellPilot dispatches its built-ins from
+    # literal switch clauses and reaches registered tools only through that
+    # switch's default, so a tool named run_command is advertised, then never
+    # invoked while the built-in runs the command ungated.
+    It 'never claims a built-in tool name' {
+        $runspace = New-EngineRunspace
+        try {
+            $bridge = New-Object DeskPilot.UserPromptBridge
+            Initialize-DpTerminalTool -Runspace $runspace -Context (New-TerminalToolContext) `
+                -SafeCommand @() -TimeoutMinutes 1 -Bridge $bridge | Should -BeTrue
+
+            $registered = Get-RegisteredTool -Runspace $runspace
+            @($registered.Name) | Should -Not -Contain 'run_command'
+            @($registered.Name) | Should -Contain 'run_terminal_command'
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'describes the approval contract in the tool description' {
+        # ShellPilot derives the schema from parameter metadata, so the argument
+        # contract and the fact that a decline is final live in the description.
+        $runspace = New-EngineRunspace
+        try {
+            $bridge = New-Object DeskPilot.UserPromptBridge
+            $null = Initialize-DpTerminalTool -Runspace $runspace -Context (New-TerminalToolContext) `
+                -SafeCommand @() -TimeoutMinutes 1 -Bridge $bridge
+
+            $tool = Get-RegisteredTool -Runspace $runspace | Where-Object Name -eq 'run_terminal_command'
+            $tool.Description | Should -Match 'approval'
+            $tool.Description | Should -Match 'command \(string, required\)'
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'removes the tool it registered when approval stands down' {
+        $runspace = New-EngineRunspace
+        try {
+            $bridge = New-Object DeskPilot.UserPromptBridge
+            $null = Initialize-DpTerminalTool -Runspace $runspace -Context (New-TerminalToolContext) `
+                -SafeCommand @() -TimeoutMinutes 1 -Bridge $bridge
+            @((Get-RegisteredTool -Runspace $runspace).Name) | Should -Contain 'run_terminal_command'
+
+            Set-DpTerminalTool -Runspace $runspace -Enabled $false | Should -BeTrue
+            @((Get-RegisteredTool -Runspace $runspace).Name) | Should -Not -Contain 'run_terminal_command'
+        }
+        finally {
+            $runspace.Dispose()
+        }
+    }
+}
+
+Describe 'Terminal tool Engine capability probe' -Tag 'Unit' {
+    # The gate is only a gate if the Engine refuses to dispatch the built-in the
+    # Turn disabled. An Engine without that refusal runs a stray run_command
+    # beside the gate, so registration must fail loudly there rather than leave
+    # approval reporting as active. Proved against a real older Engine when one
+    # is installed, because a probe nobody has seen reject anything is decoration.
+    It 'refuses to register against an Engine that still dispatches disabled built-ins' {
+        $legacy = Get-Module -ListAvailable ShellPilot |
+            Where-Object {
+                $rootModule = Join-Path $_.ModuleBase 'ShellPilot.psm1'
+                (Test-Path -LiteralPath $rootModule) -and
+                    ((Get-Content -LiteralPath $rootModule -Raw) -notmatch 'offeredBuiltInTool')
+            } |
+            Sort-Object Version -Descending |
+            Select-Object -First 1
+
+        if (-not $legacy) {
+            Set-ItResult -Skipped -Because 'no ShellPilot without the dispatch fix is installed to test against'
+            return
+        }
+
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        try {
+            $importShell = [powershell]::Create()
+            $importShell.Runspace = $runspace
+            $null = $importShell.AddCommand('Import-Module').AddParameter('Name', $legacy.Path)
+            $importShell.Invoke() | Out-Null
+            $importShell.Dispose()
+
+            $bridge = New-Object DeskPilot.UserPromptBridge
+            { Initialize-DpTerminalTool -Runspace $runspace `
+                    -Context @{ conversationId = 'c-1'; turnId = 't-1'; project = 'Alpha'; workingDirectory = $TestDrive } `
+                    -SafeCommand @() -TimeoutMinutes 1 -Bridge $bridge } |
+                Should -Throw -ExpectedMessage '*dispatches disabled built-in tools*'
+
+            $probeShell = [powershell]::Create()
+            $probeShell.Runspace = $runspace
+            $null = $probeShell.AddCommand('Get-ShpTool')
+            $registered = @($probeShell.Invoke())
+            $probeShell.Dispose()
+            @($registered.Name) | Should -Not -Contain 'run_terminal_command'
+        }
+        finally {
+            $runspace.Dispose()
+        }
     }
 }
 

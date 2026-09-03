@@ -93,12 +93,13 @@ function New-DpTurnParameter {
     if (-not $perm.file) { $params.DisableFileAccess = $true }
     if (-not $perm.terminal) { $params.DisableTerminal = $true }
     # Per-call approval needs the Engine's own run_command gone, not merely
-    # discouraged: $terminalEnabled gates both the offered tool definition and the
-    # dispatch switch, so -DisableTerminal is what leaves DeskPilot's gated
-    # run_command as the only door. Registering the gated Tool without this would
-    # ship two doors and gate one. -DisableUserTools would take the gated Tool away
-    # with it, so the two Settings cannot both hold: approval loses, because a
-    # withdrawn Permission must never widen access.
+    # discouraged: -DisableTerminal drops it from the offered tool set and, from
+    # the Engine build DeskPilot probes for, refuses to dispatch it even if the
+    # Model names it anyway. DeskPilot's gated Tool is registered under a
+    # different name, because a User Tool sharing a built-in's name is shadowed
+    # by the built-in's dispatch clause and never runs. -DisableUserTools would
+    # take the gated Tool away with it, so the two Settings cannot both hold:
+    # approval loses, because a withdrawn Permission must never widen access.
     elseif (Test-DpApprovalActive -Settings $Settings) { $params.DisableTerminal = $true }
     if (-not $perm.askUser) { $params.DisableUserPrompts = $true }
     if (-not $perm.userTools) { $params.DisableUserTools = $true }

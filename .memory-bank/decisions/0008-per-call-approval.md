@@ -12,27 +12,31 @@ Supersedes the "blocked on the Engine" framing this repository carried for
 Terminal. See `.memory-bank/topics/design-per-call-approval.md` for the full
 Design Concept and `specs/120` for what remains genuinely blocked.
 
-> **Correction, 2026-09-03 — the boundary below does not hold.** Re-verifying
-> this record against ShellPilot 0.4.0 showed that `-DisableTerminal` gates the
-> *offered* tool definition but **not** the dispatch switch: `$tc.Name` has a
-> literal `run_command` clause and User Tools are reached only through its
-> `default`, so a User Tool registered under that name is never invoked and the
-> built-in runs the command ungated. Proof and the two-step fix are in decision
-> 0001. Nothing shipped is at risk today because `perCallApproval` defaults off;
-> the gate must not be switched on until the fix lands.
+> **Correction, 2026-09-03 — the mechanism below was wrong, and is now fixed.**
+> Re-verifying this record against ShellPilot 0.4.0 showed that
+> `-DisableTerminal` gated the *offered* tool definition but **not** the
+> dispatch switch: `$tc.Name` has a literal `run_command` clause and User Tools
+> are reached only through its `default`, so a User Tool registered under that
+> name was never invoked and the built-in ran the command ungated. Proved by
+> test, not by reading. Resolved the same day in two places — ShellPilot now
+> refuses to dispatch a built-in a call did not offer and refuses to register a
+> Tool under a built-in's name, and DeskPilot's Tool is now
+> `run_terminal_command`. The intent below always stood; only the name and the
+> Engine's cooperation were missing.
 
 ## Decisions
 
-**DeskPilot owns `run_command`; the built-in is removed, not out-voted.**
-~~`Invoke-Shp` is given `-DisableTerminal` whenever approval is active. Measured
-in ShellPilot 0.4.0: `$terminalEnabled` gates the tool definition offered to the
-Model *and* the dispatch branch, so a disabled `run_command` is neither
-advertised nor callable.~~ **Disproven 2026-09-03: `$terminalEnabled` does not
-appear in the dispatch region at all, so the built-in stays callable and wins the
-name.** The intent stands — an owned Tool competing with a live built-in is a
-preference, and only an absent rival makes it a boundary — but the mechanism has
-to change: the owned Tool needs a name that is not a built-in, plus a
-`Set-ShpToolPolicy` denial to close the built-in path.
+**DeskPilot owns the terminal Tool; the built-in is removed, not out-voted.**
+`Invoke-Shp` is given `-DisableTerminal` whenever approval is active, which
+removes the built-in from the offered tool set, and the Engine refuses to
+dispatch a built-in it did not offer. The owned Tool is registered as
+**`run_terminal_command`** — never `run_command`, because the Engine matches
+built-in names before it consults registered Tools, so a same-named Tool is
+advertised and then silently bypassed. DeskPilot probes the Engine for the
+dispatch refusal at registration and fails loudly without it: an approval gate
+that cannot be honoured must not report as active. An owned Tool competing with
+a live built-in would be a preference; with the built-in neither offered nor
+dispatchable it is a boundary.
 
 **The gate blocks before the executor, and execution is delegated.** The Tool
 parks on the approval bridge before it calls anything, so a pending card means

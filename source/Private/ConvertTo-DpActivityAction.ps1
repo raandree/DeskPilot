@@ -60,6 +60,10 @@ function ConvertTo-DpActivityAction {
         # change, so treating it as one would put a dead review row on the Turn.
         create_directory = @{ kind = 'create'; field = 'path' }
         run_command      = @{ kind = 'run'; field = 'command' }
+        # DeskPilot's approval-gated terminal Tool. A separate entry rather than
+        # an alias of run_command because the two are different Tools: this one
+        # can be declined, and only its name reaches the gate.
+        run_terminal_command = @{ kind = 'run'; field = 'command' }
         fetch_url        = @{ kind = 'fetch'; field = 'url' }
         search_files     = @{ kind = 'search'; field = 'pattern' }
         search_text      = @{ kind = 'search'; field = 'query' }

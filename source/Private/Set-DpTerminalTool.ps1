@@ -1,7 +1,7 @@
 function Set-DpTerminalTool {
     <#
     .SYNOPSIS
-        Enables or removes DeskPilot's approval-gated run_command.
+        Enables or removes DeskPilot's approval-gated terminal Tool.
     .DESCRIPTION
         Called once per Turn beside Set-DpWorkspaceTool, for the same reason: a
         registered User Tool is a separate Engine category, so a Tool left over
@@ -71,7 +71,7 @@ function Set-DpTerminalTool {
 foreach ($name in @('DeskPilotTerminalExecutor', 'DeskPilotApprovalBridge', 'DeskPilotApprovalContext', 'DeskPilotSafeCommand')) {
     Set-Variable -Name $name -Scope Global -Value $null
 }
-Unregister-ShpTool -Name 'run_command' -Confirm:$false -WarningAction SilentlyContinue
+Unregister-ShpTool -Name 'run_terminal_command' -Confirm:$false -WarningAction SilentlyContinue
 '@)
         $shell.Invoke() | Out-Null
         if ($shell.HadErrors) {

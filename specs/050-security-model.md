@@ -132,17 +132,15 @@ Category Permissions authorize a Tool for a whole Turn. Approval narrows that to
 the individual action, and it does so by **owning the Tool** rather than by
 asking the Engine to pause.
 
-- **The built-in is removed, not out-voted.** `-DisableTerminal` drops
-  `run_command` from the offered tool set, so the owned replacement is the only
-  path the Model is shown. An owned Tool competing with a live built-in would be
-  a preference, not a boundary.
-
-  > **Not yet true, 2026-09-03.** `-DisableTerminal` does *not* remove the
-  > Engine's dispatch clause for `run_command`, and a User Tool registered under
-  > that name is unreachable behind it, so the gate described in this section is
-  > currently bypassed. `perCallApproval` ships off and must stay off until the
-  > owned Tool is renamed off the built-in and a tool policy closes the built-in
-  > path. See decision 0001 for the measurement and the fix.
+- **The built-in is removed, and its name is left alone.** `-DisableTerminal`
+  drops `run_command` from the offered tool set, and the Engine refuses to
+  dispatch a built-in this call did not offer — so a `run_command` the Model
+  names from its own priors or from a replayed history fails closed rather than
+  running beside the gate. DeskPilot's own Tool is called
+  `run_terminal_command`, deliberately not `run_command`: the Engine matches
+  built-in names before it consults registered Tools, so a same-named Tool would
+  be advertised and then silently bypassed. The name is the boundary, and
+  DeskPilot probes the Engine for the dispatch refusal before claiming it.
 - **The gate precedes the effect.** The Tool blocks on the approval bridge
   before it calls the executor, so a pending question means nothing has run.
   Execution is then delegated to the Engine's own implementation: DeskPilot owns

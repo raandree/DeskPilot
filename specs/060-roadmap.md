@@ -36,9 +36,11 @@ task, see Activity and Usage — all from the window.
   Folder and the agent reads them through its existing File Tool; drag-and-drop
   and clipboard paste use the same Attachment flow.
 - ~~Per-call approval for Terminal commands.~~ **Done** (FR-PA1–FR-PA12).
-  DeskPilot passes `-DisableTerminal` and registers its own `run_command`, which
-  blocks before the side effect. A shipped safe-list of read-only commands runs
-  without asking; everything else prompts, with no Turn-wide grant.
+  DeskPilot passes `-DisableTerminal` and registers its own
+  `run_terminal_command`, which blocks before the side effect. A shipped
+  safe-list of read-only commands runs without asking; everything else prompts,
+  with no Turn-wide grant. Requires an Engine that refuses to dispatch a
+  disabled built-in; DeskPilot probes for that and fails loudly without it.
 - **Blocked — per-call approval for the remaining risky actions.** Outside-Project
   writes and mutating MCP calls still need approval while category Permissions
   remain in force. DeskPilot must not simulate approval from an Activity event
