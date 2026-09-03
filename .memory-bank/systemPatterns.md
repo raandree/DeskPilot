@@ -954,6 +954,16 @@ source: repository evidence
   runspace inherits that runspace's `$PWD`, not the process-global value. So the
   concurrency question for DeskPilot is "who owns the process CWD", not "how do
   we separate Tool registrations".
+- **`Set-DpEngineLocation` sets the runspace location only.** Measured
+  2026-09-03 with `$PWD` at folder A and `[System.Environment]::CurrentDirectory`
+  at folder B: `read_file`, `list_directory`, `write_file` and `run_command` all
+  resolved against **A**, the written file landed in A, and ShellPilot starts an
+  MCP server from `(Get-Location).Path` too. Only a raw `[System.IO.File]` call
+  with a relative path followed B, and neither codebase makes one. The
+  process-global write was therefore removed: it changed no Tool behaviour and
+  was the only piece of state two concurrent Turns would have fought over. A
+  paired test pins both halves — the runspace location moves, the process value
+  does not.
 
 ## Anti-patterns to avoid
 

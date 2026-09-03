@@ -266,8 +266,10 @@ recurses into `output/RequiredModules/Sampler/*/Templates` (measured 464/955/169
 `$env:` writes and `Set-Location` never reach the runspace, the host, or the
 next Turn (verified). The runspace loads no profile at all (`$PROFILE` is
 `$null`, `$Host.Name` is `Default Host`), and `Set-DpEngineLocation` resets the
-location every Turn. What *does* persist is
-`[System.Environment]::CurrentDirectory`, which that helper sets process-wide.
+location every Turn. It used to also set `[System.Environment]::CurrentDirectory`
+process-wide; **that write was removed on 2026-09-03** after measurement showed
+no Tool reads it (see systemPatterns), so the only thing that still leaks across
+Turns is the environment block itself.
 
 **Installing the Engine properly does not fix this**, because the leaked modules
 are DeskPilot's own *build* dependencies. Measured with ShellPilot 0.4.0 resolved

@@ -62,18 +62,25 @@ A second probe set two runspaces to two different working directories:
 | State | Scope | Consequence |
 | --- | --- | --- |
 | `$PWD` (PowerShell location) | per runspace | fine |
-| `[System.Environment]::CurrentDirectory` | **process-global, last writer wins** | `Set-DpEngineLocation` writes it, so two concurrent Turns in different Projects would fight over .NET relative-path resolution |
-| Environment variables | **process-wide** | already recorded (2026-08-11, Engine Runspace environment divergence) |
+| `[System.Environment]::CurrentDirectory` | process-global, last writer wins | **resolved 2026-09-03**: `Set-DpEngineLocation` no longer writes it, because no Tool reads it |
+| Environment variables | **process-wide** | already recorded (2026-08-11, Engine Runspace environment divergence); still open |
 | A child process spawned from a runspace | inherits that runspace's `$PWD`, not `[Environment]::CurrentDirectory` | measured: a child from runspace 1 reported runspace 1's folder while the process-global value pointed at runspace 2 |
 | Engine OAuth token file | shared on disk | desirable |
-| MCP attachments | per runspace | a second Runspace would start its own third-party server processes |
+| MCP attachments | per runspace, started from that runspace's `$PWD` | a second Runspace would start its own third-party server processes |
 
-The residual concurrency problem is therefore **process-global CWD and
-environment**, not Tool registration. That is a much narrower problem: it is one
-value to serialise or eliminate, and the child-process measurement suggests
-`Set-DpEngineLocation`'s process-global write may not even be load-bearing for
-Terminal Tools — though it probably is for .NET APIs resolving a relative path
-inside a Turn, so removing it needs its own evidence.
+The working-directory half was closed by measuring what actually reads the
+process value. With `$PWD` pointed at folder A and
+`[System.Environment]::CurrentDirectory` at folder B, `read_file`,
+`list_directory`, `write_file` and `run_command` all resolved against **A** (the
+written file physically landed in A), and ShellPilot starts an MCP server from
+`(Get-Location).Path` as well. Only a raw `[System.IO.File]` call with a relative
+path followed B, and neither DeskPilot nor the Engine makes one. The write was
+therefore removed, with a paired regression test.
+
+What remains genuinely process-wide is the **environment block**. That is a
+smaller problem than a working directory: it is read at process start by child
+processes, and the isolation work (decision 0001) has to solve it anyway through
+a per-variable allow-list.
 
 ## Topology decision
 
@@ -85,11 +92,10 @@ were considered and rejected for the first slice: they would need an IPC protoco
 for progress, Usage and cancellation that the in-process `Streams.Information`
 drain already provides.
 
-**One working directory at a time.** Because `[Environment]::CurrentDirectory` is
-process-global, concurrent children may not each set it. Either children take a
-Project-relative contract and never rely on process CWD, or CWD becomes a
-serialised resource held for the duration of a child's Tool call. This is the
-concurrency problem to solve; Tool registration is not.
+**One working directory at a time — no longer a constraint.** The process-global
+`[System.Environment]::CurrentDirectory` write was removed on 2026-09-03, so each
+child's working directory is its own runspace `$PWD`. Nothing in the Engine's
+Tool set reads a process-wide location.
 
 **Project isolation.** A child never writes the user's working tree. Each writable
 child gets a git worktree-style scratch copy under the data directory; results
@@ -114,12 +120,10 @@ may be retried only while it is observably side-effect free.
 1. Engine contract from `specs/120` → per-call approval.
 2. Isolation backend (decision 0001) — a writable child is exactly the case that
    needs it.
-3. Process-global CWD: decide whether `Set-DpEngineLocation`'s
-   `[Environment]::CurrentDirectory` write is load-bearing, and if it is, make it
-   a serialised resource rather than an ambient one. **This replaces "multi-
-   Runspace lifecycle" as the real concurrency work** — the runspace side is
-   already isolated by the platform, so what remains is a factory plus orphan
-   reaping and a Diagnostics probe for child lifecycle.
+3. Per-variable environment allow-list — the last genuinely process-wide state.
+   Decision 0001 needs it anyway, so it is shared work rather than extra work.
+   The runspace side needs only a factory plus orphan reaping and a Diagnostics
+   probe for child lifecycle; process-global CWD is closed.
 4. Scratch-worktree creation, merge review and rollback, built on the existing
    snapshot and change-set machinery.
 5. Only then: fan-out limits, aggregation UI, and the stress tests for ordering

@@ -6931,3 +6931,46 @@ Describe 'the Turn records a transcript' -Tag 'Unit' {
         $script:transcriptTurnSource | Should -Match 'hasProject\s*=\s*\[bool\]\$settings\.workspaceFolder'
     }
 }
+
+Describe 'Set-DpEngineLocation' {
+    BeforeEach {
+        $script:probeRunspace = [runspacefactory]::CreateRunspace()
+        $script:probeRunspace.Open()
+        $script:DeskPilot = @{ Engine = @{ Runspace = $script:probeRunspace } }
+        $script:target = Join-Path $TestDrive ('loc-' + [guid]::NewGuid().ToString('N'))
+    }
+
+    AfterEach {
+        $script:probeRunspace.Dispose()
+        $script:DeskPilot = $null
+    }
+
+    It 'moves the runspace location to the Workspace Folder, creating it' {
+        Set-DpEngineLocation -Path $script:target | Should -BeTrue
+
+        Test-Path -LiteralPath $script:target -PathType Container | Should -BeTrue
+        $ps = [powershell]::Create()
+        $ps.Runspace = $script:probeRunspace
+        try {
+            $null = $ps.AddScript('(Get-Location).ProviderPath')
+            [string](@($ps.Invoke()) | Select-Object -First 1) | Should -Be ([System.IO.Path]::GetFullPath($script:target).TrimEnd([System.IO.Path]::DirectorySeparatorChar))
+        }
+        finally { $ps.Dispose() }
+    }
+
+    It 'leaves the process-global current directory alone' {
+        # Measured 2026-09-03: every Engine File and Terminal Tool resolves through
+        # the per-runspace $PWD, so writing this process-global value changed no
+        # Tool behaviour and was the only state two concurrent Turns would fight over.
+        $before = [System.Environment]::CurrentDirectory
+
+        $null = Set-DpEngineLocation -Path $script:target
+
+        [System.Environment]::CurrentDirectory | Should -Be $before
+    }
+
+    It 'reports failure when no Engine Runspace exists' {
+        $script:DeskPilot = @{ Engine = @{ Runspace = $null } }
+        Set-DpEngineLocation -Path $script:target | Should -BeFalse
+    }
+}
