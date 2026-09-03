@@ -13,6 +13,14 @@ source: repository evidence
 **Blocked at the prerequisite gate.** The architecture decision below is
 recorded; no runtime code was written.
 
+> **Superseded 2026-09-03 — the gate is now met.** Both blockers recorded below
+> were resolved the same day by decision 0008. Per-call approval *is* implemented
+> for Terminal, and DeskPilot *does* own Terminal execution: it registers its own
+> `run_command`, passes `-DisableTerminal`, and delegates to the Engine's
+> `Invoke-RunCommandTool` through an injected executor scriptblock. That executor
+> is precisely the seam an isolation backend would replace, so the two findings
+> below are kept for provenance and must not be re-cited as current.
+
 ## The gate
 
 `.github/prompts/implement-isolated-tool-execution.prompt.md` requires:

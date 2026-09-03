@@ -13,6 +13,10 @@ source: repository evidence
 **Blocked at the prerequisite gate.** Decision and dependency plan recorded; no
 concurrency was added.
 
+> **Partly superseded 2026-09-03.** Per-call approval shipped for Terminal
+> (decision 0008), so half the gate below is now met. Isolation is not shipped
+> and the single-Runspace finding stands, so the verdict is unchanged.
+
 ## The gate
 
 `.github/prompts/implement-parallel-agents.prompt.md`:

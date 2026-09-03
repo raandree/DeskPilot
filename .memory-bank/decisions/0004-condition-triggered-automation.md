@@ -16,7 +16,7 @@ the feature may and may not do.
 
 ## The gate, and why shipping does not bypass it
 
-`.github/prompts/implement-event-triggered-automation.prompt.md`:
+`.github/prompts/archive/implement-event-triggered-automation.prompt.md`:
 
 > Stop after design if per-call approval and safe scheduled-work dispatch are not
 > implemented. Do not create a second scheduler or Engine Runspace to bypass

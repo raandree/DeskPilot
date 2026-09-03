@@ -42,16 +42,16 @@ acceptance criteria, and rollback paths.
 
 | Candidate | Selection guidance | Prompt File |
 | --- | --- | --- |
-| Per-call approval | Start here; it closes the clearest safety gap and is a prerequisite for higher-agency work. | [Implement per-call approval](../.github/prompts/implement-per-call-approval.prompt.md) |
-| Diagnostics and support bundle | Choose for faster support and trustworthy failure evidence without Model Usage. | [Implement diagnostics and support bundle](../.github/prompts/implement-diagnostics-support-bundle.prompt.md) |
-| Scheduled work | Choose for recurring local knowledge work after collision and unattended-Permission policy is approved. | [Implement scheduled work](../.github/prompts/implement-scheduled-work.prompt.md) |
-| Windows packaging | Choose to remove PowerShell and browser-launch concepts from installation and startup. | [Implement Windows packaging](../.github/prompts/implement-windows-packaging.prompt.md) |
-| Localization | Choose to ship maintainable English and German UI and safety text without a frontend build step. | [Implement localization](../.github/prompts/implement-localization.prompt.md) |
+| Per-call approval | Terminal shipped; file writes and MCP still need the `specs/120` contract. | [Implement per-call approval](../.github/prompts/implement-per-call-approval.prompt.md) |
+| Diagnostics and support bundle | **Shipped.** | [Archived](../.github/prompts/archive/implement-diagnostics-support-bundle.prompt.md) |
+| Scheduled work | **Shipped.** | [Archived](../.github/prompts/archive/implement-scheduled-work.prompt.md) |
+| Windows packaging | **Shipped.** | [Archived](../.github/prompts/archive/implement-windows-packaging.prompt.md) |
+| Localization | **Shipped** (English + German). | [Archived](../.github/prompts/archive/implement-localization.prompt.md) |
 | Isolated Tool execution | Choose after per-call approval; this is an architectural security boundary, not a UI-only feature. | [Implement isolated Tool execution](../.github/prompts/implement-isolated-tool-execution.prompt.md) |
 | Parallel Agents | Later bet; requires approval and isolation plus separate child state and reviewable file integration. | [Implement parallel Agents](../.github/prompts/implement-parallel-agents.prompt.md) |
 | Playwright browser automation | Later bet; DeskPilot currently fetches URLs but cannot control a page. Requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement Playwright browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
 | Microsoft 365 work integration | New Scout-derived candidate; begin read-only with delegated identity, least privilege, provenance, and no send/share actions. | [Implement Microsoft 365 work integration](../.github/prompts/implement-microsoft-365-integration.prompt.md) |
-| Condition-triggered automation | New Scout-derived candidate after approval and scheduled work; begin with one confined local file event, not a webhook. | [Implement condition-triggered automation](../.github/prompts/implement-event-triggered-automation.prompt.md) |
+| Condition-triggered automation | **Shipped**, locked to `safe` mode. | [Archived](../.github/prompts/archive/implement-event-triggered-automation.prompt.md) |
 
 Selecting a Prompt File starts implementation discovery; it does not waive its
 prerequisite or decision gates.

@@ -13,6 +13,11 @@ source: repository evidence
 **Blocked.** Three of the gate's requirements are unmet and one cannot be
 resolved without the user.
 
+> **Partly superseded 2026-09-03.** Per-call approval shipped for Terminal
+> (decision 0008), so that bullet below is stale. Isolated execution is still
+> unshipped and the product decisions are still unanswered, so the verdict is
+> unchanged.
+
 ## The gate
 
 `.github/prompts/implement-browser-automation.prompt.md`:
