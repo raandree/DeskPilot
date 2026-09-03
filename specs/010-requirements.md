@@ -117,6 +117,19 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-U4 | M | Let the user reset the lifetime counter manually; record the date it has counted since. |
 | FR-U5 | S | In the Usage panel, show the **tokens in / tokens out** split (prompt vs. completion) alongside the totals for both the session and lifetime counters, a **Top models** list (this session, ranked by tokens), and a 7-/14-/**30-day** credits-per-day chart. |
 
+### Per-call approval (Terminal)
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-PA1 | S | When `perCallApproval` is on, run `Invoke-Shp` with **`-DisableTerminal`** and register a DeskPilot-owned `run_command` User Tool instead. Removing the built-in is what makes approval a boundary: `$terminalEnabled` gates both the tool definition offered to the Model and the dispatch branch, so there is no fallback to prefer. |
+| FR-PA2 | M | **Block before the side effect, never after it.** The owned Tool parks on the approval bridge - the rendezvous `ask_questions` already uses - so no command has run when the question reaches the user, and the Turn resumes where it stopped. |
+| FR-PA3 | M | Show the Tool, the exact command, the working directory, the Project and a plain-language risk line, built from an **allow-list** of known fields. Unknown Tool arguments contribute nothing; no secret, environment value or file body may appear. |
+| FR-PA4 | M | Offer **Allow once**, **Allow for this Turn** and **Deny**. `once` authorizes exactly the action shown and is consumed by it; `turn` covers only the narrow Tool class and only for the current Turn. Neither ever becomes a persistent policy. |
+| FR-PA5 | M | Correlate every answer with one Conversation, Turn, request id and **action fingerprint** (SHA-256 over Tool, class, Conversation, Turn, command and working directory). A stale, replayed or cross-Conversation answer authorizes nothing. |
+| FR-PA6 | M | Treat denial as a **structured Tool result the Agent can recover from**, not a failed Turn. Stop while approval is pending cancels the wait and runs nothing. |
+| FR-PA7 | M | Invalidate every Turn-scoped grant when the Turn completes, fails or is stopped. |
+| FR-PA8 | S | Approval applies **after** the category Permission, never instead of it. Terminal Permission off keeps the Tool unavailable; the default stays off. |
+
 ### Localization
 
 | ID | Priority | Requirement |

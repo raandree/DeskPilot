@@ -69,6 +69,12 @@ function Get-DpDefaultSettings {
         # is only ever remembered when the user ticks the box in the question, and
         # an executable or script type is never accepted here.
         externalOpenTypes = @()
+        # Ask before every Terminal command. DeskPilot removes the Engine's own
+        # run_command (-DisableTerminal) and registers its own, which blocks on
+        # the same bridge ask_questions uses - so no command has run when the
+        # question appears. Off until the browser surface ships: with the Setting
+        # on and no way to answer, a Turn would park forever.
+        perCallApproval   = $false
         costBudgetUSD     = 0.0
         # A serious agentic task - audit a repository, run a build, diagnose what it
         # reports - routinely needs more than the Engine's own default of 25, and

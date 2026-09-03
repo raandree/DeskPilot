@@ -143,6 +143,7 @@ function Merge-DpSettings {
                 $merged.compactionKeepRecent = $keep
             }
             'memoryLearning' { $merged.memoryLearning = [bool]$value }
+            'perCallApproval' { $merged.perCallApproval = [bool]$value }
             'updateCheckIntervalMinutes' {
                 $minutes = [int]$value
                 if ($minutes -lt 1 -or $minutes -gt 1440) {

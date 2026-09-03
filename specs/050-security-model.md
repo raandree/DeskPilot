@@ -126,6 +126,35 @@ Both are explicit diagnostic requirements. The support bundle carries only
 folder leaf. The archive therefore remains shareable without disclosing the
 user's directory layout.
 
+## Per-call approval (Terminal)
+
+Category Permissions authorize a Tool for a whole Turn. Approval narrows that to
+the individual action, and it does so by **owning the Tool** rather than by
+asking the Engine to pause.
+
+- **The built-in is removed, not out-voted.** `-DisableTerminal` drops
+  `run_command` from the offered tool set *and* the dispatch switch, so the
+  owned replacement is the only path. An owned Tool competing with a live
+  built-in would be a preference, not a boundary.
+- **The gate precedes the effect.** The Tool blocks on the approval bridge
+  before it calls the executor, so a pending question means nothing has run.
+  Execution is then delegated to the Engine's own implementation: DeskPilot owns
+  the decision, not process spawning, deadlines, output caps and tree kill.
+- **The summary is an allow-list.** Only the command, working directory and
+  Project are carried. Tool arguments are exactly where a token or a file body
+  would be, so a blacklist would have to be right about every future argument.
+  The command is bounded and marked when truncated.
+- **An answer is bound to one action.** The fingerprint covers Tool, class,
+  Conversation, Turn, command and working directory, so a grant cannot be
+  replayed against a different command, a different chat or a later Turn.
+  `once` is consumed on use; `turn` matches only the Tool class it was given
+  for; both die with the Turn.
+- **Denial is recoverable.** The Model is told the user declined, so it can
+  propose something else rather than the Turn failing.
+- **Not yet covered.** MCP calls and the Engine's built-in file writes still run
+  ungated - the Engine dispatches those itself. `specs/120` records the contract
+  that would close them.
+
 ## Scheduled work
 
 A schedule runs while nobody is watching, so its authority is deliberately not
