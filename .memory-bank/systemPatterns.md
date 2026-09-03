@@ -1007,6 +1007,17 @@ source: repository evidence
   blocking half already exists and ships: `ask_questions` parks inside the Engine
   Runspace on `$bridge.RequestAnswer()` and resumes when the browser answers
   through the pending-request pump.
+- **A delegation mechanism that cannot carry your Tools cannot carry your
+  boundaries.** ShellPilot's `Invoke-ShpBatch` is a real bounded fan-out with
+  merged Usage, yet it replays registered Tools *by command name* into a runspace
+  that inherited nothing, and its own code says a Tool "backed by a function that
+  exists only in the caller's session" is skipped with a warning. Every DeskPilot
+  Tool is injected with `AddScript`, so every one would be dropped — leaving the
+  built-in `run_command` in place and the gated `run_terminal_command` gone. It
+  also forces `DisableUserPrompts`, which makes the approval bridge unreachable
+  rather than merely absent. Before adopting any execution mechanism, ask what it
+  does with the Tools your gates live in; a mechanism that silently keeps the
+  built-ins and drops your replacements re-opens the boundary you just closed.
 
 ## Anti-patterns to avoid
 
