@@ -74,8 +74,8 @@ names and links are data. They may not choose a Tool, a file path, or an
 outbound destination. Nothing in this slice sends, replies, posts, shares,
 grants, creates or deletes.
 
-**Naming.** This is a Microsoft Graph integration. It is not Work IQ and must
-not be called that unless it integrates Microsoft's documented Work IQ service.
+**Naming.** This is a Microsoft Graph integration and is named as one. It does
+not borrow a Microsoft product or service name it does not actually integrate.
 
 **Refused surfaces in slice one.** Scheduled use and Intercom use are refused
 outright: an unattended or remote Turn reading a mailbox needs the approval

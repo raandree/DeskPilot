@@ -11,7 +11,7 @@ source: repository evidence
 ## Current focus
 
 **Per-call approval for Terminal commands is implemented and committed**
-(`223ecfe`, branch `ai/competitive-landscape-2026`, unpushed). The design was
+(`3c3048e`, branch `ai/safety-and-automation`, unpushed). The design was
 interrogated with `grill-me`, signed off by the operator, and built the same
 day. The Design Concept is at `.memory-bank/topics/design-per-call-approval.md`;
 the durable choices are in `.memory-bank/decisions/0008-per-call-approval.md`.

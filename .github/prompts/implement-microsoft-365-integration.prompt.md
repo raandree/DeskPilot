@@ -46,8 +46,9 @@ Record and present a concrete contract for:
 - Data sent through the Engine and third-party Models after retrieval.
 - Interactive, scheduled, and Intercom behavior.
 
-Do not call a Microsoft Graph implementation Work IQ. Use that name only if the
-product integrates with Microsoft's documented Work IQ service and contract.
+Name the feature for what it is: a Microsoft Graph integration. Do not borrow a
+Microsoft product or service name for it unless the implementation genuinely
+integrates that documented service and honours its contract.
 
 ## Required behavior
 
@@ -107,7 +108,7 @@ Write failing Pester tests around a fake Microsoft 365 boundary. Cover at least:
 
 ## Non-goals
 
-- Claiming parity with Microsoft Scout or Work IQ.
+- Claiming parity with any Microsoft product or service.
 - Application permissions, tenant-wide indexing, or administrator impersonation.
 - Sending mail, posting messages, sharing files, or changing calendars and tasks.
 - Storing a local copy of a mailbox, OneDrive, or Teams corpus.

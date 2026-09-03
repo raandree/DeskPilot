@@ -69,6 +69,6 @@ data-flow contract has been approved.
 
 ## Selection source
 
-See the [competitive landscape](../../specs/100-competitive-landscape.md) for
-feature rationale, DeskPilot's current baseline, market evidence, and the
-selection guidance behind this order.
+See the [feature selection record](../../specs/100-feature-selection.md) for the
+rationale behind this order, DeskPilot's current baseline, and the decision
+gates each candidate must clear.

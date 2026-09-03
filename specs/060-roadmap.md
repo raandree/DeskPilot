@@ -83,11 +83,11 @@ local-first, single-user constraints (most need no new dependency):
 - ~~Command palette (Ctrl/Cmd+K) + global keyboard shortcuts (FR-M10).~~ **Done.**
 - ~~Per-session spend warning (FR-M11).~~ **Done.**
 
-### Phase 2.7 — Memory & context (Hermes-inspired batch)
+### Phase 2.7 — Memory & context
 
-Ideas migrated after reviewing a similar local agent tool (Hermes): its
-**Memory & Context** settings and **Usage** screen. Kept the parts that fit the
-build-free, local-first, cost-honest constraints; dropped the rest.
+A batch aimed at one problem: a long Conversation silently gets more expensive
+and less accurate as replayed history grows. Each item here is kept only where
+it fits the build-free, local-first, cost-honest constraints.
 
 - ~~**Automatic conversation compaction** (FR-C19).~~ **Done** — builds directly
   on the manual Compact + Context Window gauge (FR-C18). After a Turn, when the
@@ -95,18 +95,16 @@ build-free, local-first, cost-honest constraints; dropped the rest.
   earlier replayed history automatically (reusing `POST /compact`), announces it
   with a toast, and preserves the visible transcript. Three Settings: toggle
   (default on), threshold percent (50–95, default 80), recent-messages-to-keep
-  (2–100, default 4). Mirrors Hermes's Auto-Compression / Compression Threshold /
-  Protected Recent Messages.
+  (2–100, default 4).
 - ~~**Usage view enhancements** (FR-U5).~~ **Done** — the Usage popover now shows
   the **tokens in / tokens out** split and a **Top models** list (session, by
   tokens), and the credits-per-day chart gained a **30-day** range. All from data
-  already tracked; no Engine change. Mirrors Hermes's Tokens IN/OUT, Top Models,
-  and 7/30/90-day range.
+  already tracked; no Engine change.
 
 ### Phase 2.8 — Persistent memory (learns who you are)
 
-The Hermes memory idea researched after the compaction batch: an agent that
-"builds a deepening model of who you are across sessions."
+Researched after the compaction batch: an agent that builds a deepening model of
+who the user is across sessions, rather than starting cold every Conversation.
 
 - ~~**User Profile + Agent Memory** (FR-M12).~~ **Done** — two bounded stores
   injected into every Turn's system prompt: the **User Profile** (the manual
@@ -135,11 +133,11 @@ The Hermes memory idea researched after the compaction batch: an agent that
 
 ### Deliberately deferred (constraint or Engine bound)
 
-- **External memory providers** (Hermes's *Memory Provider* plugins — Honcho,
-  Mem0, Hindsight, etc.). DeskPilot now has its own bounded, built-in persistent
+- **External memory providers** (pluggable third-party memory backends such as
+  Honcho or Mem0). DeskPilot now has its own bounded, built-in persistent
   memory (Phase 2.8); pluggable external backends are a larger, later track that
   would need a provider abstraction and their own dependencies.
-- **Top Skills usage panel** (Hermes's *Top Skills*). The Engine does not report
+- **Top Skills usage panel.** The Engine does not report
   which Skill a Turn invoked, so per-Skill activity can't be measured without a
   ShellPilot change (the "Engine is sacrosanct" pattern).
 - **Knowledge base / RAG over a corpus.** Real vector RAG needs a vector DB,

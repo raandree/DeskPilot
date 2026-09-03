@@ -72,7 +72,7 @@ knowledge worker who wants agentic help without the tool stack.
 | [070-merge-wizard](070-merge-wizard.md) | Non-expert branch merge, incl. AI conflict resolution. |
 | [080-clone-wizard](080-clone-wizard.md) | Non-expert repository clone. |
 | [090-git-workbench](090-git-workbench.md) | Changes review, diff viewer, Branch Wizard, sync. |
-| [100-competitive-landscape](100-competitive-landscape.md) | Comparable tools, feature gaps, priorities. |
+| [100-feature-selection](100-feature-selection.md) | Feature decisions, gaps, priorities and decision gates. |
 
 ## Terminology
 
