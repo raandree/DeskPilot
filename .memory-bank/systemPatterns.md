@@ -943,6 +943,18 @@ source: repository evidence
   refused while nothing is on disk. `Test-DpPackageInventory` also reports
   *undeclared* files, which is what catches a build leftover.
 
+- **A runspace already isolates more than it looks like it does — measure before
+  designing around it.** Measured 2026-09-03: the Engine's Tool table
+  (`Register-ShpTool`/`Get-ShpTool`), `$global:` variables, and `$PWD` are all
+  **per-runspace**; a Tool registered in one runspace is invisible in another.
+  An extra Engine Runspace costs ~20 ms and ~5 MB after the first (the first
+  import pays 752 ms of JIT and assembly load once). What is genuinely shared is
+  **`[System.Environment]::CurrentDirectory` and the environment block, which
+  are process-global** — last writer wins. A child process spawned from a
+  runspace inherits that runspace's `$PWD`, not the process-global value. So the
+  concurrency question for DeskPilot is "who owns the process CWD", not "how do
+  we separate Tool registrations".
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode
