@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Off by default while the feature settles in.
 
+  **Known issue, and the reason it must stay off.** The replacement terminal is
+  registered under the same name as the agent engine's built-in one, and the
+  engine reaches its own built-in first — so the command runs without ever
+  reaching the card. Taking the built-in away removes it from what the agent is
+  *offered*, but not from what the engine will *run*. Nothing is at risk while
+  the setting is off; do not switch it on until the replacement is renamed and
+  the built-in path is closed.
+
 - **Start work when a file arrives, not only when a clock strikes.** A schedule
   can now be set to **When a file appears in the project** with a pattern such as
   `incoming/*.csv`. DeskPilot waits until the file stops changing before it runs,

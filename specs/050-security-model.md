@@ -133,9 +133,16 @@ the individual action, and it does so by **owning the Tool** rather than by
 asking the Engine to pause.
 
 - **The built-in is removed, not out-voted.** `-DisableTerminal` drops
-  `run_command` from the offered tool set *and* the dispatch switch, so the
-  owned replacement is the only path. An owned Tool competing with a live
-  built-in would be a preference, not a boundary.
+  `run_command` from the offered tool set, so the owned replacement is the only
+  path the Model is shown. An owned Tool competing with a live built-in would be
+  a preference, not a boundary.
+
+  > **Not yet true, 2026-09-03.** `-DisableTerminal` does *not* remove the
+  > Engine's dispatch clause for `run_command`, and a User Tool registered under
+  > that name is unreachable behind it, so the gate described in this section is
+  > currently bypassed. `perCallApproval` ships off and must stay off until the
+  > owned Tool is renamed off the built-in and a tool policy closes the built-in
+  > path. See decision 0001 for the measurement and the fix.
 - **The gate precedes the effect.** The Tool blocks on the approval bridge
   before it calls the executor, so a pending question means nothing has run.
   Execution is then delegated to the Engine's own implementation: DeskPilot owns

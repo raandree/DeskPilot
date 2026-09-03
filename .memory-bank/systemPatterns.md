@@ -32,11 +32,16 @@ source: repository evidence
    while it runs. Multi-client concurrency is explicitly out of scope for v1.
 6. **Static, build-free frontend.** The SPA is plain files the Host Server
    serves. No bundler, no npm — nothing for an end user to install.
-7. **Own the Tool to own the gate.** Where DeskPilot must decide before a side
-   effect, it disables the Engine's built-in and registers its own Tool in the
-   Runspace, then delegates execution back to the Engine. Terminal works this
-   way (`-DisableTerminal` + DeskPilot's `run_command`; decision 0008). An owned
-   Tool competing with a live built-in is a preference, not a boundary.
+7. **Own the Tool to own the gate — and check that the Engine agrees.** Where
+   DeskPilot must decide before a side effect, it disables the Engine's built-in
+   and registers its own Tool in the Runspace, then delegates execution back to
+   the Engine. An owned Tool competing with a live built-in is a preference, not
+   a boundary. Terminal was built this way and **does not yet hold**: a User Tool
+   may not reuse a built-in's name, because ShellPilot dispatches built-ins from
+   literal `switch` clauses and User Tools only from that switch's `default`, so
+   the built-in wins the name and runs ungated (decisions 0001 and 0008).
+   Disabling a category removes what the Model is *offered*; proving it removes
+   what the Engine will *execute* is a separate measurement.
 
 ### Decision index
 
@@ -999,11 +1004,26 @@ source: repository evidence
   switch over a backend that does not restrict files or network, or an approval
   dialog raised after the Tool already ran, converts an honest limitation into a
   false promise. Decisions 0001 and 0003 stop at the gate for this reason.
-- **Recording a blocker without re-deriving it.** Three inherited claims in this
-  repository were measured and found wrong within two days: shared Tool
-  registrations across runspaces, the process-global working directory, and
-  "per-call approval is blocked on the Engine". A blocker shapes the roadmap, so
-  it earns the same evidence bar as a bug fix.
+- **Recording a blocker without re-deriving it.** Four inherited claims in this
+  repository have been measured and found wrong within three days: shared Tool
+  registrations across runspaces, the process-global working directory,
+  "per-call approval is blocked on the Engine", and — written by this repository
+  about its own security boundary, on the day it shipped — "`-DisableTerminal`
+  removes `run_command` from the dispatch switch". A blocker shapes the roadmap
+  and a boundary shapes what a user may trust, so both earn the same evidence bar
+  as a bug fix.
+- **Proving your own parameter instead of the other side's behaviour.** A test
+  named "passes `-DisableTerminal` so the Engine keeps no `run_command` of its
+  own" asserts that DeskPilot built a hashtable key, then names its conclusion
+  after something the Engine does. A boundary is a claim about the other side of
+  an interface: verify it there — read the dispatch, or run one live Turn — and
+  never let the test name carry the inference the assertion did not make.
+- **Giving an owned Tool a built-in's name.** ShellPilot dispatches its built-ins
+  from literal `switch` clauses on the tool name and reaches User Tools only
+  through that switch's `default`, and `Register-ShpTool` does not reject the
+  collision. A same-named replacement is therefore registered, advertised, and
+  never invoked — the built-in wins silently, and the gate that was supposed to
+  wrap it never runs.
 - **A confirmation prompt that fires on everything.** A gate that interrupts on
   `git status` is a gate the user switches off, and a switched-off gate protects
   nothing. Tier the interruption against an allow-list that fails closed, and

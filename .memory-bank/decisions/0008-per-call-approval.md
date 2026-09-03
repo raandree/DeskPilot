@@ -12,14 +12,27 @@ Supersedes the "blocked on the Engine" framing this repository carried for
 Terminal. See `.memory-bank/topics/design-per-call-approval.md` for the full
 Design Concept and `specs/120` for what remains genuinely blocked.
 
+> **Correction, 2026-09-03 — the boundary below does not hold.** Re-verifying
+> this record against ShellPilot 0.4.0 showed that `-DisableTerminal` gates the
+> *offered* tool definition but **not** the dispatch switch: `$tc.Name` has a
+> literal `run_command` clause and User Tools are reached only through its
+> `default`, so a User Tool registered under that name is never invoked and the
+> built-in runs the command ungated. Proof and the two-step fix are in decision
+> 0001. Nothing shipped is at risk today because `perCallApproval` defaults off;
+> the gate must not be switched on until the fix lands.
+
 ## Decisions
 
 **DeskPilot owns `run_command`; the built-in is removed, not out-voted.**
-`Invoke-Shp` is given `-DisableTerminal` whenever approval is active. Measured
+~~`Invoke-Shp` is given `-DisableTerminal` whenever approval is active. Measured
 in ShellPilot 0.4.0: `$terminalEnabled` gates the tool definition offered to the
 Model *and* the dispatch branch, so a disabled `run_command` is neither
-advertised nor callable. An owned Tool competing with a live built-in would be a
-preference; with no fallback it is a boundary.
+advertised nor callable.~~ **Disproven 2026-09-03: `$terminalEnabled` does not
+appear in the dispatch region at all, so the built-in stays callable and wins the
+name.** The intent stands — an owned Tool competing with a live built-in is a
+preference, and only an absent rival makes it a boundary — but the mechanism has
+to change: the owned Tool needs a name that is not a built-in, plus a
+`Set-ShpToolPolicy` denial to close the built-in path.
 
 **The gate blocks before the executor, and execution is delegated.** The Tool
 parks on the approval bridge before it calls anything, so a pending card means
