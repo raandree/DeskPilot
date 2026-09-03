@@ -159,6 +159,21 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
         $result.kind | Should -Be 'answer'
     }
 
+    It 'does not accept free text from a different allow-listed chat' {
+        $update = New-TestUpdate -ChatId '-1004455397827' -Text 'use my choice'
+        $params = @{
+            Update                        = $update
+            AllowedChatId                 = '111'
+            AllowedGroupChatId            = '-1004455397827'
+            PendingQuestionChatId         = '111'
+            PendingQuestionAwaitsFreeText = $true
+        }
+
+        $result = ConvertFrom-DpIntercomUpdate @params
+
+        $result.kind | Should -Be 'prompt'
+    }
+
     It 'treats plain text as a prompt' {
         $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text 'tidy the tests') -AllowedChatId '111'
 
@@ -1690,9 +1705,11 @@ Describe 'Intercom update batching' -Tag 'Unit' {
         }
 
         $script:handled = [System.Collections.Generic.List[string]]::new()
+        $script:handledKinds = [System.Collections.Generic.List[string]]::new()
         Mock Invoke-DpIntercomCommand {
             param($Command)
             $script:handled.Add([string]$Command.text)
+            $script:handledKinds.Add([string]$Command.kind)
             if ([string]$Command.text -eq 'poison') { throw 'handler blew up' }
         }
     }
@@ -1724,6 +1741,47 @@ Describe 'Intercom update batching' -Tag 'Unit' {
         $entry.detail | Should -Match 'Update 11'
         $entry.accepted | Should -BeFalse
         $script:DeskPilot.Intercom.Counters.errors | Should -Be 1
+    }
+
+    It 'treats ordinary text as the pending answer after Something else is tapped' {
+        $script:DeskPilot.TurnRunning = $true
+        $script:DeskPilot.Intercom.PendingQuestion = @{
+            id               = 'q1'
+            conversationId   = 'c1'
+            messageId        = 42
+            chatId           = '111'
+            askedUtc         = [DateTime]::UtcNow
+            token            = 'abcd1234'
+            options          = @('First', 'Second')
+            step             = 0
+            multiSelect      = $false
+            awaitingFreeText = $false
+            questions        = @(
+                @{
+                    question           = 'Which option?'
+                    options            = @(@{ label = 'First' }, @{ label = 'Second' })
+                    multiSelect        = $false
+                    selectedOptions    = @()
+                    freeText           = ''
+                    allowFreeformInput = $false
+                }
+            )
+        }
+        Invoke-DpIntercomCallback -Command @{ kind = 'callback'; callbackId = 'cb1'; text = 'q|abcd1234|f' }
+
+        $body = @{
+            ok     = $true
+            result = @(
+                @{ update_id = 13; message = @{ message_id = 43; chat = @{ id = '111' }; text = 'I will trust your choice' } }
+            )
+        } | ConvertTo-Json -Depth 6
+        $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+        $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+        $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+
+        Update-DpIntercomState
+
+        $script:handledKinds | Should -Be @('answer')
     }
 }
 

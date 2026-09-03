@@ -76,12 +76,12 @@ function Invoke-DpIntercomCallback {
                 return
             }
 
-            # 'Something else': the next reply is taken as written, and this
-            # message becomes the one to reply to. The nonce is left alone, so the
-            # buttons already on screen still work if they change their mind.
+            # 'Something else': the next ordinary message in this chat is taken
+            # as written. The nonce is left alone, so the buttons already on
+            # screen still work if the operator changes their mind.
             if ($parts[2] -eq 'f') {
                 $pending.awaitingFreeText = $true
-                $null = Send-DpIntercomMessage -Title 'Go ahead - reply to this message with your answer.' -Line @(
+                $null = Send-DpIntercomMessage -Title 'Type your answer in your next message.' -Line @(
                     [string]$question.question
                 ) -Kind 'question' -Capture 'question'
                 return

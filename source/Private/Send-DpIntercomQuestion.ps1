@@ -6,8 +6,9 @@ function Send-DpIntercomQuestion {
         Called from the Turn loop the moment DeskPilot publishes an Ask-User
         request to the browser, so the phone and the window learn about it
         together. The Telegram message id that carries the question becomes the
-        answer nonce: only a reply to that exact message is accepted, so there is
-        nothing for the operator to type at a bus stop.
+        answer nonce: a reply to that exact message is accepted. Choosing
+        Something else also arms the next ordinary message in the same chat as
+        the answer.
 
         The question text is authored by the agent, and forwarding it verbatim is
         the one accepted exception to composing messages from structured fields

@@ -551,6 +551,13 @@ source: repository evidence
   other. The pending question records the chat it was sent to, and a reply is only
   an answer in that chat. Widening an allow-list silently invalidates every
   identifier that was only unique because the list had one entry.
+- **A Keyboard choice that changes the next message is normalizer state.**
+  Tapping **Something else** arms the next ordinary message as a Questionnaire
+  answer. That state must cross the Intercom pump into
+  `ConvertFrom-DpIntercomUpdate`, where messages become commands; setting it only
+  in the callback handler changes no later classification. Pair the state with
+  the pending question's chat, just like its message id, so another allow-listed
+  chat cannot answer it accidentally.
 - **A credential in the request URL is a credential in every error string.** The
   Telegram bot token travels in the path, so an unredacted transport error would
   print it into the audit log, a route response, or the console. Every Intercom

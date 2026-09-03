@@ -10,7 +10,7 @@ function ConvertFrom-DpIntercomUpdate {
         command.
 
         Recognised kinds:
-          answer   - a reply to the message that carried the pending question
+          answer   - a reply to the pending question, or its armed free-text message
           prompt   - plain text to run as a prompt
           stop     - /stop
           steer    - /steer <text>: cancel the running Turn, then run <text>
@@ -48,6 +48,10 @@ function ConvertFrom-DpIntercomUpdate {
         sequences, so with two chats allow-listed an unrelated reply in one could
         otherwise carry the same id as the question waiting in the other and be
         read as its answer. Empty applies no chat constraint.
+    .PARAMETER PendingQuestionAwaitsFreeText
+        Whether the operator tapped Something else for the pending question, so
+        their next ordinary message in that chat is the answer without requiring
+        Telegram reply metadata.
     .PARAMETER BotUsername
         This bot's own @name, without the @. When the message opens by mentioning
         it, the mention is stripped: in a group with Telegram's group privacy on,
@@ -77,6 +81,8 @@ function ConvertFrom-DpIntercomUpdate {
 
         [AllowNull()]
         [string]$PendingQuestionChatId,
+
+        [bool]$PendingQuestionAwaitsFreeText = $false,
 
         [AllowNull()]
         [string]$BotUsername,
@@ -256,9 +262,11 @@ function ConvertFrom-DpIntercomUpdate {
 
     if (-not $text.StartsWith('/')) {
         # A reply to the message that carried the pending question is the answer;
-        # the nonce is the message id, so there is nothing for the user to type.
+        # after choosing free text, the next ordinary message in the same chat is
+        # also the answer, without making the operator invoke Telegram's Reply UI.
         $sameChat = [string]::IsNullOrWhiteSpace($PendingQuestionChatId) -or $result.chatId -eq $PendingQuestionChatId.Trim()
-        if ($PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId -and $sameChat) {
+        $repliesToQuestion = $PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId
+        if ($sameChat -and ($repliesToQuestion -or $PendingQuestionAwaitsFreeText)) {
             $result.kind = 'answer'
         }
         else {

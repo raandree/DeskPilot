@@ -226,6 +226,7 @@ Describe 'Intercom step-through interview' -Tag 'Unit' {
 
         Invoke-TestTap -Choice 'f'
         $script:DeskPilot.Intercom.PendingQuestion.awaitingFreeText | Should -BeTrue
+        @($script:sent)[-1].Title | Should -Be 'Type your answer in your next message.'
         $null = Submit-DpIntercomAnswer -Answer '2'
 
         # Without the verbatim flag this would have picked the second option.

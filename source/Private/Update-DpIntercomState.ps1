@@ -227,17 +227,20 @@ function Update-DpIntercomState {
                         else {
                             $pendingMessageId = 0
                             $pendingChatId = ''
+                            $pendingAwaitsFreeText = $false
                             if ($intercom.PendingQuestion) {
                                 $pendingMessageId = [long]$intercom.PendingQuestion.messageId
                                 $pendingChatId = [string](Get-DpPropertyValue -InputObject $intercom.PendingQuestion -Name @('chatId') -Default '')
+                                $pendingAwaitsFreeText = [bool](Get-DpPropertyValue -InputObject $intercom.PendingQuestion -Name @('awaitingFreeText') -Default $false)
                             }
                             $commandParams = @{
-                                Update                   = $update
-                                AllowedChatId            = $chatId
-                                AllowedGroupChatId       = $groupChatIds
-                                PendingQuestionMessageId = $pendingMessageId
-                                PendingQuestionChatId    = $pendingChatId
-                                BotUsername              = [string](Get-DpPropertyValue -InputObject $intercom -Name @('BotUsername') -Default '')
+                                Update                        = $update
+                                AllowedChatId                 = $chatId
+                                AllowedGroupChatId            = $groupChatIds
+                                PendingQuestionMessageId      = $pendingMessageId
+                                PendingQuestionChatId         = $pendingChatId
+                                PendingQuestionAwaitsFreeText = $pendingAwaitsFreeText
+                                BotUsername                   = [string](Get-DpPropertyValue -InputObject $intercom -Name @('BotUsername') -Default '')
                             }
                             $command = ConvertFrom-DpIntercomUpdate @commandParams
                             # While pairing, chatId is empty, so every command comes
@@ -347,7 +350,7 @@ function Update-DpIntercomState {
                 # a hang looks like from a phone.
                 $null = Send-DpIntercomMessage -Title 'Still waiting for your answer.' -Line @(
                     "The agent asked you something $stallMinutes minutes ago and cannot continue until you reply.",
-                    'Answer by replying to the question message itself - not to this one - or by tapping one of its buttons.',
+                    'Reply to the question, tap one of its buttons, or type your next message after selecting Something else.',
                     'Send /stop if you would rather abandon the job.'
                 ) -Kind 'awaiting-answer'
             }
@@ -366,7 +369,7 @@ function Update-DpIntercomState {
             if ($questionTimeout -lt 1) { $questionTimeout = 60 }
             if (($now - [DateTime]$intercom.PendingQuestion.askedUtc).TotalMinutes -ge $questionTimeout) {
                 $intercom.PendingQuestion = $null
-                $null = Send-DpIntercomMessage -Title 'That question has expired.' -Line @('Answer by replying to a question message within the time stated.') -Kind 'expired'
+                $null = Send-DpIntercomMessage -Title 'That question has expired.' -Line @('Answer a question within the time stated.') -Kind 'expired'
             }
         }
 

@@ -329,6 +329,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Let Something else wait for the typed answer.** Tapping the free-text choice
+  in an Intercom Questionnaire now makes the next ordinary message in that same
+  Telegram chat the answer. It no longer queues those words as a new Turn, and
+  the acknowledgement says to type the next message instead of requiring
+  Telegram's Reply action.
+
 - **A message is never sent to a chat that has lost its authority.** DeskPilot
   replies wherever it was asked, and it now re-checks that chat against the
   allow-list at the moment of sending rather than trusting the address it noted

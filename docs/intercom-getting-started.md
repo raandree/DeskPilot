@@ -141,9 +141,9 @@ it before the agent sees the work, so the instruction and the conversation title
 read as if you had typed them in your own chat.
 
 **Answering a question in a group.** Use Telegram's **reply** on the question
-message itself, or tap one of its buttons. A new message in the group is a new
-instruction, not an answer — so if the agent is waiting, replying is the only
-thing that unblocks it.
+message itself, or tap one of its buttons. A new message in the group is normally
+a new instruction, not an answer. After you tap **Something else**, however,
+your next message in that group is the answer.
 
 **Answering a set of questions.** The agent usually needs several things at once.
 DeskPilot asks them **one at a time**: tap an answer and the next question
@@ -230,10 +230,10 @@ Three things worth knowing:
   itself — swipe it, or hold it and tap Reply. That is how DeskPilot knows which
   question you are answering, so there is no code to type.
 - **When the agent offers a list of choices, you get buttons.** Tap one and that
-  is your answer — no typing, no numbers. You can still reply with your own words
-  instead if none of them fit. Some questions let you pick several answers at
-  once; those have no buttons, because one tap cannot say "these two". Reply to
-  those in writing. `/chats` gives you a button per conversation too.
+  is your answer — no typing, no numbers. If none fit, tap **Something else** and
+  type your answer as the next message; you do not need to use Reply. Some
+  questions let you pick several answers at once; tap each answer and then
+  **Done**. `/chats` gives you a button per conversation too.
 - **Buttons from an old question stop working, on purpose.** Telegram leaves them
   on screen forever. If you scroll back and tap one, DeskPilot tells you that
   question has moved on rather than putting the answer somewhere it does not
