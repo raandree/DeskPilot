@@ -965,12 +965,27 @@ source: repository evidence
   paired test pins both halves — the runspace location moves, the process value
   does not.
 
+- **Own the Tool, own the gate.** When the Engine will not let the host intercept
+  a built-in Tool, the answer is not always an upstream contract: check whether
+  the built-in can be *removed*. `Invoke-Shp -DisableTerminal` drops
+  `run_command` from both the tool set offered to the Model and the dispatch
+  switch (verified in 0.4.0), so a DeskPilot-registered replacement becomes a
+  boundary the Model cannot route around rather than one it can decline. The
+  blocking half already exists and ships: `ask_questions` parks inside the Engine
+  Runspace on `$bridge.RequestAnswer()` and resumes when the browser answers
+  through the pending-request pump.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode
   switch over a backend that does not restrict files or network, or an approval
   dialog raised after the Tool already ran, converts an honest limitation into a
   false promise. Decisions 0001 and 0003 stop at the gate for this reason.
+- **Recording a blocker without re-deriving it.** Three inherited claims in this
+  repository were measured and found wrong within two days: shared Tool
+  registrations across runspaces, the process-global working directory, and
+  "per-call approval is blocked on the Engine". A blocker shapes the roadmap, so
+  it earns the same evidence bar as a bug fix.
 - **Inferring control from post-execution Activity.** A `ToolCall` progress
   record proves what happened, not that it could have been prevented. Any
   feature whose premise is "DeskPilot decides before the Tool runs" needs the

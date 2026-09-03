@@ -21,13 +21,15 @@ recorded; no runtime code was written.
 > is absent, stop after producing the architecture decision and prerequisite
 > list; do not ship isolated execution as a substitute for action-level approval.
 
-Per-call approval is **not implemented**. `specs/120-per-call-approval-engine-contract.md`
-records why: ShellPilot 0.4.0 has `ShouldProcess` gates but no correlated Host
-callback, no trustworthy MCP annotation provenance, no safe summary contract and
-no action fingerprint, so DeskPilot cannot block a Tool call before it runs.
-The gate is therefore unmet and this work stops here.
+Per-call approval is **not implemented**. It is, however, **no longer blocked**:
+`specs/120` was rescoped on 2026-09-03 after `Invoke-Shp -DisableTerminal` was
+verified to remove the built-in `run_command` from both the offered tool set and
+the dispatch switch. DeskPilot can therefore own the Terminal Tool and gate it on
+the pending-request pump that `ask_questions` already uses. The gate here is
+unmet only because that approval work has not been done yet - not because the
+Engine prevents it.
 
-## Second, independent blocker found while assessing the gate
+## Second finding, corrected 2026-09-03
 
 The prompt also requires verifying, from source, that *"the Engine can route
 Terminal execution to a DeskPilot-owned backend"*. It cannot. `run_command` is a
@@ -36,11 +38,19 @@ call only as a `ToolCall` progress record, which `ConvertTo-DpActivityAction`
 turns into an Activity row **after** the fact. Inferring control from
 post-execution Activity is exactly what the prompt forbids.
 
-So isolation needs the *same* upstream Engine contract as approval: an optional
-DeskPilot-supplied executor invoked before the command runs. Shipping isolation
-before that would mean re-implementing `run_command` as a User Tool and hoping
-the Model prefers it over the built-in — a boundary the Model can decline, which
-is not a boundary.
+So isolation needs the *same* upstream Engine contract as approval **for the
+Engine's own built-in execution path**: an optional DeskPilot-supplied executor
+invoked before the command runs.
+
+**Corrected 2026-09-03.** The original version of this record dismissed the
+alternative as "re-implementing `run_command` as a User Tool and hoping the Model
+prefers it over the built-in - a boundary the Model can decline, which is not a
+boundary". That is wrong: `Invoke-Shp -DisableTerminal` removes the built-in from
+**both** the tool set offered to the Model and the dispatch switch (verified in
+ShellPilot 0.4.0), so there is nothing left to prefer. A DeskPilot-owned
+`run_command` is therefore a real boundary, and it is where both approval and, in
+time, an isolated executor can live without any Engine change. Isolation still
+needs a backend decision (see below); it no longer needs `specs/120`.
 
 ## Backend comparison
 

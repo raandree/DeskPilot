@@ -6,9 +6,39 @@ to unblock it. No approval is simulated after a Tool has run.
 
 ## Status
 
-**Blocked on the Engine.** ShellPilot 0.4.0 can stop some Tool calls through
-PowerShell `ShouldProcess`, but DeskPilot cannot safely use that mechanism as a
-per-call approval protocol.
+**Scoped, 2026-09-03.** The Engine contract below is still required for
+**MCP calls** and for gating the Engine's built-in File Tools in place. It is
+**not** required for Terminal.
+
+The original version of this record concluded that per-call approval as a whole
+was blocked on ShellPilot. That conclusion was too broad, and the correction
+matters because it has been shaping the roadmap:
+
+- `Invoke-Shp` exposes **`-DisableTerminal`** as a switch separate from
+  `-DisableUserTools`. Verified in ShellPilot 0.4.0: `$terminalEnabled` gates
+  both the tool definition offered to the Model and the dispatch branch, so a
+  disabled `run_command` is neither advertised nor callable.
+- DeskPilot already registers its own Tools into the Engine Runspace
+  (`ask_questions`, `search_files`, `search_text`, `replace_in_file`), and
+  `ask_questions` **already blocks a Turn mid-flight and resumes it**:
+  `Invoke-DpQuestionnaireTool` calls `$bridge.RequestAnswer()`, which parks
+  inside the Runspace until the browser answers through the pending-request
+  pump. That is per-call approval's mechanism, in production, today.
+
+So for Terminal the host does not need the Engine to offer a callback: it can
+**own the Tool and therefore own the gate**. Disabling the built-in is what makes
+it a boundary rather than a preference - with no built-in to fall back to, the
+Model cannot route around the owned Tool.
+
+What still needs the contract below:
+
+- **MCP.** The Engine dispatches MCP calls itself and `-DisableMcp` is
+  all-or-nothing; annotations never reach the host, so a mutating call cannot be
+  distinguished or intercepted.
+- **Built-in File Tools in place.** `-DisableFileAccess` removes `read_file`,
+  `list_directory`, `write_file` and `create_directory` together. Gating writes
+  without the Engine therefore means DeskPilot owning the read side too - the
+  same pattern, a larger surface, and a separate decision.
 
 ## Verified behavior
 
@@ -99,8 +129,12 @@ ShellPilot while giving the Host Server a synchronous pre-dispatch boundary.
 
 ## DeskPilot implementation gate
 
-Do not add an approval surface, approval routes, Activity records, or approval
-state until an imported Engine exposes `ToolCallApprover` and a focused
+This gate applies to **MCP approval and to gating the Engine's built-in Tools in
+place**. It does not apply to Terminal, which DeskPilot can own outright (see
+Status).
+
+Do not add an MCP approval surface, approval routes, Activity records, or
+approval state until an imported Engine exposes `ToolCallApprover` and a focused
 integration test proves all of the following:
 
 - the callback is entered before a Terminal side effect;
