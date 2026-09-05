@@ -1166,6 +1166,28 @@ source: repository evidence
   and none attacked the previous round's; the round that did found both of its
   Blockers there.
 
+- **A test that cannot fail is worse than no test, so measure that it can.** Five
+  review rounds found their Blockers by running things; the repository's own tests
+  found none, and the fifth round measured why - 53 of 54 ways to disable a
+  supervisor control left the suite green, because every assertion read the source
+  as a string and the source could not be imported without a browser. The fix was
+  not another control. It was moving the two stateful guards into
+  `source/browser/guards.mjs`, which takes its resolver and clock as arguments,
+  and adding a mutation matrix that disables each control in turn and **fails the
+  suite if a check does not notice**. Its first run found three of its own checks
+  toothless, one of them blinded by a case-insensitive `-BeLike`. Any control
+  worth writing down is worth putting behind an interface a test can drive, and a
+  green suite is evidence only once something has watched it go red.
+
+- **A cosmetic fix is a security change when it touches a trust boundary.** The
+  fifth round's Blocker came from splitting a matched URL run on every inner
+  `https://`, added so a comma-joined list would yield both addresses. The unfixed
+  behaviour was already fail-safe - it dropped the second host and cost one
+  approval card. The fix promoted `?redirect_uri=https://attacker.test/cb` into
+  user-named scope, chosen by whoever sent the user the link. On the input path to
+  a boundary, prefer the fail-safe annoyance to the elegant parse, and weigh a
+  change by where it lives rather than by what motivated it.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

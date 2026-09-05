@@ -22,6 +22,7 @@ import { mkdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { lookup } from 'node:dns/promises';
 import { resolveUrlDecision, isResourceAllowed, isFieldFillable, isInternalAddress, normalizeScopeEntry } from './policy.mjs';
+import { createRefusalLog, createHostGuard } from './guards.mjs';
 
 // Bounds, so a hostile or merely broken page cannot exhaust the session. Every
 // one of these is a refusal the user can see, not a silent truncation of intent.
@@ -35,12 +36,13 @@ const LIMITS = {
     screenshots: 10,
     downloads: 10,
     downloadBytes: 50 * 1024 * 1024,
-    // Distinct hostnames the page may make DeskPilot resolve, per page. A page
-    // chooses how many names it asks for, so without this it chooses how much
-    // DNS traffic leaves the machine and how large the cache grows - and a
-    // session-wide budget let one hostile page starve every later page of its
-    // sub-resources. Reset on each main-frame navigation.
+    // Distinct hostnames the page may make DeskPilot resolve between one
+    // Tool-driven navigation and the next. A page chooses how many names it asks
+    // for, so without this it chooses how much DNS traffic leaves the machine.
     hostLookups: 256,
+    // Bounded by eviction, not by the budget: entries expire in place, and
+    // expiry on its own never removes anything.
+    hostCacheEntries: 512,
     // A name that answered publicly is not trusted for the rest of the session:
     // that is what rebinding is.
     hostLookupTtlMs: 60000,
@@ -64,24 +66,14 @@ const state = {
     // Incremented only by a real main-frame navigation, so a page cannot restore
     // it the way history.replaceState restores a URL.
     navigationId: 0,
-    // Hostname -> whether it resolves to an address the browser may not reach.
-    // Per session, so an ordinary page costs one lookup per host rather than one
-    // per request, and bounded by LIMITS.hostLookups.
-    resolved: new Map(),
-    lookups: 0,
+    // Hostname resolution and refusal bookkeeping live in guards.mjs so a test
+    // can run them with a fake resolver and a fake clock.
+    hostGuard: null,
+    refusals: null,
     // Set when a response came back from an internal peer. A sub-resource cannot
     // be un-sent, so the next action refuses instead of the run continuing as if
     // nothing had happened.
-    internalPeer: null,
-    blocked: [],
-    // Counted separately from the reported ring. `blocked` is bounded so a
-    // looping page cannot grow the process, but the navigate/click/press paths
-    // decide "was this refused?" by looking at what arrived since they started -
-    // and once the ring was full they saw nothing, fell through to the old
-    // in-scope URL, and reported a refused navigation as a success (B4-6,
-    // 2026-09-05). The counter is unbounded and cheap; only the reporting is capped.
-    blockedCount: 0,
-    blockedLast: null
+    internalPeer: null
 };
 
 function emit(payload) {
@@ -90,29 +82,16 @@ function emit(payload) {
 // Refusals are reported, never silently dropped: a page that tried to reach
 // somewhere is evidence, and Activity is where the user sees it. Bounded so a
 // page looping on a blocked request cannot grow the process without limit.
-function recordBlocked(reason, url, resourceType) {
-    const entry = { reason, url: String(url).slice(0, 500), resourceType };
-    state.blockedCount += 1;
-    state.blockedLast = entry;
-    // Bounds the array *and* the emit. A page looping on a blocked request would
-    // otherwise write unbounded lines to stdout even though the array stopped.
-    if (state.blocked.length >= 200) return;
-    state.blocked.push(entry);
-    emit({ event: 'blocked', ...entry });
+function recordBlocked(reason, url, resourceType, isMainFrame = true) {
+    state.refusals.record(reason, url, resourceType, isMainFrame);
 }
 
-// What was refused since a marker, without depending on the reporting ring
-// having room. Returns the newest navigation refusal, or null.
 function navigationRefusedSince(marker) {
-    if (state.blockedCount === marker.count) return null;
-    const fromRing = state.blocked.slice(marker.length).find((entry) => String(entry.reason).startsWith('navigation-'));
-    if (fromRing) return fromRing;
-    const last = state.blockedLast;
-    return last && String(last.reason).startsWith('navigation-') ? last : null;
+    return state.refusals.navigationRefusedSince(marker);
 }
 
 function blockedMarker() {
-    return { length: state.blocked.length, count: state.blockedCount };
+    return state.refusals.marker();
 }
 
 async function ensureBrowser() {
@@ -135,7 +114,14 @@ async function ensureBrowser() {
     const testInsecure = process.env.DESKPILOT_BROWSER_TEST_INSECURE === '1';
     state.testInsecure = testInsecure;
 
-    state.browser = await chromium.launch({
+    state.refusals = createRefusalLog({ cap: 200, emit: (entry) => emit({ event: 'blocked', ...entry }) });
+    state.hostGuard = createHostGuard({
+        lookup: (hostname) => lookup(hostname, { all: true, verbatim: true }).then((all) => all.map((a) => a.address)),
+        isInternal: isInternalAddress,
+        limits: LIMITS
+    });
+
+    const browser = await chromium.launch({
         headless: false,
         // No personal profile is reachable from here: launch() plus a fresh
         // context is ephemeral by construction - no cookie jar on disk, no
@@ -143,20 +129,37 @@ async function ensureBrowser() {
         args: ['--no-default-browser-check', '--no-first-run', '--disable-extensions', ...testArgs]
     });
 
-    state.context = await state.browser.newContext({
-        acceptDownloads: state.allowDownload,
-        ignoreHTTPSErrors: testInsecure,
-        // Playwright's own types say route() does not intercept requests made by
-        // a Service Worker. It does on this version - measured - but a control
-        // that holds only because the vendor's documentation is stale is not a
-        // control. Blocking registration makes the contract the documented one.
-        serviceWorkers: 'block',
-        // Nothing is granted. A page asking for geolocation, notifications,
-        // camera or clipboard is refused without reaching the user, because the
-        // first workflow needs none of them and a prompt is a decision surface
-        // an injected page should not get to open.
-        permissions: []
-    });
+    // Assigned last, so a failure below leaves no half-built session that
+    // `if (state.browser) return` would later report as ready (m5-6).
+    let context;
+    try {
+        context = await browser.newContext({
+            acceptDownloads: state.allowDownload,
+            ignoreHTTPSErrors: testInsecure,
+            // Playwright's own types say route() does not intercept requests made
+            // by a Service Worker. Blocking registration outright removes the
+            // question rather than depending on an answer the vendor documents
+            // the other way.
+            serviceWorkers: 'block',
+            // Nothing is granted. A page asking for geolocation, notifications,
+            // camera or clipboard is refused without reaching the user, because the
+            // first workflow needs none of them and a prompt is a decision surface
+            // an injected page should not get to open.
+            permissions: []
+        });
+
+        if (typeof context.routeWebSocket !== 'function') {
+            // Never silently: an absent control is not a control that passed.
+            throw new Error('This Playwright build cannot intercept WebSocket traffic, so DeskPilot will not open a browser.');
+        }
+    }
+    catch (error) {
+        await browser.close().catch(() => {});
+        throw error;
+    }
+
+    state.browser = browser;
+    state.context = context;
     state.context.setDefaultTimeout(LIMITS.actionTimeoutMs);
     state.context.setDefaultNavigationTimeout(LIMITS.navigationTimeoutMs);
 
@@ -170,7 +173,16 @@ async function ensureBrowser() {
         if (request.isNavigationRequest()) {
             const decision = resolveUrlDecision(url, state.scope);
             if (decision.decision !== 'allow') {
-                recordBlocked(`navigation-${decision.reason}`, url, resourceType);
+                // Attributed to its frame. A sub-frame document request is a
+                // navigation request too, so a page cycling `iframe.src` could
+                // otherwise mint refusals that answered for the main frame -
+                // denying every click and choosing the address the refusal named
+                // (M5-3, 2026-09-05). A frame that has gone - a pop-up being
+                // closed - is not the main frame.
+                let isMain = false;
+                try { isMain = request.frame() === state.page?.mainFrame(); }
+                catch { isMain = false; }
+                recordBlocked(`${isMain ? 'navigation' : 'subframe'}-${decision.reason}`, url, resourceType, isMain);
                 return route.abort('blockedbyclient');
             }
             return route.continue();
@@ -207,7 +219,6 @@ async function ensureBrowser() {
     });
 
     if (typeof state.context.routeWebSocket !== 'function') {
-        // Never silently: an absent control is not a control that passed.
         throw new Error('This Playwright build cannot intercept WebSocket traffic, so DeskPilot will not open a browser.');
     }
     await state.context.routeWebSocket('**/*', (ws) => {
@@ -220,10 +231,7 @@ async function ensureBrowser() {
     state.page = await state.context.newPage();
 
     state.page.on('framenavigated', (frame) => {
-        if (frame !== state.page.mainFrame()) return;
-        state.navigationId += 1;
-        // The lookup budget is the page's to spend, so it is the page's to lose.
-        state.lookups = 0;
+        if (frame === state.page.mainFrame()) state.navigationId += 1;
     });
 
     // Registered only after the main page exists. The 'page' event fires for
@@ -438,45 +446,11 @@ async function assertPeerAllowed(response) {
     }
 }
 
-// The best a route handler can do, which is not as good as a peer address:
-// resolve the name and refuse if any answer is internal. Returns null when the
-// request may go out, otherwise the reason it may not.
-//
-// Failure is **closed**, not open. The earlier reasoning - "a name that will not
-// resolve produces a request that fails anyway" - assumes Node's resolver and
-// Chromium's agree. They need not: Chromium runs its own resolver with Secure
-// DNS, so a name that SERVFAILs the OS path and resolves to 127.0.0.1 over DoH
-// would have been let out unchecked. If the two agree, refusing costs a request
-// that was going to fail; if they disagree, refusing is the only check there is
-// (B4-5, 2026-09-05).
-//
-// Entries expire so a name that answered publicly once is re-checked rather than
-// trusted for the life of the session, and both the cache and the DNS traffic
-// are bounded per page because the page chooses how many names to ask for.
+// The best a route handler can do, which is not as good as a peer address. The
+// guard itself lives in guards.mjs, where a test can drive it.
 async function hostRefusalReason(rawUrl) {
     if (state.testInsecure) return null;
-    let hostname;
-    try { hostname = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase(); }
-    catch { return null; }
-    if (!hostname) return null;
-
-    const cached = state.resolved.get(hostname);
-    if (cached && Date.now() - cached.at < LIMITS.hostLookupTtlMs) {
-        return cached.internal ? 'resource-internal-address' : null;
-    }
-
-    if (state.lookups >= LIMITS.hostLookups) return 'resource-lookup-budget';
-    state.lookups += 1;
-
-    let internal = true;
-    try {
-        const answers = await lookup(hostname, { all: true, verbatim: true });
-        internal = answers.some((answer) => isInternalAddress(answer.address));
-    }
-    catch { internal = true; }
-
-    state.resolved.set(hostname, { internal, at: Date.now() });
-    return internal ? 'resource-internal-address' : null;
+    return state.hostGuard.refusalReason(rawUrl);
 }
 
 const handlers = {
@@ -500,6 +474,9 @@ const handlers = {
         }
         budget('navigation');
         await ensureBrowser();
+        // The page does not get to restore its own budget; a navigation the Tool
+        // performed does.
+        state.hostGuard.resetBudget();
 
         // Blocking a navigation leaves Chromium mid-transition to its own error
         // page, and that transition interrupts the *next* goto - so an ordinary
@@ -710,7 +687,10 @@ const handlers = {
             actions: state.actions,
             navigations: state.navigations,
             screenshots: state.screenshots,
-            blocked: state.blocked,
+            blocked: state.refusals?.entries() ?? [],
+            // The report stops at 200; this does not, so a page that went quiet
+            // in Activity because it was looping is still visible as a number.
+            blockedTotal: state.refusals?.total() ?? 0,
             url: state.page?.url() ?? null
         };
     },

@@ -36,10 +36,26 @@ function Copy-DpBrowserAsset {
         New-Item -ItemType Directory -Path $RuntimeRoot -Force -ErrorAction Stop | Out-Null
     }
 
-    foreach ($name in @('package.json', 'policy.mjs', 'supervisor.mjs')) {
+    # Enumerated rather than listed. A hard-coded list silently stopped shipping
+    # guards.mjs the moment it existed, and the skip-if-missing below turned that
+    # into "the supervisor started but did not report ready" (2026-09-05). Every
+    # module in the asset folder ships, and a missing one is an error rather than
+    # a quiet omission.
+    $names = @('package.json') + @(
+        Get-ChildItem -LiteralPath $AssetRoot -Filter '*.mjs' -File -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Name }
+    )
+    foreach ($name in ($names | Select-Object -Unique)) {
         $source = Join-Path $AssetRoot $name
-        if (Test-Path -LiteralPath $source -PathType Leaf) {
-            Copy-Item -LiteralPath $source -Destination (Join-Path $RuntimeRoot $name) -Force -ErrorAction Stop
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "The browser asset '$name' is missing from '$AssetRoot'."
+        }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $RuntimeRoot $name) -Force -ErrorAction Stop
+    }
+
+    foreach ($required in @('supervisor.mjs', 'policy.mjs', 'guards.mjs')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $RuntimeRoot $required) -PathType Leaf)) {
+            throw "The browser runtime is incomplete: '$required' was not installed."
         }
     }
 }

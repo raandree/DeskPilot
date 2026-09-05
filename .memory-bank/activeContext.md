@@ -18,49 +18,61 @@ uninstall, the hostile-site suite, the live workflow, UI screenshots, specs
 
 ## What the review changed
 
-**Four rounds, four FAILs.** Round one: 4 Blockers, 7 Majors. Round two, over the
-fixes: 2 Blockers, 3 Majors. Round three: 2 Blockers, 4 Majors, 7 Minors. Round
-four: 2 Blockers, 4 Majors, 6 Minors. In every round after the first, the
-Blockers were inside the previous round's fixes. All closed; decision 0003 has
-the detail.
+**Five rounds, five FAILs.** After the first, every round's Blockers were inside
+the previous round's fixes. All closed; decision 0003 has the detail.
 
-Four Blockers now share one shape: **a correct fact about component A written
+Five Blockers now share one shape: **a correct fact about component A written
 down as a guarantee about component B.**
 
 - Round two: "a bare path carries no payload beyond the path itself." The path is
   the payload.
 - Round three: "the site root carries nothing." It carries the host, and
   subdomains inherit scope.
-- Round four: percent-encoding "does not also have to be defended here, because
-  the classifier rebuilds the address." True about unreserved encoding. The
-  comparison operator two lines below was `-eq`, which in PowerShell is
-  **case-insensitive** - so `/FoReCaSt/ToDaY` matched the page's
-  `/forecast/today`, was certified as the site's own link, and reached the origin
-  verbatim. About a bit per alphabetic character, and it works off the user's own
-  typed URL, so no injected page is needed.
+- Round four: percent-encoding "does not need defending here, because the
+  classifier rebuilds the address." True of unreserved encoding; the comparison
+  operator two lines below was `-eq`, which is case-insensitive.
+- Round five: "a URL in the user's message was named by the user." True of the
+  outer URL, and round four wrote it down as a guarantee about every substring -
+  so an OAuth link's `?redirect_uri=https://attacker.test/cb` seeded
+  `attacker.test` and its whole subtree, no card. That splitter was added for a
+  **cosmetic** Minor whose unfixed behaviour was already fail-safe.
 
-Round four's second Blocker had been there since before round one and three
-rounds walked past it: the 8000-character bound on the user's message cuts
-mid-token, so a pasted blob followed by the user's own address turned
-`news.bbc.co.uk/weather` into `news.bbc.co` - a live registrable domain that then
-seeded scope and inherited the site-root exemption. That exact string is the
-example round two's docstring cites as the bug it had removed.
+Round five's second Blocker was the test written to answer round four's: the
+rebuilt-URL check only asked whether JS agreed with whatever PowerShell produced,
+so it passed with the rebuild deleted outright.
 
-Also closed: the generated corpus asserted its properties on the URL the Model
-typed rather than the one the tool sends; `fill` bound the page at the first
-field and the submit but not in between; the sub-resource DNS check was
-fail-open on a resolver assumption; and the 200-entry refusal ring turned a
-blocked navigation into a reported success once a page filled it.
+Also closed: the DNS guard's budget reset on `framenavigated`, which
+`history.pushState` fires, so a page could restore it 500 times without a network
+request; the budget counted resolver calls rather than hostnames, so one host
+spent all of it and then refused the page's own images; a transient SERVFAIL was
+cached as a positive "resolved to an internal address"; and the refusal counter's
+third hole let a sub-frame refusal deny every click and choose the text of the
+refusal message.
+
+## The change that matters more than any single fix
+
+The reviewer measured that **53 of 54** ways to disable a supervisor control left
+the suite green, because the assertions read `supervisor.mjs` as text and it
+cannot be imported without Playwright. The two stateful guards now live in
+`source/browser/guards.mjs`, which takes its resolver and clock as arguments;
+`tests/Unit/fixtures/guard-checks.mjs` executes them, and `mutate-guards.mjs`
+disables each control in turn. **The suite fails if any disabling mutation goes
+unnoticed** - eleven mutations, eleven noticed. No control was added; existing
+ones moved somewhere a test can reach.
 
 ## Evidence
 
-- Full Sampler gate: **2170 passed, 0 failed, 0 errors, 0 warnings.**
+- Full Sampler gate: **2193 passed, 0 failed, 0 errors, 0 warnings.**
 - Hostile-site proof: **25/25** against a real attacking page over HTTPS.
 - Live workflow: **11/11** against the real site.
-- The cross-parser property now runs on the **rebuilt** URL as well as the
-  original. The reviewer attacked the rebuild over 76,581 generated cases and
-  found zero host drift - it is the strongest control in the feature, and its
-  strength was what made the case-insensitive comparison invisible.
+- Guard mutation matrix: 11/11 disabling mutations detected.
+- Rebuild mutation matrix: 4/4 detected, after the first draft was caught using
+  a case-insensitive `-BeLike` and missing the lowercasing mutation.
+
+Two defects the round-five fixes introduced were caught by the hostile-site proof
+and by neither the unit suite nor review: `Copy-DpBrowserAsset` skipped a missing
+asset silently, so the new module never shipped; and `request.frame()` throws for
+a pop-up being closed, which took the session down.
 
 Defects found by running rather than reading, across three rounds: the pop-up
 handler closed the page `newPage()` created; `, $array.ToArray()` produced a
@@ -96,19 +108,21 @@ does not touch that.
 
 ## The lesson this session keeps re-teaching
 
-Four review rounds. After the first, every round's Blockers were in the previous
+Five review rounds. After the first, every round's Blockers were in the previous
 round's fixes, and every one was defended by a sentence this repository had
 written about itself and never tested.
 
-What did not work: care, re-reading, and adding controls. Round three added the
-strongest control in the feature - and then cited its strength, in a docstring,
-as the reason not to look at the line below it. What worked, every time, was
-someone trying to break the machinery the previous round had added. None of the
-first three rounds did that; round four did, and that is where both Blockers
-were.
+What did not work: care, re-reading, and adding controls. Round four added
+fifteen controls and eleven falsification attempts, and the attempts covered the
+two files where nothing broke while ten fresh source-text greps covered the six
+supervisor controls where four things did.
 
-The three standing rules are in `systemPatterns.md`: **grep for the caller before
-believing the comment**, **a justification in a docstring is a hypothesis**, **a
-fix ships with a falsification attempt**, and now **a guarantee about A is not a
-guarantee about B**.
+What worked, every time, was someone trying to break the machinery the previous
+round added. Rounds one to three never did; rounds four and five did, and that is
+where every Blocker was.
+
+Round five's answer was to stop adding and start exposing: the supervisor guards
+moved to a module a test can execute, and the suite now fails if disabling a
+control goes unnoticed. That is the first artifact in this feature that measures
+whether its own tests are worth anything.
 

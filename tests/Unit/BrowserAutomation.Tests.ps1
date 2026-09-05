@@ -471,6 +471,11 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             # sends $decision.url, so the string the browser receives was covered
             # by nothing but a source grep on the highest-risk line in the change
             # that introduced it (B4-3, 2026-09-05).
+            #
+            # On its own this is only an agreement property: it passes with the
+            # rebuild deleted, because it asks JS about whatever string PowerShell
+            # produced (B5-2). The 'rebuild collapses' Context below is what makes
+            # the rebuild itself falsifiable; this is what makes the *pair* agree.
             $rebuilt = [System.Collections.Generic.List[string]]::new()
             $expected = @{}
             foreach ($case in $script:Mutations) {
@@ -481,9 +486,6 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
                     $rebuilt.Add([string]$mine.url)
                 }
             }
-            # Far fewer than the corpus, and that collapse is itself the point:
-            # many spellings rebuild to one address, which is what removes the
-            # Model's freedom to write one request several ways.
             $rebuilt.Count | Should -BeGreaterThan 20
 
             $payload = Join-Path ([System.IO.Path]::GetTempPath()) "dp-rebuilt-$([guid]::NewGuid().ToString('n')).json"
@@ -1939,7 +1941,8 @@ Describe 'Security review regressions' -Tag 'Unit' {
         }
 
         It 'bounds the emitted refusals, not only the array' {
-            $script:Supervisor | Should -Match 'if \(state\.blocked\.length >= 200\) return;'
+            $guards = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'guards.mjs') -Raw
+            $guards | Should -Match 'if \(entries\.length >= cap\) return entry;'
         }
     }
 
@@ -2103,6 +2106,112 @@ Describe 'Third review round regressions' -Tag 'Unit' {
         }
     }
 
+    # The rebuild's own property, and proof that asserting it can fail. The
+    # generated-corpus check next door passes with the rebuild deleted, because it
+    # only asks whether JS agrees with whatever PowerShell produced (B5-2).
+    Context 'B5-2 - the rebuild collapses what the Model may vary' {
+        BeforeAll {
+            # Each pair is one request written two ways. The rebuild must erase
+            # the difference; anything it keeps is a channel.
+            $script:CollapsePairs = @(
+                @{ A = 'https://weathercity.com/%66orecast'; B = 'https://weathercity.com/forecast' }
+                @{ A = 'https://weathercity.com/%66%6f%72%65%63%61%73%74'; B = 'https://weathercity.com/forecast' }
+                @{ A = 'https://weathercity.com/a?q=%76alue'; B = 'https://weathercity.com/a?q=value' }
+                @{ A = 'https://weathercity.com/a#%66rag'; B = 'https://weathercity.com/a#frag' }
+                @{ A = 'https://weathercity.com:443/a'; B = 'https://weathercity.com/a' }
+                @{ A = 'https://weathercity.com./a'; B = 'https://weathercity.com/a' }
+                @{ A = 'https://WEATHERCITY.com/a'; B = 'https://weathercity.com/a' }
+            )
+            # Things the rebuild must not erase, because they are the request.
+            $script:KeepCases = @(
+                @{ Url = 'https://weathercity.com/A/b'; Keep = '/A/b' }
+                @{ Url = 'https://weathercity.com/a?q=1'; Keep = '?q=1' }
+                @{ Url = 'https://weathercity.com/a#frag'; Keep = '#frag' }
+                @{ Url = 'https://weathercity.com/a%2Fb'; Keep = '%2F' }
+                @{ Url = 'https://weathercity.com:8443/a'; Keep = ':8443' }
+            )
+            $script:ResolvePath = Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Resolve-DpBrowserUrlDecision.ps1' | Convert-Path
+        }
+
+        It 'collapses <A> onto <B>' -TestCases (@(
+                @{ A = 'https://weathercity.com/%66orecast'; B = 'https://weathercity.com/forecast' }
+                @{ A = 'https://weathercity.com/%66%6f%72%65%63%61%73%74'; B = 'https://weathercity.com/forecast' }
+                @{ A = 'https://weathercity.com/a?q=%76alue'; B = 'https://weathercity.com/a?q=value' }
+                @{ A = 'https://weathercity.com/a#%66rag'; B = 'https://weathercity.com/a#frag' }
+                @{ A = 'https://weathercity.com:443/a'; B = 'https://weathercity.com/a' }
+                @{ A = 'https://weathercity.com./a'; B = 'https://weathercity.com/a' }
+                @{ A = 'https://WEATHERCITY.com/a'; B = 'https://weathercity.com/a' }
+            )) {
+            param($A, $B)
+            (Resolve-DpBrowserUrlDecision -Url $A -Scope @('weathercity.com')).url |
+                Should -Be (Resolve-DpBrowserUrlDecision -Url $B -Scope @('weathercity.com')).url
+        }
+
+        It 'keeps <Keep>, which is the request rather than its spelling' -TestCases (@(
+                @{ Url = 'https://weathercity.com/A/b'; Keep = '/A/b' }
+                @{ Url = 'https://weathercity.com/a?q=1'; Keep = '?q=1' }
+                @{ Url = 'https://weathercity.com/a#frag'; Keep = '#frag' }
+                @{ Url = 'https://weathercity.com/a%2Fb'; Keep = '%2F' }
+                @{ Url = 'https://weathercity.com:8443/a'; Keep = ':8443' }
+            )) {
+            param($Url, $Keep)
+            # Ordinal: -BeLike is case-insensitive, so a rebuild that lowercased
+            # the path would satisfy it. The mutation matrix below caught that.
+            (Resolve-DpBrowserUrlDecision -Url $Url -Scope @('weathercity.com')).url.Contains($Keep, [System.StringComparison]::Ordinal) |
+                Should -BeTrue
+        }
+
+        It 'is idempotent, so what is sent survives being re-read' {
+            foreach ($case in $script:CollapsePairs) {
+                $once = (Resolve-DpBrowserUrlDecision -Url $case.A -Scope @('weathercity.com')).url
+                (Resolve-DpBrowserUrlDecision -Url $once -Scope @('weathercity.com')).url | Should -Be $once
+            }
+        }
+
+        It 'never carries userinfo onward, even on the refusal' {
+            (Resolve-DpBrowserUrlDecision -Url 'https://user:secret@weathercity.com/x' -Scope @('weathercity.com')).url |
+                Should -Be 'https://weathercity.com/x'
+        }
+
+        It 'breaking the rebuild breaks these checks' {
+            # The measurement the fifth round made and this suite could not: with
+            # $safeUrl = $Url the rebuild is gone, B3-6 is reopened, and the
+            # generated-corpus check still passed. These must not.
+            $original = Get-Content -LiteralPath $script:ResolvePath -Raw
+            $mutations = @{
+                'no-rebuild'      = @{ From = "    `$safeUrl = '{0}://{1}{2}{3}' -f `$uri.Scheme, `$authorityPart, `$uri.PathAndQuery, `$uri.Fragment"; To = '    $safeUrl = $Url' }
+                'drop-fragment'   = @{ From = ', $uri.PathAndQuery, $uri.Fragment'; To = ", `$uri.PathAndQuery, ''" }
+                'lowercase-path'  = @{ From = '$uri.PathAndQuery, $uri.Fragment'; To = '$uri.PathAndQuery.ToLowerInvariant(), $uri.Fragment' }
+                'drop-port'       = @{ From = '$authorityPart = if ($uri.IsDefaultPort) { $hostName } else { ''{0}:{1}'' -f $hostName, $uri.Port }'; To = '$authorityPart = $hostName' }
+            }
+
+            $undetected = [System.Collections.Generic.List[string]]::new()
+            foreach ($name in $mutations.Keys) {
+                $mutation = $mutations[$name]
+                $original.Contains($mutation.From) | Should -BeTrue -Because "the '$name' mutation must still apply"
+                $mutated = ($original.Replace($mutation.From, $mutation.To)) -replace 'function Resolve-DpBrowserUrlDecision', 'function Test-MutatedResolve'
+                $file = Join-Path ([System.IO.Path]::GetTempPath()) "dp-mutate-$([guid]::NewGuid().ToString('n')).ps1"
+                try {
+                    Set-Content -LiteralPath $file -Value $mutated -Encoding utf8NoBOM
+                    $noticed = & {
+                        . $file
+                        foreach ($case in $script:CollapsePairs) {
+                            if ((Test-MutatedResolve -Url $case.A -Scope @('weathercity.com')).url -ne
+                                (Test-MutatedResolve -Url $case.B -Scope @('weathercity.com')).url) { return $true }
+                        }
+                        foreach ($case in $script:KeepCases) {
+                            if (-not (Test-MutatedResolve -Url $case.Url -Scope @('weathercity.com')).url.Contains($case.Keep, [System.StringComparison]::Ordinal)) { return $true }
+                        }
+                        $false
+                    }
+                    if (-not $noticed) { $undetected.Add($name) }
+                }
+                finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
+            }
+            ($undetected -join ', ') | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'B3-5 - a sub-resource cannot reach inward unchecked' {
         BeforeAll {
             $script:Sup = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
@@ -2114,13 +2223,10 @@ Describe 'Third review round regressions' -Tag 'Unit' {
         }
 
         It 'bounds the DNS work a page can force, and refuses past it' {
-            # The cache and the lookup count are both page-driven: a page emitting
-            # <img> at a thousand distinct names chose a thousand lookups and a
-            # thousand map entries. Past the budget an unseen host is refused
-            # rather than let out unchecked, because this boundary has no peer
-            # address to fall back on.
+            # The bound itself is executed by the guard checks; this is only the
+            # wiring that gives it a real limit to enforce.
             $script:Sup | Should -Match 'hostLookups: \d+'
-            $script:Sup | Should -Match "state\.lookups >= LIMITS\.hostLookups\) return 'resource-lookup-budget'"
+            $script:Sup | Should -Match 'hostCacheEntries: \d+'
         }
 
         It 'checks the peer address of every response, not only main documents' {
@@ -2276,14 +2382,31 @@ Describe 'Fourth review round regressions' -Tag 'Unit' {
         }
 
         It 'splits addresses run together without a space' {
+            # Withdrawn: splitting promoted a url inside a url into scope (B5-1).
+            # A joined list now yields the first address only, which costs a card.
             Get-DpBrowserUserUrl -Text 'https://good.example,https://other.example/x' |
-                Should -Be @('https://good.example', 'https://other.example/x')
-            Get-DpBrowserScope -StartUrl 'https://good.example,https://other.example/x' |
-                Should -Be @('good.example', 'other.example')
+                Should -Be @('https://good.example,https://other.example/x')
         }
 
         It 'leaves a comma inside a path alone' {
             Get-DpBrowserUserUrl -Text 'https://example.com/a,b/c and more' | Should -Be @('https://example.com/a,b/c')
+        }
+
+        It 'does not promote a url inside a url into scope' {
+            # Splitting on every inner https:// was added for the cosmetic joined
+            # -list case and promoted a redirect_uri into user-named scope, chosen
+            # by whoever sent the user the link (B5-1, 2026-09-05). The splitter is
+            # gone; the joined list costs one card, which is the safe direction.
+            $oauth = 'Please open https://login.example.com/authorize?redirect_uri=https://attacker.test/cb'
+            Get-DpBrowserScope -StartUrl $oauth | Should -Be @('login.example.com')
+            (Resolve-DpBrowserUrlDecision -Url 'https://attacker.test/' -Scope @(Get-DpBrowserScope -StartUrl $oauth)).decision |
+                Should -Be 'ask'
+            Test-DpBrowserUrlFromPage -Url 'https://attacker.test/' -UserText $oauth | Should -BeFalse
+        }
+
+        It 'does not let an outer query author a path on an in-scope host' {
+            Test-DpBrowserUrlFromPage -Url 'https://a.example/admin/secret' `
+                -UserText 'https://a.example/?u=https://a.example/admin/secret' | Should -BeFalse
         }
     }
 
@@ -2292,39 +2415,107 @@ Describe 'Fourth review round regressions' -Tag 'Unit' {
             $script:Sup4 = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
         }
 
-        It 'refuses a host it could not resolve rather than letting it out' {
-            # Node's resolver and Chromium's need not agree - Chromium runs Secure
-            # DNS - so "it would have failed anyway" was an assumption, not a fact.
-            $reason = [regex]::Match($script:Sup4, 'async function hostRefusalReason.*?\n\}', 'Singleline').Value
-            $reason | Should -Match 'catch \{ internal = true; \}'
-            $reason | Should -Not -Match 'catch \{ internal = false; \}'
+        It 'wires the route handler to the host guard' {
+            $script:Sup4 | Should -Match 'hostRefusalReason'
+            $script:Sup4 | Should -Match 'recordBlocked\(refusal'
+            $script:Sup4 | Should -Match 'createHostGuard'
         }
 
-        It 'expires a resolution instead of trusting it for the session' {
-            $script:Sup4 | Should -Match 'hostLookupTtlMs'
+        It 'checks the peer address of every response, not only main documents' {
+            $script:Sup4 | Should -Match "state\.context\.on\('response'"
+            $script:Sup4 | Should -Match 'state\.internalPeer'
         }
 
-        It 'gives each page its own lookup budget' {
-            $script:Sup4 | Should -Match 'state\.lookups = 0;'
+        It 'stops the run once a response came from inside' {
+            $budget = [regex]::Match($script:Sup4, 'function budget\(kind\) \{.*?\n\}', 'Singleline').Value
+            $budget | Should -Match 'state\.internalPeer'
         }
 
-        It 'counts a refusal even when the reporting ring is full' {
-            # Past 200 entries the ring stopped growing, so click and press saw
-            # nothing refused, fell through to the still-in-scope URL, and
-            # reported a blocked navigation as a success.
-            $record = [regex]::Match($script:Sup4, 'function recordBlocked.*?\n\}', 'Singleline').Value
-            $record.IndexOf('state.blockedCount += 1') | Should -BeLessThan $record.IndexOf('if (state.blocked.length >= 200) return;')
-            $script:Sup4 | Should -Not -Match 'state\.blocked\.slice\(before\)\.find'
-            ([regex]::Matches($script:Sup4, 'navigationRefusedSince\(before\)')).Count | Should -Be 2
+        It 'does not let page script restore the lookup budget' {
+            # framenavigated fires for history.pushState, so resetting there let a
+            # page hand itself a fresh budget 500 times without a single network
+            # navigation - a control anti-correlated with the threat it named
+            # (M5-1, 2026-09-05). Only a navigation the Tool performed resets it.
+            $handler = [regex]::Match($script:Sup4, "state\.page\.on\('framenavigated'.*?\}\);", 'Singleline').Value
+            $handler | Should -Not -Match 'resetBudget|lookups'
+            $navigate = [regex]::Match($script:Sup4, 'async navigate\(\{ url \}\) \{.*?\n    \},', 'Singleline').Value
+            $navigate | Should -Match 'state\.hostGuard\.resetBudget\(\)'
+        }
+
+        It 'attributes a navigation refusal to the frame that caused it' {
+            $script:Sup4 | Should -Match "request\.frame\(\) === state\.page\?\.mainFrame\(\)"
+            $script:Sup4 | Should -Match "isMain \? 'navigation' : 'subframe'"
+        }
+
+        It 'reports the refusals it could not fit in the report' {
+            $script:Sup4 | Should -Match 'blockedTotal: state\.refusals'
         }
 
         It 'blocks service workers rather than relying on undocumented interception' {
             $script:Sup4 | Should -Match "serviceWorkers: 'block'"
         }
 
-        It 'refuses to run at all without WebSocket interception' {
+        It 'refuses to run at all without WebSocket interception, and leaves nothing behind' {
             $script:Sup4 | Should -Match 'cannot intercept WebSocket traffic'
-            $script:Sup4 | Should -Not -Match "typeof state\.context\.routeWebSocket === 'function'"
+            # The throw used to fire after state.browser was assigned, so the next
+            # ensureBrowser() returned into a session with no page (m5-6).
+            $ensure = [regex]::Match($script:Sup4, 'async function ensureBrowser\(\).*?\n\}', 'Singleline').Value
+            $ensure.IndexOf('await browser.close()') | Should -BeLessThan $ensure.IndexOf('state.browser = browser;')
+        }
+    }
+
+    # Everything above in this Context reads source text, which the fifth round
+    # measured as unable to detect 53 of 54 disabling mutations. The guards those
+    # assertions describe now live in source/browser/guards.mjs, which a test can
+    # execute - and the mutation matrix below proves these checks fail when the
+    # control they name is removed.
+    Context 'the supervisor guards, executed rather than read' -Skip:(-not $script:NodeAvailable) {
+        BeforeAll {
+            $script:GuardChecks = @()
+            $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+            if ($node) {
+                $runner = Join-Path $PSScriptRoot 'fixtures' 'run-guard-checks-real.mjs'
+                $stdout = & $node.Source $runner 2>&1
+                if ($LASTEXITCODE -eq 0) { $script:GuardChecks = @((($stdout | Out-String) | ConvertFrom-Json).checks) }
+                else { $script:GuardError = ($stdout | Out-String).Trim() }
+            }
+        }
+
+        It 'ran the guard checks' {
+            $script:GuardError | Should -BeNullOrEmpty
+            $script:GuardChecks.Count | Should -BeGreaterThan 15
+        }
+
+        It 'every guard check passes' {
+            $failed = @($script:GuardChecks | Where-Object { -not $_.pass } | ForEach-Object { "$($_.name): $($_.detail)" })
+            ($failed -join "`n") | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'the guard checks can fail' -Skip:(-not $script:NodeAvailable) {
+        BeforeAll {
+            $script:MutationMatrix = $null
+            $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+            if ($node) {
+                $runner = Join-Path $PSScriptRoot 'fixtures' 'mutate-guards.mjs'
+                $stdout = & $node.Source $runner 2>&1
+                if ($LASTEXITCODE -eq 0) { $script:MutationMatrix = (($stdout | Out-String) | ConvertFrom-Json) }
+                else { $script:MutationError = ($stdout | Out-String).Trim() }
+            }
+        }
+
+        It 'the unmutated guards pass' {
+            $script:MutationError | Should -BeNullOrEmpty
+            @($script:MutationMatrix.baselineFailures) -join "`n" | Should -BeNullOrEmpty
+        }
+
+        It 'disabling any one control is noticed' {
+            # This is the assertion the fifth round asked for: not that a control
+            # exists, but that removing it turns a test red.
+            $missed = @($script:MutationMatrix.results |
+                    Where-Object { -not $_.applied -or @($_.noticedBy).Count -eq 0 } |
+                    ForEach-Object { "$($_.id) ($($_.control)) applied=$($_.applied)" })
+            ($missed -join "`n") | Should -BeNullOrEmpty
         }
     }
 }

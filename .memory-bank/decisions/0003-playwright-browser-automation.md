@@ -456,6 +456,80 @@ the generator. The standing rules that came out of this: every equality deciding
 a security outcome is ordinal and asserted to be; the cross-parser property is
 asserted on the string that is sent; and no security claim survives in a comment
 that no test can fail.
+
+## Fifth review round, 2026-09-05
+
+**FAIL - 2 Blockers, 4 Majors, 2 Minors.** Five rounds, five Blockers inside the
+previous round's fix. Two of round four's controls held under hard attack - the
+ordinal decomposition survived 28,561 generated pairs, the truncation guard a
+~1,100-case boundary sweep - and five broke.
+
+**B5-1: a URL inside a URL became user-named scope.** Round four added
+`[regex]::Split($match.Value, '(?<=.)(?=https://)')` so that
+`https://a.example,https://b.example/` would yield both - a cosmetic Minor whose
+unfixed behaviour was already *fail-safe*. It splits on every inner `https://`,
+so an OAuth link's `?redirect_uri=https://attacker.test/cb` seeded
+`attacker.test` and its whole subtree, and that root then navigated with no card.
+The host in a `redirect_uri` is chosen by whoever sent the user the link. The
+splitter is deleted; a joined list costs one approval card, which is what it cost
+before the fix.
+
+Same shape as the previous four - *"a URL in the user's message was named by the
+user"* is true of the outer URL and was written down as a guarantee about every
+substring of it - and the first time the shape appeared in a change made for a
+cosmetic reason rather than a security one.
+
+**B5-2: the rebuilt-URL test could not fail.** Round four added it to answer
+B4-3, and it only asks whether `policy.mjs` agrees with whatever string
+PowerShell produced. The reviewer mutated the rebuild six ways, including
+deleting it outright (`$safeUrl = $Url`, which reopens B3-6), and the test passed
+every time; the `Count -gt 20` floor did not bite because the unmutated value is
+36. There is now a `rebuild collapses` Context asserting the property the rebuild
+exists for - one request written several ways must produce one string - plus a
+mutation matrix that fails if any of four ways of breaking the rebuild goes
+unnoticed. It caught a `-BeLike` in its own first draft, which is
+case-insensitive and therefore blind to a lowercasing mutation.
+
+**M5-1, M5-2, m5-5: the DNS guard was three controls that did not work.** The
+per-page budget reset on `framenavigated`, which `history.pushState` fires - 500
+pushStates produced 1000 events and 1000 free budgets, so the control was
+anti-correlated with the threat it named. The budget counted resolver calls
+rather than hostnames and the cache was written only after `await`, so 256
+concurrent requests for *one* host spent the whole budget and then refused 44 of
+the page's own images. And a transient SERVFAIL was cached as
+`resource-internal-address` for 60 seconds - a positive claim that a site
+resolved onto the user's machine, produced by a failure to ask.
+
+**M5-3: the refusal counter's third hole.** Reduced to "the newest navigation
+refusal, globally", and sub-frame document requests are navigation requests, so a
+page cycling `iframe.src` could deny every `click_link` and `press` and choose
+the address named in the refusal - up to 500 characters of attacker-selected text
+presented to the user as DeskPilot's own explanation. Refusals are now attributed
+per frame.
+
+**M5-4, which matters more than any single fix.** Nine supervisor assertions read
+`supervisor.mjs` as text; the reviewer measured **53 of 54** disabling mutations
+undetected. Commenting out `serviceWorkers: 'block'` satisfies the assertion that
+it is set. So the two stateful guards moved into `source/browser/guards.mjs`,
+which imports no Playwright and takes its resolver and clock as arguments.
+`tests/Unit/fixtures/guard-checks.mjs` executes them; `mutate-guards.mjs`
+disables each control in turn, and the suite **fails if any disabling mutation
+goes unnoticed**. Eleven mutations, eleven noticed. This adds no control - it
+moves existing ones somewhere a test can reach, which was the reviewer's stated
+bar.
+
+Also: `ensureBrowser` assigned `state.browser` before the WebSocket check, so the
+throw left a session every later call reported as ready (m5-6). The browser is
+now closed on failure and assigned last.
+
+**Two defects the fixes introduced, both found by running rather than reading.**
+`Copy-DpBrowserAsset` copied a hard-coded list of three files and *skipped*
+anything missing, so `guards.mjs` silently did not ship and the supervisor died
+with "started but did not report ready"; it now enumerates the asset folder and
+throws on a missing module. And `request.frame()` throws for a pop-up being
+closed, which took the whole session down until the frame check was made
+defensive. The hostile-site proof caught both; the unit suite caught neither.
+
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

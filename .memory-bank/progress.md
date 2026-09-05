@@ -364,3 +364,33 @@ and tests are in place and verified.
   browser surface is now ordinal, service workers are blocked outright, and the
   WebSocket control is required rather than skipped when absent. Gate: **2170
   tests, 0 failures**; hostile-site proof **25/25**; live workflow **11/11**.
+- **2026-09-05 - Fifth security review round, and the fixes for it.** FAIL again:
+  2 Blockers, 4 Majors, 2 Minors, and for the fifth time every Blocker sat in the
+  previous round's fix. Round four had added a splitter so a comma-joined URL list
+  would yield both addresses - a cosmetic Minor whose unfixed behaviour was
+  fail-safe - and it split on every inner `https://`, so an OAuth link's
+  `?redirect_uri=https://attacker.test/cb` seeded `attacker.test` and its whole
+  subtree with no approval card. The splitter is deleted. The rebuilt-URL test
+  round four added could not fail: it only asked whether policy.mjs agreed with
+  whatever PowerShell produced, and passed with the rebuild deleted outright.
+  Also closed: the DNS budget reset on `framenavigated`, which `history.pushState`
+  fires, so a page restored it at will; the budget counted resolver calls rather
+  than hostnames, so one host spent all of it and then refused the page's own
+  images; a transient SERVFAIL was cached as a positive "resolved to an internal
+  address"; and the refusal counter's third hole let a sub-frame refusal deny
+  every click and choose the refusal text the user was shown.
+
+  The change that matters more than any single fix: the reviewer measured 53 of 54
+  ways to disable a supervisor control leaving the suite green, because every
+  assertion read `supervisor.mjs` as text and it cannot be imported without
+  Playwright. The two stateful guards moved to `source/browser/guards.mjs`, which
+  takes its resolver and clock as arguments; `guard-checks.mjs` executes them and
+  `mutate-guards.mjs` disables each control in turn, **failing the suite if a
+  disabling mutation goes unnoticed**. Eleven mutations, eleven noticed. No
+  control was added - existing ones moved somewhere a test can reach.
+
+  Two defects the fixes introduced were caught by the hostile-site proof and by
+  nothing else: `Copy-DpBrowserAsset` skipped a missing asset silently, so the new
+  module never shipped, and `request.frame()` throws for a pop-up being closed.
+  Gate: **2193 tests, 0 failures, 0 warnings**; hostile-site proof **25/25**; live
+  workflow **11/11**.
