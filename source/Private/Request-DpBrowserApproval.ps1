@@ -89,7 +89,8 @@ function Request-DpBrowserApproval {
     # treated as a denial rather than matched on the request id alone, which a
     # stale grant would also satisfy.
     $returned = if ($answer -and $answer.PSObject.Properties['fingerprint']) { [string]$answer.fingerprint } else { '' }
-    if ($decisionText -eq 'approve' -and $returned -ne $request.fingerprint) {
+    if ($decisionText -eq 'approve' -and
+        -not [string]::Equals($returned, $request.fingerprint, [System.StringComparison]::Ordinal)) {
         return @{ approved = $false; message = 'That approval did not match this action, so nothing was done.' }
     }
 

@@ -18,46 +18,49 @@ uninstall, the hostile-site suite, the live workflow, UI screenshots, specs
 
 ## What the review changed
 
-**Three rounds, three FAILs.** Round one: 4 Blockers, 7 Majors, four of ten
-design claims false. Round two, over the fixes: 2 Blockers, 3 Majors, every one
-in round-one code. Round three, over those fixes: **2 Blockers, 4 Majors, 7
-Minors, every Blocker again in the previous round's code.** All are now closed
-and carry regression tests; decision 0003 has the detail.
+**Four rounds, four FAILs.** Round one: 4 Blockers, 7 Majors. Round two, over the
+fixes: 2 Blockers, 3 Majors. Round three: 2 Blockers, 4 Majors, 7 Minors. Round
+four: 2 Blockers, 4 Majors, 6 Minors. In every round after the first, the
+Blockers were inside the previous round's fixes. All closed; decision 0003 has
+the detail.
 
-The two that keep coming back are the same two, each time one component to the
-left:
+Four Blockers now share one shape: **a correct fact about component A written
+down as a guarantee about component B.**
 
-- **Where scope comes from.** The Model seeded it (round one). Then free-text
-  parsing seeded it, so `README.md` and `install.sh` were authorised hosts
-  (round two). Then the scheme match was unanchored, so `xhttps://evil.example`
-  seeded it, and a userinfo address the classifier will *never* offer a card for
-  granted permanent scope instead (round three). Scope now takes only complete
-  `https://` URLs from the message, and only ones the classifier would raise a
-  card for.
-- **What counts as "not the Model's idea".** A bare path was exempt, on the
-  claim it "carries no payload beyond the path itself" (round two). Then the site
-  *root* was exempt, on the claim it "carries nothing" - it carries the host, and
-  subdomains inherit scope, so `<200-bytes-of-context>.weather.example/` reached
-  an attacker's DNS resolver with no card (round three). The root is now authored
-  only for a host the user, the Project, or an approval named.
+- Round two: "a bare path carries no payload beyond the path itself." The path is
+  the payload.
+- Round three: "the site root carries nothing." It carries the host, and
+  subdomains inherit scope.
+- Round four: percent-encoding "does not also have to be defended here, because
+  the classifier rebuilds the address." True about unreserved encoding. The
+  comparison operator two lines below was `-eq`, which in PowerShell is
+  **case-insensitive** - so `/FoReCaSt/ToDaY` matched the page's
+  `/forecast/today`, was certified as the site's own link, and reached the origin
+  verbatim. About a bit per alphabetic character, and it works off the user's own
+  typed URL, so no injected page is needed.
 
-Also round three: sub-resources bypassed the peer-address check entirely, so an
-`<img>` at a name resolving to `169.254.169.254` was fetched unchecked;
-percent-encoding was a covert channel through provenance, closed by rebuilding
-the address rather than comparing harder; and the turn-boundary close was dead a
-second time - `Invoke-DpTurn` handed it a fresh hashtable - behind the same two
-grep assertions round two had already named as worthless and left in place.
+Round four's second Blocker had been there since before round one and three
+rounds walked past it: the 8000-character bound on the user's message cuts
+mid-token, so a pasted blob followed by the user's own address turned
+`news.bbc.co.uk/weather` into `news.bbc.co` - a live registrable domain that then
+seeded scope and inherited the site-root exemption. That exact string is the
+example round two's docstring cites as the bug it had removed.
+
+Also closed: the generated corpus asserted its properties on the URL the Model
+typed rather than the one the tool sends; `fill` bound the page at the first
+field and the submit but not in between; the sub-resource DNS check was
+fail-open on a resolver assumption; and the 200-entry refusal ring turned a
+blocked navigation into a reported success once a page filled it.
 
 ## Evidence
 
-- Full Sampler gate: **2147 passed, 0 failed, 0 errors, 0 warnings.**
+- Full Sampler gate: **2170 passed, 0 failed, 0 errors, 0 warnings.**
 - Hostile-site proof: **25/25** against a real attacking page over HTTPS.
 - Live workflow: **11/11** against the real site.
-- The cross-parser invariant now runs over **23,040 generated cases** in four
-  directions. The previous generator mutated only the first `.` of four fixed
-  hosts and never produced a near-miss at the label boundary the property is
-  about - it passed by construction.
-- PSScriptAnalyzer on `source/`: nothing new in kind.
+- The cross-parser property now runs on the **rebuilt** URL as well as the
+  original. The reviewer attacked the rebuild over 76,581 generated cases and
+  found zero host drift - it is the strongest control in the feature, and its
+  strength was what made the case-insensitive comparison invisible.
 
 Defects found by running rather than reading, across three rounds: the pop-up
 handler closed the page `newPage()` created; `, $array.ToArray()` produced a
@@ -93,19 +96,19 @@ does not touch that.
 
 ## The lesson this session keeps re-teaching
 
-Three review rounds. Every round's Blockers were in the previous round's fixes,
-and every one was defended by a sentence this repository had written about
-itself and never tested.
+Four review rounds. After the first, every round's Blockers were in the previous
+round's fixes, and every one was defended by a sentence this repository had
+written about itself and never tested.
 
-What did not work: care, and re-reading. What worked: generating the test inputs
-instead of enumerating them, and running the thing against a page that attacks
-it. Round three also showed the failure mode of a *half*-generated test - a
-generator that never produces the case the property is about passes by
-construction and reads as proof.
+What did not work: care, re-reading, and adding controls. Round three added the
+strongest control in the feature - and then cited its strength, in a docstring,
+as the reason not to look at the line below it. What worked, every time, was
+someone trying to break the machinery the previous round had added. None of the
+first three rounds did that; round four did, and that is where both Blockers
+were.
 
-The reviewer's diagnosis is the one to keep: this repository writes an
-explanation, does not test it, and then treats the explanation as the evidence.
-Recorded in `systemPatterns.md` as **grep for the caller before believing the
-comment**, **a justification in a docstring is a hypothesis**, and **a fix ships
-with a falsification attempt**.
+The three standing rules are in `systemPatterns.md`: **grep for the caller before
+believing the comment**, **a justification in a docstring is a hypothesis**, **a
+fix ships with a falsification attempt**, and now **a guarantee about A is not a
+guarantee about B**.
 

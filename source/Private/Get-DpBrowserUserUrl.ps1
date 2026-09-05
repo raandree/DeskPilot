@@ -16,9 +16,16 @@ function Get-DpBrowserUserUrl {
 
         Trailing sentence punctuation is stripped because it belongs to the
         sentence: `see https://example.com, then go` used to yield nothing at all,
-        since the comma stayed on the host and the host then failed validation.
+        since the comma stayed on the host and the host then failed validation. A
+        run of addresses with no space between them is split rather than dropped,
+        so `https://a.example,https://b.example/` yields both.
 
-        Bounded on purpose - a very long message must not turn this into a scan.
+        The length bound discards a match that reaches the cut. `Substring` slices
+        mid-token, so a long pasted blob followed by the user's own address turned
+        `news.bbc.co.uk/weather` into `news.bbc.co` - a live registrable domain
+        the message never named, whose whole subtree scope then inherited, at a
+        byte offset an attacker who supplied the pasted content chooses (B4-2,
+        2026-09-05).
     .PARAMETER Text
         The user's message.
     .OUTPUTS
@@ -34,12 +41,16 @@ function Get-DpBrowserUserUrl {
 
     if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
 
-    $bounded = if ($Text.Length -gt 8000) { $Text.Substring(0, 8000) } else { $Text }
+    $truncated = $Text.Length -gt 8000
+    $bounded = if ($truncated) { $Text.Substring(0, 8000) } else { $Text }
 
     $found = [System.Collections.Generic.List[string]]::new()
     foreach ($match in [regex]::Matches($bounded, '(?<![A-Za-z0-9+.\-])https://[^\s"''<>)\]]+')) {
-        $candidate = $match.Value -replace '[.,;:!?''"]+$', ''
-        if (-not [string]::IsNullOrWhiteSpace($candidate)) { $found.Add($candidate) }
+        if ($truncated -and ($match.Index + $match.Length) -ge $bounded.Length) { continue }
+        foreach ($part in [regex]::Split($match.Value, '(?<=.)(?=https://)')) {
+            $candidate = $part -replace '[.,;:!?''"`]+$', ''
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) { $found.Add($candidate) }
+        }
     }
 
     $found.ToArray()

@@ -379,7 +379,83 @@ lived in the previous round's fixes. The reviewer's diagnosis is the one to keep
 this repository writes an explanation, does not test it, and then treats the
 explanation as the evidence. A fix now ships with an executable falsification
 attempt — not a grep, not a curated case list, and not a paragraph.
+## Fourth review round, 2026-09-05
 
+**FAIL - 2 Blockers, 4 Majors, 6 Minors.** Both Blockers were silent, card-free
+exfiltration channels on the user's own named host. B-2 was re-confirmed closed
+under a much harder attack (76,581 generated cases, zero host drift); the URL
+rebuild introduced in round three is the strongest control in the feature and
+survived.
+
+**B4-1: `-eq` is case-insensitive, and a path is not.** `Test-DpBrowserUrlFromPage`
+compared the path, query and fragment with PowerShell's `-eq`, which is
+case-insensitive *and* culture-sensitive. So `/FoReCaSt/ToDaY` matched the page's
+`/forecast/today`, was certified as the site's own link, and reached the origin
+server verbatim - roughly a bit per alphabetic character, 24 bits for that link,
+and ~300 for a link with a 300-character path a hostile page publishes on
+purpose. It works off the user's own typed URL too, so no injected page is
+required. This is **B3-6 re-opened one component to the left**, and round three's
+docstring is the reason nobody looked: it stated that percent-encoding did not
+need defending here *because* the classifier rebuilds the address - true about
+unreserved encoding, false about letter case and reserved-byte hex case, and
+silent about the larger channel. The comparison is now ordinal for everything
+after the host, case-insensitive for the host because DNS is, and every other
+culture-sensitive comparison on the browser surface (`$hostName -eq $allowed`,
+`.EndsWith`, the approval fingerprint) is ordinal too.
+
+**B4-2: the 8000-character bound manufactured a host nobody wrote.** `Substring`
+slices mid-token, so a pasted blob followed by the user's own address turned
+`news.bbc.co.uk/weather` into `news.bbc.co` - a live registrable domain - which
+then seeded scope *and* inherited the B3-1 root exemption, reachable with no card
+at either enforcement point. `.com`->`.co`, `.dev`->`.de`, `.info`->`.in` and
+`.net`->`.ne` are all live registries, and an attacker who supplies any pasted
+content chooses the byte offset and therefore the typo-domain. The string
+`news.bbc.co` is verbatim the example round two's own docstring cites as the bug
+it removed: it was removed from the bare-token heuristic and left in the length
+bound, where three rounds walked past it. A match that reaches the cut is now
+discarded.
+
+**B4-3: the corpus tested the string the Model typed, not the one that is sent.**
+All four generated properties evaluated `$case.url`, while `Invoke-DpBrowserTool`
+sends `$decision.url`. The generator grew 13x in round three and 0% closer to the
+property that round's headline change was about; the only coverage of that change
+was a `Should -Match` on the send line. The rebuilt URL is now fed back through
+`policy.mjs` and compared host for host.
+
+**B4-4: `fill` bound the page at the first field and the submit, not in between.**
+Fields 2..n were typed with no check, and with no `submitWith` no check ever
+fired at all. `assertSamePage` now runs before every field.
+
+**B4-5: the sub-resource DNS check was fail-open.** `catch { internal = false }`
+rested on "a name that will not resolve produces a request that fails anyway",
+which assumes Node's resolver and Chromium's agree - Chromium runs its own with
+Secure DNS. If they agree, refusing costs a request that was going to fail; if
+they disagree, refusing is the only check there is. Failure is now closed, the
+cache expires after 60s so a rebinding host is re-checked, and the lookup budget
+is per page rather than per session.
+
+**B4-6: the refusal ring's 200-entry cap turned a blocked navigation into a
+reported success.** Past the cap `recordBlocked` returned before pushing, so
+`click` and `press` found nothing refused, fell through to the still-in-scope
+current URL, and reported success - `submitted: true` for a form that never
+posted. A page reaches 200 with 200 off-scope `fetch` calls, i.e. exactly when it
+is attacking. Refusals are now counted separately from the bounded report.
+
+Also: service workers are blocked outright rather than relying on `route()`
+intercepting them, which it does on this version but which Playwright's own types
+say it does not; the WebSocket control is now required rather than skipped when
+absent; and the extractor keeps a host the user named in a comma-joined list and
+strips a trailing backtick.
+
+**The root cause the reviewer named, which is one level up from any of these.**
+Four Blockers across four rounds share a shape: *a correct fact about component A
+is written down as a guarantee about component B.* The rebuild is genuinely
+strong, and its strength was used in writing as the reason not to look at the
+comparison operator two lines below. Size was likewise mistaken for coverage in
+the generator. The standing rules that came out of this: every equality deciding
+a security outcome is ordinal and asserted to be; the cross-parser property is
+asserted on the string that is sent; and no security claim survives in a comment
+that no test can fail.
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

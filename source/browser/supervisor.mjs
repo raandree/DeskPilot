@@ -35,6 +35,15 @@ const LIMITS = {
     screenshots: 10,
     downloads: 10,
     downloadBytes: 50 * 1024 * 1024,
+    // Distinct hostnames the page may make DeskPilot resolve, per page. A page
+    // chooses how many names it asks for, so without this it chooses how much
+    // DNS traffic leaves the machine and how large the cache grows - and a
+    // session-wide budget let one hostile page starve every later page of its
+    // sub-resources. Reset on each main-frame navigation.
+    hostLookups: 256,
+    // A name that answered publicly is not trusted for the rest of the session:
+    // that is what rebinding is.
+    hostLookupTtlMs: 60000,
     actionTimeoutMs: 30000,
     navigationTimeoutMs: 45000
 };
@@ -57,13 +66,22 @@ const state = {
     navigationId: 0,
     // Hostname -> whether it resolves to an address the browser may not reach.
     // Per session, so an ordinary page costs one lookup per host rather than one
-    // per request.
+    // per request, and bounded by LIMITS.hostLookups.
     resolved: new Map(),
+    lookups: 0,
     // Set when a response came back from an internal peer. A sub-resource cannot
     // be un-sent, so the next action refuses instead of the run continuing as if
     // nothing had happened.
     internalPeer: null,
-    blocked: []
+    blocked: [],
+    // Counted separately from the reported ring. `blocked` is bounded so a
+    // looping page cannot grow the process, but the navigate/click/press paths
+    // decide "was this refused?" by looking at what arrived since they started -
+    // and once the ring was full they saw nothing, fell through to the old
+    // in-scope URL, and reported a refused navigation as a success (B4-6,
+    // 2026-09-05). The counter is unbounded and cheap; only the reporting is capped.
+    blockedCount: 0,
+    blockedLast: null
 };
 
 function emit(payload) {
@@ -74,11 +92,27 @@ function emit(payload) {
 // page looping on a blocked request cannot grow the process without limit.
 function recordBlocked(reason, url, resourceType) {
     const entry = { reason, url: String(url).slice(0, 500), resourceType };
+    state.blockedCount += 1;
+    state.blockedLast = entry;
     // Bounds the array *and* the emit. A page looping on a blocked request would
     // otherwise write unbounded lines to stdout even though the array stopped.
     if (state.blocked.length >= 200) return;
     state.blocked.push(entry);
     emit({ event: 'blocked', ...entry });
+}
+
+// What was refused since a marker, without depending on the reporting ring
+// having room. Returns the newest navigation refusal, or null.
+function navigationRefusedSince(marker) {
+    if (state.blockedCount === marker.count) return null;
+    const fromRing = state.blocked.slice(marker.length).find((entry) => String(entry.reason).startsWith('navigation-'));
+    if (fromRing) return fromRing;
+    const last = state.blockedLast;
+    return last && String(last.reason).startsWith('navigation-') ? last : null;
+}
+
+function blockedMarker() {
+    return { length: state.blocked.length, count: state.blockedCount };
 }
 
 async function ensureBrowser() {
@@ -112,6 +146,11 @@ async function ensureBrowser() {
     state.context = await state.browser.newContext({
         acceptDownloads: state.allowDownload,
         ignoreHTTPSErrors: testInsecure,
+        // Playwright's own types say route() does not intercept requests made by
+        // a Service Worker. It does on this version - measured - but a control
+        // that holds only because the vendor's documentation is stale is not a
+        // control. Blocking registration makes the contract the documented one.
+        serviceWorkers: 'block',
         // Nothing is granted. A page asking for geolocation, notifications,
         // camera or clipboard is refused without reaching the user, because the
         // first workflow needs none of them and a prompt is a decision surface
@@ -149,8 +188,9 @@ async function ensureBrowser() {
         // assertPeerAllowed is only wired into the main-document paths (B3-5,
         // 2026-09-05). This is TOCTOU-able by a fast rebind; the response check
         // below is not, and catches what this misses.
-        if (await hostResolvesInternal(url)) {
-            recordBlocked('resource-internal-address', url, resourceType);
+        const refusal = await hostRefusalReason(url);
+        if (refusal) {
+            recordBlocked(refusal, url, resourceType);
             return route.abort('blockedbyclient');
         }
 
@@ -166,19 +206,24 @@ async function ensureBrowser() {
         }).catch(() => {});
     });
 
-    if (typeof state.context.routeWebSocket === 'function') {
-        await state.context.routeWebSocket('**/*', (ws) => {
-            const url = ws.url();
-            if (resolveUrlDecision(url, state.scope).decision === 'allow') return ws.connectToServer();
-            recordBlocked('websocket', url, 'websocket');
-            return ws.close();
-        });
+    if (typeof state.context.routeWebSocket !== 'function') {
+        // Never silently: an absent control is not a control that passed.
+        throw new Error('This Playwright build cannot intercept WebSocket traffic, so DeskPilot will not open a browser.');
     }
+    await state.context.routeWebSocket('**/*', (ws) => {
+        const url = ws.url();
+        if (resolveUrlDecision(url, state.scope).decision === 'allow') return ws.connectToServer();
+        recordBlocked('websocket', url, 'websocket');
+        return ws.close();
+    });
 
     state.page = await state.context.newPage();
 
     state.page.on('framenavigated', (frame) => {
-        if (frame === state.page.mainFrame()) state.navigationId += 1;
+        if (frame !== state.page.mainFrame()) return;
+        state.navigationId += 1;
+        // The lookup budget is the page's to spend, so it is the page's to lose.
+        state.lookups = 0;
     });
 
     // Registered only after the main page exists. The 'page' event fires for
@@ -332,7 +377,7 @@ async function clickControl(text) {
 // exactly like a navigation - a form that posts to another site is a navigation
 // wearing a button.
 async function pressControl(text) {
-    const before = state.blocked.length;
+    const before = blockedMarker();
     const [response] = await Promise.all([
         state.page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => null),
         clickControl(text)
@@ -342,7 +387,7 @@ async function pressControl(text) {
     // The interceptor may already have refused the post, in which case the page
     // never moved and the scope check below would see nothing wrong. Saying so
     // is the difference between "that did not work" and "that was not allowed".
-    const refused = state.blocked.slice(before).find((entry) => String(entry.reason).startsWith('navigation-'));
+    const refused = navigationRefusedSince(before);
     if (refused) {
         // Settled before returning: the aborted navigation is still transitioning
         // to Chromium's error page, and leaving it in flight interrupts whatever
@@ -394,26 +439,44 @@ async function assertPeerAllowed(response) {
 }
 
 // The best a route handler can do, which is not as good as a peer address:
-// resolve the name and refuse if any answer is internal. Cached per session and
-// treated as allowed when resolution fails, because a name that will not resolve
-// produces a request that fails anyway.
-async function hostResolvesInternal(rawUrl) {
-    if (state.testInsecure) return false;
+// resolve the name and refuse if any answer is internal. Returns null when the
+// request may go out, otherwise the reason it may not.
+//
+// Failure is **closed**, not open. The earlier reasoning - "a name that will not
+// resolve produces a request that fails anyway" - assumes Node's resolver and
+// Chromium's agree. They need not: Chromium runs its own resolver with Secure
+// DNS, so a name that SERVFAILs the OS path and resolves to 127.0.0.1 over DoH
+// would have been let out unchecked. If the two agree, refusing costs a request
+// that was going to fail; if they disagree, refusing is the only check there is
+// (B4-5, 2026-09-05).
+//
+// Entries expire so a name that answered publicly once is re-checked rather than
+// trusted for the life of the session, and both the cache and the DNS traffic
+// are bounded per page because the page chooses how many names to ask for.
+async function hostRefusalReason(rawUrl) {
+    if (state.testInsecure) return null;
     let hostname;
     try { hostname = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase(); }
-    catch { return false; }
-    if (!hostname) return false;
-    if (state.resolved.has(hostname)) return state.resolved.get(hostname);
+    catch { return null; }
+    if (!hostname) return null;
 
-    let internal = false;
+    const cached = state.resolved.get(hostname);
+    if (cached && Date.now() - cached.at < LIMITS.hostLookupTtlMs) {
+        return cached.internal ? 'resource-internal-address' : null;
+    }
+
+    if (state.lookups >= LIMITS.hostLookups) return 'resource-lookup-budget';
+    state.lookups += 1;
+
+    let internal = true;
     try {
         const answers = await lookup(hostname, { all: true, verbatim: true });
         internal = answers.some((answer) => isInternalAddress(answer.address));
     }
-    catch { internal = false; }
+    catch { internal = true; }
 
-    state.resolved.set(hostname, internal);
-    return internal;
+    state.resolved.set(hostname, { internal, at: Date.now() });
+    return internal ? 'resource-internal-address' : null;
 }
 
 const handlers = {
@@ -472,15 +535,15 @@ const handlers = {
         // A click that follows a link is a navigation, and counting it as only an
         // action left LIMITS.navigations unenforced on the one path a page can
         // steer (m3-1, 2026-09-05).
-        budget('navigation');
         if (!state.page) throw new Error('No page is open.');
+        budget('navigation');
         const name = String(linkText ?? '').trim();
         if (!name) throw new Error('A link name is required.');
         if (name.length > 200) throw new Error('That link name is too long to be a link name.');
 
         // Role and accessible name, never a page-supplied selector string: there
         // is no path here from page text to a selector engine or to eval.
-        const before = state.blocked.length;
+        const before = blockedMarker();
         const link = state.page.getByRole('link', { name, exact: false }).first();
         const [response] = await Promise.all([
             state.page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => null),
@@ -492,7 +555,7 @@ const handlers = {
         // which case the page never moved and the check below would see nothing
         // wrong. The settle matters as much as the message - an aborted
         // navigation left in flight interrupts whatever the caller does next.
-        const refused = state.blocked.slice(before).find((entry) => String(entry.reason).startsWith('navigation-'));
+        const refused = navigationRefusedSince(before);
         if (refused) {
             await state.page.goto('about:blank').catch(() => {});
             await state.page.waitForLoadState('domcontentloaded').catch(() => {});
@@ -527,6 +590,11 @@ const handlers = {
 
         const filled = [];
         for (const entry of fields ?? []) {
+            // Between every field, not only before the first. A page that
+            // navigates itself after field one used to receive the remaining
+            // approved values, and with no submitWith no check ever fired at all
+            // (B4-4, 2026-09-05).
+            assertSamePage(expectedUrl, expectedNavigation);
             const locator = findField(entry.name);
             const descriptor = await describeField(locator);
             if (!descriptor.found) throw new Error(`No field called '${entry.name}' was found on this page.`);
@@ -547,9 +615,7 @@ const handlers = {
 
         if (submitWith) {
             // Re-checked, because filling takes time and the approval covered the
-            // page as well as the values. A navigation between the first field
-            // and the submit would otherwise press a control on a page nobody
-            // approved (m3-4, 2026-09-05).
+            // page as well as the values.
             assertSamePage(expectedUrl, expectedNavigation);
             await pressControl(submitWith);
         }

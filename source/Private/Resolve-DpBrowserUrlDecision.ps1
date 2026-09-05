@@ -123,7 +123,8 @@ function Resolve-DpBrowserUrlDecision {
     }
 
     if ($hostName -notmatch '\.') { return (& $refuse 'single-label-host' $safeUrl $hostName) }
-    if ($hostName.EndsWith('.localhost') -or $hostName.EndsWith('.local')) {
+    if ($hostName.EndsWith('.localhost', [System.StringComparison]::Ordinal) -or
+        $hostName.EndsWith('.local', [System.StringComparison]::Ordinal)) {
         return (& $refuse 'private-host' $safeUrl $hostName)
     }
 
@@ -133,8 +134,12 @@ function Resolve-DpBrowserUrlDecision {
         if (-not $allowed) { continue }
 
         # The label boundary is the point: a plain suffix test would let
-        # evilweathercity.com inherit weathercity.com's scope.
-        if ($hostName -eq $allowed -or $hostName.EndsWith('.' + $allowed)) {
+        # evilweathercity.com inherit weathercity.com's scope. Ordinal, because
+        # both sides are already lowercased and a culture-sensitive comparison
+        # ignores characters ICU treats as collapsible - safe here by coincidence
+        # rather than by design (B4-1, 2026-09-05).
+        if ([string]::Equals($hostName, $allowed, [System.StringComparison]::Ordinal) -or
+            $hostName.EndsWith('.' + $allowed, [System.StringComparison]::Ordinal)) {
             return @{ decision = 'allow'; reason = 'in-scope'; host = $hostName; url = $safeUrl }
         }
     }

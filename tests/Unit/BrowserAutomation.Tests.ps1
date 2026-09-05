@@ -465,6 +465,54 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             }
             ($offenders -join "`n") | Should -BeNullOrEmpty
         }
+
+        It 'agrees about the address it actually sends, not the one the Model typed' {
+            # Every property above evaluates the Model's original string. The tool
+            # sends $decision.url, so the string the browser receives was covered
+            # by nothing but a source grep on the highest-risk line in the change
+            # that introduced it (B4-3, 2026-09-05).
+            $rebuilt = [System.Collections.Generic.List[string]]::new()
+            $expected = @{}
+            foreach ($case in $script:Mutations) {
+                $mine = Resolve-DpBrowserUrlDecision -Url $case.url -Scope @('weathercity.com')
+                if ($mine.decision -ne 'allow') { continue }
+                if (-not $expected.ContainsKey([string]$mine.url)) {
+                    $expected[[string]$mine.url] = [string]$mine.host
+                    $rebuilt.Add([string]$mine.url)
+                }
+            }
+            # Far fewer than the corpus, and that collapse is itself the point:
+            # many spellings rebuild to one address, which is what removes the
+            # Model's freedom to write one request several ways.
+            $rebuilt.Count | Should -BeGreaterThan 20
+
+            $payload = Join-Path ([System.IO.Path]::GetTempPath()) "dp-rebuilt-$([guid]::NewGuid().ToString('n')).json"
+            try {
+                Set-Content -LiteralPath $payload -Value ($rebuilt.ToArray() | ConvertTo-Json -Compress -Depth 3) -Encoding utf8NoBOM
+                $node = Get-Command node -CommandType Application
+                $runner = Join-Path $PSScriptRoot 'fixtures' 'run-rebuilt-urls.mjs'
+                $previousEncoding = [Console]::OutputEncoding
+                try {
+                    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $stdout = & $node.Source $runner $payload '["weathercity.com"]' 2>&1
+                }
+                finally { [Console]::OutputEncoding = $previousEncoding }
+                $LASTEXITCODE | Should -Be 0 -Because ($stdout | Out-String)
+
+                $offenders = [System.Collections.Generic.List[string]]::new()
+                foreach ($case in (($stdout | Out-String) | ConvertFrom-Json).results) {
+                    if ($case.decision -ne 'allow') {
+                        $offenders.Add("$($case.url) : ps=allow js=$($case.decision)/$($case.reason)")
+                        continue
+                    }
+                    if ($case.host -ne $expected[[string]$case.url]) {
+                        $offenders.Add("$($case.url) : ps=$($expected[[string]$case.url]) js=$($case.host)")
+                    }
+                }
+                ($offenders -join "`n") | Should -BeNullOrEmpty
+            }
+            finally { Remove-Item -LiteralPath $payload -Force -ErrorAction SilentlyContinue }
+        }
     }
 }
 
@@ -2061,8 +2109,18 @@ Describe 'Third review round regressions' -Tag 'Unit' {
         }
 
         It 'resolves a sub-resource host before letting the request out' {
-            $script:Sup | Should -Match 'hostResolvesInternal'
-            $script:Sup | Should -Match "recordBlocked\('resource-internal-address'"
+            $script:Sup | Should -Match 'hostRefusalReason'
+            $script:Sup | Should -Match "recordBlocked\(refusal"
+        }
+
+        It 'bounds the DNS work a page can force, and refuses past it' {
+            # The cache and the lookup count are both page-driven: a page emitting
+            # <img> at a thousand distinct names chose a thousand lookups and a
+            # thousand map entries. Past the budget an unseen host is refused
+            # rather than let out unchecked, because this boundary has no peer
+            # address to fall back on.
+            $script:Sup | Should -Match 'hostLookups: \d+'
+            $script:Sup | Should -Match "state\.lookups >= LIMITS\.hostLookups\) return 'resource-lookup-budget'"
         }
 
         It 'checks the peer address of every response, not only main documents' {
@@ -2113,7 +2171,7 @@ Describe 'Third review round regressions' -Tag 'Unit' {
         }
 
         It 'settles a refused navigation instead of leaving it in flight' {
-            $script:Click | Should -Match 'state\.blocked\.slice\(before\)'
+            $script:Click | Should -Match 'navigationRefusedSince\(before\)'
             ([regex]::Matches($script:Click, "waitForLoadState\('domcontentloaded'\)")).Count | Should -BeGreaterOrEqual 2
         }
     }
@@ -2130,7 +2188,143 @@ Describe 'Third review round regressions' -Tag 'Unit' {
 
         It 're-checks the page between filling and submitting' {
             $fill = [regex]::Match($script:WriteSup, 'async fill\(\{.*?\n    \},', 'Singleline').Value
-            ([regex]::Matches($fill, 'assertSamePage\(expectedUrl, expectedNavigation\)')).Count | Should -Be 2
+            ([regex]::Matches($fill, 'assertSamePage\(expectedUrl, expectedNavigation\)')).Count | Should -Be 3
+        }
+    }
+}
+
+# The fourth review round. Both Blockers were silent, card-free channels on the
+# user's own named host, and both were guarded by a sentence rather than a test.
+Describe 'Fourth review round regressions' -Tag 'Unit' {
+    Context 'B4-1 - a path is case-sensitive on the wire, and -eq is not' {
+        BeforeAll {
+            $script:LinkSession = @{ pageLinks = @('https://weather.example/forecast/today?city=london') }
+        }
+
+        It 'authors the link exactly as the page published it' {
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/forecast/today?city=london' -Session $script:LinkSession |
+                Should -BeTrue
+        }
+
+        It 'refuses <Case>, which reaches the origin server verbatim' -TestCases @(
+            @{ Case = 'alternating case in the path'; Url = 'https://weather.example/FoReCaSt/ToDaY?city=london' }
+            @{ Case = 'alternating case in the query'; Url = 'https://weather.example/forecast/today?CiTy=LoNdOn' }
+            @{ Case = 'an upper-cased path'; Url = 'https://weather.example/FORECAST/TODAY?city=london' }
+        ) {
+            param($Url)
+            # 24 alphabetic characters in that link is 24 bits per navigation,
+            # into the access log of whoever published it.
+            Test-DpBrowserUrlFromPage -Url $Url -Session $script:LinkSession | Should -BeFalse
+        }
+
+        It 'refuses a case flip on an address the user typed' {
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/FoReCaSt/ToDaY' `
+                -UserText 'open https://weather.example/forecast/today' | Should -BeFalse
+        }
+
+        It 'still treats the host case-insensitively, because DNS does' {
+            Test-DpBrowserUrlFromPage -Url 'https://WEATHER.example/forecast/today?city=london' -Session $script:LinkSession |
+                Should -BeTrue
+        }
+
+        It 'refuses a hex-case flip in a reserved escape' {
+            $session = @{ pageLinks = @('https://weather.example/a%2Fb') }
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/a%2Fb' -Session $session | Should -BeTrue
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/a%2fb' -Session $session | Should -BeFalse
+        }
+
+        It 'matches the scope host ordinally rather than by culture' {
+            $source = Get-Command Resolve-DpBrowserUrlDecision | ForEach-Object { $_.Definition }
+            $source | Should -Not -Match '\$hostName -eq \$allowed'
+            $source | Should -Match 'StringComparison\]::Ordinal'
+        }
+
+        It 'compares the approval fingerprint ordinally' {
+            $source = Get-Command Request-DpBrowserApproval | ForEach-Object { $_.Definition }
+            $source | Should -Not -Match '\$returned -ne \$request\.fingerprint'
+        }
+    }
+
+    Context 'B4-2 - the length bound must not manufacture a host' {
+        It 'does not seed a domain the message never named' {
+            # Substring slices mid-token, so a pasted blob of the attacker's
+            # chosen length collapsed news.bbc.co.uk into news.bbc.co - a live
+            # registrable domain - and scope then covered its whole subtree.
+            foreach ($pad in 7975..7995) {
+                $text = ('x' * $pad) + ' https://news.bbc.co.uk/weather'
+                $seeded = @(Get-DpBrowserScope -StartUrl $text)
+                foreach ($name in $seeded) {
+                    $name | Should -Be 'news.bbc.co.uk' -Because "pad=$pad produced '$name', which is not in the message"
+                }
+            }
+        }
+
+        It 'keeps a URL that ends before the cut' {
+            $text = 'https://weather.example/x ' + ('y' * 9000)
+            Get-DpBrowserScope -StartUrl $text | Should -Be @('weather.example')
+        }
+
+        It 'authors nothing from a truncated address either' {
+            $text = ('x' * 7979) + ' https://news.bbc.co.uk/weather'
+            Test-DpBrowserUrlFromPage -Url 'https://news.bbc.co/' -UserText $text | Should -BeFalse
+        }
+    }
+
+    Context 'm4-4 and m4-5 - the extractor keeps what the user named' {
+        It 'strips a trailing backtick' {
+            Get-DpBrowserUserUrl -Text 'see `https://example.com/x` here' | Should -Be @('https://example.com/x')
+        }
+
+        It 'splits addresses run together without a space' {
+            Get-DpBrowserUserUrl -Text 'https://good.example,https://other.example/x' |
+                Should -Be @('https://good.example', 'https://other.example/x')
+            Get-DpBrowserScope -StartUrl 'https://good.example,https://other.example/x' |
+                Should -Be @('good.example', 'other.example')
+        }
+
+        It 'leaves a comma inside a path alone' {
+            Get-DpBrowserUserUrl -Text 'https://example.com/a,b/c and more' | Should -Be @('https://example.com/a,b/c')
+        }
+    }
+
+    Context 'B4-5 and B4-6 - the supervisor fails closed and keeps counting' {
+        BeforeAll {
+            $script:Sup4 = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+        }
+
+        It 'refuses a host it could not resolve rather than letting it out' {
+            # Node's resolver and Chromium's need not agree - Chromium runs Secure
+            # DNS - so "it would have failed anyway" was an assumption, not a fact.
+            $reason = [regex]::Match($script:Sup4, 'async function hostRefusalReason.*?\n\}', 'Singleline').Value
+            $reason | Should -Match 'catch \{ internal = true; \}'
+            $reason | Should -Not -Match 'catch \{ internal = false; \}'
+        }
+
+        It 'expires a resolution instead of trusting it for the session' {
+            $script:Sup4 | Should -Match 'hostLookupTtlMs'
+        }
+
+        It 'gives each page its own lookup budget' {
+            $script:Sup4 | Should -Match 'state\.lookups = 0;'
+        }
+
+        It 'counts a refusal even when the reporting ring is full' {
+            # Past 200 entries the ring stopped growing, so click and press saw
+            # nothing refused, fell through to the still-in-scope URL, and
+            # reported a blocked navigation as a success.
+            $record = [regex]::Match($script:Sup4, 'function recordBlocked.*?\n\}', 'Singleline').Value
+            $record.IndexOf('state.blockedCount += 1') | Should -BeLessThan $record.IndexOf('if (state.blocked.length >= 200) return;')
+            $script:Sup4 | Should -Not -Match 'state\.blocked\.slice\(before\)\.find'
+            ([regex]::Matches($script:Sup4, 'navigationRefusedSince\(before\)')).Count | Should -Be 2
+        }
+
+        It 'blocks service workers rather than relying on undocumented interception' {
+            $script:Sup4 | Should -Match "serviceWorkers: 'block'"
+        }
+
+        It 'refuses to run at all without WebSocket interception' {
+            $script:Sup4 | Should -Match 'cannot intercept WebSocket traffic'
+            $script:Sup4 | Should -Not -Match "typeof state\.context\.routeWebSocket === 'function'"
         }
     }
 }

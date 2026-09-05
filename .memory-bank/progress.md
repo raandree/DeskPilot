@@ -345,3 +345,22 @@ and tests are in place and verified.
   cases to **23,040** checked in four directions, because the old one never
   produced a near-miss at the label boundary the property is about. Gate: **2147
   tests, 0 failures**; hostile-site proof **25/25**; live workflow **11/11**.
+- **2026-09-05 - Fourth security review round, and the fixes for it.** FAIL
+  again: 2 Blockers, 4 Majors, 6 Minors. Both Blockers were silent, card-free
+  exfiltration channels on the user's own named host. `Test-DpBrowserUrlFromPage`
+  compared paths with PowerShell's `-eq`, which is case-insensitive, so
+  `/FoReCaSt/ToDaY` matched the page's `/forecast/today` and reached the origin
+  verbatim - about a bit per alphabetic character, and it works off the user's
+  own typed URL. And the 8000-character bound on the message cut mid-token, so a
+  pasted blob turned `news.bbc.co.uk/weather` into `news.bbc.co`, a live
+  registrable domain that then seeded scope and inherited the site-root
+  exemption; that string is verbatim the example round two cited as a bug it had
+  removed, and three rounds walked past it. Also closed: the generated corpus
+  asserted its properties on the URL the Model typed rather than the one the tool
+  sends; `fill` bound the page at the first field and the submit but not in
+  between; the sub-resource DNS check was fail-open on the assumption that Node's
+  resolver and Chromium's agree; and the 200-entry refusal ring turned a blocked
+  navigation into a reported success. Every culture-sensitive comparison on the
+  browser surface is now ordinal, service workers are blocked outright, and the
+  WebSocket control is required rather than skipped when absent. Gate: **2170
+  tests, 0 failures**; hostile-site proof **25/25**; live workflow **11/11**.

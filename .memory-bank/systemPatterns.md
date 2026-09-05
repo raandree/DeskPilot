@@ -1138,16 +1138,33 @@ source: repository evidence
   now says so instead of implying it can.
 
 - **A fix ships with an executable falsification attempt.** Not a `Should -Match`
-  against source text, not a curated case list, not a paragraph. Three rounds of
+  against source text, not a curated case list, not a paragraph. Four rounds of
   review found their Blockers by running things; the repository's own tests found
   none of them, because the tests asserted intent. The concrete shapes to avoid:
   a test that greps for the function's own name in a route table (this hid two
   different dead calls, and survived the commit that documented why it is
   worthless); a corpus curated until it passes; and a generator that never emits
   the case the property is about - the cross-parser mutator produced 1,700 cases
-  and not one near-miss at the label boundary the whole invariant concerns.
-  Prefer reference equality, mock invocation counts, and generated inputs over
-  anything that reads the source as a string.
+  and not one near-miss at the label boundary the whole invariant concerns, then
+  grew to 23,040 cases while still evaluating the URL the Model typed rather than
+  the one the tool sends. Prefer reference equality, mock invocation counts, and
+  generated inputs over anything that reads the source as a string.
+
+- **A guarantee about A is not a guarantee about B, and adding a control is not
+  reviewing it.** Four Blockers across four review rounds share one shape: a
+  correct fact about one component written down as a promise about the component
+  next to it. "The classifier rebuilds the address" is true, and it was cited in
+  a docstring as the reason percent-encoding needed no defence in the *comparison
+  function* - whose operator was `-eq`, which in PowerShell is case-insensitive,
+  so a path could be re-cased freely and still be certified as the site's own
+  link. The rebuild was the strongest control in the feature and its strength is
+  precisely what made the hole invisible. Two rules follow. Every equality that
+  decides a security outcome is ordinal and asserted to be - `-eq`, `-ne`, `-in`,
+  `-contains`, `-like`, `.EndsWith` and `.StartsWith` are all culture-sensitive
+  and case-insensitive by default in PowerShell. And a round that only adds
+  machinery has not been reviewed: the first three rounds each added a control
+  and none attacked the previous round's; the round that did found both of its
+  Blockers there.
 
 ## Anti-patterns to avoid
 

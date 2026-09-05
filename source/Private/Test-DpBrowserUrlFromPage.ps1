@@ -35,10 +35,15 @@ function Test-DpBrowserUrlFromPage {
 
         Everything else is the Model's own composition and is escalated.
 
-        The comparison covers scheme, host, path, query and fragment. It does not
-        also have to defend against percent-encoding games, because
+        The comparison covers scheme, host, port, path, query and fragment. Host
+        is matched case-insensitively because DNS is; everything after it is
+        matched **ordinally**, because a path is case-sensitive on the wire and
+        PowerShell's `-eq` is not. It does not additionally have to defend
+        against percent-encoding of unreserved characters, because
         `Resolve-DpBrowserUrlDecision` rebuilds the address it hands onward and
-        the browser is sent that rebuilt string rather than the Model's original.
+        the browser is sent that rebuilt string - but note that the rebuild
+        preserves letter case and reserved-byte encoding, so the operator below
+        is what closes the channel, not the rebuild.
     .PARAMETER Url
         The address the Model proposes.
     .PARAMETER Session
@@ -83,14 +88,24 @@ function Test-DpBrowserUrlFromPage {
         ([string]$name).Trim().TrimEnd('.').ToLowerInvariant()
     }
 
+    $wantedHost = & $hostOf $uri
     # Everything the address carries, fragment included.
-    $wanted = $uri.GetLeftPart([System.UriPartial]::Query) + $uri.Fragment
+    $wantedPath = $uri.PathAndQuery + $uri.Fragment
 
     $matchesCandidate = {
         param([string]$Candidate)
         $other = $null
         if (-not [System.Uri]::TryCreate($Candidate, [System.UriKind]::Absolute, [ref]$other)) { return $false }
-        ($other.GetLeftPart([System.UriPartial]::Query) + $other.Fragment) -eq $wanted
+        if (-not [string]::Equals($other.Scheme, $uri.Scheme, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+        if ($other.Port -ne $uri.Port) { return $false }
+        # A hostname is case-insensitive by DNS; a path is not.
+        if (-not [string]::Equals((& $hostOf $other), $wantedHost, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+        # Ordinal, and that is the whole point. PowerShell's -eq is
+        # case-insensitive, so `/FoReCaSt` matched the page's `/forecast` while
+        # reaching the origin server verbatim - about a bit per alphabetic
+        # character, on an address this function had just certified as the site's
+        # own (B4-1, 2026-09-05).
+        [string]::Equals(($other.PathAndQuery + $other.Fragment), $wantedPath, [System.StringComparison]::Ordinal)
     }
 
     $authored = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)

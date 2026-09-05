@@ -77,7 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   You are asked about a web address the agent made up even when it is on a site
   you named — including one that hides what it is carrying in the path or after
   a `#`, not just after a `?`, and including one that hides it in the **web
-  address itself**, such as `something-long.the-site-you-named.com`. Only the
+  address itself**, such as `something-long.the-site-you-named.com`, or in the
+  **capitalisation** of an address that otherwise matches a real link. Only the
   site's own links, addresses you typed yourself, and the front page of a site
   you or your project named go through without interrupting you.
 
