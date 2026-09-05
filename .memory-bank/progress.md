@@ -394,3 +394,30 @@ and tests are in place and verified.
   module never shipped, and `request.frame()` throws for a pop-up being closed.
   Gate: **2193 tests, 0 failures, 0 warnings**; hostile-site proof **25/25**; live
   workflow **11/11**.
+- **2026-09-05 - Mutation coverage for the browser boundary, and an exit
+  criterion.** No review round this time: the recommendation after five rounds was
+  to stop adding controls and start measuring whether the tests can fail. **28
+  controls** are now covered by two mutation matrices that disable each one in
+  turn and fail the suite if nothing notices - 16 in `mutate-guards.mjs` and 12 in
+  `Invoke-DpBrowserMutation.ps1`, the latter copying the source tree and running
+  only the tests each mutation names. The write binding (`assertSamePage`) and the
+  download-name sanitiser moved into `source/browser/guards.mjs` so a test can
+  reach them without a browser.
+
+  The PowerShell matrix immediately found a control with **no test at all**: the
+  host comparison in `Test-DpBrowserUrlFromPage`. Removing it let a link published
+  on `weather.example` author the same path on `payload.weather.example` - B3-1's
+  channel wearing the page's own path - and every existing provenance test used a
+  single host, so none of them noticed. Found by measurement rather than by a
+  sixth review round, which is the first time that has happened here.
+
+  The test file now labels each assertion as behavioural-and-proven, behavioural,
+  or wiring-only, so a `Should -Match` cannot read as coverage. Decision 0003
+  gained an exit criterion - a round passes only when no Blocker or Major is open,
+  every control has a mutation entry, remaining greps are labelled, and **the diff
+  adds no new control** - plus the standing rules: no "X is safe because Y" in the
+  source unless Y names a test, every security equality ordinal, and a cosmetic
+  change on this input path treated as a security change. Whether the write
+  capabilities ship at all in v1 is recorded as open rather than settled by
+  default. Gate: **2211 tests, 0 failures, 0 warnings**; hostile-site **25/25**;
+  workflow **11/11**; mutation coverage **28/28**.

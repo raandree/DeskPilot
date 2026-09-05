@@ -119,3 +119,31 @@ export function createHostGuard({ lookup, isInternal, limits, now = () => Date.n
         stats() { return { hostnames, cached: resolved.size }; }
     };
 }
+
+// Whether a write may still act on the page the user approved. Returns null when
+// it may, otherwise the reason it may not.
+//
+// A page can navigate itself while the user reads the card - a meta refresh or a
+// setTimeout is enough - and the values approved for one page would then be typed
+// into another. Comparing URLs was not enough: `history.replaceState` rewrites the
+// document and restores the address, so a navigation counter that only a real
+// navigation increments is compared too. A missing expectation is a refusal, not
+// a disabled check (NEW-002).
+export function pageBindingRefusal({ currentUrl, currentNavigation, expectedUrl, expectedNavigation }) {
+    if (!expectedUrl) return 'unknown-page';
+    if (currentUrl !== expectedUrl) return 'page-changed';
+    if (expectedNavigation !== undefined && currentNavigation !== expectedNavigation) return 'page-changed';
+    return null;
+}
+
+// The saved name for a download. Page-controlled by definition, so it is reduced
+// to a leaf and stripped before it is ever joined to a path: the hostile-site
+// proof sends `../../Windows/System32/evil.exe`.
+export function safeDownloadName(suggested) {
+    const leaf = String(suggested ?? '').split(/[\\/]/).pop() ?? '';
+    const cleaned = leaf
+        .replace(/[^A-Za-z0-9._-]/g, '_')
+        .replace(/^\.+/, '_')
+        .slice(0, 120);
+    return cleaned || 'download.bin';
+}

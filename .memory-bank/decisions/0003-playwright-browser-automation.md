@@ -530,6 +530,48 @@ throws on a missing module. And `request.frame()` throws for a pop-up being
 closed, which took the whole session down until the frame check was made
 defensive. The hostile-site proof caught both; the unit suite caught neither.
 
+## When this feature is done being reviewed
+
+Five rounds produced ten Blockers at a flat rate of roughly two per round, and
+after the first round every one of them was inside the previous round's fix. That
+is not a convergence curve; without a stated criterion this runs forever and each
+round is individually justifiable. So:
+
+**A review round passes when all four hold.**
+
+1. No Blocker and no Major is open.
+2. Every control on the browser boundary is covered by a mutation entry - in
+   `tests/Unit/fixtures/Invoke-DpBrowserMutation.ps1` or
+   `tests/Unit/fixtures/mutate-guards.mjs` - and the suite fails when it is
+   disabled. A control that cannot be reached by a test moves into
+   `source/browser/guards.mjs` until it can.
+3. Every remaining source-text assertion is labelled as wiring, and the behaviour
+   it stands for is covered by the live hostile-site proof.
+4. The round's diff adds **no new control**. A round that only adds machinery has
+   not been reviewed - rounds one to three each did that and none attacked the
+   previous round's work; the two rounds that did found every Blocker there.
+
+**Standing rules, adopted after round five.**
+
+- A new control ships with a mutation entry, or it ships in a module a test can
+  drive. Not "and a test" - *with the measurement that the test can fail*.
+- No sentence of the form "X is safe because Y" survives in the source unless Y
+  names a test. Four of the ten Blockers were defended by such a sentence, and in
+  each case the sentence is why nobody looked.
+- Every equality that decides a security outcome is ordinal and asserted to be.
+  `-eq`, `-ne`, `-in`, `-contains`, `-like`, `-BeLike`, `.EndsWith` and
+  `.StartsWith` are case-insensitive and culture-sensitive by default.
+- A cosmetic change on the input path to this boundary is a security change.
+  B5-1 was a Blocker produced by improving a joined-URL list.
+
+**Open product decision.** Whether the write capabilities (`fill_form`,
+`click_button`, `upload_file`, `download_file`) ship in the first release at all.
+They are per-Project opt-in and default off, and they own roughly half the
+supervisor - `assertSamePage`, the credential-field refusals, the download
+quarantine - and a corresponding share of the findings. Shipping read-only first
+would remove that surface at no cost to the workflow this feature was
+commissioned for. Recorded here as undecided rather than settled by default.
+
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

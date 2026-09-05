@@ -83,6 +83,30 @@ const mutations = [
         control: 'a sub-resource refusal does not answer for a navigation',
         from: '            if (isMainFrame && String(reason).startsWith(\'navigation-\')) {',
         to: '            if (isMainFrame) {'
+    },
+    {
+        id: 'binding-ignores-navigation',
+        control: 'a page that navigated and came back is refused',
+        from: '    if (expectedNavigation !== undefined && currentNavigation !== expectedNavigation) return \'page-changed\';',
+        to: '    if (false) return \'page-changed\';'
+    },
+    {
+        id: 'binding-allows-unknown-page',
+        control: 'a missing expectation is a refusal',
+        from: "    if (!expectedUrl) return 'unknown-page';",
+        to: '    if (!expectedUrl) return null;'
+    },
+    {
+        id: 'download-name-not-a-leaf',
+        control: 'a download name is reduced to a leaf',
+        from: "    const leaf = String(suggested ?? '').split(/[\\\\/]/).pop() ?? '';",
+        to: "    const leaf = String(suggested ?? '');"
+    },
+    {
+        id: 'download-name-unfiltered',
+        control: 'nothing outside the allowed set survives a download name',
+        from: "        .replace(/[^A-Za-z0-9._-]/g, '_')",
+        to: '        .replace(/$^/g, \'_\')'
     }
 ];
 

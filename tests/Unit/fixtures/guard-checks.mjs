@@ -4,7 +4,7 @@
 // Every check is written to fail when the control it names is removed or
 // inverted. mutate-guards.mjs proves that claim rather than asserting it.
 
-export async function runChecks({ createHostGuard, createRefusalLog }) {
+export async function runChecks({ createHostGuard, createRefusalLog, pageBindingRefusal, safeDownloadName }) {
     const checks = [];
     const record = (name, pass, detail) => checks.push({ name, pass, detail: String(detail) });
 
@@ -137,6 +137,44 @@ export async function runChecks({ createHostGuard, createRefusalLog }) {
         const answered = log.navigationRefusedSince(marker);
         record('a main-frame navigation refusal answers, and names its own url',
             answered?.url === 'https://real.test/go', JSON.stringify(answered));
+    });
+
+    // A write acts on the page the user approved, or it does not act.
+    await safely('write binding', async () => {
+        const page = 'https://weather.example/form';
+        record('the approved page is acted on',
+            pageBindingRefusal({ currentUrl: page, currentNavigation: 3, expectedUrl: page, expectedNavigation: 3 }) === null,
+            'same page');
+        record('a page that moved is refused',
+            pageBindingRefusal({ currentUrl: 'https://weather.example/other', currentNavigation: 3, expectedUrl: page, expectedNavigation: 3 }) === 'page-changed',
+            'different url');
+        // history.replaceState rewrites the document and restores the address, so
+        // the URL alone was never enough (NEW-006).
+        record('a page that navigated and came back is refused',
+            pageBindingRefusal({ currentUrl: page, currentNavigation: 5, expectedUrl: page, expectedNavigation: 3 }) === 'page-changed',
+            'replaceState');
+        record('a missing expectation is a refusal, not a disabled check',
+            pageBindingRefusal({ currentUrl: page, currentNavigation: 3, expectedUrl: '', expectedNavigation: 3 }) === 'unknown-page',
+            'no expectation');
+    });
+
+    // The suggested filename is page-controlled by definition.
+    await safely('download name', async () => {
+        record('a traversal is reduced to a leaf',
+            safeDownloadName('../../Windows/System32/evil.exe') === 'evil.exe',
+            safeDownloadName('../../Windows/System32/evil.exe'));
+        record('a backslash traversal is reduced too',
+            safeDownloadName('..\\..\\Windows\\System32\\evil.exe') === 'evil.exe',
+            safeDownloadName('..\\..\\Windows\\System32\\evil.exe'));
+        record('a leading dot cannot make a dotfile',
+            !safeDownloadName('.bashrc').startsWith('.'), safeDownloadName('.bashrc'));
+        record('an empty name still produces one',
+            safeDownloadName('') === 'download.bin', safeDownloadName(''));
+        record('a name is bounded', safeDownloadName('a'.repeat(500)).length <= 120,
+            String(safeDownloadName('a'.repeat(500)).length));
+        record('nothing outside the allowed set survives',
+            /^[A-Za-z0-9._-]+$/.test(safeDownloadName('re;po rt$(whoami).txt')),
+            safeDownloadName('re;po rt$(whoami).txt'));
     });
 
     return checks;

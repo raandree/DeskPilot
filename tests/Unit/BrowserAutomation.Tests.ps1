@@ -7,6 +7,31 @@
 # The classifier is written to be wrong only in the safe direction, exactly like
 # Test-DpCommandSafe: anything it does not positively recognise is refused or
 # escalated to the user, never allowed.
+#
+# ## What the assertions in this file are worth
+#
+# Five review rounds found ten Blockers and this suite caught none of them,
+# because most assertions read source text as a string. The fifth round measured
+# it: 53 of 54 ways to disable a supervisor control left the suite green.
+#
+# So assertions here are one of three kinds, and the difference is stated rather
+# than implied:
+#
+# 1. **Behavioural, and proven to fail.** The two mutation matrices - `The
+#    browser controls can be observed failing` below, and `the guard checks can
+#    fail` - disable each control in turn and fail if nothing notices. 28
+#    controls are covered this way. Anything a matrix covers is real evidence.
+# 2. **Behavioural, not yet mutation-covered.** Ordinary Pester assertions that
+#    execute the code. Better than a grep, weaker than (1).
+# 3. **Wiring only.** A `Should -Match` against a file. These say a call site
+#    exists; they cannot say the control works, and several have survived the
+#    control being deleted. They are kept where the behaviour needs a real
+#    browser, and the behaviour is covered by tests/live/Invoke-DpBrowserHostileTest.ps1
+#    (25 cases against a page that attacks back) and Invoke-DpBrowserWorkflowTest.ps1.
+#    Do not read one as coverage.
+#
+# The rule that follows: a new control ships with an entry in a mutation matrix,
+# or it ships in guards.mjs where one can reach it.
 
 BeforeAll {
     $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
@@ -1654,6 +1679,39 @@ Describe 'Browser runtime lifecycle' -Tag 'Unit' {
         }
     }
 
+    Context 'installing the supervisor sources' {
+        BeforeEach {
+            $script:AssetSource = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-asset-" + [guid]::NewGuid().ToString('N'))
+            $script:AssetTarget = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-target-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $script:AssetSource -Force | Out-Null
+            foreach ($name in 'package.json', 'supervisor.mjs', 'policy.mjs', 'guards.mjs') {
+                Set-Content -LiteralPath (Join-Path $script:AssetSource $name) -Value '// stub' -Encoding utf8NoBOM
+            }
+        }
+
+        AfterEach {
+            foreach ($path in $script:AssetSource, $script:AssetTarget) {
+                if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+        }
+
+        It 'installs every browser module, not a hard-coded list of them' {
+            # A hard-coded list stopped shipping guards.mjs the moment it existed,
+            # and the supervisor died with "started but did not report ready".
+            Set-Content -LiteralPath (Join-Path $script:AssetSource 'extra.mjs') -Value '// stub' -Encoding utf8NoBOM
+            Copy-DpBrowserAsset -AssetRoot $script:AssetSource -RuntimeRoot $script:AssetTarget
+            foreach ($name in 'package.json', 'supervisor.mjs', 'policy.mjs', 'guards.mjs', 'extra.mjs') {
+                Test-Path -LiteralPath (Join-Path $script:AssetTarget $name) | Should -BeTrue -Because "$name has to reach the runtime"
+            }
+        }
+
+        It 'refuses to leave a browser module behind rather than skipping it' {
+            Remove-Item -LiteralPath (Join-Path $script:AssetSource 'guards.mjs') -Force
+            { Copy-DpBrowserAsset -AssetRoot $script:AssetSource -RuntimeRoot $script:AssetTarget } |
+                Should -Throw -ExpectedMessage '*guards.mjs*'
+        }
+    }
+
     Context 'finding leftover browsers' {
         # The discriminator is the executable path, never the process name.
         # Matching on "chrome" would sweep up the user's own browser, which is
@@ -2339,15 +2397,68 @@ Describe 'Fourth review round regressions' -Tag 'Unit' {
             Test-DpBrowserUrlFromPage -Url 'https://weather.example/a%2fb' -Session $session | Should -BeFalse
         }
 
-        It 'matches the scope host ordinally rather than by culture' {
-            $source = Get-Command Resolve-DpBrowserUrlDecision | ForEach-Object { $_.Definition }
-            $source | Should -Not -Match '\$hostName -eq \$allowed'
-            $source | Should -Match 'StringComparison\]::Ordinal'
+        It 'refuses a matching path on a sibling host' {
+            # Scope matches on a label boundary, so every subdomain of an in-scope
+            # name is in scope. Without the host comparison, a link the page
+            # published on weather.example would author the same path on
+            # <anything>.weather.example - which is B3-1's channel wearing the
+            # page's own path. Found by the mutation matrix, not by review.
+            $session = @{ pageLinks = @('https://weather.example/forecast/today?city=london') }
+            Test-DpBrowserUrlFromPage -Url 'https://payload.weather.example/forecast/today?city=london' -Session $session |
+                Should -BeFalse
+            Test-DpBrowserUrlFromPage -Url 'https://other.example/forecast/today?city=london' -Session $session |
+                Should -BeFalse
         }
 
-        It 'compares the approval fingerprint ordinally' {
-            $source = Get-Command Request-DpBrowserApproval | ForEach-Object { $_.Definition }
-            $source | Should -Not -Match '\$returned -ne \$request\.fingerprint'
+        It 'refuses a matching path on a different port' {
+            $session = @{ pageLinks = @('https://weather.example/forecast/today') }
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example:8443/forecast/today' -Session $session |
+                Should -BeFalse
+        }
+
+        It 'matches the scope host ordinally rather than by culture' {
+            # A regression guard, and honest about being one. PowerShell's -eq is
+            # culture-sensitive: 'weather<U+00AD>city.com' -eq 'weathercity.com'
+            # is $true. It was never reachable here, because the host arrives via
+            # IdnHost and IDNA deletes the same characters ICU ignores - safe by
+            # coincidence rather than by design. Both halves are asserted, so
+            # swapping IdnHost for DnsSafeHost cannot quietly make it reachable.
+            $soft = "weather$([char]0x00AD)city.com"
+            ($soft -eq 'weathercity.com') | Should -BeTrue -Because 'this is why the comparison must be ordinal'
+            [string]::Equals($soft, 'weathercity.com', [System.StringComparison]::Ordinal) | Should -BeFalse
+            ([uri]"https://$soft/x").IdnHost | Should -Be 'weathercity.com'
+
+            $source = Get-Command Resolve-DpBrowserUrlDecision | ForEach-Object { $_.Definition }
+            $source | Should -Not -Match '\$hostName -eq \$allowed'
+            $source | Should -Match 'IdnHost'
+        }
+
+        It 'refuses an approval whose fingerprint differs only in case' {
+            # A fingerprint is a hash, and -ne on strings is case-insensitive, so
+            # matching it that way widens the set of answers that satisfy it for
+            # no reason at all.
+            $bridge = [pscustomobject]@{ Enabled = $true; Asked = [System.Collections.Generic.List[string]]::new() }
+            $bridge | Add-Member -MemberType ScriptMethod -Name CaptureQuestion -Value {
+                param([string]$Question)
+                $this.Asked.Add($Question)
+            }
+            $bridge | Add-Member -MemberType ScriptMethod -Name RequestAnswer -Value {
+                param([int]$Seconds)
+                $request = $this.Asked[-1] | ConvertFrom-Json
+                $flipped = -join ($request.fingerprint.ToCharArray() | ForEach-Object {
+                        if ([char]::IsLower($_)) { [char]::ToUpperInvariant($_) } else { [char]::ToLowerInvariant($_) }
+                    })
+                @{ decision = 'approve'; note = ''; fingerprint = $flipped } | ConvertTo-Json -Compress
+            }
+
+            $result = Request-DpBrowserApproval -Context @{ conversationId = 'c1'; turnId = 't1' } `
+                -Class 'BrowserNavigation' `
+                -Argument @{ url = 'https://weather.example/'; host = 'weather.example' } `
+                -Subject 'opening weather.example' -Bridge $bridge -TimeoutMinutes 1
+
+            $asked = $bridge.Asked[-1] | ConvertFrom-Json
+            $asked.fingerprint | Should -Match '[a-fA-F]' -Because 'the case flip has to change something'
+            $result.approved | Should -BeFalse
         }
     }
 
@@ -2492,8 +2603,7 @@ Describe 'Fourth review round regressions' -Tag 'Unit' {
         }
     }
 
-    Context 'the guard checks can fail' -Skip:(-not $script:NodeAvailable) {
-        BeforeAll {
+    Context 'the guard checks can fail' -Skip:(-not $script:NodeAvailable) {        BeforeAll {
             $script:MutationMatrix = $null
             $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
             if ($node) {
@@ -2520,7 +2630,45 @@ Describe 'Fourth review round regressions' -Tag 'Unit' {
     }
 }
 
+# The same measurement for the PowerShell half of the boundary. Each mutation
+# disables one control, runs only the tests that claim to cover it, and the run
+# fails if the suite stays green. Slow by construction - it copies the tree and
+# invokes Pester once per mutation - and worth it, because it is the only thing
+# here that measures whether the other 500 assertions are load-bearing.
+Describe 'The browser controls can be observed failing' -Tag 'Unit' {
+    BeforeAll {
+        $script:Matrix = @(& (Join-Path $PSScriptRoot 'fixtures' 'Invoke-DpBrowserMutation.ps1'))
+    }
 
+    It 'mutated every control it names' {
+        $unapplied = @($script:Matrix | Where-Object { -not $_.Applied } | ForEach-Object { $_.Id })
+        ($unapplied -join ', ') | Should -BeNullOrEmpty -Because 'a mutation whose text has moved silently tests nothing'
+    }
+
+    It 'ran the tests each mutation names' {
+        $empty = @($script:Matrix | Where-Object { $_.Ran -le 0 } | ForEach-Object { "$($_.Id) ran=$($_.Ran)" })
+        ($empty -join ', ') | Should -BeNullOrEmpty -Because 'a filter that matched nothing proves nothing'
+    }
+
+    It 'noticed <Id> being disabled' -ForEach @(
+        @{ Id = 'scope-match-not-ordinal' }
+        @{ Id = 'provenance-not-ordinal' }
+        @{ Id = 'provenance-ignores-host' }
+        @{ Id = 'root-exemption-unbounded' }
+        @{ Id = 'truncation-guard-removed' }
+        @{ Id = 'scheme-match-unanchored' }
+        @{ Id = 'url-run-splitter-restored' }
+        @{ Id = 'scope-seeds-denied-forms' }
+        @{ Id = 'fingerprint-not-ordinal' }
+        @{ Id = 'sends-the-model-string' }
+        @{ Id = 'authored-hosts-not-passed' }
+        @{ Id = 'missing-asset-skipped' }
+    ) {
+        $result = $script:Matrix | Where-Object { $_.Id -eq $Id }
+        $result | Should -Not -BeNullOrEmpty
+        $result.Noticed | Should -BeTrue -Because "$($result.Control) has no test that fails when it is removed"
+    }
+}
 
 
 

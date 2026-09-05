@@ -22,7 +22,7 @@ import { mkdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { lookup } from 'node:dns/promises';
 import { resolveUrlDecision, isResourceAllowed, isFieldFillable, isInternalAddress, normalizeScopeEntry } from './policy.mjs';
-import { createRefusalLog, createHostGuard } from './guards.mjs';
+import { createRefusalLog, createHostGuard, pageBindingRefusal, safeDownloadName } from './guards.mjs';
 
 // Bounds, so a hostile or merely broken page cannot exhaust the session. Every
 // one of these is a refusal the user can see, not a silent truncation of intent.
@@ -420,16 +420,19 @@ async function pressControl(text) {
 // page rewrite the document and restore the address, so the check also carries a
 // navigation counter that only a real navigation increments.
 function assertSamePage(expectedUrl, expectedNavigation) {
-    // A missing expectation used to disable the check silently. PowerShell now
-    // refuses the write before it gets here, and this refuses it again.
-    if (!expectedUrl) {
+    const refusal = pageBindingRefusal({
+        currentUrl: state.page.url(),
+        currentNavigation: state.navigationId,
+        expectedUrl,
+        expectedNavigation
+    });
+    if (!refusal) return;
+    if (refusal === 'unknown-page') {
         throw new Error('DeskPilot does not know which page this was approved for, so nothing was done.');
     }
-    if (state.page.url() !== expectedUrl || (expectedNavigation !== undefined && state.navigationId !== expectedNavigation)) {
-        recordBlocked('page-changed', state.page.url(), 'document');
-        throw new Error('The page changed while this was waiting for approval, so nothing was done. Read the page again first.'
-            + ` (approved for ${expectedUrl} #${expectedNavigation}, now on ${state.page.url()} #${state.navigationId})`);
-    }
+    recordBlocked('page-changed', state.page.url(), 'document');
+    throw new Error('The page changed while this was waiting for approval, so nothing was done. Read the page again first.'
+        + ` (approved for ${expectedUrl} #${expectedNavigation}, now on ${state.page.url()} #${state.navigationId})`);
 }
 
 // Every path that lands the browser on a new document goes through here. A
@@ -646,10 +649,7 @@ const handlers = {
                 clickControl(controlText)
             ]);
 
-            const suggested = (basename(download.suggestedFilename() || '') || 'download.bin')
-                .replace(/[^A-Za-z0-9._-]/g, '_')
-                .replace(/^\.+/, '_')
-                .slice(0, 120) || 'download.bin';
+            const suggested = safeDownloadName(download.suggestedFilename());
             const target = join(state.downloadRoot, `${Date.now()}-${suggested}`);
 
             // Sized before it is copied anywhere DeskPilot keeps things. The

@@ -1188,6 +1188,29 @@ source: repository evidence
   a boundary, prefer the fail-safe annoyance to the elegant parse, and weigh a
   change by where it lives rather than by what motivated it.
 
+- **No sentence of the form "X is safe because Y" unless Y names a test.** Four
+  of ten Blockers across five review rounds were defended by exactly that shape -
+  "a bare path carries no payload beyond the path itself", "the site root carries
+  nothing", "percent-encoding does not need defending here because the classifier
+  rebuilds the address", "a name that will not resolve produces a request that
+  fails anyway". Each was a true statement about one component asserted as a
+  property of another, and in every case the sentence is why the next reviewer
+  looked elsewhere. Writing the reasoning down felt like rigour and functioned as
+  camouflage. Either the claim has a test named after it, or the claim is deleted
+  and the code stands on its own.
+
+- **A control ships with the measurement that its test can fail.** Not "with a
+  test" - the repository had ~500 browser assertions and none of them caught any
+  of the ten Blockers. `tests/Unit/fixtures/Invoke-DpBrowserMutation.ps1` and
+  `tests/Unit/fixtures/mutate-guards.mjs` disable each control in turn, run only
+  the tests that claim to cover it, and fail the suite if nothing goes red. Both
+  matrices found toothless checks on their first run, including one blinded by a
+  case-insensitive `-BeLike` and one that missed a whole missing host comparison.
+  If a control cannot be reached by a test - because it needs a browser, a
+  runspace or a network - move it into a module that takes its dependencies as
+  arguments, as `source/browser/guards.mjs` does, rather than settling for a
+  `Should -Match` against the source.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

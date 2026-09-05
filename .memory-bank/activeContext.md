@@ -53,26 +53,47 @@ refusal message.
 
 The reviewer measured that **53 of 54** ways to disable a supervisor control left
 the suite green, because the assertions read `supervisor.mjs` as text and it
-cannot be imported without Playwright. The two stateful guards now live in
-`source/browser/guards.mjs`, which takes its resolver and clock as arguments;
-`tests/Unit/fixtures/guard-checks.mjs` executes them, and `mutate-guards.mjs`
-disables each control in turn. **The suite fails if any disabling mutation goes
-unnoticed** - eleven mutations, eleven noticed. No control was added; existing
-ones moved somewhere a test can reach.
+cannot be imported without Playwright.
+
+That is now closed on both halves of the boundary. **28 controls** are covered by
+two mutation matrices that disable each one in turn and fail the suite if nothing
+notices:
+
+- `tests/Unit/fixtures/mutate-guards.mjs` - 16 controls in
+  `source/browser/guards.mjs`, which takes its resolver and clock as arguments so
+  no browser is needed. The host guard, the refusal log, the write binding and the
+  download-name sanitiser all moved there.
+- `tests/Unit/fixtures/Invoke-DpBrowserMutation.ps1` - 12 controls in
+  `source/Private`, each mutated in a copy of the tree with only the tests that
+  claim to cover it run.
+
+Both found toothless checks on their first run. The PowerShell matrix found the
+host comparison in `Test-DpBrowserUrlFromPage` had **no test at all** - removing
+it let a link published on `weather.example` author the same path on
+`payload.weather.example`, which is B3-1's channel wearing the page's own path.
+Found by measurement, not by a sixth review round.
+
+The test file now states which of its assertions are behavioural-and-proven,
+behavioural, or wiring-only, so a `Should -Match` can no longer read as coverage.
 
 ## Evidence
 
-- Full Sampler gate: **2193 passed, 0 failed, 0 errors, 0 warnings.**
+- Full Sampler gate: **2211 passed, 0 failed, 0 errors, 0 warnings.**
 - Hostile-site proof: **25/25** against a real attacking page over HTTPS.
 - Live workflow: **11/11** against the real site.
-- Guard mutation matrix: 11/11 disabling mutations detected.
-- Rebuild mutation matrix: 4/4 detected, after the first draft was caught using
-  a case-insensitive `-BeLike` and missing the lowercasing mutation.
+- Mutation coverage: **28/28** disabling mutations detected.
 
-Two defects the round-five fixes introduced were caught by the hostile-site proof
-and by neither the unit suite nor review: `Copy-DpBrowserAsset` skipped a missing
-asset silently, so the new module never shipped; and `request.frame()` throws for
-a pop-up being closed, which took the session down.
+## The exit criterion
+
+Written into decision 0003, because without one this runs forever. A round passes
+when no Blocker or Major is open, every control has a mutation entry, every
+remaining source-text assertion is labelled as wiring, and **the diff adds no new
+control** - a round that only adds machinery has not been reviewed.
+
+One product decision is recorded as open rather than settled by default: whether
+the write capabilities ship in the first release at all. They own roughly half
+the supervisor and a matching share of the findings, and read-only would cost
+nothing for the workflow this feature was commissioned for.
 
 Defects found by running rather than reading, across three rounds: the pop-up
 handler closed the page `newPage()` created; `, $array.ToArray()` produced a
