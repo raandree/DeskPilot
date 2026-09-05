@@ -7,14 +7,17 @@
 //
 // Usage: node mutate-guards.mjs
 
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runChecks } from './guard-checks.mjs';
 
-const guardsPath = new URL('../../../source/browser/guards.mjs', import.meta.url);
-const original = readFileSync(guardsPath, 'utf8');
+const browserDir = new URL('../../../source/browser/', import.meta.url);
+// Every module the checks import, so a mutated copy of one can be loaded beside
+// unmutated copies of the rest.
+const modules = ['guards.mjs', 'policy.mjs'];
+const original = Object.fromEntries(modules.map((name) => [name, readFileSync(new URL(name, browserDir), 'utf8')]));
 
 // Each entry names the control it disables and what the checks must notice.
 const mutations = [
@@ -107,6 +110,48 @@ const mutations = [
         control: 'nothing outside the allowed set survives a download name',
         from: "        .replace(/[^A-Za-z0-9._-]/g, '_')",
         to: '        .replace(/$^/g, \'_\')'
+    },
+    {
+        id: 'password-box-fillable',
+        file: 'policy.mjs',
+        control: 'a password box is refused outright',
+        from: "    if (type === 'password') return { fillable: false, reason: 'credential-field' };",
+        to: '    if (false) return { fillable: false, reason: \'credential-field\' };'
+    },
+    {
+        id: 'credential-autocomplete-fillable',
+        file: 'policy.mjs',
+        control: 'a field the site declares as a credential is refused',
+        from: "    if (CREDENTIAL_AUTOCOMPLETE.has(autocomplete)) return { fillable: false, reason: 'credential-field' };",
+        to: '    if (false) return { fillable: false, reason: \'credential-field\' };'
+    },
+    {
+        id: 'credential-name-fillable',
+        file: 'policy.mjs',
+        control: 'a field named like a credential is refused',
+        from: '    if (CREDENTIAL_NAME.test(name)) return { fillable: false, reason: \'credential-field\' };',
+        to: '    if (false) return { fillable: false, reason: \'credential-field\' };'
+    },
+    {
+        id: 'hidden-field-fillable',
+        file: 'policy.mjs',
+        control: 'a field the approver cannot see is refused',
+        from: "    if (type === 'hidden') return { fillable: false, reason: 'hidden-field' };",
+        to: '    if (false) return { fillable: false, reason: \'hidden-field\' };'
+    },
+    {
+        id: 'invisible-field-fillable',
+        file: 'policy.mjs',
+        control: 'a field rendered invisible is refused',
+        from: "    if (field.visible === false) return { fillable: false, reason: 'not-visible' };",
+        to: '    if (false) return { fillable: false, reason: \'not-visible\' };'
+    },
+    {
+        id: 'file-input-fillable',
+        file: 'policy.mjs',
+        control: 'a file input is a different capability with a different approval',
+        from: "    if (type === 'file') return { fillable: false, reason: 'file-input' };",
+        to: '    if (false) return { fillable: false, reason: \'file-input\' };'
     }
 ];
 
@@ -114,18 +159,18 @@ const workspace = mkdtempSync(join(tmpdir(), 'dp-mutate-guards-'));
 const results = [];
 
 try {
-    const baseline = await runChecks(await import(pathToFileURL(write('baseline', original)).href));
+    const baseline = await runChecks(await load('baseline', {}));
     const baselineFailures = baseline.filter((check) => !check.pass).map((check) => check.name);
 
     for (const mutation of mutations) {
-        if (!original.includes(mutation.from)) {
+        const file = mutation.file ?? 'guards.mjs';
+        if (!original[file].includes(mutation.from)) {
             results.push({ id: mutation.id, control: mutation.control, applied: false, noticedBy: [] });
             continue;
         }
-        const mutated = original.replace(mutation.from, mutation.to);
         let noticed = [];
         try {
-            const checks = await runChecks(await import(pathToFileURL(write(mutation.id, mutated)).href));
+            const checks = await runChecks(await load(mutation.id, { [file]: original[file].replace(mutation.from, mutation.to) }));
             noticed = checks.filter((check) => !check.pass).map((check) => check.name);
         }
         catch (error) {
@@ -140,8 +185,16 @@ finally {
     rmSync(workspace, { recursive: true, force: true });
 }
 
-function write(name, contents) {
-    const target = join(workspace, `${name}.mjs`);
-    writeFileSync(target, contents, 'utf8');
-    return target;
+// One directory per variant, holding a full set of modules so the relative
+// imports between them resolve to the copies rather than back to the originals.
+async function load(name, overrides) {
+    const target = join(workspace, name);
+    mkdirSync(target, { recursive: true });
+    for (const module of modules) {
+        const contents = overrides[module] ?? original[module];
+        writeFileSync(join(target, module), contents, 'utf8');
+    }
+    const guards = await import(pathToFileURL(join(target, 'guards.mjs')).href);
+    const policy = await import(pathToFileURL(join(target, 'policy.mjs')).href);
+    return { ...guards, ...policy };
 }

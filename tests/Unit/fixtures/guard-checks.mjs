@@ -4,7 +4,7 @@
 // Every check is written to fail when the control it names is removed or
 // inverted. mutate-guards.mjs proves that claim rather than asserting it.
 
-export async function runChecks({ createHostGuard, createRefusalLog, pageBindingRefusal, safeDownloadName }) {
+export async function runChecks({ createHostGuard, createRefusalLog, pageBindingRefusal, safeDownloadName, isFieldFillable }) {
     const checks = [];
     const record = (name, pass, detail) => checks.push({ name, pass, detail: String(detail) });
 
@@ -175,6 +175,29 @@ export async function runChecks({ createHostGuard, createRefusalLog, pageBinding
         record('nothing outside the allowed set survives',
             /^[A-Za-z0-9._-]+$/.test(safeDownloadName('re;po rt$(whoami).txt')),
             safeDownloadName('re;po rt$(whoami).txt'));
+    });
+
+    // The refusal that cannot be delegated to the approval card: the user judges
+    // a description, and only the live input can say whether that field is a
+    // password box. Refused, never masked - the user signs in themselves.
+    await safely('field refusals', async () => {
+        const refuses = (field, why) => {
+            const verdict = isFieldFillable(field);
+            record(why, verdict.fillable === false, JSON.stringify(verdict));
+        };
+        refuses({ type: 'password', name: 'reference', visible: true }, 'a password box is refused whatever it is called');
+        refuses({ type: 'text', autocomplete: 'current-password', visible: true }, 'a field the site declares as a password is refused');
+        refuses({ type: 'text', autocomplete: 'one-time-code', visible: true }, 'a one-time-code field is refused');
+        refuses({ type: 'text', autocomplete: 'cc-number', visible: true }, 'a card-number field is refused');
+        refuses({ type: 'text', name: 'api_key', visible: true }, 'a field named like a credential is refused');
+        refuses({ type: 'text', label: 'API key', visible: true }, 'a credential named in the label is refused');
+        refuses({ type: 'hidden', name: 'csrf' }, 'a hidden field is refused');
+        refuses({ type: 'text', name: 'ghost', visible: false }, 'an invisible field is refused');
+        refuses({ type: 'file', name: 'attachment', visible: true }, 'a file input is refused, being a different capability');
+        refuses({ type: 'text', name: 'locked', visible: true, readOnly: true }, 'a read-only field is refused');
+
+        const ordinary = isFieldFillable({ type: 'text', name: 'city', label: 'City', visible: true });
+        record('an ordinary field is fillable', ordinary.fillable === true, JSON.stringify(ordinary));
     });
 
     return checks;

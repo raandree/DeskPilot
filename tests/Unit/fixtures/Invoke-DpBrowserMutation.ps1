@@ -176,6 +176,44 @@ $mutations = @(
 '@
         Test    = '*refuses to leave a browser module behind*'
     }
+    @{
+        Id      = 'capability-gate-removed'
+        Control = 'a write the Project never granted is refused before any card'
+        File    = 'source/Private/Invoke-DpBrowserTool.ps1'
+        From    = @'
+        if ($granted -contains $Capability) { return $null }
+'@
+        To      = @'
+        if ($true) { return $null }
+'@
+        Test    = '*capability*'
+    }
+    @{
+        Id      = 'write-with-unknown-page'
+        Control = 'a write on a page DeskPilot cannot name is refused'
+        File    = 'source/Private/Invoke-DpBrowserTool.ps1'
+        From    = @'
+    if ($Action -in @('fill_form', 'click_button', 'upload_file', 'download_file') -and
+        [string]::IsNullOrWhiteSpace($state.lastUrl)) {
+'@
+        To      = @'
+    if ($false -and
+        [string]::IsNullOrWhiteSpace($state.lastUrl)) {
+'@
+        Test    = '*refuses a write on a page it cannot name*'
+    }
+    @{
+        Id      = 'write-without-expected-page'
+        Control = 'every write tells the supervisor which page it was approved for'
+        File    = 'source/Private/Invoke-DpBrowserTool.ps1'
+        From    = @'
+expectedUrl = $pageUrl
+'@
+        To      = @'
+expectedUrl = ''
+'@
+        Test    = '*names the page it was approved for*'
+    }
 )
 
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) "dp-mutate-$([guid]::NewGuid().ToString('n'))"

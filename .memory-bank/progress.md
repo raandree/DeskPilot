@@ -421,3 +421,25 @@ and tests are in place and verified.
   capabilities ship at all in v1 is recorded as open rather than settled by
   default. Gate: **2211 tests, 0 failures, 0 warnings**; hostile-site **25/25**;
   workflow **11/11**; mutation coverage **28/28**.
+- **2026-09-05 - The full capability set ships in v1, and the write surface was
+  brought up to the read surface''s evidence bar.** The open product decision is
+  closed: `fill_form`, `click_button`, `upload_file` and `download_file` ship,
+  against the read-only recommendation. The case for read-only was that the
+  browser context is ephemeral by construction and `isFieldFillable` refuses
+  password and one-time-code fields outright, so form-filling behind a sign-in is
+  unreachable by two independent controls; the case that won was that the
+  capability was asked for, is per-Project opt-in and default off, and cannot be
+  evaluated against real work if it is held back.
+
+  The consequence was paid rather than waived. Nine write-surface controls that
+  had only wiring assertions now carry mutation entries: the six credential-field
+  refusals in `isFieldFillable` (password type, declared credential autocomplete,
+  credential-shaped name, hidden, invisible, file input), the per-Project
+  capability gate, the refusal to write on a page DeskPilot cannot name, and the
+  `expectedUrl`/`expectedNavigation` binding on every write. Two replaced greps
+  that passed with the control removed - the binding one passed with
+  `expectedUrl = ''`, which is the exact value that disabled `assertSamePage` in
+  NEW-002. The JS matrix now mutates `policy.mjs` as well as `guards.mjs`, loading
+  a full set of modules per variant so the relative imports resolve to the copies.
+  Mutation coverage **36/36**. Gate: **2215 tests, 0 failures, 0 warnings**;
+  hostile-site **25/25**; workflow **11/11**.

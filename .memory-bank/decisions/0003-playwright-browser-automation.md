@@ -564,13 +564,25 @@ round is individually justifiable. So:
 - A cosmetic change on the input path to this boundary is a security change.
   B5-1 was a Blocker produced by improving a joined-URL list.
 
-**Open product decision.** Whether the write capabilities (`fill_form`,
-`click_button`, `upload_file`, `download_file`) ship in the first release at all.
-They are per-Project opt-in and default off, and they own roughly half the
-supervisor - `assertSamePage`, the credential-field refusals, the download
-quarantine - and a corresponding share of the findings. Shipping read-only first
-would remove that surface at no cost to the workflow this feature was
-commissioned for. Recorded here as undecided rather than settled by default.
+**Decided: the full capability set ships in v1.** The alternative considered and
+rejected was read-only plus `download_file`, on the grounds that the context is
+ephemeral by construction - no cookie jar, no password store, no ambient SSO -
+and `isFieldFillable` refuses password and one-time-code fields outright, so
+form-filling behind a sign-in is unreachable by two independent controls and the
+remaining unauthenticated cases are thin. The counter-argument that carried it:
+the capability was asked for, it is per-Project opt-in and default off, and a
+capability withheld from v1 is a capability nobody can evaluate against real
+work.
+
+What that decision cost, and it is the honest price rather than a formality: the
+write surface had to be brought up to the same evidence bar as the read surface
+before it could ship. Nine controls that had only wiring assertions now have
+mutation entries - the six credential-field refusals in `isFieldFillable`, the
+per-Project capability gate, the refusal to write on a page DeskPilot cannot
+name, and the `expectedUrl`/`expectedNavigation` binding on every write. Two of
+those replaced greps that passed with the control removed: the binding one passed
+with `expectedUrl = ''`, which is the exact value that disabled `assertSamePage`
+in NEW-002.
 
 ## Domain policy: scope-plus-prompt
 

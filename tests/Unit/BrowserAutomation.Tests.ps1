@@ -2005,6 +2005,37 @@ Describe 'Security review regressions' -Tag 'Unit' {
     }
 
     Context 'M-7 - a write is bound to the page it was approved on' {
+        BeforeEach {
+            $script:BoundRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-bound-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $script:BoundRoot -Force | Out-Null
+            $bridge = [pscustomobject]@{ Enabled = $true; Asked = [System.Collections.Generic.List[string]]::new() }
+            $bridge | Add-Member -MemberType ScriptMethod -Name CaptureQuestion -Value {
+                param([string]$Question)
+                $this.Asked.Add($Question)
+            }
+            $bridge | Add-Member -MemberType ScriptMethod -Name RequestAnswer -Value {
+                param([int]$Seconds)
+                $request = $this.Asked[-1] | ConvertFrom-Json
+                @{ decision = 'approve'; note = ''; fingerprint = $request.fingerprint } | ConvertTo-Json -Compress
+            }
+            $global:DeskPilotBrowserContext = @{
+                conversationId = 'c1'; turnId = 't1'; project = $script:BoundRoot; projectRoot = $script:BoundRoot
+                projectDomains = @(); actions = @('fill', 'submit', 'upload', 'download')
+                runtimeRoot = 'C:\runtime'; downloadRoot = 'C:\runtime\downloads'
+            }
+            $global:DeskPilotBrowserBridge = $bridge
+            $global:DeskPilotBrowserTimeoutMinutes = 15
+        }
+
+        AfterEach {
+            foreach ($name in 'DeskPilotBrowserContext', 'DeskPilotBrowserState', 'DeskPilotBrowserBridge', 'DeskPilotBrowserTimeoutMinutes') {
+                Remove-Variable -Name $name -Scope Global -ErrorAction SilentlyContinue
+            }
+            if ($script:BoundRoot -and (Test-Path -LiteralPath $script:BoundRoot)) {
+                Remove-Item -LiteralPath $script:BoundRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It 'the supervisor refuses a page that moved' {
             $supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
             $supervisor | Should -Match 'function assertSamePage'
@@ -2013,9 +2044,50 @@ Describe 'Security review regressions' -Tag 'Unit' {
             }
         }
 
-        It 'the tool sends the approved page url with every write' {
-            $source = Get-Command Invoke-DpBrowserTool | ForEach-Object { $_.Definition }
-            ([regex]::Matches($source, 'expectedUrl = \$pageUrl')).Count | Should -Be 4
+        It 'every write names the page it was approved for' {
+            # Behavioural, because the grep this replaces passed with expectedUrl
+            # set to the empty string - which is exactly the value that disabled
+            # assertSamePage in NEW-002.
+            $global:DeskPilotBrowserState = @{
+                session = @{ faulted = $false; events = [System.Collections.Generic.List[object]]::new() }
+                scope = @('weathercity.com'); granted = @()
+                lastUrl = 'https://weathercity.com/form'; lastNavigation = 4
+            }
+            $sent = [System.Collections.Generic.List[object]]::new()
+            Mock Invoke-DpBrowserRequest {
+                $sent.Add(@{ command = $Command; payload = $Payload })
+                @{ ok = $true; result = [pscustomobject]@{ url = 'https://weathercity.com/done'; title = 'Done'; text = 'Saved.' } }
+            }
+
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]'
+            $null = Invoke-DpBrowserTool -Action click_button -ButtonText 'Search'
+
+            $writes = @($sent | Where-Object { $_.command -in @('fill', 'press') })
+            $writes.Count | Should -Be 2
+            # The first names the page that was open; the second names where the
+            # first landed, because the response moves the page the next approval
+            # is bound to. Neither may be empty - that is the value that disabled
+            # assertSamePage in NEW-002.
+            $writes[0].payload.expectedUrl | Should -Be 'https://weathercity.com/form'
+            $writes[0].payload.expectedNavigation | Should -Be 4
+            $writes[1].payload.expectedUrl | Should -Be 'https://weathercity.com/done'
+            foreach ($write in $writes) {
+                $write.payload.expectedUrl | Should -Not -BeNullOrEmpty
+            }
+        }
+
+        It 'refuses a write on a page it cannot name' {
+            $global:DeskPilotBrowserState = @{
+                session = @{ faulted = $false; events = [System.Collections.Generic.List[object]]::new() }
+                scope = @('weathercity.com'); granted = @(); lastUrl = ''; lastNavigation = -1
+            }
+            Mock Invoke-DpBrowserRequest { @{ ok = $true; result = [pscustomobject]@{ url = 'x' } } }
+
+            $result = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]' | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $result.error | Should -Match 'does not know which page'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
         }
     }
 
@@ -2663,6 +2735,9 @@ Describe 'The browser controls can be observed failing' -Tag 'Unit' {
         @{ Id = 'sends-the-model-string' }
         @{ Id = 'authored-hosts-not-passed' }
         @{ Id = 'missing-asset-skipped' }
+        @{ Id = 'capability-gate-removed' }
+        @{ Id = 'write-with-unknown-page' }
+        @{ Id = 'write-without-expected-page' }
     ) {
         $result = $script:Matrix | Where-Object { $_.Id -eq $Id }
         $result | Should -Not -BeNullOrEmpty

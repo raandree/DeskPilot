@@ -78,10 +78,11 @@ behavioural, or wiring-only, so a `Should -Match` can no longer read as coverage
 
 ## Evidence
 
-- Full Sampler gate: **2211 passed, 0 failed, 0 errors, 0 warnings.**
+- Full Sampler gate: **2215 passed, 0 failed, 0 errors, 0 warnings.**
 - Hostile-site proof: **25/25** against a real attacking page over HTTPS.
 - Live workflow: **11/11** against the real site.
-- Mutation coverage: **28/28** disabling mutations detected.
+- Mutation coverage: **36/36** disabling mutations detected - 21 in the browser
+  modules, 15 in `source/Private`.
 
 ## The exit criterion
 
@@ -90,10 +91,21 @@ when no Blocker or Major is open, every control has a mutation entry, every
 remaining source-text assertion is labelled as wiring, and **the diff adds no new
 control** - a round that only adds machinery has not been reviewed.
 
-One product decision is recorded as open rather than settled by default: whether
-the write capabilities ship in the first release at all. They own roughly half
-the supervisor and a matching share of the findings, and read-only would cost
-nothing for the workflow this feature was commissioned for.
+## The write capabilities ship in v1
+
+Decided, against the read-only recommendation. The argument for read-only was
+that the context is ephemeral by construction and `isFieldFillable` refuses
+password fields outright, so form-filling behind a sign-in is unreachable by two
+independent controls and the unauthenticated remainder is thin. The argument that
+won: it was asked for, it is per-Project opt-in and default off, and a capability
+held back cannot be evaluated against real work.
+
+The price was paid rather than waived. Nine write-surface controls that had only
+wiring assertions now carry mutation entries - the six credential-field refusals,
+the capability gate, the unknown-page refusal, and the `expectedUrl` binding on
+every write. Two of them replaced greps that passed with the control removed; the
+binding grep passed with `expectedUrl = ''`, the exact value that disabled
+`assertSamePage` in NEW-002.
 
 Defects found by running rather than reading, across three rounds: the pop-up
 handler closed the page `newPage()` created; `, $array.ToArray()` produced a
