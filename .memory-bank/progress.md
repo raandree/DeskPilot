@@ -310,3 +310,17 @@ and tests are in place and verified.
   off. Signed-off design in `.memory-bank/topics/design-per-call-approval.md`,
   decisions in `.memory-bank/decisions/0008-per-call-approval.md`. Gate:
   1656 tests, 16 tasks, 0 errors, 0 warnings.
+- **2026-09-05 - Second security review round, and the fixes for it.** The
+  round-one fixes were re-reviewed and returned FAIL again: 2 Blockers, 3
+  Majors, every one of them in code written to fix round one. Scope had moved
+  from the Model to free-text parsing, which authorised `README.md`,
+  `install.sh` and pasted attacker text; `Test-DpBrowserUrlFromPage` waved
+  through Model-composed paths and fragments on a docstring claim that measured
+  false; and the Stop fix was dead code that threw "a pipeline is already
+  running" on every call, behind a test that grepped for its own name. All
+  closed: scope takes only complete `https://` URLs the user wrote, provenance
+  covers path/query/fragment, and the session state now lives on the Host Server
+  side so closing needs no pipeline. The cross-parser invariant was restated to
+  what it actually protects and is asserted over ~1,700 generated mutations.
+  Gate: **2105 tests, 0 failures**; hostile-site proof **25/25** over three
+  consecutive runs; live workflow **11/11**.

@@ -232,6 +232,64 @@ correlation design.
 written down about itself. Three were in docstrings, one was in a header
 comment. None had a test. The fixes all carry one now.
 
+## Second review round, 2026-09-05
+
+The fixes were re-reviewed and returned **FAIL again — 2 Blockers, 3 Majors**.
+B-2 and B-4 were confirmed properly fixed; B-1 and B-3 were only half fixed, and
+the half that remained was the half that mattered. That second round is the
+reason this feature is now defensible, and it is worth recording why each miss
+happened.
+
+**B-1's fix moved the channel instead of closing it.** Scope no longer came from
+the Model, but the replacement parsed *free text* for hostnames — so `README.md`,
+`install.sh` and `main.py` became authorised hosts (all live TLDs, all cheap to
+pre-register), text the user **pasted** rather than wrote authorised whatever it
+mentioned, and a trailing slash made the match backtrack a label so
+`news.bbc.co.uk/weather` authorised `news.bbc.co` while *not* authorising the
+site the user named. Scope now comes only from complete `https://` URLs the user
+wrote. And `Test-DpBrowserUrlFromPage` waved through any URL with no query and
+no fragment on the docstring's claim that "a bare path carries no payload beyond
+the path itself" — a sentence that refutes itself. The path *is* the payload.
+The fragment was excluded on the claim that it "never leaves the browser"; it
+never leaves over the network, and `location.hash` reads it in full, which chains
+with the deliberate off-origin-image allowance into a working exfiltration. Both
+now count.
+
+**B-3's stop path was dead code that threw on every call.**
+`Close-DpBrowserSession` opened a `[powershell]` on the Engine Runspace — which
+is executing `Invoke-Shp` at exactly the moment Stop is pressed, so it threw
+"a pipeline is already running" and a `catch { $null = $_ }` swallowed it, every
+time, on the only path the fix existed for. The test asserted that the string
+`Close-DpBrowserSession` appeared in the stop route. The session state is now
+created on the Host Server side and injected into the runspace by reference, so
+closing the browser needs no pipeline at all.
+
+Also fixed: the peer-address check was missing on `click` and `press` (M-6/
+NEW-005); `assertSamePage` was defeatable by `history.replaceState` and now
+carries a navigation counter (NEW-006); an empty `lastUrl` blanked the card *and*
+disabled the same-page check, which is the exact defect class the previous commit
+set out to fix (NEW-002); `isInternalAddress` missed the expanded IPv6 loopback
+(NEW-007); and a blocked navigation left an error-page transition in flight that
+interrupted the *next* one — found by the hostile-site proof, and a defect
+production would have hit.
+
+**NEW-004 corrected a claim rather than the code.** `policy.mjs` asserted in its
+header that it "may never be more permissive than the PowerShell one". Generated
+inputs proved that false and always had been: `System.Uri` refuses to parse forms
+the WHATWG parser canonicalises (`https:host/`, `%2e` in a host, backslash
+separators), so PowerShell says `deny/unparseable` where `policy.mjs` correctly
+allows a host that genuinely is in scope. Refusing to parse is not a permission
+decision. The header now states the two properties that actually matter — every
+`allow` names an in-scope host, and both sides name the same host when both allow
+— and the invariant is asserted over ~1,700 generated mutations rather than a
+corpus curated to pass it.
+
+**The habit the reviewer named.** Two rounds, six false claims, all written by
+this repository about itself, none tested. The countermeasure that worked was not
+care: it was generating the test inputs and running the thing against a hostile
+page. Both rounds' Blockers were found by measurement, and every one of the
+second round's was in code written to fix the first round's.
+
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

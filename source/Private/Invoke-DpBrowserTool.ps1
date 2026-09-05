@@ -127,6 +127,9 @@ function Invoke-DpBrowserTool {
         param($Response)
         if ($Response.ok -and $Response.result) {
             if ($Response.result.PSObject.Properties['url']) { $state.lastUrl = [string]$Response.result.url }
+            # A counter only a real navigation increments, so a page that rewrites
+            # itself and restores the address cannot pass the same-page check.
+            if ($Response.result.PSObject.Properties['navigationId']) { $state.lastNavigation = [int]$Response.result.navigationId }
             # The link set is the page's own offer of where to go next, and it is
             # what tells a Model-composed address from one the site authored.
             if ($Response.result.PSObject.Properties['links']) {
@@ -138,6 +141,7 @@ function Invoke-DpBrowserTool {
             # out-of-scope redirect path parks it on about:blank - so the page a
             # later approval names must not keep pointing at the previous one.
             $state.lastUrl = ''
+            $state.lastNavigation = -1
             $state.session.pageLinks = @()
         }
         ConvertFrom-DpBrowserResult -Response $Response -Session $state.session
@@ -146,6 +150,16 @@ function Invoke-DpBrowserTool {
     # A live page is required for everything except the first open.
     if ($Action -ne 'open' -and $null -eq $state.session) {
         return (& $refuse 'No page is open yet. Use open with a full https address first.')
+    }
+
+    # A write whose page is unknown cannot be approved meaningfully: the card
+    # would name no site and no address while asking the user to authorise
+    # typing into "the page", and the supervisor's same-page check would have
+    # nothing to compare against. lastUrl is cleared by any failed response, so
+    # this is reachable from an ordinary mistyped link name.
+    if ($Action -in @('fill_form', 'click_button', 'upload_file', 'download_file') -and
+        [string]::IsNullOrWhiteSpace($state.lastUrl)) {
+        return (& $refuse 'DeskPilot does not know which page is open, so it cannot ask about this. Read the page again first.')
     }
 
     if ($Action -eq 'open') {
@@ -172,7 +186,8 @@ function Invoke-DpBrowserTool {
         # address, so a query string it invented on a site the user named is the
         # same channel one hop shorter. A URL whose query or fragment did not
         # come from a link on the page just read is approved like a departure.
-        if ($decision.decision -eq 'allow' -and -not (Test-DpBrowserUrlFromPage -Url $Url -Session $state.session)) {
+        if ($decision.decision -eq 'allow' -and
+            -not (Test-DpBrowserUrlFromPage -Url $Url -Session $state.session -UserText ([string]$context.userUrl))) {
             $decision = @{ decision = 'ask'; reason = 'model-composed'; host = $decision.host; url = $decision.url }
         }
 
@@ -246,7 +261,7 @@ function Invoke-DpBrowserTool {
             -Subject 'filling in this form' -Bridge $bridge -TimeoutMinutes $timeoutMinutes
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
-        $payload = @{ fields = $parsed.fields; expectedUrl = $pageUrl }
+        $payload = @{ fields = $parsed.fields; expectedUrl = $pageUrl; expectedNavigation = [int]$state.lastNavigation }
         if ($submitting) { $payload.submitWith = $SubmitWith }
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'fill' -Payload $payload -TimeoutSeconds 90
         return (& $finish $response)
@@ -269,7 +284,7 @@ function Invoke-DpBrowserTool {
             -Subject "pressing $ButtonText" -Bridge $bridge -TimeoutMinutes $timeoutMinutes
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
-        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'press' -Payload @{ buttonText = $ButtonText; expectedUrl = $pageUrl } -TimeoutSeconds 90
+        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'press' -Payload @{ buttonText = $ButtonText; expectedUrl = $pageUrl; expectedNavigation = [int]$state.lastNavigation } -TimeoutSeconds 90
         return (& $finish $response)
     }
 
@@ -305,7 +320,7 @@ function Invoke-DpBrowserTool {
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'upload' `
-            -Payload @{ fieldName = $FieldName; path = $full; expectedUrl = $pageUrl } -TimeoutSeconds 120
+            -Payload @{ fieldName = $FieldName; path = $full; expectedUrl = $pageUrl; expectedNavigation = [int]$state.lastNavigation } -TimeoutSeconds 120
         return (& $finish $response)
     }
 
@@ -328,7 +343,7 @@ function Invoke-DpBrowserTool {
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'download' `
-            -Payload @{ controlText = $ButtonText; expectedUrl = $pageUrl } -TimeoutSeconds 120
+            -Payload @{ controlText = $ButtonText; expectedUrl = $pageUrl; expectedNavigation = [int]$state.lastNavigation } -TimeoutSeconds 120
         return (& $finish $response)
     }
 

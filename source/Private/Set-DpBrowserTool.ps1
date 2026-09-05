@@ -40,15 +40,20 @@ function Set-DpBrowserTool {
         [int]$TimeoutMinutes = 15,
 
         [AllowNull()]
-        [object]$Bridge
+        [object]$Bridge,
+
+        # Created by the caller and held on the Host Server side, so Stop can
+        # close the browser while the runspace is busy running the Turn.
+        [AllowNull()]
+        [hashtable]$State
     )
 
     # Whether it is being switched on or off, a browser from the previous Turn
     # must not survive into this one.
-    Close-DpBrowserSession -Runspace $Runspace
+    Close-DpBrowserSession -State $State
 
     if ($Enabled) {
-        return Initialize-DpBrowserTool -Runspace $Runspace -Context $Context -TimeoutMinutes $TimeoutMinutes -Bridge $Bridge
+        return Initialize-DpBrowserTool -Runspace $Runspace -Context $Context -TimeoutMinutes $TimeoutMinutes -Bridge $Bridge -State $State
     }
 
     $shell = [powershell]::Create()

@@ -151,6 +151,9 @@ if ($m) {
         TokenPath        = $tokenPath
         UserPromptBridge = $userPromptBridge
         ApprovalBridge   = $approvalBridge
+        # Shared with the Engine Runspace by reference, so Stop can close a live
+        # browser while the runspace is busy running the Turn.
+        BrowserState     = $null
         McpSupported     = $mcpSupported
     }
 }

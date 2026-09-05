@@ -5,12 +5,21 @@ function Get-DpBrowserScope {
     .DESCRIPTION
         Scope has exactly three sources, and the order of trust is the point:
 
-        1. **Hosts the user themselves named**, taken from their own message.
-           This used to be seeded from the first URL the *Model* chose, which
-           meant every Turn got one free, unapproved navigation to any host on
-           the internet - a complete exfiltration channel, since the Model's
-           context holds the conversation and the Workspace Folder path and a URL
-           carries them out. Recorded as Blocker B-1, 2026-09-05.
+        1. **Full `https://` addresses the user themselves wrote**, taken from
+           their own message. It used to be seeded from the first URL the *Model*
+           chose, which gave every Turn one free, unapproved navigation to any
+           host on the internet (Blocker B-1, 2026-09-05).
+
+           Only complete `https://` URLs count. A bare token that merely looks
+           like a host was tried and withdrawn: `.md`, `.sh`, `.py`, `.io`, `.ai`
+           and `.co` are all registrable, so `README.md` and `install.sh` in an
+           ordinary prompt became authorised hosts an attacker can pre-register;
+           text the user *pasted* rather than wrote - an error message, a log
+           line, a quoted email - authorised whatever host it mentioned; and a
+           trailing slash made the match backtrack a label, so
+           `news.bbc.co.uk/weather` authorised `news.bbc.co` while not
+           authorising the site the user actually named. Requiring a scheme costs
+           one approval card and removes all three.
         2. **The Project's own list.** Durable, and widened only from Settings -
            never from a button beside an approval card, for the reason decision
            0008 gives about safeCommands: "always allow this" next to a prompt is
@@ -31,8 +40,8 @@ function Get-DpBrowserScope {
         arriving from the API are validated at that boundary, where a bad value
         can still be reported.
     .PARAMETER StartUrl
-        Text the user wrote. Hosts are extracted from it, whether written as a
-        full https address or as a bare host name.
+        The user's own message. Complete `https://` addresses in it seed the
+        scope; nothing else in the text does.
     .PARAMETER ProjectDomain
         Additional hosts the Project allows.
     .PARAMETER GrantedHost
@@ -78,11 +87,6 @@ function Get-DpBrowserScope {
             if ([System.Uri]::TryCreate($match.Value, [System.UriKind]::Absolute, [ref]$uri) -and $uri.Scheme -eq 'https') {
                 & $add $uri.IdnHost
             }
-        }
-
-        # A host written without a scheme, which is how people usually type one.
-        foreach ($match in [regex]::Matches($text, '(?<![\w./@-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}(?![\w/@-])', 'IgnoreCase')) {
-            & $add $match.Value
         }
     }
 

@@ -67,6 +67,30 @@ $record = {
 $node = Get-DpNodeCommand
 $site = $null
 $session = $null
+$page = @{ url = ''; navigationId = 0 }
+
+# Writes carry the identity of the page they were approved on, so the harness has
+# to track it the way the Tool does in production.
+$goto = {
+    param([string]$Url, [switch]$ExpectRefusal)
+    $response = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = $Url } -TimeoutSeconds 45
+    if ($response.ok -and $response.result) {
+        $page.url = [string]$response.result.url
+        $page.navigationId = [int]$response.result.navigationId
+    }
+    elseif (-not $ExpectRefusal) {
+        # A navigation the harness needed and did not get would otherwise show up
+        # later as a page-identity mismatch, which reads like a policy failure.
+        Write-Host "    (setup navigation to $Url failed: $($response.error))" -ForegroundColor Yellow
+    }
+    $response
+}
+$approved = {
+    param([hashtable]$Payload)
+    $Payload.expectedUrl = $page.url
+    $Payload.expectedNavigation = $page.navigationId
+    $Payload
+}
 $workRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dp-hostile-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $workRoot -Force | Out-Null
 
@@ -120,7 +144,7 @@ try {
         -AllowDownload $true -DownloadRoot $downloadRoot
 
     # --- Reaching the site at all, which everything below depends on ----------
-    $landing = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/" } -TimeoutSeconds 60
+    $landing = & $goto "$origin/"
     & $record 'the in-scope hostile site opens' $landing.ok ([string]$landing.error)
     if (-not $landing.ok) { throw "Could not open the hostile site: $($landing.error)" }
     & $record 'its injected instruction comes back as data, not as an action' `
@@ -137,37 +161,37 @@ try {
             @{ Name = 'a credential in the address is refused'; Url = 'https://user:secret@exfil.invalid/' }
         )) {
         $url = if ($case.ContainsKey('Url')) { $case.Url } else { "$origin$($case.Path)" }
-        $response = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = $url } -TimeoutSeconds 45
+        $response = & $goto $url -ExpectRefusal
         $blockedByPolicy = -not $response.ok -and [string]$response.error -notmatch 'ERR_NAME_NOT_RESOLVED'
         & $record $case.Name $blockedByPolicy ([string]$response.error)
     }
 
     # --- Page-driven channels ------------------------------------------------
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/osorno" } -TimeoutSeconds 45
+    $null = & $goto "$origin/osorno"
     Start-Sleep -Milliseconds 800
     $status = Invoke-DpBrowserRequest -Session $session -Command 'status' -TimeoutSeconds 15
     $reachedExfil = @($status.result.blocked | Where-Object { $_.url -match 'exfil\.invalid' })
     & $record 'the page''s own script, socket and beacon were refused' `
     ($reachedExfil.Count -gt 0) "blocked: $((@($reachedExfil | ForEach-Object { $_.resourceType }) | Select-Object -Unique) -join ', ')"
 
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/popup" } -TimeoutSeconds 45
+    $null = & $goto "$origin/popup"
     Start-Sleep -Milliseconds 800
     $status = Invoke-DpBrowserRequest -Session $session -Command 'status' -TimeoutSeconds 15
     & $record 'a pop-up was closed rather than followed' `
     (@($status.result.blocked | Where-Object { $_.reason -eq 'popup' }).Count -gt 0) ''
 
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/frame-page" } -TimeoutSeconds 45
+    $null = & $goto "$origin/frame-page"
     Start-Sleep -Milliseconds 800
     $status = Invoke-DpBrowserRequest -Session $session -Command 'status' -TimeoutSeconds 15
     & $record 'a nested frame could not leave the scope' `
     (@($status.result.blocked | Where-Object { $_.url -match 'exfil\.invalid' }).Count -gt 0) ''
 
     # --- The write surface ---------------------------------------------------
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/credentials" } -TimeoutSeconds 45
+    $null = & $goto "$origin/credentials"
 
-    $ordinary = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload @{
-        fields = @(@{ name = 'window'; value = 'Monday 02:00' })
-    }
+    $ordinary = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload (& $approved @{
+            fields = @(@{ name = 'window'; value = 'Monday 02:00' })
+        })
     & $record 'an ordinary field is filled' $ordinary.ok ([string]$ordinary.error)
 
     foreach ($case in @(
@@ -178,34 +202,44 @@ try {
             @{ Name = 'an invisible field is refused'; Field = 'ghost' }
             @{ Name = 'a read-only field is refused'; Field = 'locked' }
         )) {
-        $response = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload @{
-            fields = @(@{ name = $case.Field; value = 'should-never-be-typed' })
-        }
+        $response = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload (& $approved @{
+                fields = @(@{ name = $case.Field; value = 'should-never-be-typed' })
+            })
         & $record $case.Name (-not $response.ok) ([string]$response.error)
     }
 
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/offsite-form" } -TimeoutSeconds 45
-    $offsite = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload @{
-        fields     = @(@{ name = 'detail'; value = 'x' })
-        submitWith = 'Save'
+    # A write approved for one page must not land on another.
+    $null = & $goto "$origin/credentials"
+    $staleUrl = $page.url
+    $null = & $goto "$origin/offsite-form"
+    $stale = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload @{
+        fields = @(@{ name = 'detail'; value = 'x' }); expectedUrl = $staleUrl; expectedNavigation = 0
     }
+    & $record 'a write approved for a different page is refused' (-not $stale.ok) ([string]$stale.error)
+
+    $offsite = Invoke-DpBrowserRequest -Session $session -Command 'fill' -TimeoutSeconds 45 -Payload (& $approved @{
+            fields     = @(@{ name = 'detail'; value = 'x' })
+            submitWith = 'Save'
+        })
     # The scope check has to be what refuses it, not an incidental page error.
     $stoppedByScope = -not $offsite.ok -and [string]$offsite.error -match 'not in scope'
     & $record 'a form that posts off-site is stopped at the press' $stoppedByScope ([string]$offsite.error)
 
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/upload" } -TimeoutSeconds 45
-    $wrongField = Invoke-DpBrowserRequest -Session $session -Command 'upload' -TimeoutSeconds 45 -Payload @{
-        fieldName = 'notes2'; path = (Join-Path $workRoot 'cert.pem')
-    }
+    $null = & $goto "$origin/upload"
+    $wrongField = Invoke-DpBrowserRequest -Session $session -Command 'upload' -TimeoutSeconds 45 -Payload (& $approved @{
+            fieldName = 'notes2'; path = (Join-Path $workRoot 'cert.pem')
+        })
     & $record 'a file cannot be attached to a field that is not a file input' (-not $wrongField.ok) ([string]$wrongField.error)
 
     # --- Downloads -----------------------------------------------------------
-    $null = Invoke-DpBrowserRequest -Session $session -Command 'navigate' -Payload @{ url = "$origin/traversal-download" } -TimeoutSeconds 45
-    $download = Invoke-DpBrowserRequest -Session $session -Command 'download' -Payload @{ controlText = 'Export' } -TimeoutSeconds 60
+    $null = & $goto "$origin/traversal-download"
+    $download = Invoke-DpBrowserRequest -Session $session -Command 'download' -TimeoutSeconds 60 -Payload (& $approved @{
+            controlText = 'Export'
+        })
     $savedAs = [string]$download.result.savedAs
     $stayedPut = $download.ok -and $savedAs -and
         ([System.IO.Path]::GetFullPath($savedAs)).StartsWith(([System.IO.Path]::GetFullPath($downloadRoot)), [System.StringComparison]::OrdinalIgnoreCase)
-    & $record 'a download filename cannot walk out of its folder' $stayedPut "saved as: $savedAs"
+    & $record 'a download filename cannot walk out of its folder' $stayedPut $(if ($savedAs) { "saved as: $savedAs" } else { "error: $($download.error)" })
 
     # --- Stop ----------------------------------------------------------------
     if (-not $KeepOpen) {

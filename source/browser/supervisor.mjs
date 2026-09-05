@@ -51,6 +51,9 @@ const state = {
     screenshots: 0,
     downloads: 0,
     pendingDownload: false,
+    // Incremented only by a real main-frame navigation, so a page cannot restore
+    // it the way history.replaceState restores a URL.
+    navigationId: 0,
     blocked: []
 };
 
@@ -144,6 +147,10 @@ async function ensureBrowser() {
 
     state.page = await state.context.newPage();
 
+    state.page.on('framenavigated', (frame) => {
+        if (frame === state.page.mainFrame()) state.navigationId += 1;
+    });
+
     // Registered only after the main page exists. The 'page' event fires for
     // newPage() too, so a handler installed earlier closes the page it was
     // meant to protect - which aborts every navigation with a detached frame.
@@ -189,6 +196,13 @@ function budget(kind) {
 // Page text and link lists are untrusted data. They are bounded and returned as
 // values; nothing here interpolates them into a selector, a script or a URL.
 async function readPage() {
+    // Playwright dispatches 'framenavigated' asynchronously, so the counter can
+    // still be one behind when goto() resolves. One turn of the event loop
+    // guarantees a pending handler has run before the identity is stamped -
+    // without it the stamp races the navigation that produced it, and a write
+    // approved for a page is refused on that same page, intermittently.
+    await new Promise((resolve) => setImmediate(resolve));
+
     // A read can race a navigation the interceptor just aborted, which destroys
     // the execution context mid-evaluate. That is an ordinary outcome of the
     // policy doing its job, so it is waited out rather than reported as a fault.
@@ -214,6 +228,7 @@ async function readPage() {
     const title = await state.page.title().catch(() => '');
     return {
         url: state.page.url(),
+        navigationId: state.navigationId,
         title: String(title).slice(0, LIMITS.titleChars),
         text: trimmed,
         truncated: text.length > LIMITS.pageTextChars,
@@ -282,14 +297,22 @@ async function clickControl(text) {
 // wearing a button.
 async function pressControl(text) {
     const before = state.blocked.length;
-    await clickControl(text);
-    await state.page.waitForLoadState('domcontentloaded').catch(() => {});
+    const [response] = await Promise.all([
+        state.page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => null),
+        clickControl(text)
+    ]);
+    await assertPeerAllowed(response);
 
     // The interceptor may already have refused the post, in which case the page
     // never moved and the scope check below would see nothing wrong. Saying so
     // is the difference between "that did not work" and "that was not allowed".
     const refused = state.blocked.slice(before).find((entry) => String(entry.reason).startsWith('navigation-'));
     if (refused) {
+        // Settled before returning: the aborted navigation is still transitioning
+        // to Chromium's error page, and leaving it in flight interrupts whatever
+        // the caller does next.
+        await state.page.goto('about:blank').catch(() => {});
+        await state.page.waitForLoadState('domcontentloaded').catch(() => {});
         throw new Error(`That control tried to send the page to ${refused.url}, which is not in scope, so nothing was sent.`);
     }
 
@@ -297,19 +320,40 @@ async function pressControl(text) {
     if (landed.decision !== 'allow') {
         recordBlocked(`action-${landed.reason}`, state.page.url(), 'document');
         await state.page.goto('about:blank').catch(() => {});
+        await state.page.waitForLoadState('domcontentloaded').catch(() => {});
         throw new Error(`That control led to ${landed.host || 'somewhere else'}, which is not in scope.`);
     }
 }
 
 // A page can navigate itself while the user reads the card - a meta refresh or a
 // setTimeout is enough - and the values approved for one page would then be
-// typed into another. The approved URL travels with the action and is checked
-// here, at the moment it would happen.
-function assertSamePage(expectedUrl) {
-    if (!expectedUrl) return;
-    if (state.page.url() !== expectedUrl) {
+// typed into another. Comparing URLs was not enough: history.replaceState lets a
+// page rewrite the document and restore the address, so the check also carries a
+// navigation counter that only a real navigation increments.
+function assertSamePage(expectedUrl, expectedNavigation) {
+    // A missing expectation used to disable the check silently. PowerShell now
+    // refuses the write before it gets here, and this refuses it again.
+    if (!expectedUrl) {
+        throw new Error('DeskPilot does not know which page this was approved for, so nothing was done.');
+    }
+    if (state.page.url() !== expectedUrl || (expectedNavigation !== undefined && state.navigationId !== expectedNavigation)) {
         recordBlocked('page-changed', state.page.url(), 'document');
-        throw new Error('The page changed while this was waiting for approval, so nothing was done. Read the page again first.');
+        throw new Error('The page changed while this was waiting for approval, so nothing was done. Read the page again first.'
+            + ` (approved for ${expectedUrl} #${expectedNavigation}, now on ${state.page.url()} #${state.navigationId})`);
+    }
+}
+
+// Every path that lands the browser on a new document goes through here. A
+// public name can hold a private A record, so the address the connection
+// actually reached is what decides - and a pre-flight resolve would be a TOCTOU
+// against DNS rebinding.
+async function assertPeerAllowed(response) {
+    if (state.testInsecure) return;
+    const peer = await response?.serverAddr?.().catch(() => null);
+    if (peer && isInternalAddress(peer.ipAddress)) {
+        recordBlocked('internal-address', state.page.url(), 'document');
+        await state.page.goto('about:blank').catch(() => {});
+        throw new Error('That address is on this machine or the local network, so DeskPilot will not open it.');
     }
 }
 
@@ -334,18 +378,24 @@ const handlers = {
         }
         budget('navigation');
         await ensureBrowser();
-        const response = await state.page.goto(url, { waitUntil: 'domcontentloaded' });
 
-        // A public name can hold a private A record, and a pre-flight resolve is
-        // a TOCTOU against rebinding - so the address the connection actually
-        // landed on is what decides. Without this, a name is a way around the
-        // IP-literal refusal to reach dev servers and router admin pages.
-        const peer = await response?.serverAddr?.().catch(() => null);
-        if (peer && !state.testInsecure && isInternalAddress(peer.ipAddress)) {
-            recordBlocked('internal-address', state.page.url(), 'document');
-            await state.page.goto('about:blank').catch(() => {});
-            throw new Error('That address is on this machine or the local network, so DeskPilot will not open it.');
+        // Blocking a navigation leaves Chromium mid-transition to its own error
+        // page, and that transition interrupts the *next* goto - so an ordinary
+        // navigation after a refused one failed for a reason that had nothing to
+        // do with the address being opened. Retried once, only for that.
+        let response;
+        for (let attempt = 0; ; attempt += 1) {
+            try {
+                response = await state.page.goto(url, { waitUntil: 'domcontentloaded' });
+                break;
+            }
+            catch (error) {
+                const interrupted = /interrupted by another navigation/i.test(String(error?.message ?? ''));
+                if (!interrupted || attempt > 0) throw error;
+                await state.page.waitForLoadState('domcontentloaded').catch(() => {});
+            }
         }
+        await assertPeerAllowed(response);
 
         // The landing URL is checked again because a redirect chain can end
         // somewhere the first check never saw.
@@ -369,10 +419,11 @@ const handlers = {
         // Role and accessible name, never a page-supplied selector string: there
         // is no path here from page text to a selector engine or to eval.
         const link = state.page.getByRole('link', { name, exact: false }).first();
-        await Promise.all([
-            state.page.waitForLoadState('domcontentloaded').catch(() => {}),
+        const [response] = await Promise.all([
+            state.page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => null),
             link.click({ timeout: LIMITS.actionTimeoutMs })
         ]);
+        await assertPeerAllowed(response);
 
         const landed = resolveUrlDecision(state.page.url(), state.scope);
         if (landed.decision !== 'allow') {
@@ -395,10 +446,10 @@ const handlers = {
     // has shown the user the page, the values and the control, and blocked until
     // they answered. What is enforced here is the part an approval cannot cover,
     // because the user is judging a description and this is judging the live DOM.
-    async fill({ fields, submitWith, expectedUrl }) {
+    async fill({ fields, submitWith, expectedUrl, expectedNavigation }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
-        assertSamePage(expectedUrl);
+        assertSamePage(expectedUrl, expectedNavigation);
 
         const filled = [];
         for (const entry of fields ?? []) {
@@ -427,18 +478,18 @@ const handlers = {
         return { filled, submitted: Boolean(submitWith), ...(await readPage()) };
     },
 
-    async press({ buttonText, expectedUrl }) {
+    async press({ buttonText, expectedUrl, expectedNavigation }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
-        assertSamePage(expectedUrl);
+        assertSamePage(expectedUrl, expectedNavigation);
         await pressControl(buttonText);
         return readPage();
     },
 
-    async upload({ fieldName, path, expectedUrl }) {
+    async upload({ fieldName, path, expectedUrl, expectedNavigation }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
-        assertSamePage(expectedUrl);
+        assertSamePage(expectedUrl, expectedNavigation);
         if (typeof path !== 'string' || !path) throw new Error('A file path is required.');
 
         // The path arrives already resolved and confined to the project folder by
@@ -457,10 +508,10 @@ const handlers = {
     // asked and never where other Tools would pick it up by accident. The
     // suggested name is page-controlled, so it is reduced to a leaf and stripped
     // before it is ever joined to a path.
-    async download({ controlText, expectedUrl }) {
+    async download({ controlText, expectedUrl, expectedNavigation }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
-        assertSamePage(expectedUrl);
+        assertSamePage(expectedUrl, expectedNavigation);
         if (!state.allowDownload) throw new Error('This project does not allow downloads.');
         if (state.downloads >= LIMITS.downloads) throw new Error(`This run has used its ${LIMITS.downloads} downloads.`);
         if (!state.downloadRoot) throw new Error('DeskPilot has nowhere to put a download.');

@@ -8,10 +8,22 @@
 // sub-resources that PowerShell never hears about.
 //
 // Two enforcement points for one boundary can drift, and a drifted boundary is
-// the failure mode this repository keeps re-learning. So both are held to a
-// shared corpus (tests/Unit/fixtures/browser-policy-corpus.json) that asserts
-// identical verdicts, and to one invariant: this implementation may never be
-// more permissive than the PowerShell one.
+// the failure mode this repository keeps re-learning. Both are held to a shared
+// corpus (tests/Unit/fixtures/browser-policy-corpus.json) plus a generated one
+// (mutate-policy-corpus.mjs), and to two properties:
+//
+//   1. Every `allow` here names a host that is genuinely in scope by the
+//      label-boundary rule. This is the security property.
+//   2. When the PowerShell classifier also allows, both name the same host.
+//      This is what the approval card depends on: the site shown to the user has
+//      to be the site the browser will contact.
+//
+// An earlier version claimed the stronger "never more permissive than the
+// PowerShell one". That is false and was never true: `System.Uri` refuses to
+// parse forms the WHATWG parser canonicalises (`https:host/`, `%2e` in a host,
+// backslash separators), so PowerShell returns `deny/unparseable` where this
+// returns `allow` for a host that really is in scope. Refusing to parse is not a
+// permission decision, and asserting it as one hid the two properties above.
 
 const MAX_URL_LENGTH = 4096;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
@@ -120,12 +132,32 @@ export function isInternalAddress(address) {
     if (!text) return false;
 
     if (text.includes(':')) {
+        // Expand :: so the loopback written out in full is recognised too, not
+        // only the compressed form Chromium usually reports.
+        const [head, tail] = text.split('::', 2);
+        const headParts = head ? head.split(':') : [];
+        const tailParts = tail !== undefined && tail ? tail.split(':') : [];
+        const groups = tail === undefined
+            ? headParts
+            : [...headParts, ...Array(Math.max(0, 8 - headParts.length - tailParts.length)).fill('0'), ...tailParts];
+
+        if (groups.length === 8) {
+            const last = groups[7];
+            if (last.includes('.')) return isInternalAddress(last);
+            const values = groups.map((g) => parseInt(g || '0', 16));
+            if (values.slice(0, 7).every((v) => v === 0) && (values[7] === 0 || values[7] === 1)) return true;
+            if (values[0] === 0 && values[4] === 0 && values[5] === 0xffff) return true;
+            if ((values[0] & 0xfe00) === 0xfc00) return true;   // fc00::/7 unique local
+            if ((values[0] & 0xffc0) === 0xfe80) return true;   // fe80::/10 link local
+            return false;
+        }
+
         if (text === '::1' || text === '::') return true;
         const mapped = text.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
         if (mapped) return isInternalAddress(mapped[1]);
-        const head = parseInt(text.split(':')[0] || '0', 16);
-        if ((head & 0xfe00) === 0xfc00) return true;       // fc00::/7 unique local
-        if ((head & 0xffc0) === 0xfe80) return true;       // fe80::/10 link local
+        const head0 = parseInt(text.split(':')[0] || '0', 16);
+        if ((head0 & 0xfe00) === 0xfc00) return true;
+        if ((head0 & 0xffc0) === 0xfe80) return true;
         return false;
     }
 

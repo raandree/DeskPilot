@@ -1603,10 +1603,10 @@ function Invoke-DpRouteHandler {
             # Stop has to release this bridge too or the pipeline never unwinds and
             # the Stop button appears to do nothing.
             if ($state.Engine.ApprovalBridge) { $state.Engine.ApprovalBridge.Cancel() }
-            # Stop has to mean the browser stops too. The Turn's own finally also
-            # closes it, but that only runs once the pipeline unwinds, and a page
-            # keeps executing script in the meantime.
-            try { Close-DpBrowserSession -Runspace $state.Engine.Runspace } catch { $null = $_ }
+            # Stop has to mean the browser stops too, and it has to work while
+            # the runspace is mid-Turn - which is why the session is held here
+            # rather than reached through a pipeline that cannot start.
+            try { Close-DpBrowserSession -State $state.Engine.BrowserState } catch { $null = $_ }
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
         }
         'titleConversation' {

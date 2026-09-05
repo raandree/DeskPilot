@@ -18,44 +18,58 @@ uninstall, the hostile-site suite, the live workflow, UI screenshots, specs
 
 ## What the review changed
 
-It returned **FAIL — 4 Blockers, 7 Majors**, and found **four of ten design
-claims false as stated**. All are fixed with regression tests; decision 0003
-carries the detail. The four that mattered most:
+**Two rounds, both FAIL.** Round one: 4 Blockers, 7 Majors, four of ten design
+claims false. Round two, over the fixes: **2 more Blockers and 3 Majors, every
+one of them in code written to fix round one.** All are now closed and carry
+regression tests; decision 0003 has the detail.
+
+Round one's four:
 
 - **The Model seeded its own scope**, giving every Turn one free unapproved
-  navigation to any host — a complete exfiltration channel. Scope now comes from
-  the user's own message, and a Model-composed query even on an in-scope host is
-  approved like a departure.
-- **The two enforcement points disagreed on 26 of 80 URLs**, because
-  `System.Uri` performs no IDNA mapping and Chromium does. The card could name a
-  host the browser would never contact. Both sides now compare on `IdnHost`, and
-  the corpus asserts equality *and* the never-more-permissive invariant that had
-  been claimed in a header comment and never tested.
+  navigation to any host.
+- **The two enforcement points disagreed on 26 of 80 URLs** (`System.Uri` does no
+  IDNA mapping, Chromium does), so the card could name a host the browser would
+  never contact.
 - **Stop did not close the browser.** `Close-DpBrowserSession` had one caller:
-  the start of the *next* Turn. Its own docstring said otherwise.
+  the start of the *next* Turn.
 - **`DESKPILOT_BROWSER_ROOT` replaced the entire policy with arbitrary Node
-  code**, silently, while the two strictly weaker test hooks beside it had a
-  guard test, a warning and a ready-line flag.
+  code**, silently.
 
-Every Blocker was a claim this repository had written about itself, three of
-them in docstrings. None had a test. All four do now.
+Round two found that two of those fixes had moved the problem rather than
+removed it:
+
+- **Scope came from free text**, so `README.md`, `install.sh` and `main.py`
+  became authorised hosts — all live TLDs — text the user *pasted* authorised
+  whatever it mentioned, and a trailing slash backtracked a label so
+  `news.bbc.co.uk/weather` authorised `news.bbc.co`. Now only complete `https://`
+  URLs the user wrote.
+- **Path and fragment were unapproved egress.** `Test-DpBrowserUrlFromPage` waved
+  through anything with no query, on a docstring claim that "a bare path carries
+  no payload beyond the path itself". The path *is* the payload. The fragment was
+  excluded as "never leaves the browser" — `location.hash` reads it in full.
+- **The Stop fix was dead code that threw every time.** It opened a pipeline on
+  the Engine Runspace, which is mid-`Invoke-Shp` at exactly that moment, and a
+  `catch` swallowed it. The test asserted the function's own name appeared in the
+  route. The session state now lives on the Host Server side and is injected by
+  reference, so closing needs no pipeline.
 
 ## Evidence
 
-- Full Sampler gate: **2098 passed, 0 failed, 0 errors, 0 warnings.**
-- Hostile-site proof against a real attacking page over HTTPS: **24/24.**
-- Live Osorno workflow against the real site: **11/11.**
-- UI screenshots at 1440, 820, 720, 700, 620 and 400 px, rendering the real card
-  builder rather than a hand-written copy of its markup.
+- Full Sampler gate: **2105 passed, 0 failed, 0 errors, 0 warnings.**
+- Hostile-site proof: **25/25**, three consecutive runs, against a real attacking
+  page over HTTPS.
+- Live Osorno workflow: **11/11** against the real site.
+- The parser invariant is now asserted over ~1,700 *generated* mutations rather
+  than a curated corpus — and it caught a class on its first run.
 - PSScriptAnalyzer on `source/`: 48 findings, both non-house-style ones
   pre-existing and in other files.
 
-Defects found by running things rather than by reading them: the pop-up handler
-was registered before `state.page` existed, so it closed the page `newPage()`
-had just created and every navigation failed; `, $array.ToArray()` on an empty
-list produced a phantom element that made the proof report an orphan that did
-not exist; and `Should -Invoke -Times 0` without `-Exactly` asserts nothing, so
-every "never contacted anything" test was vacuous.
+Defects found by running rather than reading, across both rounds: the pop-up
+handler closed the page `newPage()` had just created; `, $array.ToArray()` on an
+empty list produced a phantom element; `Should -Invoke -Times 0` without
+`-Exactly` asserts nothing; a blocked navigation left an error-page transition
+in flight that interrupted the *next* one; and the navigation stamp raced the
+navigation that produced it.
 
 ## Deliberate gaps, not oversights
 
@@ -85,10 +99,15 @@ does not touch that.
 
 ## The lesson this session keeps re-teaching
 
-It stopped being a lesson about inherited claims and became one about claims
-made *in the same session*. Adding write actions falsified "no action has an
-external effect" in four documents written hours earlier. The security review
-then falsified four more, all of them written down by this repository about
-itself, none of them tested. The pattern is now recorded in `systemPatterns.md`
-as **grep for the caller before believing the comment**.
+Two review rounds produced six false claims, all written by this repository
+about itself, none tested. Round two's Blockers were *all* in code written to
+fix round one's.
+
+What did not work: care, and re-reading. What worked: generating the test inputs
+instead of enumerating them, and running the thing against a page that attacks
+it. Every Blocker in both rounds was found by measurement, and the corrected
+parser invariant caught a fresh divergence class on its first generated run.
+
+Recorded in `systemPatterns.md` as **grep for the caller before believing the
+comment**, and now also as **a justification in a docstring is a hypothesis**.
 

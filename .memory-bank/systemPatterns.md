@@ -1101,6 +1101,31 @@ source: repository evidence
   before believing the comment**, and prefer a test that observes the effect over
   one that observes the intent.
 
+- **A justification written into a docstring is a hypothesis, not a finding.**
+  Two boundaries in the browser feature were waved through on sentences that read
+  as reasoning: "a bare path carries no payload beyond the path itself" (the path
+  *is* the payload) and the URL fragment "never leaves the browser" (it never
+  leaves over the network; `location.hash` reads it in full). Both were
+  exploitable, and both had survived review precisely because the prose sounded
+  like it had been thought about. When a comment explains why something is safe,
+  that sentence is the thing to test.
+
+- **Generate the inputs for an invariant, do not enumerate them.** A curated
+  corpus can only contain the failure classes somebody already imagined; it will
+  pass by construction and read as evidence. The browser policy's cross-parser
+  invariant was asserted over 56 hand-picked URLs and a review found 26
+  disagreements outside them - then 8 more after the first fix. Replacing the
+  enumeration with ~1,700 generated mutations caught a fresh class on its first
+  run. The corollary is that a green curated corpus is a smoke test, not a proof.
+
+- **Check whether the fix can run at all.** The first attempt at closing the
+  browser on Stop opened a `[powershell]` on the Engine Runspace - which is
+  executing `Invoke-Shp` at exactly the moment Stop is pressed, so it threw "a
+  pipeline is already running" on every invocation and a `catch { $null = $_ }`
+  hid it. Cross-boundary cleanup has to use a channel that works while the other
+  side is busy: share the state object by reference, as the approval bridge does,
+  rather than asking for a pipeline that cannot start.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

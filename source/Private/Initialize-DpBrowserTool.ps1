@@ -40,7 +40,13 @@ function Initialize-DpBrowserTool {
         [int]$TimeoutMinutes = 15,
 
         [AllowNull()]
-        [object]$Bridge
+        [object]$Bridge,
+
+        # The same hashtable the Host Server holds. Injected rather than created
+        # here so Stop can reach the live session without a pipeline on a
+        # runspace that is busy running the Turn.
+        [AllowNull()]
+        [hashtable]$State
     )
 
     $names = @(
@@ -66,11 +72,11 @@ function Initialize-DpBrowserTool {
     )
 
     $builder = [System.Text.StringBuilder]::new()
-    [void]$builder.AppendLine('param($Context, [int]$TimeoutMinutes, $Bridge)')
+    [void]$builder.AppendLine('param($Context, [int]$TimeoutMinutes, $Bridge, $State)')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotBrowserContext -Scope Global -Value $Context')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotBrowserBridge -Scope Global -Value $Bridge')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotBrowserTimeoutMinutes -Scope Global -Value $TimeoutMinutes')
-    [void]$builder.AppendLine('Set-Variable -Name DeskPilotBrowserState -Scope Global -Value @{ session = $null; scope = @(); granted = @(); lastUrl = '''' }')
+    [void]$builder.AppendLine('Set-Variable -Name DeskPilotBrowserState -Scope Global -Value $State')
 
     foreach ($name in $names) {
         $command = Get-Command -Name $name -CommandType Function -ErrorAction Stop
@@ -135,7 +141,8 @@ Register-ShpTool -Command 'Invoke-DpBrowserTool' -ToolName 'browser_page' -Descr
         $null = $shell.AddScript($builder.ToString()).
             AddArgument($Context).
             AddArgument([int]$TimeoutMinutes).
-            AddArgument($Bridge)
+            AddArgument($Bridge).
+            AddArgument($State)
         $shell.Invoke() | Out-Null
         if ($shell.HadErrors) {
             $firstError = $shell.Streams.Error | Select-Object -First 1

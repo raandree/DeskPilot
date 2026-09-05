@@ -1,31 +1,38 @@
 function Test-DpBrowserUrlFromPage {
     <#
     .SYNOPSIS
-        Whether an address was offered by the page rather than composed by the Model.
+        Whether an address was authored by the user or offered by the page,
+        rather than composed by the Model.
     .DESCRIPTION
         An in-scope host is not a blank cheque. The Model composes the entire
-        address, so a query string it invented on a site the user named carries
-        the Model's context outward exactly as an off-scope navigation would -
-        one hop shorter, and previously with no card at all. This is the
-        same-origin half of Blocker B-1 from the security review of 2026-09-05.
+        address, so anything it invents on a site the user named carries the
+        Model's context outward exactly as an off-scope navigation would - one
+        hop shorter, and previously with no card at all.
 
-        The test is provenance, not content: an address that appeared as a link
-        on the page just read was authored by the site, so following it tells the
-        site nothing it did not already know. Anything else is the Model's own
-        composition and is escalated to an approval.
+        The first version of this test compared only scheme, host and path, and
+        waved through any URL with no query and no fragment on the reasoning that
+        "a bare path carries no payload beyond the path itself". That sentence
+        refutes itself: the path *is* a payload, it is Model-composed, and it
+        lands in the access log of the host doing the injecting. The fragment was
+        excluded on the reasoning that it "never leaves the browser" - it never
+        leaves over the network, and `location.hash` reads it in full. Both were
+        found exploitable end to end (NEW-001, 2026-09-05), so the comparison now
+        covers path, query **and** fragment.
 
-        A URL with no query and no fragment is treated as page-offered. A bare
-        path on an in-scope host carries no payload beyond the path itself, and
-        refusing those would raise a card on ordinary navigation and train the
-        user to click through - the failure decision 0008 records at length.
+        Three things count as authored:
 
-        Comparison ignores the fragment, which never leaves the browser, and is
-        done on the normalised absolute URI so trivial encoding differences do
-        not manufacture a card.
+        - the site root, which carries nothing;
+        - an address the user wrote in their own message;
+        - an address that appeared as a link on the page just read, because
+          following a link the site published tells that site nothing new.
+
+        Everything else is the Model's own composition and is escalated.
     .PARAMETER Url
         The address the Model proposes.
     .PARAMETER Session
         The live session, whose last read page supplied the link set.
+    .PARAMETER UserText
+        The user's own message, so an address they typed is not queried back.
     .OUTPUTS
         System.Boolean
     #>
@@ -38,24 +45,41 @@ function Test-DpBrowserUrlFromPage {
         [string]$Url,
 
         [AllowNull()]
-        [object]$Session
+        [object]$Session,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$UserText
     )
 
     $uri = $null
     if (-not [System.Uri]::TryCreate($Url, [System.UriKind]::Absolute, [ref]$uri)) { return $false }
 
-    # Nothing to carry: no query, no fragment.
-    if ([string]::IsNullOrEmpty($uri.Query) -and [string]::IsNullOrEmpty($uri.Fragment)) { return $true }
+    # The site root carries nothing: no path, no query, no fragment.
+    $bare = $uri.AbsolutePath -in @('', '/') -and
+        [string]::IsNullOrEmpty($uri.Query) -and [string]::IsNullOrEmpty($uri.Fragment)
+    if ($bare) { return $true }
+
+    # Everything the address carries, fragment included.
+    $wanted = $uri.GetLeftPart([System.UriPartial]::Query) + $uri.Fragment
+
+    $matchesCandidate = {
+        param([string]$Candidate)
+        $other = $null
+        if (-not [System.Uri]::TryCreate($Candidate, [System.UriKind]::Absolute, [ref]$other)) { return $false }
+        ($other.GetLeftPart([System.UriPartial]::Query) + $other.Fragment) -eq $wanted
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($UserText)) {
+        $text = if ($UserText.Length -gt 8000) { $UserText.Substring(0, 8000) } else { $UserText }
+        foreach ($match in [regex]::Matches($text, 'https://[^\s"''<>)\]]+')) {
+            if (& $matchesCandidate $match.Value) { return $true }
+        }
+    }
 
     if ($null -eq $Session) { return $false }
-    $links = @($Session.pageLinks)
-    if ($links.Count -eq 0) { return $false }
-
-    $wanted = $uri.GetLeftPart([System.UriPartial]::Query)
-    foreach ($link in $links) {
-        $candidate = $null
-        if (-not [System.Uri]::TryCreate([string]$link, [System.UriKind]::Absolute, [ref]$candidate)) { continue }
-        if ($candidate.GetLeftPart([System.UriPartial]::Query) -eq $wanted) { return $true }
+    foreach ($link in @($Session.pageLinks)) {
+        if (& $matchesCandidate ([string]$link)) { return $true }
     }
 
     $false

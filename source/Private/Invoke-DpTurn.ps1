@@ -431,11 +431,15 @@ function Invoke-DpTurn {
             $selectedProject = @($settings.projects) | Where-Object { $_.id -eq $settings.selectedProjectId } | Select-Object -First 1
         }
         $browserRuntime = Get-DpBrowserRuntime
+        # Held here, not inside the runspace: Stop has to reach the live session
+        # while the runspace is busy running this Turn.
+        $script:DeskPilot.Engine.BrowserState = @{ session = $null; scope = @(); granted = @(); lastUrl = '' }
         $browserToolParams = @{
             Runspace       = $script:DeskPilot.Engine.Runspace
             Enabled        = (Test-DpBrowserActive -Settings $settings -Runtime $browserRuntime)
             TimeoutMinutes = [int]$settings.approvalTimeoutMinutes
             Bridge         = $script:DeskPilot.Engine.ApprovalBridge
+            State          = $script:DeskPilot.Engine.BrowserState
             Context        = @{
                 conversationId = [string]$Conversation.id
                 turnId         = [string]$assistantId
@@ -696,7 +700,13 @@ function Invoke-DpTurn {
                 # ~10 s between keep-alive comments (1000 x 10 ms), unchanged in
                 # wall-clock from the prior 250 x 40 ms cadence.
                 $heartbeat++
-                if ($heartbeat -ge 1000) { $writer.Write(": heartbeat`n`n"); $heartbeat = 0 }
+                # Guarded: a client that disconnected throws here, and an
+                # unguarded throw leaves the streaming loop with the Engine still
+                # running - so the cleanup that closes the browser is skipped.
+                if ($heartbeat -ge 1000) {
+                    try { $writer.Write(": heartbeat`n`n") } catch { $script:DeskPilot.CancelRequested = $true }
+                    $heartbeat = 0
+                }
             }
             while ($lastIndex -lt $info.Count) { & $emit $info[$lastIndex]; $lastIndex++ }
             & $emitUserPrompt
@@ -978,7 +988,7 @@ function Invoke-DpTurn {
         # next Turn to re-register the Tool would leave a window running an
         # attacker-controlled page, with the scope still installed and script
         # still executing, for as long as the user does not send another message.
-        try { Close-DpBrowserSession -Runspace $script:DeskPilot.Engine.Runspace } catch { $null = $_ }
+        try { Close-DpBrowserSession -State $script:DeskPilot.Engine.BrowserState } catch { $null = $_ }
         if ($shell) { try { $shell.Dispose() } catch { $null = $_ } }
         try { $writer.Flush(); $writer.Dispose() } catch { $null = $_ }
     }

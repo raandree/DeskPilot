@@ -343,9 +343,9 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             $script:NodeResourceVerdict[[int]$Index] | Should -Be ([bool]$Expect)
         }
 
-        # The invariant policy.mjs states in its own header, which nothing
-        # asserted until a security review measured 26 disagreements against it.
         It 'is never more permissive than the PowerShell classifier' {
+            # Held over the curated corpus only, where every case is a form both
+            # parsers accept. The generated corpus asserts the real properties.
             $rank = @{ 'deny' = 0; 'ask' = 1; 'allow' = 2 }
             foreach ($case in $script:UrlCases) {
                 $mine = (Resolve-DpBrowserUrlDecision -Url $case.Url -Scope $script:CorpusScope).decision
@@ -383,7 +383,79 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             $script:NodeAddressVerdict[[int]$Index] | Should -Be ([bool]$Expect)
         }
     }
+
+    # The curated corpus can only hold divergence classes somebody already
+    # thought of. A review found 26 disagreements on a fresh case set the corpus
+    # did not cover, and then 8 more after the first fix - so the invariant's
+    # inputs are generated rather than enumerated.
+    Context 'the invariant holds on generated inputs, not only curated ones' -Skip:(-not $script:NodeAvailable) {
+        BeforeAll {
+            $script:Mutations = @()
+            $script:MutationError = $null
+            $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+            if ($node) {
+                $runner = Join-Path $PSScriptRoot 'fixtures' 'mutate-policy-corpus.mjs'
+                $previousEncoding = [Console]::OutputEncoding
+                try {
+                    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+                    $stdout = & $node.Source $runner '["weathercity.com"]' 2>&1
+                }
+                finally { [Console]::OutputEncoding = $previousEncoding }
+
+                if ($LASTEXITCODE -ne 0) { $script:MutationError = ($stdout | Out-String).Trim() }
+                else { $script:Mutations = @((($stdout | Out-String) | ConvertFrom-Json).results) }
+            }
+        }
+
+        It 'generated a substantial case set' {
+            $script:MutationError | Should -BeNullOrEmpty
+            $script:Mutations.Count | Should -BeGreaterThan 500
+        }
+
+        It 'never allows a url whose host is outside the scope' {
+            # The security property. The old phrasing - "never more permissive
+            # than PowerShell" - was a bad proxy: System.Uri refuses to parse
+            # forms the WHATWG parser canonicalises, so PowerShell says
+            # deny/unparseable where policy.mjs correctly allows a host that is
+            # genuinely in scope. Refusing to parse is not a permission decision.
+            $offenders = [System.Collections.Generic.List[string]]::new()
+            foreach ($case in $script:Mutations) {
+                if ($case.decision -ne 'allow') { continue }
+                $allowedHost = [string]$case.host
+                $inScope = $allowedHost -eq 'weathercity.com' -or $allowedHost.EndsWith('.weathercity.com')
+                if (-not $inScope) { $offenders.Add("$($case.url) -> $allowedHost") }
+            }
+            ($offenders -join "`n") | Should -BeNullOrEmpty
+        }
+
+        It 'names the same host as PowerShell whenever both allow' {
+            # What the approval card depends on: the site shown to the user must
+            # be the site the browser will contact.
+            $offenders = [System.Collections.Generic.List[string]]::new()
+            foreach ($case in $script:Mutations) {
+                if ($case.decision -ne 'allow') { continue }
+                $mine = Resolve-DpBrowserUrlDecision -Url $case.url -Scope @('weathercity.com')
+                if ($mine.decision -eq 'allow' -and $mine.host -ne $case.host) {
+                    $offenders.Add("$($case.url) : ps=$($mine.host) js=$($case.host)")
+                }
+            }
+            ($offenders -join "`n") | Should -BeNullOrEmpty
+        }
+
+        It 'never allows an off-scope host that PowerShell escalated' {
+            # The direction that would matter: policy.mjs waving through a host
+            # PowerShell had decided needed a card.
+            $offenders = [System.Collections.Generic.List[string]]::new()
+            foreach ($case in $script:Mutations) {
+                if ($case.decision -ne 'allow') { continue }
+                $mine = Resolve-DpBrowserUrlDecision -Url $case.url -Scope @('weathercity.com')
+                if ($mine.decision -eq 'ask') { $offenders.Add("$($case.url) : ps=ask js=allow host=$($case.host)") }
+            }
+            ($offenders -join "`n") | Should -BeNullOrEmpty
+        }
+    }
 }
+
 
 Describe 'Browser automation Permission' -Tag 'Unit' {
     It 'ships off by default' {
@@ -959,16 +1031,40 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
         }
 
-        It 'does not ask for a plain in-scope path' {
+        # A Model-composed path is the same channel as a Model-composed query,
+        # one character different: the path lands in the access log of the host
+        # doing the injecting.
+        It 'asks before opening a model-composed path on an in-scope host' {
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
-            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/cl/ll/osorno'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/L2hvbWUvYm9iL3Byb2plY3Q'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+        }
+
+        It 'does not ask for the site root' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 
         It 'does not ask for a link the page itself offered' {
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
-            $global:DeskPilotBrowserState.session.pageLinks = @('https://weathercity.com/s?q=osorno')
-            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/s?q=osorno'
+            $global:DeskPilotBrowserState.session.pageLinks = @('https://weathercity.com/cl/ll/osorno')
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/cl/ll/osorno'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+        }
+
+        # The fragment never leaves over the network, but location.hash reads it
+        # in full and an off-origin image can then carry it out.
+        It 'asks when a fragment is appended to a link the page offered' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $global:DeskPilotBrowserState.session.pageLinks = @('https://weathercity.com/page')
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/page#L2hvbWUvYm9i'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+        }
+
+        It 'does not ask for an address the user wrote themselves' {
+            $global:DeskPilotBrowserContext.userUrl = 'check https://weathercity.com/cl/?units=metric please'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/cl/?units=metric'
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 
@@ -1037,7 +1133,7 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
         It 'does not ask for a host the project already allows' {
             $global:DeskPilotBrowserContext.projectDomains = @('partner.test')
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
-            $null = Invoke-DpBrowserTool -Action open -Url 'https://partner.test/page'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://partner.test/'
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 

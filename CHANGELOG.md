@@ -74,6 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after an unexpected shutdown and offers to close it, and can uninstall the
   downloaded browser without touching Node or the files you saved.
 
+  You are asked about a web address the agent made up even when it is on a site
+  you named — including one that hides what it is carrying in the path or after
+  a `#`, not just after a `?`. Only the site's own links, and addresses you typed
+  yourself, go through without interrupting you.
+
 - **DeskPilot asks before it runs a command.** When per-call approval is on, the
   agent's own terminal is taken away and replaced by DeskPilot's, which stops and
   asks you first. The card shows the command exactly as it will run, the folder

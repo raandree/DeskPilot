@@ -1,42 +1,42 @@
 function Close-DpBrowserSession {
     <#
     .SYNOPSIS
-        Closes a browser left open in the Engine Runspace.
+        Closes a browser the current Turn opened, from outside the Engine Runspace.
     .DESCRIPTION
-        The session lives in a runspace global, so it outlives the Tool call that
-        created it and has to be closed from outside. Called when a Turn ends and
-        when the Tool is re-registered, so a browser cannot survive into a Turn
-        that did not ask for one - and cannot survive a Permission being switched
-        off, which would leave a window running that nothing in the UI accounts
-        for.
+        Stop has to reach the browser while the Turn is still running, and that
+        rules out doing it through the runspace: the runspace is executing
+        Invoke-Shp at exactly that moment, so opening a [powershell] on it throws
+        "a pipeline is already running", and a swallowed exception turns the
+        whole call into dead code. The first attempt at this fix did precisely
+        that, and a test that grepped for the function's own name reported it
+        working.
 
-        Failures are swallowed deliberately. This runs on the way out, and a
-        runspace that is already broken must not turn cleanup into the error the
-        user sees instead of the real one.
-    .PARAMETER Runspace
-        The Engine Runspace that may hold a session.
+        So the session state is created **here**, on the Host Server side, and
+        the same hashtable reference is injected into the runspace as a global.
+        Both sides then hold the same object, the browser's Process handle is an
+        ordinary .NET object in one process, and closing it needs no pipeline at
+        all - the same reason the approval bridge works across the boundary.
+
+        Safe to call at any time, twice, or on a Turn that never opened a
+        browser.
+    .PARAMETER State
+        The shared browser state, or $null when no Turn has registered one.
     #>
     [CmdletBinding()]
     [OutputType([void])]
     param(
-        [Parameter(Mandatory)]
-        [System.Management.Automation.Runspaces.Runspace]$Runspace
+        [AllowNull()]
+        [hashtable]$State
     )
 
-    $shell = [powershell]::Create()
-    $shell.Runspace = $Runspace
-    try {
-        $null = $shell.AddScript(@'
-$state = Get-Variable -Name DeskPilotBrowserState -Scope Global -ErrorAction SilentlyContinue
-if ($state -and $state.Value -and $state.Value.session) {
-    try { Stop-DpBrowserSession -Session $state.Value.session -Confirm:$false } catch { $null = $_ }
-    $state.Value.session = $null
-}
-'@)
-        $shell.Invoke() | Out-Null
-    }
+    if ($null -eq $State) { return }
+
+    $session = $State.session
+    if ($null -eq $session) { return }
+
+    # Cleared first: Stop and the Turn's finally race by design, and neither
+    # should try to close the same session twice.
+    $State.session = $null
+    try { Stop-DpBrowserSession -Session $session -Confirm:$false }
     catch { $null = $_ }
-    finally {
-        $shell.Dispose()
-    }
 }
