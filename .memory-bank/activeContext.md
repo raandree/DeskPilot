@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-03
+last-verified: 2026-09-05
 source: repository evidence
 ---
 
@@ -10,8 +10,37 @@ source: repository evidence
 
 ## Current focus
 
-**Contained browser automation is complete and has survived an independent
-security review.** Every open item from the prompt's Definition of Done is done:
+**Isolated Tool execution: the dependency is approved, the backend is not
+installed, and no code was written.** Re-running the isolation Prompt File on
+2026-09-05 re-measured both gates rather than reading them back.
+
+The prompt's own gate — per-call approval implemented *and* enforced — is met as
+a mechanism. The sharper measurement is where that enforcement lives:
+`offeredBuiltInTool` appears **3 times in the staged 0.4.1** and **0 times in
+0.4.0**, which is both the installed build and the newest published one. So the
+probe fails closed everywhere but this machine, and the boundary isolation is
+meant to stand on cannot be switched on in any shipped configuration. Put to the
+operator as a competing priority; they chose to record it.
+
+The controlling blocker was never that gate. It was the dependency, and the
+operator **approved Docker Desktop plus WSL2** on 2026-09-05, over the Windows
+Sandbox fallback, over shipping no isolation, and over the zero-dependency
+`Set-ShpToolPolicy` alternative. Approval is not installation: `docker`,
+`podman` and `nerdctl` are absent, `wsl --list` exits 1 with *the Subsystem is
+not installed*, and `Containers-DisposableClientVM` is Disabled — identical to
+2026-09-03. Both installs need elevation, so they are the operator's own hands.
+
+**Nothing was built, deliberately.** Every isolation test would have skipped,
+and the prompt says a skipped isolation suite is not release evidence. Decision
+0001 already records why a mode switch that contains nothing is worse than its
+absence: it converts an honest limitation into a false promise. Next session
+starts by observing `docker version` and a `--network none` run from this
+machine — not by writing a backend.
+
+## Previous focus — contained browser automation
+
+**Complete and survived an independent security review.** Every open item from
+the prompt's Definition of Done is done:
 the approval card, the Settings surface, Diagnostics orphan cleanup and
 uninstall, the hostile-site suite, the live workflow, UI screenshots, specs
 030/040/060, `docs/browser-automation.md`, and the review itself.
@@ -130,14 +159,18 @@ next one; and the navigation stamp raced its own navigation.
 
 ## Inherited approval work
 
-Unchanged: per-call approval is enforced only against the locally staged
-`output/RequiredModules/ShellPilot/0.4.1`. The installed and newest published
-build is `0.4.0`, and `RequiredModules.psd1` pins `'latest'`, so the capability
-probe fails closed on any other machine. `perCallApproval` still ships off.
+Unchanged, and re-measured on 2026-09-05: per-call approval is enforced only
+against the locally staged `output/RequiredModules/ShellPilot/0.4.1`. The
+installed and newest published build is `0.4.0`, and `RequiredModules.psd1` pins
+`'latest'`, so the capability probe fails closed on any other machine.
+`perCallApproval` still ships off.
 
-Isolated Tool execution (decision 0001) remains blocked on its own
-prerequisites; scoping *this* feature's isolation to the browser deliberately
-does not touch that.
+Isolated Tool execution (decision 0001) is no longer blocked on the *dependency
+decision* — that closed on 2026-09-05 — but on the install, and behind it on
+prerequisites 2, 4, 5 and 6. Prerequisite 6 is the one that has to be built
+here: `Set-DpTerminalTool` registers the owned Tool only when
+`Test-DpApprovalActive` is true, so with approval off there is no executor seam
+at all, and isolation must not inherit a gate a separate Setting can switch off.
 
 ## The lesson this session keeps re-teaching
 
@@ -158,4 +191,3 @@ Round five's answer was to stop adding and start exposing: the supervisor guards
 moved to a module a test can execute, and the suite now fails if disabling a
 control goes unnoticed. That is the first artifact in this feature that measures
 whether its own tests are worth anything.
-

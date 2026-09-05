@@ -2,13 +2,44 @@
 schema-version: 1
 status: accepted
 owner: software-engineer
-last-verified: 2026-09-02
+last-verified: 2026-09-05
 source: repository evidence
 ---
 
 # 0001 — Optional isolated Tool execution: stop at the architecture decision
 
 ## Status
+
+**Dependency approved 2026-09-05; still blocked, now on the install itself.**
+The operator approved Docker Desktop plus WSL2 when the trade was put to them
+with today's measurements. That closes prerequisite 3 as a *decision* and
+reopens it as a *task*: nothing is installed, and both installs need elevation,
+so no isolation claim can be proven yet. No runtime code has been written, and
+none should be until a command has been observed running inside a container.
+
+**Machine state re-measured 2026-09-05, unchanged from 2026-09-03.** `docker`,
+`podman` and `nerdctl` absent; `wsl.exe` present as the inbox stub but
+`wsl --list` exits 1 with *"The Windows Subsystem for Linux is not installed"*;
+`Containers-DisposableClientVM` **Disabled** and `WindowsSandbox.exe` absent.
+Windows 11 Enterprise. Re-measured rather than read back, because this record's
+own history is three corrected inherited claims in two days.
+
+**Approval reachability, recorded and deliberately not fixed.** The prompt's
+gate asks that per-call approval be implemented *and enforced*. The mechanism
+enforces: `Initialize-DpTerminalTool` probes `Invoke-Shp` for the
+`offeredBuiltInTool` marker and throws without it. Measured today, that marker
+is in **0.4.1 (3 hits), staged only in this repository's `output/`**, and
+**absent from 0.4.0 (0 hits)**, which is both the installed build and the newest
+published one. `RequiredModules.psd1` pins `'latest'` and `perCallApproval`
+ships off, so on every machine but this one the boundary isolation is meant to
+sit on top of cannot be switched on at all — it fails closed, which is the safe
+direction, but it is not an active boundary anywhere. Put to the operator on
+2026-09-05 as a competing priority; they chose to record it and move on.
+
+The 2026-09-02 and 2026-09-03 history below is kept in full because it is the
+evidence for prerequisites 2 and 6 and for two anti-patterns.
+
+---
 
 **Blocked at the prerequisite gate, for the second time and for a new reason.**
 The architecture decision below is recorded; no runtime code was written.
@@ -127,7 +158,7 @@ upstream, so it was fixed upstream rather than worked around:
 
 `Set-ShpToolPolicy` was the planned second step and proved unnecessary for
 closing the hole. It remains attractive on its own merits as a "Project scope"
-Setting \u2014 a real, zero-dependency reach restriction \u2014 but it is a separate slice
+Setting — a real, zero-dependency reach restriction — but it is a separate slice
 with a real cost to price: a policy is deny-by-default for `Read` and `Write`
 too, so DeskPilot would have to state the file reach it intends.
 
@@ -143,22 +174,29 @@ elevated install.
 | Backend | Windows | Dependency burden | Mounts | Cancellation | Network control | Credential isolation | Cleanup | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **Windows Sandbox** | Pro/Enterprise only, needs Hyper-V + an admin feature install (measured Disabled here) | Ships with Windows | `<MappedFolder>` per-folder, read-only supported | No process API; the whole sandbox is the unit | `<Networking>Disable</Networking>` only — all or nothing | Clean: fresh profile, no ambient tokens | Disposable by construction | **Rejected**: Home editions excluded, elevation to enable, and no per-command cancellation |
-| **Docker Desktop / WSL2** | Yes, but a large third-party install with licence terms; neither Docker nor WSL present here | ~1 GB plus a WSL2 distro | Bind mounts, `:ro` supported, well understood | `docker kill` terminates the tree | `--network none` plus an explicit allow-list proxy | No ambient host credentials unless mounted | `--rm` plus a reaper | **Preferred, unconfirmed**: the right shape, but the dependency is unapproved and the backend is absent, so nothing can be proven against it today |
+| **Docker Desktop / WSL2** | Yes, but a large third-party install with licence terms; neither Docker nor WSL present here | ~1 GB plus a WSL2 distro | Bind mounts, `:ro` supported, well understood | `docker kill` terminates the tree | `--network none` plus an explicit allow-list proxy | No ambient host credentials unless mounted | `--rm` plus a reaper | **Chosen, unproven**: approved 2026-09-05, but still absent from this machine, so nothing has been demonstrated against it |
 | **Hyper-V VM** | Pro/Enterprise, elevation, minutes to start | Very large | Slow (SMB/9p) | Yes | Full | Full | Heavy | **Rejected**: start-up cost defeats a per-command boundary |
 | **Job objects** | Native, no dependency | None | **None** — the host file system stays fully visible | Yes | None | None | Trivial | **Rejected as isolation**: it bounds CPU and memory, not reach. Calling it isolation would be the exact mis-marketing the prompt forbids |
 | **AppContainer** | Native; profile creation needs no elevation | None | Restriction is by ACL, not namespace: the user profile is denied, but anything granted to `Users`, `Everyone` or `ALL APPLICATION PACKAGES` stays readable | Yes | Real, through absent capabilities enforced by the firewall service | Partial | Trivial | **Rejected for the first slice**: a partial, ACL-shaped boundary that is easy to describe as more than it is, over a large `CreateProcessAsUser` interop surface |
 | **Remote SSH host** | Needs a second machine | Operational, not local | rsync/sftp round-trips | Yes | Yes, at the remote's firewall | Yes | Manual | **Deferred**: viable for a team, wrong shape for a single-user desktop app |
 
-**Decision, conditional on both gates opening:** Docker via WSL2, mounting only
-the selected Project (`:ro` by default), `--network none`, no `-e` pass-through
-except an explicit per-variable allow-list, pinned digest-addressed base image,
-`--rm`, and `docker kill` on Stop. Windows Sandbox is the fallback for machines
-that already have it and where per-command cancellation can be relaxed.
+**Decision, conditional on the backend being installed and demonstrated:** Docker
+via WSL2, mounting only the selected Project (`:ro` by default), `--network
+none`, no `-e` pass-through except an explicit per-variable allow-list, pinned
+digest-addressed base image, `--rm`, and `docker kill` on Stop. Windows Sandbox
+is the fallback for machines that already have it and where per-command
+cancellation can be relaxed.
 
-The dependency itself is **not approved**. DeskPilot installs nothing beyond two
-PowerShell modules today; Docker Desktop is a different order of commitment, and
-on this machine it would additionally mean installing WSL2 first. That call
-belongs to the operator, not to this record.
+**The dependency was approved by the operator on 2026-09-05.** The trade was put
+to them with the day's measurements: DeskPilot installs nothing beyond two
+PowerShell modules today, Docker Desktop is a ~1 GB third-party install carrying
+licence terms, and on this machine it means installing WSL2 first — both
+elevated. They took it over the Windows Sandbox fallback, over shipping no
+isolation, and over the zero-dependency `Set-ShpToolPolicy` alternative.
+
+Approval is not installation. Until `docker version` answers from this machine,
+every isolation test would skip, and the prompt is explicit that a skipped
+isolation suite is not release evidence.
 
 ## Prerequisite list
 
@@ -170,8 +208,12 @@ belongs to the operator, not to this record.
    including that the capability probe rejects an Engine without the fix. What is
    still unproven is a real Model choosing the Tool and a real operator answering
    the card.
-3. **Approve the dependency.** Docker Desktop plus WSL2, or an explicit decision
-   to ship no isolation. Unchanged, and still the controlling blocker.
+3. **Install the approved backend.** The dependency question is closed — Docker
+   Desktop plus WSL2, approved 2026-09-05 — so what is left is the install, and
+   it is now the controlling blocker. `wsl --install`, then Docker Desktop, both
+   elevated and both the operator's own hands: an agent must not drive a UAC
+   prompt. `docker version` and a `--network none` run have to be observed from
+   this machine before any production code is written.
 4. A Diagnostics probe for backend presence, version and orphaned containers.
 5. A hostile-workload test corpus: a build script that reads `$HOME`, resolves
    cloud metadata, opens a socket, and follows a junction out of the mount.
