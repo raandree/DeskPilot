@@ -76,6 +76,17 @@ function Send-DpIntercomApproval {
     $lines.Add([string](Get-DpPropertyValue -InputObject $Request -Name @('risk') -Default 'This runs on your computer.'))
     if ($project) { $lines.Add("Project: $project") }
     if ($directory) { $lines.Add("In: $directory") }
+    $execution = Get-DpPropertyValue -InputObject $summary -Name 'execution'
+    if ($execution) {
+        $lines.Add("Terminal: $($execution.mode)")
+        if ($execution.mode -eq 'isolated') {
+            $lines.Add("Project access: $($execution.projectAccess); network: $($execution.network)")
+            $lines.Add("HTTPS origins: $(@($execution.allowedHosts) -join ', ')")
+            $variables = @($execution.environment | ForEach-Object { "$($_.name)$(if ($_.secret) { ' [secret]' })" })
+            $lines.Add("Environment: $($variables -join ', ')")
+            $lines.Add("Limits: $($execution.timeoutSeconds)s; $($execution.cpuCount) CPU; $($execution.memoryMB) MiB; $($execution.processLimit) processes; $($execution.outputBytes) output bytes; $($execution.tempMB) MiB temporary storage")
+        }
+    }
 
     $keyboard = Get-DpIntercomKeyboard -Choice @(
         @{ label = 'Run it'; data = "a|$token|y" }

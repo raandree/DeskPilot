@@ -73,6 +73,11 @@ function Invoke-DpTerminalApprovalTool {
 
     $context = & $read 'DeskPilotApprovalContext'
     $directory = if ([string]::IsNullOrWhiteSpace($WorkingDirectory)) { [string]$context.workingDirectory } else { $WorkingDirectory }
+    $isolated = & $read 'DeskPilotIsolatedTerminal'
+    if ($null -ne $isolated) {
+        try { $directory = $isolated.MapWorkingDirectory($directory) }
+        catch { return (& $refuse $_.Exception.Message) }
+    }
 
     $run = {
         $output = ''
@@ -93,7 +98,7 @@ function Invoke-DpTerminalApprovalTool {
     }
 
     $request = New-DpApprovalRequest -Tool 'run_terminal_command' -Class 'Terminal' `
-        -Argument @{ command = $Command; workingDirectory = $directory } `
+        -Argument @{ command = $Command; workingDirectory = $directory; execution = $context.terminalExecution; policyId = $context.policyId } `
         -ProjectName ([string]$context.project) `
         -ConversationId ([string]$context.conversationId) `
         -TurnId ([string]$context.turnId)

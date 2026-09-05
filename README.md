@@ -41,6 +41,10 @@ work without driving the tool stack themselves.
 - **Visible permissions.** Five tool categories — Browsing, Files, Terminal,
   Ask-you, Your tools — each a switch you control, with plain-language risk
   notes. Terminal is **off** by default.
+- **Optional isolated Terminal.** On Windows, run commands in disposable Docker
+  containers with a narrow Project mount, no ambient credentials, and network
+  off or an exact HTTPS allow-list. Local execution remains the default; other
+  Tools are not isolated. See [setup and limitations](docs/isolated-terminal.md).
 - **Show the work, as it happens.** Each answer carries an Activity panel: what
   was read, written, run, fetched, searched, or asked — listed in order the
   moment the agent does it. A run of the same kind of action folds into one line

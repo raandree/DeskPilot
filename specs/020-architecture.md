@@ -265,13 +265,36 @@ is no `delete` capability, because there is no delete action — removing
 something on a site is a button press, covered by `submit` and named on that
 button's card.
 
-Permissions remain category-level availability controls. Per-call approval for
-risky actions is not implemented: the Host Server can observe a structured
-Tool-call record before dispatch, but that record has no response channel.
-ShellPilot 0.4.0's `ShouldProcess` checks are interactive PowerShell host
-prompts and do not carry the correlated, redacted metadata DeskPilot needs.
-Implementation is blocked on the pre-dispatch callback defined in
+Permissions remain category-level availability controls. DeskPilot owns Terminal
+approval through `run_terminal_command`, disables the native Terminal Tool, and
+requires an Engine that refuses disabled built-ins. Approval for remaining
+Engine-owned risky actions still needs the pre-dispatch callback defined in
 [120-per-call-approval-engine-contract.md](120-per-call-approval-engine-contract.md).
+
+### Optional isolated Terminal
+
+`terminalExecution` selects `local` or `isolated`, defaulting to `local` for
+existing installations. `ConvertTo-DpTerminalExecution` validates the policy:
+Project access, network, environment grants, and bounds. Isolated ownership does
+not depend on Local `perCallApproval`. Missing User Tools Permission, Project,
+runtime, image, or Engine capability refuses execution without Local fallback.
+
+`TerminalSession` owns disposable Docker command containers and, for nonempty
+HTTPS allow-lists, a Squid proxy in a protected private network namespace.
+Commands have separate filesystem and process namespaces, no capabilities or
+ambient credentials, and only the Project mount. The Host Server shares the
+controller with the Engine Runspace so Stop needs no second pipeline. Cleanup
+verifies removal of both containers.
+
+The policy is frozen per Turn and bound to approvals. Project-relative writes
+from bounded before/after accounting enter existing pending changes and Undo.
+Usage remains supplied by the Engine. The `start` event and command Activity
+carry the effective boundary, not subsequently edited Settings.
+
+Explicit runtime preparation runs outside the accept loop, verifies PowerShell
+download bytes, builds the image, and records its immutable identity and package
+provenance. Turns only use prepared images. See
+[setup, limits and rollback](../docs/isolated-terminal.md).
 
 The `taskTracking` Setting is **not** a Permission. When on (default), the
 Host Server passes `-EnableTodoList` to `Invoke-Shp`; when off, the Task List

@@ -75,6 +75,30 @@ function Invoke-DpRouteHandler {
                 latestSequence = [long]$state.Diagnostics.Log.NextSequence
             }
         }
+        { $_ -in @('getTerminalRuntime', 'checkTerminalRuntime', 'installTerminalRuntime', 'cleanupTerminalRuntime', 'uninstallTerminalRuntime') } {
+            if ($Name -ne 'getTerminalRuntime' -and ($state.TurnRunning -or ($state.TerminalSetupJob -and $state.TerminalSetupJob.State -in @('NotStarted', 'Running')))) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'Stop the active Turn or wait for runtime preparation before changing the Terminal runtime.' } }
+                return
+            }
+            try {
+                switch ($Name) {
+                    'checkTerminalRuntime' { $state.TerminalRuntime = Get-DpTerminalRuntime -DataDirectory $state.DataDir -Probe }
+                    'installTerminalRuntime' { $null = Start-DpTerminalPreparation }
+                    'cleanupTerminalRuntime' {
+                        $null = Remove-DpTerminalRuntime -DataDirectory $state.DataDir -Confirm:$false
+                        $state.TerminalRuntime = Get-DpTerminalRuntime -DataDirectory $state.DataDir -Probe
+                    }
+                    'uninstallTerminalRuntime' {
+                        $null = Remove-DpTerminalRuntime -DataDirectory $state.DataDir -Uninstall -Confirm:$false
+                        $state.TerminalRuntime = $null
+                    }
+                }
+                Write-DpResponse -Stream $Stream -Status $(if ($Name -eq 'installTerminalRuntime') { 202 } else { 200 }) -Json (Get-DpTerminalStatus)
+            }
+            catch {
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'terminal_runtime_failed'; message = 'The Terminal runtime operation failed. Check Docker Desktop and retry; execution mode was not changed.' } }
+            }
+        }
         'installBrowserRuntime' {
             # The consent gate for downloading a browser engine. It is reachable
             # only from this user-initiated route: no Turn, Tool or Model path
@@ -657,7 +681,7 @@ function Invoke-DpRouteHandler {
                 Write-DpResponse -Stream $Stream -Json @{ files = @(); fileCount = 0; totalAdded = 0; totalDeleted = 0; undoable = $false; error = $null }
                 return
             }
-            Write-DpResponse -Stream $Stream -Json (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+            Write-DpResponse -Stream $Stream -Json (Get-DpChangePayload -Root $root -Entries (Get-DpChangeEntry -Store $state.Changes -Root $root))
         }
         'keepChanges' {
             $root = $state.Settings.workspaceFolder
@@ -677,7 +701,7 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Json @{
                 kept      = $cleared.cleared
                 remaining = $cleared.remaining
-                changes   = (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+                changes   = (Get-DpChangePayload -Root $root -Entries (Get-DpChangeEntry -Store $state.Changes -Root $root))
             }
         }
         'undoChanges' {
@@ -688,7 +712,7 @@ function Invoke-DpRouteHandler {
             }
             $paths = @()
             if ($Body -and $Body.PSObject.Properties['paths'] -and $Body.paths) { $paths = @($Body.paths | ForEach-Object { [string]$_ }) }
-            $entries = @(Get-DpChangeEntry -Store $state.Changes -Root $root)
+            $entries = Get-DpChangeEntry -Store $state.Changes -Root $root
             $undo = if ($paths.Count -gt 0) {
                 Invoke-DpChangeUndo -Root $root -Entries $entries -Paths $paths
             }
@@ -710,7 +734,7 @@ function Invoke-DpRouteHandler {
                 restored = @($undo.restored)
                 removed  = @($undo.removed)
                 skipped  = @($undo.skipped)
-                changes  = (Get-DpChangePayload -Root $root -Entries @(Get-DpChangeEntry -Store $state.Changes -Root $root))
+                changes  = (Get-DpChangePayload -Root $root -Entries (Get-DpChangeEntry -Store $state.Changes -Root $root))
             }
         }
         'gitMergePreview' {
@@ -1597,6 +1621,7 @@ function Invoke-DpRouteHandler {
         }
         'stopTurn' {
             $state.CancelRequested = $true
+            if ($state.Engine.TerminalSession) { $state.Engine.TerminalSession.Cancel() }
             $bridge = $state.Engine.UserPromptBridge
             if ($bridge) { $bridge.Cancel() }
             # A Turn parked on an approval is parked inside the Engine pipeline, so

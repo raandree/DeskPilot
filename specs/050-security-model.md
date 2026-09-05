@@ -131,6 +131,31 @@ Both are explicit diagnostic requirements. The support bundle carries only
 folder leaf. The archive therefore remains shareable without disclosing the
 user's directory layout.
 
+## Optional Terminal isolation
+
+Terminal has an opt-in Docker Desktop/WSL2 boundary. Approval and isolation remain
+independent: Isolated mode requires approval for non-routine commands and never
+restores native execution when a Setting or dependency prevents the owned Tool.
+
+Assume the Agent and Project content are hostile. Narrow mounts and no ambient
+environment remove host credentials from command reach. Network-off breaks its
+outbound leg; an explicit HTTPS allow-list narrows it through namespace-local
+packet rules and a client-first TLS-inspecting proxy. Clearing proxy variables,
+direct sockets, and Docker DNS do not bypass the packet rules. The proxy has no
+Project mount and uses pinned public IPv4 destinations. Its private CA is
+disposable, never added to host trust; origin certificates remain verified.
+
+Other Tools are not isolated. Secrets in a selected Project can reach an approved
+origin. This is not VM-grade protection from a compromised shared kernel.
+Read-write mounts have no total disk quota; secret replacement is not general
+DLP, and simultaneous outside file edits cannot be attributed reliably. These
+limitations must remain visible rather than hidden by an Isolated label.
+
+Stop cancels the controller before pipeline termination. Resource and cleanup
+failures are visible. Explicit preparation records verified runtime provenance
+and immutable image identity; Turns never acquire executables. See
+[guarantees, limitations and recovery](../docs/isolated-terminal.md).
+
 ## Per-call approval (Terminal)
 
 Category Permissions authorize a Tool for a whole Turn. Approval narrows that to
@@ -290,7 +315,7 @@ and `replace_in_file` when File is off and re-registers them when it is on,
 exactly as `Set-DpQuestionnaireTool` does for `ask_questions` and Ask-User.
 
 `Set-DpTerminalTool` is the same pattern with the mapping inverted: when
-per-call approval is active it registers DeskPilot's gated `run_command` **and**
+per-call approval is active it registers DeskPilot's gated `run_terminal_command` **and**
 `-DisableTerminal` is passed, so the Permission that is on is served by an owned
 Tool rather than the built-in. Approval is active only when `perCallApproval`,
 Terminal and User Tools are all on. Terminal off keeps the Tool unavailable
@@ -300,8 +325,9 @@ Without that, a Permission the UI reports as off would still be in force.
 
 ### Per-call approval blocker
 
-DeskPilot does not claim per-call approval for Terminal commands, outside-Project
-writes, or mutating MCP calls. `ShpProgress` and `tool.call` are observation
+DeskPilot does not claim per-call approval for Engine-owned outside-Project
+writes or mutating MCP calls. Terminal approval uses the owned Tool described
+above. `ShpProgress` and `tool.call` are observation
 channels: neither accepts a decision. Stop cancels the whole Turn and can race
 dispatch, so it is not an approval mechanism.
 
@@ -424,6 +450,6 @@ Mirroring the AgenticOperatingModel's guardrail theme:
 
 ## Out of scope (v1)
 
-- True OS-level sandboxing of agent Tools.
+- Isolation of Tools other than the optional Terminal container boundary.
 - Encrypting the Engine's cached token (upstream concern).
 - Multi-user authn/authz.

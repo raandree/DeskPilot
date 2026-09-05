@@ -254,6 +254,57 @@ classified as auth errors, so they never trigger a spurious re-sign-in.
 
 ## Settings
 
+### Terminal execution policy
+
+`terminalExecution` is a nested partial-merge object. Unknown fields, invalid
+types, reserved environment names, and out-of-range limits return `400`. There
+are no environment values, custom images, extra mounts, or privilege controls.
+
+```json
+{
+  "terminalExecution": {
+    "mode": "local",
+    "projectAccess": "read-only",
+    "network": "off",
+    "allowedHosts": [],
+    "environment": [],
+    "timeoutSeconds": 120,
+    "cpuCount": 1,
+    "memoryMB": 1024,
+    "processLimit": 64,
+    "outputBytes": 1048576,
+    "tempMB": 128
+  }
+}
+```
+
+Modes are `local`/`isolated`, Project access is `read-only`/`read-write`, and
+network is `off`/`allow-list`. An allow-list requires at least one exact public
+DNS name and permits HTTPS on port 443 only. Environment entries are
+`{ "name": "VARIABLE_NAME", "secret": true }`, never values. Invalid persisted
+Terminal policy stops recovery instead of silently selecting Local defaults.
+See [limits](../docs/isolated-terminal.md#resource-limits).
+
+### Terminal runtime routes
+
+| Method and path | Result |
+| --- | --- |
+| `GET /api/diagnostics/terminal` | Fixed-field readiness, state, image identity, versions, orphan count, issues, preparation and Turn state. |
+| `POST /api/diagnostics/terminal/check` | Inspect the prepared runtime and local daemon; no Model call or download. |
+| `POST /api/diagnostics/terminal/install` | `202`; explicit asynchronous preparation. Poll GET for completion. |
+| `POST /api/diagnostics/terminal/cleanup` | Remove inactive positively identified DeskPilot command/proxy containers. |
+| `POST /api/diagnostics/terminal/uninstall` | Remove this installation's runtime tag/record, leaving Docker, WSL and Project files. |
+
+Routes retain loopback, origin, and session-token gates. Actions return `409 busy`
+during a Turn or preparation, and `500 terminal_runtime_failed` on failure. No
+route changes execution mode. Ordinary Diagnostics includes runtime status.
+
+The Turn `start` event adds `terminalExecution`; command `activity` adds
+`execution`. Approval fingerprints bind the effective policy and its Turn-specific
+identity. Isolated command results add `timedOut`, `cancelled`,
+`outputLimitExceeded`, `outOfMemory`, `cleanupSucceeded`, `filesWritten`, and
+`execution` to the command result envelope.
+
 ### `GET /api/settings`
 
 Returns the Settings object (see architecture spec).
@@ -990,11 +1041,10 @@ The `tasks` event is emitted only when the `taskTracking` Setting is on. The
 live frames originate from structured progress events on the Engine
 Runspace's Information stream; see [020-architecture.md](020-architecture.md#in-turn-task-list).
 
-There is no approval event or approval endpoint. An `activity` event reports
-intent and cannot suspend or authorize Engine dispatch. The approval wire
-contract is intentionally deferred until the Engine satisfies
-[the pre-dispatch contract](120-per-call-approval-engine-contract.md); defining
-routes first would create an approval UI with no enforceable execution gate.
+The approval endpoints and event below are enforced by DeskPilot-owned Tools.
+Activity remains observation, not authorization. Approval for Engine-owned File
+and MCP actions still depends on
+[the pre-dispatch contract](120-per-call-approval-engine-contract.md).
 
 Client stops a Turn with `POST /api/conversations/{id}/stop` → `202`. The single
 accept thread services this request mid-Turn (the streaming loop pumps pending
@@ -1052,7 +1102,7 @@ must be rendered** — a payload field the card omits is a field nobody approved
 
 | `class` | `summary` fields |
 | --- | --- |
-| `Terminal` | `command`, `workingDirectory`, `project` |
+| `Terminal` | `command`, `workingDirectory`, `project`, `execution` with mode and, for Isolated commands, Project access, network, exact hosts, environment names/secret markers, and limits |
 | `BrowserNavigation` | `host`, `url` — the whole URL including the query string, which is where an injected page puts what it is trying to send out |
 | `BrowserAction` | `action`, `host`, `url`, plus `fields` (an array of `{ name, value }`) for `fill_form`, `control` for a button or field name, and `filePath` for an upload's resolved path or a download's destination |
 

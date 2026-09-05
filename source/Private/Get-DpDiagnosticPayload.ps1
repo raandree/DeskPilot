@@ -63,6 +63,7 @@ function Get-DpDiagnosticPayload {
             mcpServerCount = [int]$snapshot.mcp.configuredCount
             intercomEnabled = [bool]$snapshot.intercom.enabled
         }
+        terminalExecution = Get-DpTerminalStatus
         selfCheck    = @{
             checking = [bool]$diagnostics.Checking
             startedUtc = $diagnostics.CheckStartedUtc

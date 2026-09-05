@@ -1,3 +1,50 @@
+.terminal-boundary {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+}
+
+.terminal-config, .terminal-policy {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
+.terminal-config [hidden] { display: none; }
+.terminal-config .field { margin: 0; min-width: 0; }
+.terminal-config h3, .terminal-runtime h3 { margin: 0 0 8px; font-size: 16px; }
+.terminal-config .hint, .terminal-runtime .hint { margin: 0; overflow-wrap: anywhere; }
+.terminal-config .btn, .terminal-runtime .btn { width: auto; min-height: 32px; }
+.terminal-config > .btn { justify-self: start; }
+
+.terminal-mode {
+    display: flex;
+    gap: 0;
+    margin: 0;
+    padding: 4px;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.terminal-mode legend, .terminal-environment legend { padding: 0 4px; font-size: 12px; color: var(--muted); }
+.terminal-mode label { display: flex; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 8px; border-radius: 4px; }
+.terminal-mode label:has(input:checked) { background: var(--surface); color: var(--accent); }
+.terminal-config input[type="radio"], .terminal-config input[type="checkbox"] { accent-color: var(--accent); }
+.terminal-environment { margin: 0; padding: 12px 0 0; min-width: 0; border: 0; border-top: 1px solid var(--border); }
+.terminal-variable-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 32px; align-items: center; gap: 8px; margin-bottom: 10px; }
+.terminal-variable-row input[type="text"] { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.terminal-variable-row label { display: flex; align-items: center; gap: 4px; white-space: nowrap; font-size: 12px; }
+.terminal-variable-row button { width: 32px; height: 32px; padding: 0; }
+.terminal-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.terminal-limits label { display: block; min-height: 32px; }
+.terminal-runtime { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+.terminal-runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.terminal-runtime-actions .btn { flex: 1 1 120px; min-width: 0; }
+
 /* ===== DeskPilot — deep teal / petrol UI ===== */
 :root {
     --bg: #eef3f2;

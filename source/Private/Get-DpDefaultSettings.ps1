@@ -81,6 +81,7 @@ function Get-DpDefaultSettings {
         # surface ships: with the Setting on and no way to answer, a Turn would
         # park until the timeout for every unrecognised command.
         perCallApproval   = $false
+        terminalExecution = (ConvertTo-DpTerminalExecution -InputObject @{})
         # An unanswered approval holds the single Engine Runspace, so it fails
         # closed after this many minutes rather than blocking every queued run.
         approvalTimeoutMinutes = 15

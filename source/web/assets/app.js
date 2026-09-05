@@ -129,6 +129,7 @@ const state = {
     defaultModel: null,
     authForce: false,
     streaming: false,
+    activeTerminalExecution: null,
     stopRequested: false,
     pendingAttachments: [],
     agents: [],
@@ -1581,7 +1582,9 @@ function activityRowHtml(action, showDiff) {
     const body = detail
         ? `${escapeHtml(kind.label)} <span class="path">${escapeHtml(detail)}</span>`
         : escapeHtml(activityLine(action));
-    return `<div class="activity-item"><span class="ico">${kind.ico}</span><span>${body}</span>${diffBtn}</div>`;
+    const boundary = action.kind === 'run'
+        ? `<span class="terminal-boundary">${escapeHtml(terminalExecutionLabel(action.execution))}</span>` : '';
+    return `<div class="activity-item"><span class="ico">${kind.ico}</span><span>${body}${boundary}</span>${diffBtn}</div>`;
 }
 
 function paintActivity(node, actions, opts) {
@@ -2383,6 +2386,11 @@ function approvalDetail(request) {
     const action = String(summary.action || '');
     const rows = [];
 
+    if (kind === 'Terminal') {
+        for (const [label, value] of terminalExecutionRows(summary.execution)) rows.push(approvalRow(label, value, false));
+        rows.push(approvalRow('Project', summary.project, false));
+    }
+
     if (kind === 'BrowserNavigation' || kind === 'BrowserAction') {
         // The host first and on its own line: a long address can bury the one
         // part that says whose site this is, which is the part being judged.
@@ -2808,7 +2816,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [], attachment
         if (images.length) messageBody.images = images;
         if (attachments.length) messageBody.attachments = attachments.map((a) => a.path);
         await streamPost('/api/conversations/' + conversationId + '/messages', messageBody, {
-            start: (d) => { turnStarted = true; if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
+            start: (d) => { turnStarted = true; state.activeTerminalExecution = d && d.terminalExecution; if (d && d.messageId) wrap.dataset.id = d.messageId; if (d && d.userMessageId) userEl.dataset.id = d.userMessageId; },
             delta: (d) => {
                 if (state.stopRequested) return;
                 const t = (d && d.text) || '';
@@ -3192,6 +3200,153 @@ function updatePermDot() {
     const p = (state.settings && state.settings.permissions) || {};
     $('perm-dot').classList.toggle('warn', !!p.terminal);
 }
+
+function terminalExecutionLabel(policy) {
+    if (!policy || policy.mode !== 'isolated') return 'Local';
+    return `Isolated | ${policy.projectAccess} | ${policy.network === 'off' ? 'Network off' : 'HTTPS allow-list'}`;
+}
+
+function terminalExecutionRows(policy) {
+    const rows = [['Terminal', terminalExecutionLabel(policy)]];
+    if (!policy || policy.mode !== 'isolated') return rows;
+    const environment = Array.isArray(policy.environment) ? policy.environment : [];
+    rows.push(['HTTPS origins', (policy.allowedHosts || []).join(', ') || 'None']);
+    rows.push(['Environment', environment.map((entry) => `${entry.name}${entry.secret ? ' [secret]' : ''}`).join(', ') || 'None']);
+    rows.push(['Limits', `${policy.timeoutSeconds}s | ${policy.cpuCount} CPU | ${policy.memoryMB} MiB memory | ${policy.processLimit} processes | ${policy.outputBytes} output bytes | ${policy.tempMB} MiB temporary storage`]);
+    if (policy.projectAccess === 'read-write') rows.push(['Project disk quota', 'Not supported']);
+    rows.push(['Other Tools', 'Not isolated']);
+    return rows;
+}
+
+function renderTerminalSettings(container, runtimeOnly = false) {
+    if (!container) return;
+    const policy = (state.settings && state.settings.terminalExecution) || {
+        mode: 'local', projectAccess: 'read-only', network: 'off', allowedHosts: [], environment: [],
+        timeoutSeconds: 120, cpuCount: 1, memoryMB: 1024, processLimit: 64, outputBytes: 1048576, tempMB: 128,
+    };
+    container.replaceChildren();
+    const form = el('terminal-config', 'form');
+    const heading = el('', 'h3'); heading.textContent = 'Terminal execution';
+    const modeGroup = el('terminal-mode', 'fieldset');
+    const legend = document.createElement('legend'); legend.textContent = 'Next Turn'; modeGroup.append(legend);
+    for (const [value, label] of [['local', 'Local'], ['isolated', 'Isolated']]) {
+        const item = document.createElement('label');
+        const input = document.createElement('input');
+        input.type = 'radio'; input.name = 'terminal-mode'; input.id = `terminal-mode-${value}`; input.value = value;
+        input.checked = policy.mode === value;
+        item.append(input, document.createTextNode(label)); modeGroup.append(item);
+    }
+    const details = el('terminal-policy');
+    const field = (label, id, input) => {
+        const wrap = el('field'); const title = document.createElement('label');
+        title.htmlFor = id; title.textContent = label; input.id = id; wrap.append(title, input); return wrap;
+    };
+    const select = (items, value) => {
+        const input = document.createElement('select');
+        for (const [key, text] of items) { const option = document.createElement('option'); option.value = key; option.textContent = text; input.append(option); }
+        input.value = value; return input;
+    };
+    const access = select([['read-only', 'Read-only'], ['read-write', 'Read-write']], policy.projectAccess);
+    const network = select([['off', 'Off'], ['allow-list', 'HTTPS allow-list']], policy.network);
+    const hosts = document.createElement('textarea'); hosts.rows = 3; hosts.value = (policy.allowedHosts || []).join('\n');
+    const hostsField = field('Exact HTTPS origins (one DNS name per line)', 'terminal-hosts', hosts);
+    const disclosure = el('hint');
+    disclosure.textContent = 'Other Tools: not isolated. Read-write Project disk quota: unsupported. SSH, UDP, QUIC and certificate-pinned clients: unsupported.';
+    details.append(field('Project access', 'terminal-access', access), field('Network', 'terminal-network', network), hostsField, disclosure);
+    access.onchange = () => {
+        if (access.value === 'read-write' && !confirm('Allow changes inside the selected Project? There is no total Project disk quota. Project changes persist after the container is removed.')) access.value = 'read-only';
+    };
+    const environment = el('terminal-environment', 'fieldset');
+    const environmentLegend = document.createElement('legend'); environmentLegend.textContent = 'Environment variable grants'; environment.append(environmentLegend);
+    const variableRows = el('terminal-variable-list');
+    const addVariable = (entry = {}) => {
+        const row = el('terminal-variable-row');
+        const input = document.createElement('input'); input.type = 'text'; input.dataset.terminalVariable = '1';
+        input.value = entry.name || ''; input.placeholder = 'VARIABLE_NAME'; input.required = true; input.maxLength = 64;
+        input.pattern = '[A-Za-z_][A-Za-z0-9_]*'; input.setAttribute('aria-label', 'Environment variable name');
+        const secretLabel = document.createElement('label'); const secret = document.createElement('input');
+        secret.type = 'checkbox'; secret.checked = entry.secret !== false; secret.dataset.terminalSecret = '1';
+        secretLabel.append(secret, document.createTextNode('Secret'));
+        const remove = el('btn btn-small', 'button'); remove.type = 'button'; remove.textContent = 'x';
+        remove.title = 'Remove environment variable'; remove.setAttribute('aria-label', remove.title); remove.onclick = () => row.remove();
+        row.append(input, secretLabel, remove); variableRows.append(row);
+    };
+    for (const entry of policy.environment || []) addVariable(entry);
+    const add = el('btn btn-small', 'button'); add.type = 'button'; add.id = 'terminal-add-variable'; add.textContent = '+ Variable';
+    add.title = 'Grant one host environment variable by name'; add.onclick = () => { if (variableRows.children.length < 32) addVariable(); };
+    environment.append(variableRows, add); details.append(environment);
+    const limits = el('terminal-limits');
+    const limitFields = [];
+    for (const [key, label, minimum, maximum, step] of [
+        ['timeoutSeconds', 'Time (seconds)', 1, 3600, 1], ['cpuCount', 'CPU', 0.1, 8, 0.1],
+        ['memoryMB', 'Memory (MiB)', 256, 8192, 1], ['processLimit', 'Processes', 16, 256, 1],
+        ['outputBytes', 'Output (bytes)', 1024, 16777216, 1], ['tempMB', 'Temporary storage (MiB)', 16, 1024, 1],
+    ]) {
+        const input = document.createElement('input'); input.type = 'number'; input.required = true;
+        input.min = minimum; input.max = maximum; input.step = step; input.value = policy[key];
+        limitFields.push([key, input]); limits.append(field(label, `terminal-${key}`, input));
+    }
+    details.append(limits);
+    const approvalLabel = document.createElement('label'); const approval = document.createElement('input');
+    approval.type = 'checkbox'; approval.checked = !!(state.settings && state.settings.perCallApproval);
+    approvalLabel.append(approval, document.createTextNode('Approve non-routine Local commands'));
+    const requiredApproval = el('hint'); requiredApproval.textContent = 'Non-routine command approval: required';
+    const message = el('hint'); message.setAttribute('role', 'status');
+    const save = el('btn btn-small', 'button'); save.type = 'submit'; save.id = 'terminal-save'; save.textContent = 'Save execution policy';
+    const showDetails = () => {
+        const isolated = form.querySelector('#terminal-mode-isolated').checked;
+        details.hidden = !isolated; approval.disabled = isolated; approvalLabel.hidden = isolated; requiredApproval.hidden = !isolated;
+        hostsField.hidden = network.value !== 'allow-list'; hosts.required = isolated && network.value === 'allow-list';
+    };
+    form.onchange = showDetails;
+    form.onsubmit = async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        const next = {
+            mode: form.querySelector('input[name="terminal-mode"]:checked').value,
+            projectAccess: access.value, network: network.value,
+            allowedHosts: hosts.value.split(/\r?\n/).map((host) => host.trim()).filter(Boolean),
+            environment: [...variableRows.children].map((row) => ({ name: row.querySelector('[data-terminal-variable]').value.trim(), secret: row.querySelector('[data-terminal-secret]').checked })),
+        };
+        for (const [key, input] of limitFields) next[key] = Number(input.value);
+        save.disabled = true;
+        try {
+            state.settings = await api('PUT', '/api/settings', { terminalExecution: next, perCallApproval: approval.checked });
+            updatePermDot(); if ($('set-perms')) buildPermList($('set-perms'));
+            message.textContent = `Saved for the next Turn: ${terminalExecutionLabel(state.settings.terminalExecution)}`;
+        } catch (error) { message.textContent = error.message; toast(error.message); }
+        finally { save.disabled = false; }
+    };
+    form.append(heading, modeGroup, details, approvalLabel, requiredApproval, save, message);
+    if (!runtimeOnly) container.append(form);
+    showDetails();
+
+    const runtime = el('terminal-runtime'); const runtimeHeading = el('', 'h3'); runtimeHeading.textContent = 'Terminal runtime';
+    const status = el('hint'); status.setAttribute('role', 'status');
+    const actions = el('terminal-runtime-actions');
+    const refresh = async (action = '') => {
+        if (!container.isConnected) return;
+        for (const button of actions.children) button.disabled = true;
+        status.textContent = action === 'install' ? 'Preparing runtime...' : 'Checking runtime...';
+        try {
+            const result = await api(action ? 'POST' : 'GET', `/api/diagnostics/terminal${action ? '/' + action : ''}`);
+            status.textContent = result.preparing ? 'Preparing runtime...' : [result.state, result.powerShellVersion ? `PowerShell ${result.powerShellVersion}` : '', result.dockerVersion ? `Docker ${result.dockerVersion}` : '', `${result.orphanCount || 0} remaining containers`, ...(result.issues || [])].filter(Boolean).join(' | ');
+            if (result.preparing) setTimeout(() => refresh(), 2000);
+            for (const button of actions.children) button.disabled = !!result.preparing || !!result.turnRunning;
+        } catch (error) { status.textContent = error.message; for (const button of actions.children) button.disabled = false; }
+    };
+    for (const [action, label, question] of [
+        ['check', 'Check', ''],
+        ['install', 'Prepare runtime', 'Download and build the verified PowerShell and Squid runtime in Docker Desktop? Temporary HTTPS certificates stay inside disposable containers; host certificate trust is unchanged.'],
+        ['cleanup', 'Clean up', 'Remove inactive containers created by DeskPilot? Active Turns in another DeskPilot process are left alone.'],
+        ['uninstall', 'Remove runtime', 'Remove this DeskPilot runtime image tag and record? Docker and WSL remain installed. Execution mode will not change.'],
+    ]) {
+        const button = el('btn btn-small', 'button'); button.type = 'button'; button.textContent = label;
+        button.onclick = () => { if (!question || confirm(question)) refresh(action); }; actions.append(button);
+    }
+    runtime.append(runtimeHeading, status, actions); container.append(runtime); refresh();
+}
+
 function buildPermList(container) {
     container.innerHTML = '';
     const p = (state.settings && state.settings.permissions) || {};
@@ -3199,6 +3354,12 @@ function buildPermList(container) {
         const row = el('perm-row' + (def.powerful ? ' powerful' : ''));
         const meta = el('perm-meta');
         meta.innerHTML = `<div class="perm-name">${def.name}</div><div class="muted tiny">${def.note}</div>`;
+        if (def.key === 'terminal') {
+            const boundary = el('terminal-boundary');
+            const policy = state.streaming && state.activeTerminalExecution ? state.activeTerminalExecution : state.settings && state.settings.terminalExecution;
+            boundary.textContent = (state.streaming ? 'Active Turn: ' : '') + terminalExecutionLabel(policy) + (!state.streaming && !p.terminal ? ' | Terminal off' : '');
+            meta.appendChild(boundary);
+        }
         const sw = el('switch', 'label');
         const input = document.createElement('input');
         input.type = 'checkbox';
@@ -7068,6 +7229,7 @@ function openSettings() {
         <label>Permissions</label>
         <div class="perm-list" id="set-perms"></div>
       </div>
+            <div id="set-terminal-execution"></div>
     </section>
     <section class="settings-tab" id="spane-projects" data-tab="projects" role="tabpanel" aria-labelledby="stab-projects" hidden>
       <div class="field">
@@ -7287,6 +7449,7 @@ function openSettings() {
     </section>`;
 
     buildPermList($('set-perms'));
+    renderTerminalSettings($('set-terminal-execution'));
     renderProjectsManager();
     renderExternalOpenTypes();
     wireSettingsTabs(body);
@@ -7746,6 +7909,7 @@ function openDiagnostics() {
     $('diagnostics-backdrop').classList.remove('hidden');
     $('diagnostics-modal').classList.remove('hidden');
     $('diagnostics-export-result').textContent = '';
+    renderTerminalSettings($('diagnostics-terminal'), true);
     refreshDiagnostics({ reset: true });
     $('diagnostics-check').focus();
 }
@@ -8518,7 +8682,7 @@ async function _streamRerun({ endpoint, body }) {
     };
     try {
         await streamPost('/api/conversations/' + conversationId + endpoint, body, {
-            start: (d) => { if (d && d.messageId) wrap.dataset.id = d.messageId; },
+            start: (d) => { state.activeTerminalExecution = d && d.terminalExecution; if (d && d.messageId) wrap.dataset.id = d.messageId; },
             delta: (d) => { if (!state.stopRequested) { const t = (d && d.text) || ''; if (t && think) { sealThinking(wrap); think = ''; } raw += t; if (!renderScheduled) { renderScheduled = true; requestAnimationFrame(renderLive); } } },
             reasoning: (d) => { if (!state.stopRequested) { if (raw) { flushAnswerChunk(wrap, raw); raw = ''; think = ''; } think += (d && d.text) || ''; renderThinking(wrap, think); } },
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },

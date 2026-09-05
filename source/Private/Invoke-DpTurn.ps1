@@ -67,6 +67,9 @@ function Invoke-DpTurn {
     $userPromptBridge = $script:DeskPilot.Engine.UserPromptBridge
     $engineUsageBefore = $null
     $stoppedUsageEstimate = $null
+    $isolatedTerminal = $null
+    $terminalPolicy = ConvertTo-DpTerminalExecution -InputObject $settings.terminalExecution
+    $terminalBoundary = if ($terminalPolicy.mode -eq 'isolated') { $terminalPolicy } else { @{ mode = 'local' } }
 
     # What the Engine is sent is not what the user typed: an Attachment is named
     # in a note in front of the prompt, while the Message keeps the user's own
@@ -362,6 +365,10 @@ function Invoke-DpTurn {
         # action lands where it happened in the trace rather than after it.
         if ($decision.event -eq 'activity') {
             & $flush
+            if ($decision.Action.kind -eq 'run') {
+                $decision.Action.execution = $terminalBoundary
+                $decision.data.execution = $terminalBoundary
+            }
             if ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($decision.Action) }
             else { $turnState.actionsDropped = [int]$turnState.actionsDropped + 1 }
             $writer.Write((ConvertTo-DpSseFrame -EventName 'activity' -Data $decision.data))
@@ -375,6 +382,26 @@ function Invoke-DpTurn {
     }
 
     try {
+        if ($terminalPolicy.mode -eq 'isolated') {
+            if ($settings.permissions.terminal) {
+                if (-not $settings.permissions.userTools) { throw 'Isolated Terminal requires User Tools Permission; Local execution was not selected.' }
+                if (-not $settings.selectedProjectId -or -not $settings.workspaceFolder) { throw 'Isolated Terminal requires a selected Project.' }
+            }
+            if (-not (Test-DpTerminalDispatch -Runspace $script:DeskPilot.Engine.Runspace)) {
+                throw 'Isolated execution requires a dispatch-enforcing Engine, including when Terminal Permission is off. Update ShellPilot; Local execution was not selected.'
+            }
+            if ($settings.permissions.terminal) {
+                $terminalRuntime = Get-DpTerminalRuntime -DataDirectory $script:DeskPilot.DataDir -Probe
+                $script:DeskPilot.TerminalRuntime = $terminalRuntime
+                if (-not $terminalRuntime.ready) { throw ($terminalRuntime.issues -join ' ') }
+                $isolatedTerminal = New-DpIsolatedTerminalSession -Context @{
+                    workingDirectory = $settings.workspaceFolder
+                    dataDirectory = $script:DeskPilot.DataDir
+                    terminalExecution = $terminalPolicy
+                }
+                $script:DeskPilot.Engine.TerminalSession = $isolatedTerminal
+            }
+        }
         $questionnaireEnabled = [bool]$settings.permissions.askUser
         $questionnaireToolParams = @{
             Runspace = $script:DeskPilot.Engine.Runspace
@@ -407,12 +434,16 @@ function Invoke-DpTurn {
             Enabled        = $approvalActive
             TimeoutMinutes = [int]$settings.approvalTimeoutMinutes
             Bridge         = $script:DeskPilot.Engine.ApprovalBridge
+            IsolatedSession = $isolatedTerminal
             SafeCommand    = @(@(Get-DpSafeCommandList) + @($settings.safeCommands))
             Context        = @{
                 conversationId   = [string]$Conversation.id
                 turnId           = [string]$assistantId
                 project          = [string]$settings.workspaceFolder
                 workingDirectory = [string](Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
+                dataDirectory    = [string]$script:DeskPilot.DataDir
+                terminalExecution = $terminalPolicy
+                policyId         = [guid]::NewGuid().ToString('N')
             }
         }
         $null = Set-DpTerminalTool @terminalToolParams
@@ -486,7 +517,7 @@ function Invoke-DpTurn {
             }
         }
 
-        $writer.Write((ConvertTo-DpSseFrame -EventName 'start' -Data @{ messageId = $assistantId; userMessageId = $userMessage.id }))
+        $writer.Write((ConvertTo-DpSseFrame -EventName 'start' -Data @{ messageId = $assistantId; userMessageId = $userMessage.id; terminalExecution = $terminalBoundary }))
 
         # The opening record states what cannot be inferred from the rest, and in
         # particular where the iteration numbers come from: with Thinking off the
@@ -674,6 +705,7 @@ function Invoke-DpTurn {
                 # the next line then observes and aborts the Engine pipeline.
                 Invoke-DpPendingRequest
                 if ($script:DeskPilot.CancelRequested) {
+                    if ($isolatedTerminal) { $isolatedTerminal.Cancel() }
                     & $flush
                     try {
                         $writer.Write((ConvertTo-DpSseFrame -EventName 'stopping' -Data @{ message = 'Turn stopped.' }))
@@ -846,6 +878,7 @@ function Invoke-DpTurn {
         # Runspace ledger in here, once, while the pipeline is complete and the
         # runspace is idle again.
         $editedFiles = @(Get-DpEngineEditedFile -Runspace $script:DeskPilot.Engine.Runspace)
+        if ($isolatedTerminal) { $editedFiles += @($isolatedTerminal.FilesWritten) }
         if ($editedFiles.Count -gt 0) {
             $alreadyWritten = @($mapped.activity.filesWritten)
             $mapped.activity.filesWritten = @($alreadyWritten + @($editedFiles | Where-Object { $alreadyWritten -notcontains $_ }))
@@ -973,6 +1006,27 @@ function Invoke-DpTurn {
         & $writeTranscript 'failed'
     }
     finally {
+        if ($isolatedTerminal) {
+            $isolatedTerminal.Cancel()
+            $terminalFiles = @($isolatedTerminal.FilesWritten)
+            if ($terminalFiles.Count -gt 0) {
+                $latestMessage = @($Conversation.messages) | Where-Object { $_.id -eq $assistantId } | Select-Object -First 1
+                if ($latestMessage -and $latestMessage.activity) {
+                    $latestMessage.activity.filesWritten = @(@($latestMessage.activity.filesWritten) + $terminalFiles | Select-Object -Unique)
+                }
+                $null = Add-DpChangeEntry -Store $script:DeskPilot.Changes -Root $settings.workspaceFolder -Paths $terminalFiles -SnapshotSha $turnSnapshotSha -ConversationId ([string]$Conversation.id)
+                if ($script:DeskPilot.DataDir) {
+                    Save-DpChangeStore -Store $script:DeskPilot.Changes -Directory $script:DeskPilot.DataDir
+                    Save-DpConversationStore -Store $script:DeskPilot.Conversations -Directory $script:DeskPilot.DataDir
+                }
+            }
+            try { $isolatedTerminal.Dispose() }
+            catch {
+                $script:DeskPilot.TerminalRuntime = @{ ready = $false; state = 'degraded'; issues = @('Terminal cleanup could not be completed.'); orphanCount = 1 }
+                Write-Warning 'Isolated Terminal cleanup could not be completed. Run Terminal cleanup before further Isolated work.'
+            }
+        }
+        $script:DeskPilot.Engine.TerminalSession = $null
         if ($userPromptBridge) { $userPromptBridge.EndTurn() }
         # Cancel before EndTurn: a Turn can end while the Tool is still parked on
         # an unanswered approval, and Cancel is what releases that thread. Ending

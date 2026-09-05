@@ -63,18 +63,26 @@ function Initialize-DpTerminalTool {
         [int]$TimeoutMinutes = 15,
 
         [Parameter(Mandatory)]
-        [object]$Bridge
+        [object]$Bridge,
+
+        [object]$IsolatedSession
     )
+
+    if ($Context.ContainsKey('terminalExecution') -and $Context.terminalExecution.mode -eq 'isolated' -and $null -eq $IsolatedSession) {
+        $IsolatedSession = New-DpIsolatedTerminalSession -Context $Context
+    }
 
     $names = @(
         'Get-DpPropertyValue'
+        'ConvertTo-DpTerminalExecution'
         'New-DpApprovalRequest'
         'Test-DpCommandSafe'
         'Invoke-DpTerminalApprovalTool'
     )
 
     $builder = [System.Text.StringBuilder]::new()
-    [void]$builder.AppendLine('param($Context, $SafeCommand, [int]$TimeoutMinutes, $Bridge)')
+    [void]$builder.AppendLine('param($Context, $SafeCommand, [int]$TimeoutMinutes, $Bridge, $IsolatedSession)')
+    [void]$builder.AppendLine('Set-Variable -Name DeskPilotIsolatedTerminal -Scope Global -Value $IsolatedSession')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotApprovalContext -Scope Global -Value $Context')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotSafeCommand -Scope Global -Value @($SafeCommand)')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotApprovalTimeoutMinutes -Scope Global -Value $TimeoutMinutes')
@@ -109,6 +117,9 @@ if ((& $engine { (Get-Command -Name Invoke-Shp).Definition }) -notmatch 'offered
 # private Engine function stays reachable.
 Set-Variable -Name DeskPilotTerminalExecutor -Scope Global -Value {
     param($Command, $WorkingDirectory, $TimeoutSeconds)
+    if ($null -ne $global:DeskPilotIsolatedTerminal) {
+        return $global:DeskPilotIsolatedTerminal.Run($Command, $WorkingDirectory, $TimeoutSeconds)
+    }
     $module = Get-Module -Name ShellPilot | Select-Object -First 1
     & $module {
         param($Command, $WorkingDirectory, $TimeoutSeconds)
@@ -148,6 +159,24 @@ this one. Do NOT re-propose the same command hoping for a different answer.
 Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_terminal_command' -Description $runDescription -Confirm:$false
 '@)
 
+    if ($null -ne $IsolatedSession) {
+        [void]$builder.AppendLine(@'
+$isolatedDescription = @"
+Run one PowerShell command in a disposable Linux container, never on the Windows host.
+The selected Project is mounted at /project. Use Project-relative paths or /project
+as workingDirectory. Network is off unless the user selected exact HTTPS origins;
+then use the supplied HTTPS proxy and temporary CA. Direct TCP, DNS, SSH and UDP
+are denied. Host programs, host credentials and host paths are unavailable.
+The user approves commands outside their safe-list before any command starts.
+Returns JSON {approved,result}; result carries exitCode, stdout, stderr, failure
+flags, cleanupSucceeded and Project-relative filesWritten. Do not retry a denied
+command or propose changing execution mode. File, Browsing, MCP and Intercom are
+separate Tools and are not isolated by this Terminal boundary.
+"@
+Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_terminal_command' -Description $isolatedDescription -Confirm:$false
+'@)
+    }
+
     $shell = [powershell]::Create()
     $shell.Runspace = $Runspace
     try {
@@ -155,7 +184,8 @@ Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_termina
             AddArgument($Context).
             AddArgument(@($SafeCommand)).
             AddArgument([int]$TimeoutMinutes).
-            AddArgument($Bridge)
+            AddArgument($Bridge).
+            AddArgument($IsolatedSession)
         $shell.Invoke() | Out-Null
         if ($shell.HadErrors) {
             $firstError = $shell.Streams.Error | Select-Object -First 1

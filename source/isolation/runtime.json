@@ -1,0 +1,7 @@
+{
+    "schemaVersion": 1,
+    "baseImage": "mcr.microsoft.com/powershell@sha256:62300a213a9293916333df2b014cd3a8f22fb0b0b65f2bb446aaf436bcf8c868",
+    "powerShellVersion": "7.6.5",
+    "powerShellArchive": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.5/powershell-7.6.5-linux-x64.tar.gz",
+    "powerShellSha256": "b34ab3b19acac1d3d4d0d3cfdb02acf62f457b0b6a962ff008132033f7566844"
+}

@@ -87,6 +87,17 @@ function New-DpApprovalRequest {
     }
     $fieldMaterial = ($fields | ForEach-Object { "$($_.name)=$($_.value)" }) -join [char]30
 
+    $execution = @{ mode = 'local' }
+    $executionMaterial = ''
+    if ($Class -eq 'Terminal') {
+        if ($Argument.execution -and $Argument.execution.mode -eq 'isolated') {
+            $execution = ConvertTo-DpTerminalExecution -InputObject $Argument.execution
+        }
+        $canonical = [ordered]@{}
+        foreach ($key in @($execution.Keys | Sort-Object)) { $canonical[$key] = $execution[$key] }
+        $executionMaterial = ($canonical | ConvertTo-Json -Depth 6 -Compress) + [char]30 + [string]$Argument.policyId
+    }
+
     $shown = $command
     if ($shown.Length -gt $maxCommand) {
         $shown = $shown.Substring(0, $maxCommand) + " ...[truncated, $($command.Length) characters]"
@@ -101,7 +112,7 @@ function New-DpApprovalRequest {
         $Tool, $Class, $ConversationId, $TurnId,
         $command.Trim(), $workingDirectory.Trim(),
         $url.Trim(), $targetHost.Trim(),
-        $action.Trim(), $control.Trim(), $filePath.Trim(), $fieldMaterial
+        $action.Trim(), $control.Trim(), $filePath.Trim(), $fieldMaterial, $executionMaterial
     ) -join [char]31
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material)) }
@@ -109,7 +120,12 @@ function New-DpApprovalRequest {
     $fingerprint = -join ($digest | ForEach-Object { $_.ToString('x2') })
 
     $risk = switch ($Class) {
-        'Terminal' { 'This runs a command on your computer with your account. It can read, change or delete files, and it can reach the network.' }
+        'Terminal' {
+            if ($execution.mode -eq 'isolated') {
+                'Isolated Terminal command. Only the selected Project is mounted; other Tools are not isolated. Check Project access, network and environment grants.'
+            }
+            else { 'This runs a command on your computer with your account. It can read, change or delete files, and it can reach the network.' }
+        }
         'FileWrite' { 'This writes to a file outside the project folder, where DeskPilot cannot undo it for you.' }
         'Mcp' { 'This calls an attached tool that may change something outside DeskPilot.' }
         'BrowserNavigation' { 'This opens an address outside the site this task started on. Check the whole address, including anything after the question mark - that is where a page tries to send information it should not have.' }
@@ -141,6 +157,7 @@ function New-DpApprovalRequest {
             control          = $control
             filePath         = $filePath
             fields           = $fields
+            execution        = if ($Class -eq 'Terminal') { $execution } else { $null }
         }
         risk           = $risk
         requestedUtc   = [datetime]::UtcNow.ToString('o')

@@ -87,6 +87,8 @@ function Get-DpJsDefinition {
 $pieces = @(
     (Get-DpJsDefinition -Source $appJs -Pattern 'const el = \(cls' -Name 'el')
     (Get-DpJsDefinition -Source $appJs -Pattern 'const APPROVAL_TITLES = \{' -Name 'APPROVAL_TITLES')
+    (Get-DpJsDefinition -Source $appJs -Pattern 'function terminalExecutionLabel\(' -Name 'terminalExecutionLabel')
+    (Get-DpJsDefinition -Source $appJs -Pattern 'function terminalExecutionRows\(' -Name 'terminalExecutionRows')
     (Get-DpJsDefinition -Source $appJs -Pattern 'function approvalRow\(' -Name 'approvalRow')
     (Get-DpJsDefinition -Source $appJs -Pattern 'function approvalDetail\(' -Name 'approvalDetail')
     (Get-DpJsDefinition -Source $appJs -Pattern 'const BROWSER_CAPABILITIES = \[' -Name 'BROWSER_CAPABILITIES')

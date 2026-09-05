@@ -126,6 +126,8 @@ function Start-DeskPilot {
         Intercom        = Initialize-DpIntercom -Directory $dataDirFull
         DataDir         = $dataDirFull
         Engine          = $engine
+        TerminalRuntime = $null
+        TerminalSetupJob = $null
         # Which Engine MCP servers each configured row attached. The Engine holds a
         # registration only for the life of the session and discovers nothing on its
         # own, so this map is how Sync-DpMcpServer knows which live server belongs to
@@ -213,6 +215,11 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/install'; Name = 'installBrowserRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/cleanup'; Name = 'cleanupBrowserRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/uninstall'; Name = 'uninstallBrowserRuntime' }
+            @{ Method = 'GET'; Pattern = '/api/diagnostics/terminal'; Name = 'getTerminalRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/check'; Name = 'checkTerminalRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/install'; Name = 'installTerminalRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/cleanup'; Name = 'cleanupTerminalRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/uninstall'; Name = 'uninstallTerminalRuntime' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
             @{ Method = 'POST'; Pattern = '/api/auth/start'; Name = 'authStart' }
             @{ Method = 'GET'; Pattern = '/api/models'; Name = 'models' }

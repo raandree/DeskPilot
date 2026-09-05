@@ -352,6 +352,23 @@ Describe 'Per-call approval wiring' -Tag 'Unit' {
         $params.ContainsKey('DisableTerminal') | Should -BeFalse
     }
 
+    It 'keeps Isolated commands approval-gated when Local approval is off' {
+        $settings = New-DpApprovalSettings -Approval $false
+        $settings.terminalExecution = @{ mode = 'isolated' }
+
+        Test-DpApprovalActive -Settings $settings | Should -BeTrue
+        (New-DpTurnParameter -Prompt 'hi' -Settings $settings).DisableTerminal | Should -BeTrue
+    }
+
+    It 'never restores the native Terminal in Isolated mode when User Tools is off' {
+        $settings = New-DpApprovalSettings -Approval $false -UserTools $false
+        $settings.terminalExecution = @{ mode = 'isolated' }
+        $parameters = New-DpTurnParameter -Prompt 'hi' -Settings $settings
+
+        $parameters.DisableUserTools | Should -BeTrue
+        $parameters.DisableTerminal | Should -BeTrue
+    }
+
     It 'still disables the terminal when Terminal Permission itself is off' {
         # Terminal off is stricter than approval, and must stay stricter.
         $params = New-DpTurnParameter -Prompt 'hi' -Settings (New-DpApprovalSettings -Terminal $false)
@@ -478,6 +495,112 @@ Describe 'Terminal tool registration' -Tag 'Unit' {
             @((Get-RegisteredTool -Runspace $runspace).Name) | Should -Not -Contain 'run_terminal_command'
         }
         finally {
+            $runspace.Dispose()
+        }
+    }
+
+    It 'enforces disabled built-in dispatch (<Disabled>) while the owned Tool reaches its executor' -ForEach @(
+        @{ Disabled = $true; NativeCalls = 0; Denials = 1 }
+        @{ Disabled = $false; NativeCalls = 1; Denials = 0 }
+    ) {
+        $runspace = New-EngineRunspace
+        $bridge = New-Object DeskPilot.UserPromptBridge
+        $shell = [powershell]::Create()
+        $shell.Runspace = $runspace
+        try {
+            $registration = @{
+                Runspace = $runspace
+                Context = New-TerminalToolContext
+                SafeCommand = @(@{ command = 'git status'; match = 'exact' })
+                TimeoutMinutes = 1
+                Bridge = $bridge
+            }
+            $null = Initialize-DpTerminalTool @registration
+            $null = $shell.AddScript(@'
+param([bool]$Disabled)
+$global:DeskPilotNativeCalls = 0
+$global:DeskPilotOwnedCalls = 0
+$global:DeskPilotTerminalExecutor = {
+    $global:DeskPilotOwnedCalls++
+    '{"exitCode":0,"stdout":"owned executor"}'
+}
+$engine = Get-Module -Name ShellPilot
+& $engine {
+    $script:DeskPilotProviderCalls = 0
+    function script:Get-ShpSessionToken {
+        @{
+            token = 'fixture'
+            expires_at = [DateTimeOffset]::UtcNow.AddMinutes(5).ToUnixTimeSeconds()
+            endpoints = @{ api = 'https://provider.invalid' }
+        }
+    }
+    function script:Invoke-ShpHttpRequest { throw 'Unexpected HTTP request in dispatch fixture.' }
+    function script:Invoke-ShpStreamRequest { throw 'Unexpected streaming request in dispatch fixture.' }
+    function script:Invoke-RunCommandTool {
+        $global:DeskPilotNativeCalls++
+        '{"exitCode":0,"stdout":"native executor"}'
+    }
+    function script:Invoke-CopilotTurn {
+        $script:DeskPilotProviderCalls++
+        $calls = @()
+        if ($script:DeskPilotProviderCalls -eq 1) {
+            $calls = @(
+                [pscustomobject]@{ Id = 'native'; Name = 'run_command'; Arguments = '{"command":"git status"}' }
+                [pscustomobject]@{ Id = 'owned'; Name = 'run_terminal_command'; Arguments = '{"command":"git status"}' }
+            )
+        }
+        [pscustomobject]@{
+            Mode = 'chat'
+            ModelName = 'gpt-4o'
+            Content = 'Dispatch fixture completed.'
+            FinishReason = if ($calls.Count) { 'tool_calls' } else { 'stop' }
+            ToolCalls = $calls
+            AssistantMessage = @{ role = 'assistant'; content = 'Dispatch fixture completed.' }
+            PromptTokens = 1
+            CompletionTokens = 1
+            CachedTokens = 0
+            CacheWriteTokens = 0
+            Response = @{ Headers = @{} }
+            Raw = @{}
+        }
+    }
+}
+$parameters = @{
+    Prompt = 'Exercise Terminal dispatch.'
+    Model = 'gpt-4o'
+    ApiBase = 'https://provider.invalid'
+    History = @()
+    DisableTerminal = $Disabled
+    DisableBrowsing = $true
+    DisableFileAccess = $true
+    DisableUserPrompts = $true
+    DisableTodoList = $true
+    DisableMcp = $true
+    DisableStreaming = $true
+    MaxContextWindowTokens = 0
+    MaxToolIterations = 3
+    Confirm = $false
+}
+$result = Invoke-Shp @parameters
+[pscustomobject]@{
+    NativeCalls = $global:DeskPilotNativeCalls
+    OwnedCalls = $global:DeskPilotOwnedCalls
+    Result = $result
+}
+'@).AddArgument($Disabled)
+            $probe = @($shell.Invoke())
+
+            $shell.HadErrors | Should -BeFalse -Because ($shell.Streams.Error | Out-String)
+            $probe | Should -HaveCount 1
+            $probe[0].NativeCalls | Should -Be $NativeCalls
+            $probe[0].OwnedCalls | Should -Be 1
+            @($probe[0].Result.ToolCallsDenied) | Should -HaveCount $Denials
+            @($probe[0].Result.ToolCalls) | Should -HaveCount 2
+            @($probe[0].Result.UserToolsCalled) | Should -Contain 'run_terminal_command'
+        }
+        finally {
+            $shell.Dispose()
+            $bridge.Dispose()
             $runspace.Dispose()
         }
     }

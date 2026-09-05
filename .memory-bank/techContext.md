@@ -99,9 +99,10 @@ atomic (temp file + `Move-Item -Force`).
   change without notice (inherited risk).
 - **Clear-text token.** The Engine caches the OAuth token unencrypted. DeskPilot
   does not change this; it is documented in the Security spec.
-- **No path sandboxing.** Engine File/Terminal tools run with the user's full
-  privileges. DeskPilot mitigates with a Workspace Folder default and visible
-  Permissions, not with a true sandbox.
+- **Optional Terminal isolation only.** Local Terminal and Engine File Tools
+  retain user privileges. Isolated Terminal uses Docker Desktop/WSL2, PowerShell
+  7.4+ on the Host Server, and a prepared PowerShell 7.6.5 Linux image. Other
+  Tools are not isolated. See `docs/isolated-terminal.md` for exact limits.
 - **Localhost only.** The Host Server binds to `127.0.0.1` by default and must
   never bind to a public interface without an explicit, documented opt-in and
   auth.

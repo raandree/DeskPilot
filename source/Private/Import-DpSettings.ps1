@@ -41,6 +41,9 @@ function Import-DpSettings {
         return $merged
     }
     catch {
+        if ($raw -match '"terminalExecution"\s*:') {
+            throw 'The saved Terminal execution policy could not be loaded. Restore or repair Settings; Local execution was not selected.'
+        }
         Write-Error "Failed to load settings (using defaults): $_"
         return $defaults
     }

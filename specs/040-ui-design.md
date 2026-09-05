@@ -451,6 +451,11 @@ DOM APIs, never concatenated HTML, because names and prompts are user text.
 
 ## Approval card
 
+Terminal approvals always label execution as **Local** or **Isolated**. Isolated
+cards show Project access, network, exact HTTPS origins, environment names with
+secret markers, every resource limit, and the lack of total read-write Project
+disk quota. Command Activity uses the recorded mode, not current Settings.
+
 When the agent proposes something that needs a decision — a Terminal command the
 safe-list does not cover, a navigation off the site a task started from, or any
 browser write — an approval card appears in the thread, in the same slot the
@@ -501,6 +506,21 @@ Turn that looks stalled with no way to answer it.
 Verified by screenshot at 1440, 820, 720, 700, 620 and 400 px
 (`tests/live/Invoke-DpBrowserUiScreenshot.ps1`), which renders the real card
 builder rather than a hand-written copy of its markup.
+
+## Terminal execution controls
+
+Settings, Permissions contains Local/Isolated radios, Project access and network
+menus, exact HTTPS-origin lines, environment-name rows with Secret checkboxes,
+and bounded numeric inputs. Save applies the policy to the next Turn. Isolated
+mode displays non-routine approval as required; Local approval cannot disable it.
+Read-write selection confirms persistence and its disk-quota limitation.
+
+Terminal Permission shows the effective boundary. During a Turn the indicator
+follows its `start` event rather than later Settings edits. Diagnostics and
+Settings expose Check, Prepare runtime, Clean up, and Remove runtime. Preparation
+is consent-gated, asynchronous, and visibly pending. An unavailable runtime must
+not appear as active containment. Desktop and 390-pixel mobile controls are
+verified with Playwright, including policy saving and horizontal overflow.
 
 ## Project browser settings
 

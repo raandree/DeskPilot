@@ -46,7 +46,9 @@ function Set-DpTerminalTool {
         [ValidateRange(1, 1440)]
         [int]$TimeoutMinutes = 15,
 
-        [object]$Bridge
+        [object]$Bridge,
+
+        [object]$IsolatedSession
     )
 
     if ($Enabled) {
@@ -56,6 +58,7 @@ function Set-DpTerminalTool {
             SafeCommand    = @($SafeCommand)
             TimeoutMinutes = $TimeoutMinutes
             Bridge         = $Bridge
+            IsolatedSession = $IsolatedSession
         }
         return Initialize-DpTerminalTool @registerParams
     }
@@ -68,6 +71,8 @@ function Set-DpTerminalTool {
         # too: a stale executor left behind would be a working terminal with
         # nothing registered to reach it.
         $null = $shell.AddScript(@'
+    if ($null -ne $global:DeskPilotIsolatedTerminal) { $global:DeskPilotIsolatedTerminal.Dispose() }
+    $global:DeskPilotIsolatedTerminal = $null
 foreach ($name in @('DeskPilotTerminalExecutor', 'DeskPilotApprovalBridge', 'DeskPilotApprovalContext', 'DeskPilotSafeCommand')) {
     Set-Variable -Name $name -Scope Global -Value $null
 }

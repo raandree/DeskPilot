@@ -159,6 +159,23 @@ who the user is across sessions, rather than starting cold every Conversation.
   in-scope links without a card, which is a residual gap on a site with
   destructive GET links.
 
+### Optional isolated Terminal
+
+The opt-in Local/Isolated implementation uses disposable Docker Desktop/WSL2
+containers, read-only Project access by default, network-off or exact HTTPS
+allow-lists, environment grants, resource bounds, and non-routine approvals.
+Diagnostics prepares, checks and removes the runtime. Read-write paths feed
+pending changes and Undo; no other Tool is isolated.
+
+Release requires the clean-environment boundary suite, full Sampler gate,
+independent security review, and an obtainable dispatch-enforcing Engine. The
+development Engine 0.4.1 is staged locally, not yet published.
+The final local gate passed 2286 tests, with zero failures and five unchanged
+browser skips; 29 real-container isolation cases ran. The independent review's
+Major protocol finding was fixed. Live Copilot acceptance awaits reauthentication;
+deterministic HTTP acceptance and Undo passed with an explicitly scripted provider.
+See [setup, limitations and rollback](../docs/isolated-terminal.md).
+
 ### Deliberately deferred (constraint or Engine bound)
 
 - **External memory providers** (pluggable third-party memory backends such as
