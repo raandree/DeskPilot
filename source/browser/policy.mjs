@@ -90,3 +90,43 @@ export function normalizeScopeEntry(candidate) {
     const name = candidate.trim().replace(/\.$/, '').toLowerCase();
     return HOST_LABELS.test(name) ? name : null;
 }
+
+// Credential fields the model must never type into. The authoritative signal is
+// the live input's own type and autocomplete, which is why this takes a
+// descriptor read from the DOM rather than a field name the model chose - a name
+// is what an attacker controls, and a heuristic over it would be confidence
+// rather than a control.
+//
+// The name pattern below is a second refusal layer only. It can add a refusal
+// and can never grant one, so being wrong about it costs a filled field, not a
+// leaked secret.
+const CREDENTIAL_AUTOCOMPLETE = new Set([
+    'current-password', 'new-password', 'one-time-code',
+    'cc-number', 'cc-csc', 'cc-exp', 'cc-exp-month', 'cc-exp-year'
+]);
+const CREDENTIAL_NAME = /pass(word|wd|phrase)|\bpin\b|otp|mfa|2fa|totp|secret|token|api[-_\s]?key|cvv|cvc|security[-_\s]?(answer|question)|recovery[-_\s]?code/i;
+
+export function isFieldFillable(descriptor) {
+    const field = descriptor ?? {};
+    const type = String(field.type ?? '').trim().toLowerCase();
+    const autocomplete = String(field.autocomplete ?? '').trim().toLowerCase();
+    const name = `${field.name ?? ''} ${field.id ?? ''} ${field.label ?? ''}`;
+
+    // A password box is refused outright rather than masked. The user is told to
+    // sign in themselves; there is no value the model may put here.
+    if (type === 'password') return { fillable: false, reason: 'credential-field' };
+    if (CREDENTIAL_AUTOCOMPLETE.has(autocomplete)) return { fillable: false, reason: 'credential-field' };
+    if (CREDENTIAL_NAME.test(name)) return { fillable: false, reason: 'credential-field' };
+
+    // A file input is a different capability with a different approval.
+    if (type === 'file') return { fillable: false, reason: 'file-input' };
+
+    // Invisible to the person approving, so it cannot be part of what they
+    // approved. Page-controlled by definition.
+    if (type === 'hidden') return { fillable: false, reason: 'hidden-field' };
+    if (field.visible === false) return { fillable: false, reason: 'not-visible' };
+
+    if (field.disabled === true || field.readOnly === true) return { fillable: false, reason: 'not-editable' };
+
+    return { fillable: true, reason: 'ok' };
+}

@@ -38,7 +38,7 @@ function New-DpApprovalRequest {
         [string]$Tool,
 
         [Parameter(Mandatory)]
-        [ValidateSet('Terminal', 'FileWrite', 'Mcp', 'UserTool', 'BrowserNavigation')]
+        [ValidateSet('Terminal', 'FileWrite', 'Mcp', 'UserTool', 'BrowserNavigation', 'BrowserAction')]
         [string]$Class,
 
         [Parameter(Mandatory)]
@@ -66,6 +66,27 @@ function New-DpApprovalRequest {
     $url = if ($Argument.ContainsKey('url')) { [string]$Argument['url'] } else { '' }
     $targetHost = if ($Argument.ContainsKey('host')) { [string]$Argument['host'] } else { '' }
 
+    # A browser write action is judged on its values, so they are carried rather
+    # than summarised away - "submit a form" is not a decision anyone can make.
+    # They are bounded, and they are bound into the fingerprint below so an
+    # approval for one set of values cannot be spent on another. Credential
+    # fields never reach here: the supervisor refuses to fill one at all.
+    $action = if ($Argument.ContainsKey('action')) { [string]$Argument['action'] } else { '' }
+    $filePath = if ($Argument.ContainsKey('filePath')) { [string]$Argument['filePath'] } else { '' }
+    $control = if ($Argument.ContainsKey('control')) { [string]$Argument['control'] } else { '' }
+    $fields = @()
+    if ($Argument.ContainsKey('fields')) {
+        $fields = @(@($Argument['fields']) | Select-Object -First 50 | ForEach-Object {
+                $fieldName = [string](Get-DpPropertyValue -InputObject $_ -Name @('name') -Default '')
+                $fieldValue = [string](Get-DpPropertyValue -InputObject $_ -Name @('value') -Default '')
+                if ($fieldValue.Length -gt 500) {
+                    $fieldValue = $fieldValue.Substring(0, 500) + " ...[truncated, $($fieldValue.Length) characters]"
+                }
+                @{ name = $fieldName; value = $fieldValue }
+            })
+    }
+    $fieldMaterial = ($fields | ForEach-Object { "$($_.name)=$($_.value)" }) -join [char]30
+
     $shown = $command
     if ($shown.Length -gt $maxCommand) {
         $shown = $shown.Substring(0, $maxCommand) + " ...[truncated, $($command.Length) characters]"
@@ -76,7 +97,12 @@ function New-DpApprovalRequest {
         $shownUrl = $shownUrl.Substring(0, $maxCommand) + " ...[truncated, $($url.Length) characters]"
     }
 
-    $material = @($Tool, $Class, $ConversationId, $TurnId, $command.Trim(), $workingDirectory.Trim(), $url.Trim(), $targetHost.Trim()) -join [char]31
+    $material = @(
+        $Tool, $Class, $ConversationId, $TurnId,
+        $command.Trim(), $workingDirectory.Trim(),
+        $url.Trim(), $targetHost.Trim(),
+        $action.Trim(), $control.Trim(), $filePath.Trim(), $fieldMaterial
+    ) -join [char]31
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material)) }
     finally { $sha.Dispose() }
@@ -87,6 +113,14 @@ function New-DpApprovalRequest {
         'FileWrite' { 'This writes to a file outside the project folder, where DeskPilot cannot undo it for you.' }
         'Mcp' { 'This calls an attached tool that may change something outside DeskPilot.' }
         'BrowserNavigation' { 'This opens an address outside the site this task started on. Check the whole address, including anything after the question mark - that is where a page tries to send information it should not have.' }
+        'BrowserAction' {
+            switch ($action) {
+                'upload_file' { 'This sends a file from your computer to the website. Check the file and the site: once it is sent, DeskPilot cannot take it back.' }
+                'download_file' { 'This saves a file from the website onto your computer. DeskPilot puts it in a holding folder and never opens or runs it.' }
+                'click_button' { 'This presses a control on the page. It may send, change, buy or delete something on that site, and DeskPilot cannot undo it.' }
+                default { 'This types these values into the page and may send them. Check every value: whatever is here leaves your computer.' }
+            }
+        }
         default { 'This performs an action that may change something on your computer.' }
     }
 
@@ -103,6 +137,10 @@ function New-DpApprovalRequest {
             project          = [string]$ProjectName
             url              = $shownUrl
             host             = $targetHost
+            action           = $action
+            control          = $control
+            filePath         = $filePath
+            fields           = $fields
         }
         risk           = $risk
         requestedUtc   = [datetime]::UtcNow.ToString('o')

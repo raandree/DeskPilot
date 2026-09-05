@@ -1044,6 +1044,37 @@ source: repository evidence
   it. The deny checks also run *before* the scope match, so a durable allow-list
   entry cannot re-open one.
 
+- **Name a capability after its mechanism, never its intention.** The browser has
+  no `delete` capability, because there is no delete action: removing something
+  on a site is a button press, so it is covered by `submit` and named on that
+  button's approval card. A capability called `delete` would promise that
+  DeskPilot can tell a Save button from a Delete one, which it cannot — and the
+  promise would be believed exactly when it mattered.
+
+- **A tiered gate needs something genuinely routine to tier against.** The
+  terminal has a safe-list because `git status` really is routine and a gate that
+  interrupts on it gets switched off. The browser's write actions have none,
+  because every one has an external effect on somebody else's system — there is
+  no "routine submission", so tiering would only be a way of not asking. Copying
+  a mitigation across surfaces without re-checking the premise it rested on is
+  how a control becomes a ritual.
+
+- **Approve the values, not the verb.** "Submit a form" is not a decision anyone
+  can make. A write approval carries every field name and value, the control's
+  name, and the resolved file path, and the fingerprint covers the values
+  themselves — so an approval for one set cannot be spent on another, which is
+  precisely the substitution an injected page wants. The corollary is that a
+  payload field the card does not render is a field nobody approved: the values
+  reaching the API and the values reaching the screen have to be the same set.
+
+- **Ask the artefact, not its label.** DeskPilot refuses to type into a
+  credential field, and decides that from the live input's own `type` and
+  `autocomplete` rather than the field name the model used — the name is what an
+  attacker controls. A name heuristic is kept as a *second* layer that can only
+  ever add a refusal, so being wrong about it costs a filled field rather than a
+  leaked secret. A check that can only deny is safe to be approximate; one that
+  can permit is not.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

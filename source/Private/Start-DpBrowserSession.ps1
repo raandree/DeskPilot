@@ -37,6 +37,13 @@ function Start-DpBrowserSession {
         [ValidateRange(5, 300)]
         [int]$StartTimeoutSeconds = 60,
 
+        # Downloads are a per-Project capability, so the browser is told whether
+        # it may accept one at all. Off means Chromium refuses them outright
+        # rather than DeskPilot cancelling them afterwards.
+        [bool]$AllowDownload = $false,
+
+        [string]$DownloadRoot,
+
         # The supervisor to run. Present so the protocol can be exercised against
         # a stand-in that speaks it without Playwright installed.
         [string]$SupervisorPath
@@ -103,6 +110,16 @@ function Start-DpBrowserSession {
         throw 'The browser supervisor refused the allowed-domain list, so no page was opened.'
     }
     $session.scope = @($applied.result.scope)
+
+    $configured = Invoke-DpBrowserRequest -Session $session -Command 'configure' -TimeoutSeconds 15 -Payload @{
+        allowDownload = $AllowDownload
+        downloadRoot  = [string]$DownloadRoot
+    }
+    if (-not $configured.ok) {
+        Stop-DpBrowserSession -Session $session
+        throw 'The browser supervisor refused its capability configuration, so no page was opened.'
+    }
+    $session.allowDownload = [bool]$configured.result.allowDownload
 
     $session
 }

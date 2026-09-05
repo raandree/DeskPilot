@@ -136,25 +136,41 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 
 ### Contained browser automation
 
-The first slice is **read-only** and proves one workflow: read a city forecast by
-following links through a public weather site. See decision 0003 for the gate
-this passed and the trifecta analysis behind it.
+The first slice proves one workflow: read a city forecast by following links
+through a public weather site. Reading needs no Project grant. **Writing is a
+separate per-Project grant** that gives back part of the agency leg the
+read-only surface breaks by architecture, so every write is approved
+individually. See decision 0003 for the gate this passed and the trifecta
+analysis behind it.
 
 | ID | Priority | Requirement |
 | --- | --- | --- |
-| FR-BA1 | M | Expose a single Tool, `browser_page`, with exactly four actions: `open`, `click_link`, `read_page`, `screenshot`. **No action has an external effect** - nothing submits, uploads, downloads, buys, sends or deletes - so an injected page has no irreversible action to reach for. |
+| FR-BA1 | M | Expose a single Tool, `browser_page`. Its **reading** actions - `open`, `click_link`, `read_page`, `screenshot` - are always available and have no external effect. Its **writing** actions - `fill_form`, `click_button`, `upload_file`, `download_file` - exist only when the selected Project grants the matching capability. |
 | FR-BA2 | M | Gate the Tool behind its own `browserAutomation` Permission, shipped **off**. The Browsing Permission must not imply it: retrieving one address and driving a live page are different amounts of authority. Your Tools off stands the browser down, for the same reason as FR-PA12. |
 | FR-BA3 | M | Drive a **throwaway browser profile** in a supervised child process: no personal cookies, extensions, password store, history, downloads or ambient single sign-on, and no local file access. Never fall back to a browser found on the machine, because that browser's profile is the user's. |
 | FR-BA4 | M | Derive the run's **scope** from the address the task names (that host and its subdomains, `https` only), plus the Project's validated `browserDomains`, plus hosts approved during this run. The user is never asked to predict a domain list in advance. |
 | FR-BA5 | M | Raise an approval card for any top-level navigation outside scope, **before the request leaves**, showing the whole URL including the query string - that is where an injected page puts what it is trying to send out. Approval is for that run only; there is no "always allow" beside the prompt, and durable widening happens only in Settings. |
 | FR-BA6 | M | Refuse outright, with **no approvable card**, anything that cannot be scoped or that reaches the local machine: a scheme other than `https` (`file:`, `data:`, `javascript:`, `blob:`, plain `http`), credentials embedded in the URL, any IP literal, single-label hosts, and `.local`/`.localhost` names. The refusal is evaluated **before** the scope match, so a Project entry cannot re-open it. |
 | FR-BA7 | M | Enforce policy **below the Model**, inside the supervisor's request interceptor, so it also covers redirect chains, nested frames, pop-ups and sub-resources that a pre-flight check cannot see. Page content may never widen scope. Both enforcement points are held to one shared conformance corpus. |
-| FR-BA8 | M | Block off-origin script, WebSocket, XHR, fetch, beacon and every download; allow off-origin images, stylesheets and fonts. The page controls sub-resources and the page knows no secrets - the asymmetry that makes an off-origin image safe is the one that makes an off-origin navigation dangerous. |
-| FR-BA9 | M | Treat all page output as untrusted data: bound page text, link lists, screenshots and error messages, label page text as information rather than instructions, and never interpolate page-supplied text into a selector, a script or a URL. Follow links by accessible name, never by a page-supplied selector string. |
-| FR-BA10 | M | Correlate a navigation approval with the Conversation, Turn and exact URL by fingerprint, exactly as FR-PA7 does for commands. An answer that does not carry this navigation's fingerprint authorizes nothing. |
-| FR-BA11 | M | Bound the run: actions, navigations, page text, link count, screenshots and per-action wall clock. Stop, and the end of a Turn, close the **whole browser process tree** - a window that outlives its Turn is an orphan nothing in the UI accounts for. |
+| FR-BA8 | M | Block off-origin script, WebSocket, XHR, fetch and beacon; allow off-origin images, stylesheets and fonts. The page controls sub-resources and the page knows no secrets - the asymmetry that makes an off-origin image safe is the one that makes an off-origin navigation dangerous. |
+| FR-BA9 | M | Treat all page output as untrusted data: bound page text, link lists, screenshots and error messages, label page text as information rather than instructions, and never interpolate page-supplied text into a selector, a script or a URL. Find links, controls and fields by accessible name, label or placeholder, never by a page-supplied selector string. |
+| FR-BA10 | M | Correlate every approval with the Conversation, Turn and the exact action by fingerprint, exactly as FR-PA7 does for commands. For a write, the fingerprint covers **the values themselves**, so an approval for one set cannot be spent on another - the substitution an injected page would want. |
+| FR-BA11 | M | Bound the run: actions, navigations, page text, link count, screenshots, downloads, upload size and per-action wall clock. Stop, and the end of a Turn, close the **whole browser process tree**. |
 | FR-BA12 | M | Never acquire an executable without being asked. Node is detected, never installed. The pinned Playwright package and its matching browser build install only from an explicit Diagnostics action, into the data directory. A missing, mismatched or partly installed runtime reports **unavailable** and offers repair; it never falls back and never reports ready. |
 | FR-BA13 | S | Report the browser runtime in Diagnostics - Node version, pinned versus installed Playwright, browser presence - and distinguish "switched off" from "switched on but unusable", because only one of those has a fix. |
+
+#### Write capabilities
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-BW1 | M | Grant write capabilities **per Project**, from Settings only, as an explicit list drawn from `fill`, `submit`, `upload`, `download`. The list defaults empty, so a Project that never asked for one has a read-only browser. An unknown capability is rejected on merge rather than dropped. |
+| FR-BW2 | M | Refuse an action whose capability the Project has not granted **before any approval is offered**, so a user cannot be talked into granting it mid-task. There is no capability named after an intention such as "delete": removing something on a site is a button press, covered by `submit` and shown on that button's card. |
+| FR-BW3 | M | Approve **every** write individually. There is no safe-list equivalent to `safeCommands`: `git status` is genuinely routine, but there is no routine submission to somebody else's system, so tiering would only be a way of not asking. Two identical presses in one Turn ask twice. |
+| FR-BW4 | M | Show the affected values on the card. A form fill lists every field name and value, a press names the control, an upload shows the resolved absolute path, a download shows where the file will land. "Submit a form" is not a decision anyone can make. |
+| FR-BW5 | M | **Never type into a credential field.** A password box, a field the site declares as `current-password`, `new-password`, `one-time-code` or a card security code, and anything matching a conservative credential-name pattern are refused outright rather than masked. The check is made in the supervisor against the live input's own type, because a field name is what an attacker controls. The user signs in themselves. |
+| FR-BW6 | M | Confine an upload to the selected Project folder using the same test every workspace Tool uses, checked **before** the card is raised. Page content may never choose a path. Refuse a file over 50 MB. |
+| FR-BW7 | M | Save a download into a quarantine folder outside the Project, never where the page asked and never where the File Tools would read it as the user's own work. Reduce the page-supplied filename to a stripped leaf before it is joined to a path, and never open or execute it. |
+| FR-BW8 | M | Re-check the scope after a control press, because a form that posts to another site is a navigation wearing a button. |
 
 ### Localization
 

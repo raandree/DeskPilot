@@ -76,7 +76,7 @@ repository implementation and tests.
 | Packaging and localization | Shipped | CurrentUser Windows package; English source locale with German shipped. |
 | OS-level isolation or remote execution | Absent by design today | The security model explicitly does not claim a sandbox. |
 | Parallel Agents | Absent | One Engine Runspace and one active Turn. |
-| Browser/computer automation | Partial | Browsing and `fetch_url` read page content; `browser_page` drives a live page read-only behind its own Permission. Form entry and desktop control are absent. |
+| Browser/computer automation | Partial | Browsing and `fetch_url` read page content; `browser_page` drives a live page behind its own Permission, with form fill, submit, upload and download available per Project and approved per action. Desktop control is absent. |
 | Multi-provider/local Models | Deliberate non-goal | DeskPilot delegates Model access and entitlement to GitHub Copilot. |
 
 ## Where DeskPilot's strength lies
@@ -197,14 +197,16 @@ strongest trust guarantees.
 
 ### Playwright browser automation and computer control
 
-Shipped as a contained, read-only first slice (decision 0003). DeskPilot drives a
-throwaway Chromium profile through a supervised Node process behind its own
-`browserAutomation` Permission, off by default. The Tool surface is `open`,
-`click_link`, `read_page` and `screenshot` — there is nothing that submits,
-uploads, downloads or deletes, which breaks the agency leg of the lethal trifecta
-by architecture. Egress is bounded by a scope derived from the address the task
-names; leaving it raises an approval card showing the whole URL. General desktop
-control remains a separate later decision and is explicitly out of scope.
+Shipped as a contained slice (decision 0003). DeskPilot drives a throwaway
+Chromium profile through a supervised Node process behind its own
+`browserAutomation` Permission, off by default. **Reading** - `open`,
+`click_link`, `read_page`, `screenshot` - is always available and has no external
+effect. **Writing** - `fill_form`, `click_button`, `upload_file`,
+`download_file` - exists only where a Project grants the matching capability, and
+every write is approved individually with its values shown. Egress is bounded by
+a scope derived from the address the task names; leaving it raises an approval
+card showing the whole URL. General desktop control remains a separate later
+decision and is explicitly out of scope.
 
 ### Microsoft 365 work integration
 

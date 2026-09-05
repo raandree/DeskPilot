@@ -5,7 +5,7 @@
 // Usage: node run-policy-corpus.mjs <corpus.json>
 
 import { readFileSync } from 'node:fs';
-import { resolveUrlDecision, isResourceAllowed } from '../../../source/browser/policy.mjs';
+import { resolveUrlDecision, isResourceAllowed, isFieldFillable } from '../../../source/browser/policy.mjs';
 
 const corpusPath = process.argv[2];
 if (!corpusPath) {
@@ -26,4 +26,9 @@ const resourceResults = corpus.resourceCases.map((testCase) => ({
     actual: isResourceAllowed(testCase.url, testCase.type, corpus.scope)
 }));
 
-process.stdout.write(JSON.stringify({ urlResults, resourceResults }));
+const fieldResults = (corpus.fieldCases ?? []).map((testCase, index) => ({
+    index,
+    actual: isFieldFillable(testCase.field).fillable
+}));
+
+process.stdout.write(JSON.stringify({ urlResults, resourceResults, fieldResults }));

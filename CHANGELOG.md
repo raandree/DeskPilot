@@ -28,16 +28,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   if you want a site allowed permanently, you add it to the project in settings,
   never from the card.
 
-  This first version only reads. There is nothing in it that fills in a form,
-  uploads, downloads, buys, sends or deletes, so a page that tries to talk the
-  agent into doing something cannot find anything to do. Addresses that could
-  reach your own machine — local files, your network, numeric addresses,
-  DeskPilot's own controls — are refused outright and are never offered to you as
-  a choice.
+  Reading a page is all it does unless you say otherwise — see the next entry.
+  Addresses that could reach your own machine — local files, your network,
+  numeric addresses, DeskPilot's own controls — are refused outright and are
+  never offered to you as a choice.
 
   Before it can run, DeskPilot needs Node.js and a browser it manages itself.
   It never installs either behind your back: **Diagnostics** reports what is
   missing and downloads the browser only when you ask it to.
+
+- **The browser can fill in and send forms, but only where you allow it.**
+  Reading a page is always available. Typing into one, pressing a button,
+  attaching a file and saving a download are four separate permissions you grant
+  **per project**, and a project starts with none of them.
+
+  Every one of these stops and asks you, every single time. There is no "allow
+  the rest of this turn": two button presses ask twice. The card shows you what
+  actually happens — every field and the exact value going into it, the name of
+  the button being pressed, the full path of the file being sent — because
+  "submit a form" is not something anyone can sensibly say yes or no to. If a
+  page tries to change the values after you have approved them, the approval no
+  longer matches and nothing happens.
+
+  **DeskPilot will not type into a password box, a one-time code, or a security
+  question — ever, whatever the field is called.** It checks the real field on
+  the page rather than trusting its name, and it hands sign-in back to you.
+
+  A file you attach must be inside your project folder; anything else is refused
+  before you are even asked. A file you download is put in a separate holding
+  folder rather than into your project, so it never gets mistaken for your own
+  work, and DeskPilot never opens or runs it.
 
 - **DeskPilot asks before it runs a command.** When per-call approval is on, the
   agent's own terminal is taken away and replaced by DeskPilot's, which stops and

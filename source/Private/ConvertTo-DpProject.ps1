@@ -80,6 +80,26 @@ function ConvertTo-DpProject {
     }
     if ($browserDomains.Count -gt 200) { throw 'At most 200 browser domains can be added to a project.' }
 
+    # What the browser may do beyond reading. The read-only slice has no action
+    # with an external effect, which is what breaks the agency leg of the lethal
+    # trifecta by architecture; every capability here gives some of it back, so
+    # each is granted per Project, defaults absent, and is approved per call.
+    #
+    # There is no 'delete' capability because there is no delete action: removing
+    # something on a site is a button press, so it is covered by 'submit' and
+    # shown on that button's approval card. A capability named after an intention
+    # rather than a mechanism would imply DeskPilot can tell the two apart.
+    $knownActions = @('fill', 'submit', 'upload', 'download')
+    $browserActions = [System.Collections.Generic.List[string]]::new()
+    foreach ($entry in @(& $read $InputObject 'browserActions')) {
+        $action = ([string]$entry).Trim().ToLowerInvariant()
+        if (-not $action) { continue }
+        if ($knownActions -notcontains $action) {
+            throw "'$entry' is not a browser action DeskPilot knows. Allowed: $($knownActions -join ', ')."
+        }
+        if ($browserActions -notcontains $action) { $browserActions.Add($action) }
+    }
+
     @{
         id             = $id
         name           = $name
@@ -87,5 +107,6 @@ function ConvertTo-DpProject {
         intercom       = $intercom
         intercomGroup  = $intercomGroup
         browserDomains = $browserDomains.ToArray()
+        browserActions = $browserActions.ToArray()
     }
 }

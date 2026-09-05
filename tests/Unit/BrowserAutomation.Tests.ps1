@@ -258,6 +258,10 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
         $script:ResourceCases = @($corpus.resourceCases | ForEach-Object {
                 @{ Url = $_.url; Type = $_.type; Expect = $_.expect; Note = $_.note }
             })
+        $script:FieldCases = @()
+        for ($i = 0; $i -lt @($corpus.fieldCases).Count; $i++) {
+            $script:FieldCases += @{ Index = $i; Expect = $corpus.fieldCases[$i].expect; Note = $corpus.fieldCases[$i].note }
+        }
         $script:NodeAvailable = [bool](Get-Command node -CommandType Application -ErrorAction SilentlyContinue)
     }
 
@@ -283,6 +287,8 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
                 foreach ($row in $parsed.resourceResults) {
                     $script:NodeResourceVerdict["$($row.url)|$($row.type)"] = [bool]$row.actual
                 }
+                $script:NodeFieldVerdict = @{}
+                foreach ($row in $parsed.fieldResults) { $script:NodeFieldVerdict[[int]$row.index] = [bool]$row.actual }
             }
         }
     }
@@ -330,6 +336,17 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
                 $theirs = $script:NodeUrlVerdict[$case.Url]
                 $rank[$theirs] | Should -BeLessOrEqual $rank[$mine] -Because "policy.mjs must not widen '$($case.Url)'"
             }
+        }
+    }
+
+    # Only the supervisor can decide this one: the authoritative signal is the
+    # live input's own type, which PowerShell never sees. A password box is
+    # refused outright rather than masked - the user signs in themselves.
+    Context 'the credential-field refusal' -Skip:(-not $script:NodeAvailable) {
+        It '<Expect>: <Note>' -TestCases $script:FieldCases {
+            param($Index, $Expect)
+            $script:NodeFieldVerdict.ContainsKey([int]$Index) | Should -BeTrue
+            $script:NodeFieldVerdict[[int]$Index] | Should -Be ([bool]$Expect)
         }
     }
 }
@@ -418,6 +435,58 @@ Describe 'Project browser domains' -Tag 'Unit' {
         } | Should -Throw
     }
 }
+
+Describe 'Project browser actions' -Tag 'Unit' {
+    # Write actions restore the agency leg of the trifecta that the read-only
+    # slice broke by architecture, so they are per-Project, off by default, and
+    # every one of them is approved individually.
+    It 'grants nothing by default' {
+        $project = ConvertTo-DpProject -InputObject @{ path = 'C:\p' }
+        $project.browserActions.Count | Should -Be 0
+    }
+
+    It 'grants nothing to a project written before the field existed' {
+        $project = ConvertTo-DpProject -InputObject @{ path = 'C:\p'; browserDomains = @('example.test') }
+        $project.browserActions.Count | Should -Be 0
+    }
+
+    It 'keeps a known capability' -TestCases @(
+        @{ Capability = 'fill' }, @{ Capability = 'submit' }
+        @{ Capability = 'upload' }, @{ Capability = 'download' }
+    ) {
+        param($Capability)
+        $project = ConvertTo-DpProject -InputObject @{ path = 'C:\p'; browserActions = @($Capability) }
+        $project.browserActions | Should -Be @($Capability)
+    }
+
+    It 'normalises case and removes duplicates' {
+        $project = ConvertTo-DpProject -InputObject @{ path = 'C:\p'; browserActions = @('Fill', 'fill', 'SUBMIT') }
+        $project.browserActions.Count | Should -Be 2
+        $project.browserActions | Should -Contain 'fill'
+        $project.browserActions | Should -Contain 'submit'
+    }
+
+    # An unknown capability throws rather than being dropped, for the same reason
+    # a bad safeCommands entry does: silently discarding it would report the
+    # grant as remembered and then keep refusing.
+    It 'rejects <Description>' -TestCases @(
+        @{ Entry = 'delete'; Description = 'a capability that does not exist' }
+        @{ Entry = '*'; Description = 'a wildcard' }
+        @{ Entry = 'all'; Description = 'a catch-all' }
+        @{ Entry = 'run_command'; Description = 'a capability from another surface' }
+    ) {
+        param($Entry)
+        { ConvertTo-DpProject -InputObject @{ path = 'C:\p'; browserActions = @($Entry) } } | Should -Throw
+    }
+
+    It 'survives a round trip through Merge-DpSettings' {
+        $merged = Merge-DpSettings -Current (Get-DpDefaultSettings) -Patch @{
+            projects = @(@{ name = 'Alpha'; path = 'C:\projects\alpha'; browserActions = @('fill', 'submit') })
+        }
+        $merged.projects[0].browserActions | Should -Be @('fill', 'submit')
+    }
+}
+
 
 Describe 'Get-DpBrowserRuntime' -Tag 'Unit' {
     BeforeAll {
@@ -723,6 +792,20 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
                 links     = @([pscustomobject]@{ text = 'Puerto Montt'; href = 'https://weathercity.com/cl/ll/puerto_montt' })
             }
         }
+
+        # A real folder, so the upload path confinement is exercised against the
+        # file system rather than against a mock of it.
+        $script:ProjectRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-proj-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:ProjectRoot -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:ProjectRoot 'report.txt') -Value 'report' -Encoding utf8
+        New-Item -ItemType Directory -Path (Join-Path $script:ProjectRoot 'sub') -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:ProjectRoot 'sub' 'nested.txt') -Value 'nested' -Encoding utf8
+    }
+
+    AfterAll {
+        if ($script:ProjectRoot -and (Test-Path -LiteralPath $script:ProjectRoot)) {
+            Remove-Item -LiteralPath $script:ProjectRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
     BeforeEach {
@@ -730,10 +813,13 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
             conversationId = 'c-1'
             turnId         = 't-1'
             project        = 'Alpha'
+            projectRoot    = $script:ProjectRoot
             projectDomains = @()
+            actions        = @()
             runtimeRoot    = 'C:\runtime'
+            downloadRoot   = 'C:\runtime\downloads'
         }
-        $global:DeskPilotBrowserState = @{ session = $null; scope = @(); granted = @() }
+        $global:DeskPilotBrowserState = @{ session = $null; scope = @(); granted = @(); lastUrl = '' }
         $global:DeskPilotBrowserBridge = New-DpFakeBridge
         $global:DeskPilotBrowserTimeoutMinutes = 15
 
@@ -916,6 +1002,258 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
         }
     }
 }
+
+Describe 'Browser write capabilities' -Tag 'Unit' {
+    BeforeAll {
+        $script:WriteRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-write-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:WriteRoot -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $script:WriteRoot 'report.txt') -Value 'report' -Encoding utf8
+
+        $script:Outside = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-outside-" + [guid]::NewGuid().ToString('N') + '.txt')
+        Set-Content -LiteralPath $script:Outside -Value 'secret' -Encoding utf8
+
+        function New-DpWriteBridge {
+            param([string]$Decision = 'approve', [switch]$WrongFingerprint)
+            $bridge = [pscustomobject]@{
+                Enabled  = $true
+                Asked    = [System.Collections.Generic.List[string]]::new()
+                Decision = $Decision
+                Wrong    = [bool]$WrongFingerprint
+            }
+            $bridge | Add-Member -MemberType ScriptMethod -Name CaptureQuestion -Value {
+                param([string]$Question)
+                $this.Asked.Add($Question)
+            }
+            $bridge | Add-Member -MemberType ScriptMethod -Name RequestAnswer -Value {
+                param([int]$Seconds)
+                $request = $this.Asked[-1] | ConvertFrom-Json
+                $fingerprint = if ($this.Wrong) { 'f' * 64 } else { $request.fingerprint }
+                @{ decision = $this.Decision; note = ''; fingerprint = $fingerprint } | ConvertTo-Json -Compress
+            }
+            $bridge
+        }
+    }
+
+    AfterAll {
+        foreach ($path in $script:WriteRoot, $script:Outside) {
+            if ($path -and (Test-Path -LiteralPath $path)) {
+                Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    BeforeEach {
+        $global:DeskPilotBrowserContext = @{
+            conversationId = 'c-1'
+            turnId         = 't-1'
+            project        = 'Alpha'
+            projectRoot    = $script:WriteRoot
+            projectDomains = @()
+            actions        = @()
+            runtimeRoot    = 'C:\runtime'
+            downloadRoot   = 'C:\runtime\downloads'
+        }
+        # A page is already open, so the capability check is what is under test
+        # rather than the "no page yet" refusal.
+        $global:DeskPilotBrowserState = @{
+            session = @{ faulted = $false; events = [System.Collections.Generic.List[object]]::new() }
+            scope   = @('weathercity.com')
+            granted = @()
+            lastUrl = 'https://weathercity.com/form'
+        }
+        $global:DeskPilotBrowserBridge = New-DpWriteBridge
+        $global:DeskPilotBrowserTimeoutMinutes = 15
+
+        Mock Invoke-DpBrowserRequest { @{ ok = $true; result = [pscustomobject]@{ url = 'https://weathercity.com/done'; title = 'Done'; text = 'Saved.' } } }
+    }
+
+    AfterEach {
+        foreach ($name in 'DeskPilotBrowserContext', 'DeskPilotBrowserState', 'DeskPilotBrowserBridge', 'DeskPilotBrowserTimeoutMinutes') {
+            Remove-Variable -Name $name -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'a project that granted nothing' {
+        # Refused before any card is offered, so a capability the project never
+        # granted cannot be talked into existence in the moment.
+        It 'refuses <Action> without asking the user' -TestCases @(
+            @{ Action = 'fill_form'; Extra = @{ Fields = '[{"name":"City","value":"Osorno"}]' } }
+            @{ Action = 'click_button'; Extra = @{ ButtonText = 'Delete' } }
+            @{ Action = 'upload_file'; Extra = @{ FieldName = 'file'; Path = 'report.txt' } }
+            @{ Action = 'download_file'; Extra = @{ ButtonText = 'Export' } }
+        ) {
+            param($Action, $Extra)
+            $result = Invoke-DpBrowserTool -Action $Action @Extra | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $result.error | Should -Match 'does not allow'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+
+        It 'still allows reading' {
+            (Invoke-DpBrowserTool -Action read_page | ConvertFrom-Json).ok | Should -BeTrue
+        }
+    }
+
+    Context 'filling a form' {
+        BeforeEach { $global:DeskPilotBrowserContext.actions = @('fill') }
+
+        It 'asks before typing anything' {
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+        }
+
+        It 'shows every value on the card, because the values are what leave the machine' {
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"},{"name":"Window","value":"Monday 02:00"}]'
+            $asked = $global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json
+            $asked.class | Should -Be 'BrowserAction'
+            $asked.summary.action | Should -Be 'fill_form'
+            @($asked.summary.fields).Count | Should -Be 2
+            $asked.summary.fields[1].value | Should -Be 'Monday 02:00'
+        }
+
+        It 'types nothing when the user declines' {
+            $global:DeskPilotBrowserBridge = New-DpWriteBridge -Decision 'deny'
+            $result = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]' | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+
+        # The fingerprint covers the values, so an approval for one set cannot be
+        # spent on another - which is the substitution an injected page wants.
+        It 'refuses an approval that does not match these values' {
+            $global:DeskPilotBrowserBridge = New-DpWriteBridge -WrongFingerprint
+            $result = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]' | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+
+        It 'produces a different fingerprint for different values' {
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]'
+            $first = ($global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json).fingerprint
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Santiago"}]'
+            $second = ($global:DeskPilotBrowserBridge.Asked[1] | ConvertFrom-Json).fingerprint
+            $second | Should -Not -Be $first
+        }
+
+        It 'refuses to submit when only fill was granted' {
+            $result = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]' -SubmitWith 'Save' | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $result.error | Should -Match 'does not allow'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+        }
+
+        It 'submits when both were granted, and names the button on the card' {
+            $global:DeskPilotBrowserContext.actions = @('fill', 'submit')
+            $null = Invoke-DpBrowserTool -Action fill_form -Fields '[{"name":"City","value":"Osorno"}]' -SubmitWith 'Save'
+            ($global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json).summary.control | Should -Be 'Save'
+            Should -Invoke Invoke-DpBrowserRequest -ParameterFilter { $Command -eq 'fill' } -Times 1 -Exactly
+        }
+
+        It 'refuses <Description> before asking' -TestCases @(
+            @{ Fields = ''; Description = 'no fields at all' }
+            @{ Fields = 'not json'; Description = 'text that is not JSON' }
+            @{ Fields = '[{"value":"x"}]'; Description = 'a field with no name' }
+            @{ Fields = '[]'; Description = 'an empty list' }
+        ) {
+            param($Fields)
+            $result = Invoke-DpBrowserTool -Action fill_form -Fields $Fields | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+        }
+    }
+
+    Context 'pressing a control' {
+        BeforeEach { $global:DeskPilotBrowserContext.actions = @('submit') }
+
+        It 'names the control on the card' {
+            $null = Invoke-DpBrowserTool -Action click_button -ButtonText 'Delete account'
+            $asked = $global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json
+            $asked.summary.control | Should -Be 'Delete account'
+            $asked.risk | Should -Match 'delete'
+        }
+
+        It 'presses nothing when the user declines' {
+            $global:DeskPilotBrowserBridge = New-DpWriteBridge -Decision 'deny'
+            (Invoke-DpBrowserTool -Action click_button -ButtonText 'Delete' | ConvertFrom-Json).ok | Should -BeFalse
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+
+        It 'asks again for a second press rather than reusing the first answer' {
+            $null = Invoke-DpBrowserTool -Action click_button -ButtonText 'Delete'
+            $null = Invoke-DpBrowserTool -Action click_button -ButtonText 'Delete'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 2
+        }
+    }
+
+    Context 'uploading a file' {
+        BeforeEach { $global:DeskPilotBrowserContext.actions = @('upload') }
+
+        It 'uploads a file inside the project' {
+            $result = Invoke-DpBrowserTool -Action upload_file -FieldName 'attachment' -Path 'report.txt' | ConvertFrom-Json
+            $result.ok | Should -BeTrue
+            Should -Invoke Invoke-DpBrowserRequest -ParameterFilter { $Command -eq 'upload' } -Times 1 -Exactly
+        }
+
+        It 'shows the resolved path on the card' {
+            $null = Invoke-DpBrowserTool -Action upload_file -FieldName 'attachment' -Path 'report.txt'
+            ($global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json).summary.filePath | Should -Match 'report\.txt$'
+        }
+
+        # The project boundary is the same one every workspace Tool uses, and it
+        # is checked before an approval is offered - a card naming a file outside
+        # the project would be asking the user to authorise a mistake.
+        It 'refuses <Description> without asking' -TestCases @(
+            @{ Path = '..\..\Windows\System32\drivers\etc\hosts'; Description = 'a traversal out of the project' }
+            @{ Path = 'C:\Windows\System32\drivers\etc\hosts'; Description = 'an absolute path elsewhere' }
+            @{ Path = 'missing.txt'; Description = 'a file that does not exist' }
+        ) {
+            param($Path)
+            $result = Invoke-DpBrowserTool -Action upload_file -FieldName 'attachment' -Path $Path | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+
+        It 'refuses when no project folder is selected' {
+            $global:DeskPilotBrowserContext.projectRoot = ''
+            (Invoke-DpBrowserTool -Action upload_file -FieldName 'a' -Path 'report.txt' | ConvertFrom-Json).ok | Should -BeFalse
+        }
+    }
+
+    Context 'downloading a file' {
+        BeforeEach { $global:DeskPilotBrowserContext.actions = @('download') }
+
+        It 'asks first and names the holding folder' {
+            $null = Invoke-DpBrowserTool -Action download_file -ButtonText 'Export'
+            $asked = $global:DeskPilotBrowserBridge.Asked[0] | ConvertFrom-Json
+            $asked.summary.action | Should -Be 'download_file'
+            $asked.summary.filePath | Should -Be 'C:\runtime\downloads'
+        }
+
+        It 'saves nothing when the user declines' {
+            $global:DeskPilotBrowserBridge = New-DpWriteBridge -Decision 'deny'
+            (Invoke-DpBrowserTool -Action download_file -ButtonText 'Export' | ConvertFrom-Json).ok | Should -BeFalse
+            Should -Invoke Invoke-DpBrowserRequest -Times 0 -Exactly
+        }
+    }
+
+    Context 'one capability does not imply another' {
+        It '<Granted> does not enable <Blocked>' -TestCases @(
+            @{ Granted = 'fill'; Blocked = 'click_button'; Extra = @{ ButtonText = 'Delete' } }
+            @{ Granted = 'submit'; Blocked = 'upload_file'; Extra = @{ FieldName = 'f'; Path = 'report.txt' } }
+            @{ Granted = 'upload'; Blocked = 'download_file'; Extra = @{ ButtonText = 'Export' } }
+            @{ Granted = 'download'; Blocked = 'fill_form'; Extra = @{ Fields = '[{"name":"a","value":"b"}]' } }
+        ) {
+            param($Granted, $Blocked, $Extra)
+            $global:DeskPilotBrowserContext.actions = @($Granted)
+            $result = Invoke-DpBrowserTool -Action $Blocked @Extra | ConvertFrom-Json
+            $result.ok | Should -BeFalse
+            $result.error | Should -Match 'does not allow'
+        }
+    }
+}
+
 
 
 

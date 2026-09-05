@@ -440,8 +440,16 @@ function Invoke-DpTurn {
                 conversationId = [string]$Conversation.id
                 turnId         = [string]$assistantId
                 project        = [string]$settings.workspaceFolder
+                projectRoot    = [string]$settings.workspaceFolder
                 projectDomains = @(if ($selectedProject) { $selectedProject.browserDomains })
+                # Write capabilities are granted per Project and default absent,
+                # so a Project that never asked for them has a read-only browser.
+                actions        = @(if ($selectedProject) { $selectedProject.browserActions })
                 runtimeRoot    = [string]$browserRuntime.runtimeRoot
+                # Downloads land outside the Project on purpose: a file the site
+                # chose must not appear where the File Tools would read it as the
+                # user's own work.
+                downloadRoot   = (Join-Path $browserRuntime.runtimeRoot 'downloads')
             }
         }
         $null = Set-DpBrowserTool @browserToolParams

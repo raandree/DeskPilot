@@ -13,6 +13,7 @@ function emit(payload) {
 
 const handlers = {
     scope: (request) => ({ scope: request.hosts ?? [] }),
+    configure: (request) => ({ allowDownload: request.allowDownload === true }),
     echo: (request) => ({ echoed: request.value ?? null }),
     events: (request) => {
         const count = Math.min(Number(request.count ?? 3), 50);

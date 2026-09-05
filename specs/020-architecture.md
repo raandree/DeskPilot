@@ -212,7 +212,7 @@ launch and can be overridden with `Start-DeskPilot -DataDir`.
   },
   "projects": [
     { "id": "p_a1b2c3d4e5", "name": "DeskPilot", "path": "C:/Users/me/Documents/DeskPilot",
-      "browserDomains": ["example.com"] }
+      "browserDomains": ["example.com"], "browserActions": ["fill", "submit"] }
   ],
   "selectedProjectId": "p_a1b2c3d4e5",
   "workspaceFolder": "C:/Users/me/Documents/DeskPilot",
@@ -255,6 +255,15 @@ the other. It ships **off**.
 `browserDomains` on a Project extends the browser's scope durably. It is
 validated on merge — a bad entry throws rather than being dropped — and it is
 the *only* durable way to widen scope. An approval card grants for one run.
+
+`browserActions` on a Project grants what the browser may do beyond reading:
+`fill`, `submit`, `upload`, `download`, each granted separately and all absent by
+default. Reading (`open`, `click_link`, `read_page`, `screenshot`) needs no
+grant. An action whose capability is not granted is refused **before** an
+approval is offered, so nobody can be talked into granting one mid-task. There
+is no `delete` capability, because there is no delete action — removing
+something on a site is a button press, covered by `submit` and named on that
+button's card.
 
 Permissions remain category-level availability controls. Per-call approval for
 risky actions is not implemented: the Host Server can observe a structured

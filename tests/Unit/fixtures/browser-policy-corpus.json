@@ -79,5 +79,29 @@
     { "url": "file:///C:/secret.png", "type": "image", "expect": false, "note": "refused scheme beats passive type" },
     { "url": "https://127.0.0.1:8720/api/settings", "type": "image", "expect": false, "note": "loopback beats passive type" },
     { "url": "https://169.254.169.254/latest/meta-data/", "type": "image", "expect": false, "note": "metadata service beats passive type" }
+  ],
+  "fieldCases": [
+    { "field": { "type": "text", "name": "window_start" }, "expect": true, "note": "an ordinary text field" },
+    { "field": { "type": "textarea", "name": "comment" }, "expect": true, "note": "a textarea" },
+    { "field": { "type": "date", "name": "start_date" }, "expect": true, "note": "a date field" },
+    { "field": { "type": "email", "name": "contact" }, "expect": true, "note": "an email field" },
+
+    { "field": { "type": "password", "name": "anything" }, "expect": false, "note": "a password box is refused outright, never masked" },
+    { "field": { "type": "text", "autocomplete": "current-password" }, "expect": false, "note": "a text box the site declares as a password" },
+    { "field": { "type": "text", "autocomplete": "new-password" }, "expect": false, "note": "a new-password field" },
+    { "field": { "type": "text", "autocomplete": "one-time-code" }, "expect": false, "note": "a one-time code" },
+    { "field": { "type": "text", "autocomplete": "cc-csc" }, "expect": false, "note": "a card security code" },
+    { "field": { "type": "text", "name": "user_password" }, "expect": false, "note": "name heuristic, second layer only" },
+    { "field": { "type": "text", "id": "otp-input" }, "expect": false, "note": "name heuristic on id" },
+    { "field": { "type": "text", "label": "Security question answer" }, "expect": false, "note": "name heuristic on label" },
+    { "field": { "type": "text", "name": "api_key" }, "expect": false, "note": "an api key" },
+    { "field": { "type": "text", "name": "recovery_code" }, "expect": false, "note": "a recovery code" },
+
+    { "field": { "type": "file", "name": "attachment" }, "expect": false, "note": "a file input needs the upload capability and its own approval" },
+    { "field": { "type": "hidden", "name": "csrf" }, "expect": false, "note": "invisible to the person approving" },
+    { "field": { "type": "text", "name": "note", "visible": false }, "expect": false, "note": "hidden by styling" },
+    { "field": { "type": "text", "name": "note", "disabled": true }, "expect": false, "note": "disabled" },
+    { "field": { "type": "text", "name": "note", "readOnly": true }, "expect": false, "note": "read only" },
+    { "field": {}, "expect": true, "note": "an unremarkable field with nothing declared" }
   ]
 }

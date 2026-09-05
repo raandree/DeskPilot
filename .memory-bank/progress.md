@@ -270,6 +270,17 @@ and tests are in place and verified.
   an explicit Diagnostics action. Gate: **1932 tests, 0 failures.** The
   hostile-site proof is written and reports honestly that it cannot run until
   the runtime is installed.
+- **2026-09-05 — Browser write capabilities, per Project (decision 0003).**
+  `fill_form`, `click_button`, `upload_file` and `download_file` added behind a
+  per-Project `browserActions` list (`fill`, `submit`, `upload`, `download`),
+  absent by default. Reading still needs no grant. An ungranted action is refused
+  before any card is offered; a granted one is approved individually with no
+  safe-list, because there is no routine submission to somebody else's system.
+  The card carries the affected values and the fingerprint covers them, so an
+  approval cannot be spent on substituted values. Credential fields are refused
+  outright against the live input's own type. Uploads are confined to the Project
+  by the shared workspace-path test before the card is raised; downloads are
+  quarantined outside it. Gate: **1995 tests, 0 failures.**
 
 - **2026-09-03 — Per-call approval for Terminal commands shipped** (`3c3048e`).
   DeskPilot owns `run_command` and passes `-DisableTerminal`; the gate blocks
