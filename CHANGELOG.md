@@ -76,8 +76,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   You are asked about a web address the agent made up even when it is on a site
   you named — including one that hides what it is carrying in the path or after
-  a `#`, not just after a `?`. Only the site's own links, and addresses you typed
-  yourself, go through without interrupting you.
+  a `#`, not just after a `?`, and including one that hides it in the **web
+  address itself**, such as `something-long.the-site-you-named.com`. Only the
+  site's own links, addresses you typed yourself, and the front page of a site
+  you or your project named go through without interrupting you.
+
+  A site is taken from your message only when you wrote its full address
+  starting with `https://`. Note that DeskPilot cannot tell an address you typed
+  from one you pasted, so a web address inside an error message or log you paste
+  in counts too — everything reached through it is still subject to the same
+  asking and the same refusals.
 
 - **DeskPilot asks before it runs a command.** When per-call approval is on, the
   agent's own terminal is taken away and replaced by DeskPilot's, which stops and

@@ -431,9 +431,10 @@ function Invoke-DpTurn {
             $selectedProject = @($settings.projects) | Where-Object { $_.id -eq $settings.selectedProjectId } | Select-Object -First 1
         }
         $browserRuntime = Get-DpBrowserRuntime
-        # Held here, not inside the runspace: Stop has to reach the live session
-        # while the runspace is busy running this Turn.
-        $script:DeskPilot.Engine.BrowserState = @{ session = $null; scope = @(); granted = @(); lastUrl = '' }
+        # Held outside the runspace so Stop can reach the live session while the
+        # runspace is busy, and created once so the turn-boundary close has
+        # something to close. Set-DpBrowserTool closes it and resets the rest.
+        $null = Get-DpBrowserState
         $browserToolParams = @{
             Runspace       = $script:DeskPilot.Engine.Runspace
             Enabled        = (Test-DpBrowserActive -Settings $settings -Runtime $browserRuntime)

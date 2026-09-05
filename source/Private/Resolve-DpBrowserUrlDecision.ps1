@@ -98,9 +98,17 @@ function Resolve-DpBrowserUrlDecision {
     $hostName = $hostName.Trim().TrimEnd('.').ToLowerInvariant()
     if ([string]::IsNullOrWhiteSpace($hostName)) { return (& $refuse 'no-host') }
 
-    # Rebuilt without userinfo so a password in the URL cannot travel onward in
-    # the decision, whatever the caller does with it.
-    $safeUrl = if ($uri.UserInfo) { '{0}://{1}{2}' -f $uri.Scheme, $uri.Authority, $uri.PathAndQuery } else { $Url }
+    # Rebuilt from the parsed parts rather than passed through, and this string
+    # is what the browser is told to open. Dropping userinfo keeps a password in
+    # the URL from travelling onward. Rebuilding also erases the caller's
+    # percent-encoding choices: `/%66orecast` and `/forecast` are one request but
+    # two different byte sequences on the wire, so any check that compares
+    # normalised forms passes both while the origin server reads the difference -
+    # roughly a bit per character of covert channel through a check the design
+    # describes as total (B3-6, 2026-09-05). The host is the punycode form for
+    # the same reason it is compared that way: it is what actually gets resolved.
+    $authorityPart = if ($uri.IsDefaultPort) { $hostName } else { '{0}:{1}' -f $hostName, $uri.Port }
+    $safeUrl = '{0}://{1}{2}{3}' -f $uri.Scheme, $authorityPart, $uri.PathAndQuery, $uri.Fragment
 
     # $uri.UserInfo is '' for 'https://:@host', but the '@' is still there and
     # the WHATWG parser reads it as empty credentials. Checking the raw authority

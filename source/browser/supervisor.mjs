@@ -18,8 +18,9 @@
 
 import { chromium } from 'playwright';
 import { createInterface } from 'node:readline';
-import { mkdirSync, statSync, rmSync } from 'node:fs';
+import { mkdirSync, statSync } from 'node:fs';
 import { join, basename } from 'node:path';
+import { lookup } from 'node:dns/promises';
 import { resolveUrlDecision, isResourceAllowed, isFieldFillable, isInternalAddress, normalizeScopeEntry } from './policy.mjs';
 
 // Bounds, so a hostile or merely broken page cannot exhaust the session. Every
@@ -54,6 +55,14 @@ const state = {
     // Incremented only by a real main-frame navigation, so a page cannot restore
     // it the way history.replaceState restores a URL.
     navigationId: 0,
+    // Hostname -> whether it resolves to an address the browser may not reach.
+    // Per session, so an ordinary page costs one lookup per host rather than one
+    // per request.
+    resolved: new Map(),
+    // Set when a response came back from an internal peer. A sub-resource cannot
+    // be un-sent, so the next action refuses instead of the run continuing as if
+    // nothing had happened.
+    internalPeer: null,
     blocked: []
 };
 
@@ -133,7 +142,28 @@ async function ensureBrowser() {
             return route.abort('blockedbyclient');
         }
 
+        // A sub-resource has no peer address at this boundary, so the name is
+        // resolved here instead. `<img src="https://public.example/x.png">` whose
+        // A record points at 169.254.169.254 or 127.0.0.1 was previously issued
+        // from the user's machine with no address check at all, because
+        // assertPeerAllowed is only wired into the main-document paths (B3-5,
+        // 2026-09-05). This is TOCTOU-able by a fast rebind; the response check
+        // below is not, and catches what this misses.
+        if (await hostResolvesInternal(url)) {
+            recordBlocked('resource-internal-address', url, resourceType);
+            return route.abort('blockedbyclient');
+        }
+
         return route.continue();
+    });
+
+    state.context.on('response', (response) => {
+        if (state.testInsecure || state.internalPeer) return;
+        Promise.resolve(response.serverAddr?.()).then((peer) => {
+            if (!peer || !isInternalAddress(peer.ipAddress)) return;
+            state.internalPeer = peer.ipAddress;
+            recordBlocked('internal-address', response.url(), response.request().resourceType());
+        }).catch(() => {});
     });
 
     if (typeof state.context.routeWebSocket === 'function') {
@@ -181,6 +211,12 @@ async function ensureBrowser() {
 }
 
 function budget(kind) {
+    // A response already came back from an address inside this machine or its
+    // network. It cannot be recalled, so the run stops here rather than carrying
+    // on around it.
+    if (state.internalPeer) {
+        throw new Error(`A request on this page reached ${state.internalPeer}, which is on this machine or the local network, so DeskPilot stopped.`);
+    }
     if (state.actions >= LIMITS.actions) throw new Error(`This run has used its ${LIMITS.actions} browser actions.`);
     state.actions += 1;
     if (kind === 'navigation') {
@@ -357,6 +393,29 @@ async function assertPeerAllowed(response) {
     }
 }
 
+// The best a route handler can do, which is not as good as a peer address:
+// resolve the name and refuse if any answer is internal. Cached per session and
+// treated as allowed when resolution fails, because a name that will not resolve
+// produces a request that fails anyway.
+async function hostResolvesInternal(rawUrl) {
+    if (state.testInsecure) return false;
+    let hostname;
+    try { hostname = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '').toLowerCase(); }
+    catch { return false; }
+    if (!hostname) return false;
+    if (state.resolved.has(hostname)) return state.resolved.get(hostname);
+
+    let internal = false;
+    try {
+        const answers = await lookup(hostname, { all: true, verbatim: true });
+        internal = answers.some((answer) => isInternalAddress(answer.address));
+    }
+    catch { internal = false; }
+
+    state.resolved.set(hostname, internal);
+    return internal;
+}
+
 const handlers = {
     // Scope and capabilities are set by PowerShell only. There is no command
     // that lets a page, or the model reading that page, add to either.
@@ -410,7 +469,10 @@ const handlers = {
     },
 
     async click({ linkText }) {
-        budget('action');
+        // A click that follows a link is a navigation, and counting it as only an
+        // action left LIMITS.navigations unenforced on the one path a page can
+        // steer (m3-1, 2026-09-05).
+        budget('navigation');
         if (!state.page) throw new Error('No page is open.');
         const name = String(linkText ?? '').trim();
         if (!name) throw new Error('A link name is required.');
@@ -418,6 +480,7 @@ const handlers = {
 
         // Role and accessible name, never a page-supplied selector string: there
         // is no path here from page text to a selector engine or to eval.
+        const before = state.blocked.length;
         const link = state.page.getByRole('link', { name, exact: false }).first();
         const [response] = await Promise.all([
             state.page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => null),
@@ -425,14 +488,25 @@ const handlers = {
         ]);
         await assertPeerAllowed(response);
 
+        // Same as pressControl: the interceptor may already have refused this, in
+        // which case the page never moved and the check below would see nothing
+        // wrong. The settle matters as much as the message - an aborted
+        // navigation left in flight interrupts whatever the caller does next.
+        const refused = state.blocked.slice(before).find((entry) => String(entry.reason).startsWith('navigation-'));
+        if (refused) {
+            await state.page.goto('about:blank').catch(() => {});
+            await state.page.waitForLoadState('domcontentloaded').catch(() => {});
+            throw new Error(`That link tried to send the page to ${refused.url}, which is not in scope, so nothing was sent.`);
+        }
+
         const landed = resolveUrlDecision(state.page.url(), state.scope);
         if (landed.decision !== 'allow') {
             recordBlocked(`click-${landed.reason}`, state.page.url(), 'document');
             await state.page.goto('about:blank').catch(() => {});
+            await state.page.waitForLoadState('domcontentloaded').catch(() => {});
             throw new Error(`That link led to ${landed.host || 'somewhere else'}, which is not in scope.`);
         }
 
-        state.navigations += 1;
         return readPage();
     },
 
@@ -472,6 +546,11 @@ const handlers = {
         }
 
         if (submitWith) {
+            // Re-checked, because filling takes time and the approval covered the
+            // page as well as the values. A navigation between the first field
+            // and the submit would otherwise press a control on a page nobody
+            // approved (m3-4, 2026-09-05).
+            assertSamePage(expectedUrl, expectedNavigation);
             await pressControl(submitWith);
         }
 
@@ -530,17 +609,20 @@ const handlers = {
                 .slice(0, 120) || 'download.bin';
             const target = join(state.downloadRoot, `${Date.now()}-${suggested}`);
 
-            await download.saveAs(target);
-            // The declared cap has to be a refusal rather than a constant: an
-            // approved download of an enormous file would otherwise fill the
-            // disk. Checked after the write because the size is not known
-            // beforehand, so the oversized file is deleted rather than kept.
-            const written = statSync(target).size;
+            // Sized before it is copied anywhere DeskPilot keeps things. The
+            // transfer has already happened by the time Playwright hands over a
+            // path - the cap bounds what is kept, not what Chromium buffered -
+            // but checking after saveAs meant writing the oversized file into the
+            // quarantine folder first and deleting it afterwards, which is not
+            // what "will not save" means (m3-3, 2026-09-05).
+            const staged = await download.path();
+            const written = staged ? statSync(staged).size : 0;
             if (written > LIMITS.downloadBytes) {
-                rmSync(target, { force: true });
+                await download.delete().catch(() => {});
                 throw new Error(`That file is larger than the ${Math.round(LIMITS.downloadBytes / 1048576)} MB DeskPilot will save, so it was discarded.`);
             }
 
+            await download.saveAs(target);
             state.downloads += 1;
             return { savedAs: target, name: suggested, bytes: written, from: download.url(), url: state.page.url() };
         }

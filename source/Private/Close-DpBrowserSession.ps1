@@ -38,5 +38,14 @@ function Close-DpBrowserSession {
     # should try to close the same session twice.
     $State.session = $null
     try { Stop-DpBrowserSession -Session $session -Confirm:$false }
-    catch { $null = $_ }
+    catch {
+        # Still swallowed - a failed close must not take the Turn down with it -
+        # but no longer silent. A leaked browser that leaves no trace is how the
+        # first version of this went unnoticed for a whole review round.
+        $log = $script:DeskPilot.Diagnostics.Log
+        if ($log) {
+            Add-DpDiagnosticLog -Log $log -Severity 'warning' -Component 'browser' `
+                -EventId 'browser.close.failed' -Summary "Could not close the browser session: $_"
+        }
+    }
 }

@@ -324,3 +324,24 @@ and tests are in place and verified.
   what it actually protects and is asserted over ~1,700 generated mutations.
   Gate: **2105 tests, 0 failures**; hostile-site proof **25/25** over three
   consecutive runs; live workflow **11/11**.
+- **2026-09-05 - Third security review round, and the fixes for it.** The
+  round-two fixes were re-reviewed and returned FAIL again: 2 Blockers, 4
+  Majors, 7 Minors, and once more every Blocker sat in the previous round's
+  code. The site-root exemption in `Test-DpBrowserUrlFromPage` made every
+  subdomain root "authored", so ~200 bytes of Model-chosen data per navigation
+  reached an attacker's DNS resolver with no card; the scheme match was
+  unanchored, so `xhttps://evil.example` seeded scope; a userinfo address the
+  classifier will never offer a card for granted permanent scope instead; the
+  turn-boundary close was dead a second time because `Invoke-DpTurn` handed it a
+  fresh hashtable, behind the same two grep assertions round two had named as
+  worthless; sub-resources bypassed the peer-address check entirely; and
+  percent-encoding was a covert channel through provenance. All closed - the
+  root is authored only for a host somebody other than the Model named, scope
+  admits only what the classifier would raise a card for, the state object comes
+  from `Get-DpBrowserState` and its identity is asserted by reference, sub-
+  resource hosts are resolved before the request leaves and every response's
+  peer is checked after, and the address is rebuilt from its parsed parts so no
+  encoding freedom survives. The cross-parser generator was widened from ~1,700
+  cases to **23,040** checked in four directions, because the old one never
+  produced a near-miss at the label boundary the property is about. Gate: **2147
+  tests, 0 failures**; hostile-site proof **25/25**; live workflow **11/11**.

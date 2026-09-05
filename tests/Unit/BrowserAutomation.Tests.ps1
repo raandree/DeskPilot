@@ -453,6 +453,18 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             }
             ($offenders -join "`n") | Should -BeNullOrEmpty
         }
+
+        It 'never opens a card for an address the browser will then refuse' {
+            # The other way the card can lie: the user approves a site and the
+            # in-path check blocks it. Safe, but it makes the approval a fiction.
+            $offenders = [System.Collections.Generic.List[string]]::new()
+            foreach ($case in $script:Mutations) {
+                if ($case.decision -ne 'deny') { continue }
+                $mine = Resolve-DpBrowserUrlDecision -Url $case.url -Scope @('weathercity.com')
+                if ($mine.decision -eq 'allow') { $offenders.Add("$($case.url) : ps=allow js=deny/$($case.reason)") }
+            }
+            ($offenders -join "`n") | Should -BeNullOrEmpty
+        }
     }
 }
 
@@ -1699,7 +1711,7 @@ Describe 'Browser runtime lifecycle' -Tag 'Unit' {
             # page and a model can reach neither. Assigning one would mean
             # DeskPilot could switch off its own certificate checking.
             $hits = @(Get-ChildItem -Path $script:PrivateRoot, $script:PublicRoot, $script:WebRootForHooks -Recurse -File |
-                    Select-String -Pattern "\`$env:$Hook\s*=|Environment\['$Hook'\]\s*=")
+                    Select-String -Pattern "\`$env:$Hook\s*=|Environment\['$Hook'\]\s*=|SetEnvironmentVariable\(\s*'$Hook'|(Set|New)-Item\s+.*Env:\\?$Hook|process\.env\.$Hook\s*=")
             $hits | Should -BeNullOrEmpty -Because 'only the environment DeskPilot was started in may set it'
         }
 
@@ -1736,10 +1748,52 @@ Describe 'Browser runtime lifecycle' -Tag 'Unit' {
 # test is the same shape of claim the review was called to check.
 Describe 'Security review regressions' -Tag 'Unit' {
     Context 'B-3 - Stop and the end of a Turn close the browser' {
-        It 'the Turn closes the browser in its finally, not on the next Turn' {
-            $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
-            $finally = $source.Substring($source.LastIndexOf('finally {'))
-            $finally | Should -Match 'Close-DpBrowserSession'
+        # Grepping the route for the function's own name reported this working
+        # twice while it was dead both times: first because the call threw on a
+        # busy runspace, then because the object handed to it had been replaced
+        # moments earlier. Both tests below watch what happens to the session.
+        It 'closing a state that holds a session stops that session' {
+            Mock Stop-DpBrowserSession {}
+            $state = @{ session = @{ id = 'turn-1-browser' }; scope = @(); granted = @(); lastUrl = 'https://a.example/'; lastNavigation = 3 }
+            Close-DpBrowserSession -State $state
+            Should -Invoke Stop-DpBrowserSession -Exactly -Times 1 -ParameterFilter { $Session.id -eq 'turn-1-browser' }
+            $state.session | Should -BeNullOrEmpty
+        }
+
+        It 'the state object survives the Turn that created it' {
+            $script:DeskPilot = @{ Engine = @{ BrowserState = $null } }
+            $first = Get-DpBrowserState
+            $first.session = @{ id = 'turn-1-browser' }
+            $second = Get-DpBrowserState
+            # Reference equality is the property. A fresh hashtable per Turn is a
+            # fresh hashtable with no session in it, which is what made the
+            # turn-boundary close dead code.
+            [object]::ReferenceEquals($first, $second) | Should -BeTrue
+            $second.session.id | Should -Be 'turn-1-browser'
+        }
+
+        It 'registering the Tool for a new Turn stops the browser the last one left' {
+            Mock Stop-DpBrowserSession {}
+            Mock Initialize-DpBrowserTool { $true }
+            $script:DeskPilot = @{ Engine = @{ BrowserState = $null } }
+            $state = Get-DpBrowserState
+            $state.session = @{ id = 'turn-1-browser' }
+            $state.scope = @('a.example')
+            $state.granted = @('b.example')
+            $state.lastUrl = 'https://a.example/'
+            $state.lastNavigation = 7
+
+            $runspace = [runspacefactory]::CreateRunspace()
+            $runspace.Open()
+            try { $null = Set-DpBrowserTool -Runspace $runspace -Enabled $true -State $state }
+            finally { $runspace.Close(); $runspace.Dispose() }
+
+            Should -Invoke Stop-DpBrowserSession -Exactly -Times 1 -ParameterFilter { $Session.id -eq 'turn-1-browser' }
+            $state.session | Should -BeNullOrEmpty
+            @($state.scope).Count | Should -Be 0
+            @($state.granted).Count | Should -Be 0
+            $state.lastUrl | Should -BeNullOrEmpty
+            $state.lastNavigation | Should -Be 0
         }
 
         It 'the stop route closes the browser rather than only cancelling bridges' {
@@ -1828,7 +1882,7 @@ Describe 'Security review regressions' -Tag 'Unit' {
             # It existed only as a constant: an approved 40 GB download filled
             # the disk while the comment claimed every bound was a refusal.
             ([regex]::Matches($script:Supervisor, 'downloadBytes')).Count | Should -BeGreaterThan 1
-            $script:Supervisor | Should -Match 'rmSync\(target'
+            $script:Supervisor | Should -Match 'download\.delete\(\)'
         }
 
         It 'bounds page-controlled href and title' {
@@ -1868,6 +1922,215 @@ Describe 'Security review regressions' -Tag 'Unit' {
             $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
             $source | Should -Match "browser-downloads"
             $source | Should -Not -Match "Join-Path \`$browserRuntime\.runtimeRoot 'downloads'"
+        }
+    }
+}
+
+# The third review round. Every finding here was in code written to close the
+# second round, which is why each one is asserted against behaviour rather than
+# against the sentence that described it.
+Describe 'Third review round regressions' -Tag 'Unit' {
+    Context 'B3-1 - a site root is not authored just for being a root' {
+        It 'authors the root of a host the user named' {
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/' -UserText 'Please check https://weather.example/ for me' |
+                Should -BeTrue
+        }
+
+        It 'refuses <Case>, which the Model composed' -TestCases @(
+            @{ Case = 'a base64 label'; Url = 'https://c2VjcmV0LWQ6XEdpdFxEZXNrUGlsb3Q.weather.example/' }
+            @{ Case = 'a hyphen-packed label'; Url = 'https://d--git--deskpilot--secrets.weather.example' }
+            @{ Case = 'a nested pair of labels'; Url = 'https://a.b.weather.example/' }
+        ) {
+            param($Url)
+            # A hostname is 253 bytes of Model-chosen data delivered to a wildcard
+            # DNS server. The root exemption used to wave all of it through
+            # because the *path* was empty.
+            Test-DpBrowserUrlFromPage -Url $Url -UserText 'Please check https://weather.example/ for me' |
+                Should -BeFalse
+        }
+
+        It 'authors the root of a host the Project or an approval named' {
+            Test-DpBrowserUrlFromPage -Url 'https://intranet.example/' -UserText '' -AuthoredHost @('intranet.example') |
+                Should -BeTrue
+            Test-DpBrowserUrlFromPage -Url 'https://other.example/' -UserText '' -AuthoredHost @('intranet.example') |
+                Should -BeFalse
+        }
+
+        It 'still refuses a query, a path and a fragment the Model wrote' -TestCases @(
+            @{ Url = 'https://weather.example/?ctx=leak' }
+            @{ Url = 'https://weather.example/d%3A%5CGit' }
+            @{ Url = 'https://weather.example/#d:\Git\DeskPilot' }
+        ) {
+            param($Url)
+            Test-DpBrowserUrlFromPage -Url $Url -UserText 'Please check https://weather.example/ for me' |
+                Should -BeFalse
+        }
+
+        It 'authors a link the page published, and only that link' {
+            $session = @{ pageLinks = @('https://weather.example/forecast/today') }
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/forecast/today' -Session $session |
+                Should -BeTrue
+            Test-DpBrowserUrlFromPage -Url 'https://weather.example/forecast/leak' -Session $session |
+                Should -BeFalse
+        }
+
+        It 'the tool tells the provenance test which hosts were not the Model''s idea' {
+            $source = Get-Command Invoke-DpBrowserTool | ForEach-Object { $_.Definition }
+            $source | Should -Match 'AuthoredHost'
+        }
+    }
+
+    Context 'B3-2 - the scheme has to start a token' {
+        It 'does not seed from <Case>' -TestCases @(
+            @{ Case = 'a scheme inside a longer token'; Text = 'xhttps://evil-substring.example/a' }
+            @{ Case = 'a concatenated scheme'; Text = 'ftphttps://weird.example/' }
+            @{ Case = 'a filename with a live TLD'; Text = 'fix the bug in README.md and update install.sh' }
+        ) {
+            param($Text)
+            @(Get-DpBrowserScope -StartUrl $Text).Count | Should -Be 0
+        }
+
+        It 'seeds from a URL the message contains, punctuation and all' {
+            Get-DpBrowserScope -StartUrl 'see https://example.com, then go' | Should -Be @('example.com')
+            Get-DpBrowserScope -StartUrl 'open [the site](https://weather.example/x) please' | Should -Be @('weather.example')
+        }
+    }
+
+    Context 'B3-3 - a form no card may offer is not a silent grant instead' {
+        It 'refuses to seed from <Case>, which the classifier denies' -TestCases @(
+            @{ Case = 'userinfo'; Text = 'https://good.example@evil-userinfo.example/' }
+            @{ Case = 'credentials'; Text = 'https://user:pw@evil-creds.example/' }
+            @{ Case = 'an IP literal'; Text = 'https://127.0.0.1/admin' }
+            @{ Case = 'a .local name'; Text = 'https://box.local/x' }
+            @{ Case = 'a single label'; Text = 'https://intranet/x' }
+        ) {
+            param($Text)
+            @(Get-DpBrowserScope -StartUrl $Text).Count | Should -Be 0
+        }
+
+        It 'every seeded host would also have been offered a card' {
+            $messages = @(
+                'go to https://weather.example/ and https://news.bbc.co.uk/weather'
+                'https://a.example https://b.example/x?y=1#z'
+                'https://good.example@evil.example/ and https://real.example/'
+            )
+            foreach ($message in $messages) {
+                foreach ($seeded in @(Get-DpBrowserScope -StartUrl $message)) {
+                    (Resolve-DpBrowserUrlDecision -Url "https://$seeded/" -Scope @()).decision |
+                        Should -Not -Be 'deny' -Because "$seeded was seeded from '$message'"
+                }
+            }
+        }
+    }
+
+    Context 'B3-6 - the browser is sent a rebuilt address, not the Model''s' {
+        It 'erases <Case>' -TestCases @(
+            @{ Case = 'an over-encoded path'; Url = 'https://weather.example/%66orecast/today'; Expected = 'https://weather.example/forecast/today' }
+            @{ Case = 'a fully over-encoded path'; Url = 'https://weather.example/%66%6f%72%65%63%61%73%74'; Expected = 'https://weather.example/forecast' }
+        ) {
+            param($Url, $Expected)
+            # One request written many ways is a covert channel through any check
+            # that compares normalised forms.
+            (Resolve-DpBrowserUrlDecision -Url $Url -Scope @('weather.example')).url | Should -Be $Expected
+        }
+
+        It 'keeps <Case>, which is not the caller''s choice to make' -TestCases @(
+            @{ Case = 'a reserved character'; Url = 'https://weather.example/a%2Fb'; Expected = 'https://weather.example/a%2Fb' }
+            @{ Case = 'a fragment'; Url = 'https://weather.example/a#frag'; Expected = 'https://weather.example/a#frag' }
+            @{ Case = 'a query'; Url = 'https://weather.example/a?b=c'; Expected = 'https://weather.example/a?b=c' }
+            @{ Case = 'a non-default port'; Url = 'https://weather.example:8443/a'; Expected = 'https://weather.example:8443/a' }
+        ) {
+            param($Url, $Expected)
+            (Resolve-DpBrowserUrlDecision -Url $Url -Scope @('weather.example')).url | Should -Be $Expected
+        }
+
+        It 'names the host in the form that will be resolved' {
+            (Resolve-DpBrowserUrlDecision -Url 'https://wéather.example/a' -Scope @()).url |
+                Should -Be 'https://xn--wather-bva.example/a'
+        }
+
+        It 'opens the rebuilt address rather than the one the Model typed' {
+            $source = Get-Command Invoke-DpBrowserTool | ForEach-Object { $_.Definition }
+            $source | Should -Match "Command 'navigate' -Payload @\{ url = \[string\]\`$decision\.url \}"
+        }
+    }
+
+    Context 'B3-5 - a sub-resource cannot reach inward unchecked' {
+        BeforeAll {
+            $script:Sup = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+        }
+
+        It 'resolves a sub-resource host before letting the request out' {
+            $script:Sup | Should -Match 'hostResolvesInternal'
+            $script:Sup | Should -Match "recordBlocked\('resource-internal-address'"
+        }
+
+        It 'checks the peer address of every response, not only main documents' {
+            $script:Sup | Should -Match "state\.context\.on\('response'"
+            $script:Sup | Should -Match 'state\.internalPeer'
+        }
+
+        It 'stops the run once a response came from inside' {
+            # A sub-resource cannot be un-sent, so the next action is the first
+            # place a refusal can still mean something.
+            $budget = [regex]::Match($script:Sup, 'function budget\(kind\) \{.*?\n\}', 'Singleline').Value
+            $budget | Should -Match 'state\.internalPeer'
+        }
+    }
+
+    Context 'm3-5 - transition formats carry internal addresses too' {
+        BeforeAll {
+            $policy = Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'policy.mjs' | Convert-Path
+            $script:PolicyUrl = 'file:///' + ($policy -replace '\\', '/')
+        }
+
+        It 'sees through <Case>' -TestCases @(
+            @{ Case = 'NAT64'; Address = '64:ff9b::7f00:1' }
+            @{ Case = '6to4'; Address = '2002:7f00:0001::1' }
+            @{ Case = 'NAT64 to link-local'; Address = '64:ff9b::a9fe:a9fe' }
+        ) {
+            param($Address)
+            $expression = "import('$($script:PolicyUrl)').then(m => console.log(m.isInternalAddress('$Address')))"
+            (node --input-type=module -e $expression).Trim() | Should -Be 'true'
+        }
+
+        It 'still passes a public address' {
+            $expression = "import('$($script:PolicyUrl)').then(m => console.log(m.isInternalAddress('2606:4700::1')))"
+            (node --input-type=module -e $expression).Trim() | Should -Be 'false'
+        }
+    }
+
+    Context 'm3-1 and m3-2 - a click is a navigation like any other' {
+        BeforeAll {
+            $script:Click = [regex]::Match(
+                (Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw),
+                'async click\(\{ linkText \}\) \{.*?\n    \},', 'Singleline').Value
+        }
+
+        It 'counts against the navigation budget' {
+            $script:Click | Should -Match "budget\('navigation'\)"
+            $script:Click | Should -Not -Match 'state\.navigations \+= 1'
+        }
+
+        It 'settles a refused navigation instead of leaving it in flight' {
+            $script:Click | Should -Match 'state\.blocked\.slice\(before\)'
+            ([regex]::Matches($script:Click, "waitForLoadState\('domcontentloaded'\)")).Count | Should -BeGreaterOrEqual 2
+        }
+    }
+
+    Context 'm3-3 and m3-4 - the remaining write gaps' {
+        BeforeAll {
+            $script:WriteSup = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+        }
+
+        It 'sizes a download before copying it where DeskPilot keeps things' {
+            $download = [regex]::Match($script:WriteSup, 'async download\(\{.*?\n    \},', 'Singleline').Value
+            $download.IndexOf('LIMITS.downloadBytes') | Should -BeLessThan $download.IndexOf('download.saveAs(')
+        }
+
+        It 're-checks the page between filling and submitting' {
+            $fill = [regex]::Match($script:WriteSup, 'async fill\(\{.*?\n    \},', 'Singleline').Value
+            ([regex]::Matches($fill, 'assertSamePage\(expectedUrl, expectedNavigation\)')).Count | Should -Be 2
         }
     }
 }

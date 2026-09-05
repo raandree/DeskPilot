@@ -38,6 +38,11 @@ function deny(reason, host = '', url = '') {
     return { decision: 'deny', reason, host, url };
 }
 
+// The dotted-quad an IPv6 transition format carries in two 16-bit groups.
+function embeddedV4(high, low) {
+    return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+}
+
 // Broader than a strict address parser on purpose: an IP literal can never
 // match a name-based allow-list, so over-matching here only ever denies more.
 function isAddressLiteral(host) {
@@ -123,10 +128,16 @@ const CREDENTIAL_AUTOCOMPLETE = new Set([
 ]);
 const CREDENTIAL_NAME = /pass(word|wd|phrase)|\bpin\b|otp|mfa|2fa|totp|secret|token|api[-_\s]?key|cvv|cvc|security[-_\s]?(answer|question)|(recovery|verification|sms|auth|access|login|one[-_\s]?time)[-_\s]?code|\bcode\b/i;
 
-// Ranges a browser DeskPilot drives has no business reaching. Checked against
-// the address the connection actually landed on, because a name with a public
-// A record can point inward and a pre-flight resolve is a TOCTOU against
-// rebinding - the peer address is the load-bearing check.
+// Ranges a browser DeskPilot drives has no business reaching. A name with a
+// public A record can point inward, so the address the connection actually
+// landed on is what decides for a main document - a pre-flight resolve is a
+// TOCTOU against rebinding.
+//
+// Sub-resources have no peer address at the route boundary, so there the
+// supervisor resolves the name first and checks every response's peer
+// afterwards: the first is TOCTOU-able and prevents, the second is not and
+// detects. Calling the peer address "the load-bearing check" was true only for
+// the paths that have one (B3-5, 2026-09-05).
 export function isInternalAddress(address) {
     const text = String(address ?? '').trim().replace(/^\[|\]$/g, '').toLowerCase();
     if (!text) return false;
@@ -149,6 +160,12 @@ export function isInternalAddress(address) {
             if (values[0] === 0 && values[4] === 0 && values[5] === 0xffff) return true;
             if ((values[0] & 0xfe00) === 0xfc00) return true;   // fc00::/7 unique local
             if ((values[0] & 0xffc0) === 0xfe80) return true;   // fe80::/10 link local
+            // Transition formats embed a v4 address, so an internal one reaches
+            // inward wearing a public-looking prefix: 64:ff9b::/96 NAT64 carries
+            // it in the last two groups, 2002::/16 6to4 in the first two after
+            // the prefix.
+            if (values[0] === 0x64 && values[1] === 0xff9b) return isInternalAddress(embeddedV4(values[6], values[7]));
+            if (values[0] === 0x2002) return isInternalAddress(embeddedV4(values[1], values[2]));
             return false;
         }
 

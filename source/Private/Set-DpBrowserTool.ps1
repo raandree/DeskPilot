@@ -49,8 +49,16 @@ function Set-DpBrowserTool {
     )
 
     # Whether it is being switched on or off, a browser from the previous Turn
-    # must not survive into this one.
+    # must not survive into this one. The state object is long-lived so that this
+    # close has something to close; the per-Turn fields are reset here, where the
+    # lifecycle is owned, rather than by the caller after the fact.
     Close-DpBrowserSession -State $State
+    if ($State) {
+        $State.scope = @()
+        $State.granted = @()
+        $State.lastUrl = ''
+        $State.lastNavigation = 0
+    }
 
     if ($Enabled) {
         return Initialize-DpBrowserTool -Runspace $Runspace -Context $Context -TimeoutMinutes $TimeoutMinutes -Bridge $Bridge -State $State

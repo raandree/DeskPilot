@@ -5,21 +5,34 @@ function Get-DpBrowserScope {
     .DESCRIPTION
         Scope has exactly three sources, and the order of trust is the point:
 
-        1. **Full `https://` addresses the user themselves wrote**, taken from
-           their own message. It used to be seeded from the first URL the *Model*
-           chose, which gave every Turn one free, unapproved navigation to any
-           host on the internet (Blocker B-1, 2026-09-05).
+        1. **Complete `https://` addresses present in the user's own message.**
+           It used to be seeded from the first URL the *Model* chose, which gave
+           every Turn one free, unapproved navigation to any host on the internet
+           (Blocker B-1, 2026-09-05).
 
            Only complete `https://` URLs count. A bare token that merely looks
            like a host was tried and withdrawn: `.md`, `.sh`, `.py`, `.io`, `.ai`
            and `.co` are all registrable, so `README.md` and `install.sh` in an
-           ordinary prompt became authorised hosts an attacker can pre-register;
-           text the user *pasted* rather than wrote - an error message, a log
-           line, a quoted email - authorised whatever host it mentioned; and a
-           trailing slash made the match backtrack a label, so
+           ordinary prompt became authorised hosts an attacker can pre-register,
+           and a trailing slash made the match backtrack a label so
            `news.bbc.co.uk/weather` authorised `news.bbc.co` while not
-           authorising the site the user actually named. Requiring a scheme costs
-           one approval card and removes all three.
+           authorising the site the user actually named.
+
+           **Present in, not typed by.** An earlier version of this description
+           claimed the scheme requirement also stopped pasted text from
+           authorising a host. It does not, and cannot: a prompt is one string,
+           and a URL a user pasted in a stack trace is indistinguishable from one
+           they typed (B3-2, 2026-09-05). The property that does hold is that the
+           host appeared in the message the user sent - so they could see it - and
+           everything reached through that host is still bounded by the deny rules
+           below, by per-address provenance, and by an approval card for anything
+           the Model composes itself.
+
+           A candidate seeds scope only if `Resolve-DpBrowserUrlDecision` would be
+           willing to raise a card for it. A form it refuses outright must not
+           become a silent permanent grant instead, which is what
+           `https://good.example@evil.test/` did: never approvable, and it read as
+           `good.example` to anyone skimming their own message (B3-3).
         2. **The Project's own list.** Durable, and widened only from Settings -
            never from a button beside an approval card, for the reason decision
            0008 gives about safeCommands: "always allow this" next to a prompt is
@@ -78,16 +91,11 @@ function Get-DpBrowserScope {
         if ($seen.Add($name)) { $scope.Add($name) }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($StartUrl)) {
-        # Bounded: a very long message must not turn scope-building into a scan.
-        $text = if ($StartUrl.Length -gt 8000) { $StartUrl.Substring(0, 8000) } else { $StartUrl }
-
-        foreach ($match in [regex]::Matches($text, 'https://[^\s"''<>)\]]+')) {
-            $uri = $null
-            if ([System.Uri]::TryCreate($match.Value, [System.UriKind]::Absolute, [ref]$uri) -and $uri.Scheme -eq 'https') {
-                & $add $uri.IdnHost
-            }
-        }
+    foreach ($candidate in @(Get-DpBrowserUserUrl -Text $StartUrl)) {
+        # Seeded only if the classifier would be willing to raise a card for it.
+        # A form it refuses outright must not become a silent permanent grant.
+        $decision = Resolve-DpBrowserUrlDecision -Url $candidate -Scope @()
+        if ($decision.decision -ne 'deny') { & $add $decision.host }
     }
 
     foreach ($domain in @($ProjectDomain)) { & $add $domain }

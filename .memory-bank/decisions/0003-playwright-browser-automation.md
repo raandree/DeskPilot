@@ -290,6 +290,96 @@ care: it was generating the test inputs and running the thing against a hostile
 page. Both rounds' Blockers were found by measurement, and every one of the
 second round's was in code written to fix the first round's.
 
+## Third review round, 2026-09-05
+
+**FAIL again — 2 Blockers, 4 Majors, 7 Minors, and once more every Blocker was
+inside round two's fixes.** B-2 and B-4 were re-confirmed closed; B-1 and B-3
+were still only half closed, one component to the left of where they had been.
+
+**B3-1: the site root was exempt from provenance, and the host is data.** The
+comment read "the site root carries nothing: no path, no query, no fragment".
+It carries the *host*. Scope matches on a label boundary, so every subdomain of
+an in-scope name is in scope, and the exemption made every subdomain *root*
+"authored" — roughly 200 bytes of Model-chosen data per navigation, delivered to
+a wildcard DNS server and a Host header, with no card at either enforcement
+point. Measured: `https://c2VjcmV0LWQ6XEdpdFxEZXNrUGlsb3Q.weather.example/`
+decided `allow` with `fromPage=True`, while `https://weather.example/?ctx=leak`
+correctly raised a card. Reaching the attacker's *resolver* is worse than the
+query channel B-1's fix escalated, because it lands before the HTTP request the
+policy might still refuse. The root is now authored only when the host was named
+by the user's message, the Project's list, or an approval the user answered.
+
+**B3-2: the scheme match was unanchored, and the docstring overclaimed.**
+`xhttps://evil.example/a` and `ftphttps://weird.example/` seeded scope, because
+the pattern matched a scheme buried inside a longer token. Anchored now. The
+docstring also claimed the scheme requirement stopped *pasted* text from
+authorising a host — it does not and cannot: a prompt is one string, and a URL in
+a pasted stack trace is indistinguishable from a typed one. The claim is
+withdrawn rather than dressed up. What holds is that the host appeared in the
+message the user sent, so they could see it, and everything reached through it is
+still bounded by the deny rules, by per-address provenance, and by a card for
+anything the Model composes.
+
+**B3-3: a form no card may offer became a silent grant instead.**
+`Resolve-DpBrowserUrlDecision` refuses userinfo outright — "a card the user could
+say yes to would be a hole" — while `Get-DpBrowserScope` applied no such check, so
+`https://good.example@evil.test/` granted `evil.test` permanent run scope under a
+display form that reads as `good.example`. Scope seeding now admits a candidate
+only if the classifier would be willing to raise a card for it, which keeps the
+two in lockstep by construction rather than by memory.
+
+**B3-4: the turn-boundary close was dead code, behind round two's own grep
+test.** The stop route worked. The documented backstop in `Set-DpBrowserTool` did
+not: `Invoke-DpTurn` assigned a *fresh* hashtable and passed that as `-State`, so
+the close hit `if ($null -eq $session) { return }` every time and the previous
+Turn's live session was dropped with no remaining reference. The only coverage
+was two `Should -Match 'Close-DpBrowserSession'` assertions — verbatim the shape
+round two had identified as worthless, left untouched by the commit that
+documented why it is worthless. The state now comes from `Get-DpBrowserState`,
+whose property — the same object every time — is asserted by reference equality.
+
+**B3-5: sub-resources bypassed the peer-address check.** `assertPeerAllowed` was
+wired only into `navigate`, `click` and `press`. The `context.route` handler
+allowed any passive off-scope resource by *name*, so
+`<img src="https://public.example/x.png">` whose A record points at
+`169.254.169.254` was issued from the user's machine with no address check at
+all. The header calling the peer address "the load-bearing check" was true only
+for the paths that have one. Sub-resource hosts are now resolved before the
+request leaves, and every response's peer is checked afterwards — the first
+prevents and is TOCTOU-able, the second detects and is not, and a response from
+inside stops the run.
+
+**B3-6: percent-encoding was a covert channel through provenance.**
+`Uri.GetLeftPart` unescapes unreserved characters, so `/%66orecast/today` and
+`/forecast/today` compare equal while being different bytes on the wire — about
+a bit per path character, on a URL the check certifies as the site's own. Rather
+than compare harder, the classifier now rebuilds the address from its parsed
+parts and the browser is sent *that*, so the Model has no encoding freedom left
+to exploit.
+
+Minors closed in the same pass: `click` never counted against the navigation
+budget and never got the blocked-navigation settle its siblings received; the
+download cap was applied after `saveAs` rather than before; `fill` asserted the
+page once and then submitted without re-asserting; `isInternalAddress` missed
+NAT64 and 6to4 embedded IPv4; a trailing comma silently dropped the host the user
+had actually named; and the test-hook write guard grepped for two spellings of an
+assignment out of five.
+
+**The generator was too narrow to be the evidence it was presented as.** Round
+two replaced a curated corpus with ~1,700 generated mutations and called the
+invariant proven. The generator mutated only the first `.` of four fixed hosts
+and never produced a near-miss around the label boundary the property is about —
+so `evilweathercity.com` and `weathercity.com.evil.test` were never tested. It
+now seeds those explicitly and crosses hosts with path tails, giving 23,040 cases
+checked in four directions including the one that catches a card naming an
+address the browser will then refuse.
+
+**Verdict on the process, not the code.** Three rounds; every round's Blockers
+lived in the previous round's fixes. The reviewer's diagnosis is the one to keep:
+this repository writes an explanation, does not test it, and then treats the
+explanation as the evidence. A fix now ships with an executable falsification
+attempt — not a grep, not a curated case list, and not a paragraph.
+
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

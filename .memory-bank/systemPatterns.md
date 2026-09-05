@@ -1126,6 +1126,29 @@ source: repository evidence
   side is busy: share the state object by reference, as the approval bridge does,
   rather than asking for a pipeline that cannot start.
 
+- **When a claim is false, withdraw it rather than narrowing it.** The same
+  boundary was wrong three review rounds running, each time one component to the
+  left: a bare path "carries no payload", then the site root "carries nothing" -
+  it carries the host, and the host is the part the Model chose. Scope seeding
+  told the same story: the Model seeds it, then free text seeds it, then an
+  unanchored scheme match seeds it. Each round's fix narrowed the sentence and
+  kept its shape. What finally worked was replacing the exemption with a rule
+  about *who named the thing*, and, where no rule could hold, deleting the claim:
+  DeskPilot cannot distinguish a typed URL from a pasted one, so the docstring
+  now says so instead of implying it can.
+
+- **A fix ships with an executable falsification attempt.** Not a `Should -Match`
+  against source text, not a curated case list, not a paragraph. Three rounds of
+  review found their Blockers by running things; the repository's own tests found
+  none of them, because the tests asserted intent. The concrete shapes to avoid:
+  a test that greps for the function's own name in a route table (this hid two
+  different dead calls, and survived the commit that documented why it is
+  worthless); a corpus curated until it passes; and a generator that never emits
+  the case the property is about - the cross-parser mutator produced 1,700 cases
+  and not one near-miss at the label boundary the whole invariant concerns.
+  Prefer reference equality, mock invocation counts, and generated inputs over
+  anything that reads the source as a string.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

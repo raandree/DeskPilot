@@ -184,10 +184,13 @@ function Invoke-DpBrowserTool {
 
         # An in-scope host is not a blank cheque. The Model composes the whole
         # address, so a query string it invented on a site the user named is the
-        # same channel one hop shorter. A URL whose query or fragment did not
-        # come from a link on the page just read is approved like a departure.
+        # same channel one hop shorter - and so is a hostname, which is why the
+        # site-root exemption is bounded by who named the host rather than
+        # granted to every root. Anything the Model composed is approved like a
+        # departure.
         if ($decision.decision -eq 'allow' -and
-            -not (Test-DpBrowserUrlFromPage -Url $Url -Session $state.session -UserText ([string]$context.userUrl))) {
+            -not (Test-DpBrowserUrlFromPage -Url $Url -Session $state.session -UserText ([string]$context.userUrl) `
+                    -AuthoredHost @(@($context.projectDomains) + @($state.granted)))) {
             $decision = @{ decision = 'ask'; reason = 'model-composed'; host = $decision.host; url = $decision.url }
         }
 
@@ -224,7 +227,10 @@ function Invoke-DpBrowserTool {
             $state.scope = @($applied.result.scope)
         }
 
-        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'navigate' -Payload @{ url = $Url } -TimeoutSeconds 90
+        # The rebuilt address, not the Model's original. The card named this
+        # string, and it is free of the encoding choices that let one request be
+        # written many ways.
+        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'navigate' -Payload @{ url = [string]$decision.url } -TimeoutSeconds 90
         return (& $finish $response)
     }
 
