@@ -76,7 +76,7 @@ repository implementation and tests.
 | Packaging and localization | Shipped | CurrentUser Windows package; English source locale with German shipped. |
 | OS-level isolation or remote execution | Absent by design today | The security model explicitly does not claim a sandbox. |
 | Parallel Agents | Absent | One Engine Runspace and one active Turn. |
-| Browser/computer automation | Partial | Browsing and `fetch_url` can read page content; Playwright, interactive page control, and desktop control are absent. |
+| Browser/computer automation | Partial | Browsing and `fetch_url` read page content; `browser_page` drives a live page read-only behind its own Permission. Form entry and desktop control are absent. |
 | Multi-provider/local Models | Deliberate non-goal | DeskPilot delegates Model access and entitlement to GitHub Copilot. |
 
 ## Where DeskPilot's strength lies
@@ -197,13 +197,14 @@ strongest trust guarantees.
 
 ### Playwright browser automation and computer control
 
-This could unlock form entry and line-of-business web work for DeskPilot's
-audience. It also combines untrusted web content, local data, and outbound
-actions in one path. DeskPilot currently has only URL fetching through the
-Engine's Browsing Tool and no Playwright dependency. Use Playwright for the
-first browser-only slice, but require a concrete user workflow, domain
-isolation, and per-action approval before adding it. Treat general desktop
-control as a separate later decision.
+Shipped as a contained, read-only first slice (decision 0003). DeskPilot drives a
+throwaway Chromium profile through a supervised Node process behind its own
+`browserAutomation` Permission, off by default. The Tool surface is `open`,
+`click_link`, `read_page` and `screenshot` — there is nothing that submits,
+uploads, downloads or deletes, which breaks the agency leg of the lethal trifecta
+by architecture. Egress is bounded by a scope derived from the address the task
+names; leaving it raises an approval card showing the whole URL. General desktop
+control remains a separate later decision and is explicitly out of scope.
 
 ### Microsoft 365 work integration
 

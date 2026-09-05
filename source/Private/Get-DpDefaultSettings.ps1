@@ -23,6 +23,11 @@ function Get-DpDefaultSettings {
             terminal  = $false
             askUser   = $true
             userTools = $true
+            # Driving a live page is a different authority from reading one
+            # DeskPilot fetched, so it is its own Permission and browsing does
+            # not imply it. Off by default: it starts a real browser, and the
+            # first workflow should be something the user asked for.
+            browserAutomation = $false
             # Attached MCP servers contribute tools to every Turn. On by default
             # because it is inert until the user attaches one: the Engine discovers
             # nothing, so an empty mcpServers list means no MCP tools exist at all.

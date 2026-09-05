@@ -117,6 +117,40 @@ function Invoke-DpDiagnosticCheck {
                 degradedCount = [int]$Snapshot.mcp.degradedCount
             })
 
+    # Browser automation is reported even when the Permission is off, because
+    # "not configured" and "switched on but unusable" are different answers and
+    # only one of them has a fix. The runtime probe is a file-system check, not a
+    # browser launch: Diagnostics must not start a browser to report on one.
+    $browserProbe = { Get-DpBrowserRuntime }
+    $browserRuntime = $null
+    try { $browserRuntime = & $browserProbe } catch { $browserRuntime = $null }
+
+    $browserConfigured = [bool]$Snapshot.browser.enabled
+    $browserAvailable = [bool]$browserRuntime -and [bool]$browserRuntime.nodePresent
+    $browserHealthy = [bool]$browserRuntime -and [bool]$browserRuntime.ready
+    $browserState = Resolve-DpDiagnosticState -Configured:$browserConfigured -Available:$browserAvailable -Healthy:$browserHealthy
+    $browserExplanation = if (-not $browserConfigured) {
+        'Browser automation is switched off. DeskPilot can still read a page address without it.'
+    }
+    elseif ($browserHealthy) {
+        "A contained browser is ready. It uses a throwaway profile with none of your sign-ins, and it stays on the site a task starts from."
+    }
+    elseif ($browserRuntime) {
+        ($browserRuntime.issues -join ' ')
+    }
+    else {
+        'The browser runtime could not be inspected.'
+    }
+    & $add (New-DpDiagnosticCheck -Id 'browser-automation' -Label 'Browser automation' -State $browserState `
+            -Explanation $browserExplanation `
+            -Action $(if ($browserHealthy -or -not $browserConfigured) { '' } elseif ($browserRuntime) { [string]$browserRuntime.action } else { 'Open Diagnostics again to retry the check.' }) `
+            -Detail @{
+                nodeVersion      = [string]$(if ($browserRuntime) { $browserRuntime.nodeVersion })
+                pinnedVersion    = [string]$(if ($browserRuntime) { $browserRuntime.pinnedVersion })
+                installedVersion = [string]$(if ($browserRuntime) { $browserRuntime.installedVersion })
+                browserInstalled = [bool]$(if ($browserRuntime) { $browserRuntime.browserInstalled })
+            })
+
     $intercomState = Resolve-DpDiagnosticState -Configured:([bool]$Snapshot.intercom.enabled) `
         -Available:([bool]$Snapshot.intercom.available) -Healthy:([bool]$Snapshot.intercom.healthy)
     & $add (New-DpDiagnosticCheck -Id 'intercom' -Label 'Intercom' -State $intercomState `

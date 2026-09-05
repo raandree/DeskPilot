@@ -38,7 +38,7 @@ function New-DpApprovalRequest {
         [string]$Tool,
 
         [Parameter(Mandatory)]
-        [ValidateSet('Terminal', 'FileWrite', 'Mcp', 'UserTool')]
+        [ValidateSet('Terminal', 'FileWrite', 'Mcp', 'UserTool', 'BrowserNavigation')]
         [string]$Class,
 
         [Parameter(Mandatory)]
@@ -60,13 +60,23 @@ function New-DpApprovalRequest {
     $maxCommand = 2000
     $command = if ($Argument.ContainsKey('command')) { [string]$Argument['command'] } else { '' }
     $workingDirectory = if ($Argument.ContainsKey('workingDirectory')) { [string]$Argument['workingDirectory'] } else { '' }
+    # A browser navigation is identified by where it goes. The full URL is shown
+    # because the query string is where an injected page puts what it is trying
+    # to send out - a host alone would hide the payload the user is judging.
+    $url = if ($Argument.ContainsKey('url')) { [string]$Argument['url'] } else { '' }
+    $targetHost = if ($Argument.ContainsKey('host')) { [string]$Argument['host'] } else { '' }
 
     $shown = $command
     if ($shown.Length -gt $maxCommand) {
         $shown = $shown.Substring(0, $maxCommand) + " ...[truncated, $($command.Length) characters]"
     }
 
-    $material = @($Tool, $Class, $ConversationId, $TurnId, $command.Trim(), $workingDirectory.Trim()) -join [char]31
+    $shownUrl = $url
+    if ($shownUrl.Length -gt $maxCommand) {
+        $shownUrl = $shownUrl.Substring(0, $maxCommand) + " ...[truncated, $($url.Length) characters]"
+    }
+
+    $material = @($Tool, $Class, $ConversationId, $TurnId, $command.Trim(), $workingDirectory.Trim(), $url.Trim(), $targetHost.Trim()) -join [char]31
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try { $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material)) }
     finally { $sha.Dispose() }
@@ -76,6 +86,7 @@ function New-DpApprovalRequest {
         'Terminal' { 'This runs a command on your computer with your account. It can read, change or delete files, and it can reach the network.' }
         'FileWrite' { 'This writes to a file outside the project folder, where DeskPilot cannot undo it for you.' }
         'Mcp' { 'This calls an attached tool that may change something outside DeskPilot.' }
+        'BrowserNavigation' { 'This opens an address outside the site this task started on. Check the whole address, including anything after the question mark - that is where a page tries to send information it should not have.' }
         default { 'This performs an action that may change something on your computer.' }
     }
 
@@ -90,6 +101,8 @@ function New-DpApprovalRequest {
             command          = $shown
             workingDirectory = $workingDirectory
             project          = [string]$ProjectName
+            url              = $shownUrl
+            host             = $targetHost
         }
         risk           = $risk
         requestedUtc   = [datetime]::UtcNow.ToString('o')

@@ -75,6 +75,27 @@ function Invoke-DpRouteHandler {
                 latestSequence = [long]$state.Diagnostics.Log.NextSequence
             }
         }
+        'installBrowserRuntime' {
+            # The consent gate for downloading a browser engine. It is reachable
+            # only from this user-initiated route: no Turn, Tool or Model path
+            # leads here, because acquiring an executable without being asked is
+            # what the security model forbids outright.
+            $result = Install-DpBrowserRuntime -Confirm:$false
+            if (-not $result.installed) {
+                Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'error' -Component 'browser' `
+                    -EventId 'browser.install.failed' -Summary $result.error
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'browser_install_failed'; message = $result.error } }
+                return
+            }
+            Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' -Component 'browser' `
+                -EventId 'browser.install.completed' -Summary "Browser automation was set up with Playwright $($result.runtime.pinnedVersion)."
+            Write-DpResponse -Stream $Stream -Status 201 -Json @{
+                ok = $true
+                pinnedVersion = [string]$result.runtime.pinnedVersion
+                nodeVersion = [string]$result.runtime.nodeVersion
+                ready = [bool]$result.runtime.ready
+            }
+        }
         'exportSupportBundle' {
             if ($state.Diagnostics.Exporting) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'export_running'; message = 'A support bundle is already being created.' } }

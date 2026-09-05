@@ -208,10 +208,11 @@ launch and can be overridden with `Start-DeskPilot -DataDir`.
   "model": "claude-opus-4.8",
   "permissions": {
     "browsing": true, "file": true, "terminal": true,
-    "askUser": true, "userTools": true
+    "askUser": true, "userTools": true, "browserAutomation": false
   },
   "projects": [
-    { "id": "p_a1b2c3d4e5", "name": "DeskPilot", "path": "C:/Users/me/Documents/DeskPilot" }
+    { "id": "p_a1b2c3d4e5", "name": "DeskPilot", "path": "C:/Users/me/Documents/DeskPilot",
+      "browserDomains": ["example.com"] }
   ],
   "selectedProjectId": "p_a1b2c3d4e5",
   "workspaceFolder": "C:/Users/me/Documents/DeskPilot",
@@ -242,6 +243,18 @@ next prompt. Permissions map to Engine switches:
 | terminal | `-DisableTerminal` |
 | askUser | `-DisableUserPrompts` |
 | userTools | `-DisableUserTools` |
+| browserAutomation | *(no Engine switch — see below)* |
+
+`browserAutomation` has no Engine switch because the Engine has no interactive
+browser. It gates a **registered User Tool** DeskPilot owns, `browser_page`, so
+it is honoured by registering or not registering that Tool for the Turn. It is
+deliberately separate from `browsing`: reading a page DeskPilot fetched and
+driving a live one are different amounts of authority, and one must not imply
+the other. It ships **off**.
+
+`browserDomains` on a Project extends the browser's scope durably. It is
+validated on merge — a bad entry throws rather than being dropped — and it is
+the *only* durable way to widen scope. An approval card grants for one run.
 
 Permissions remain category-level availability controls. Per-call approval for
 risky actions is not implemented: the Host Server can observe a structured

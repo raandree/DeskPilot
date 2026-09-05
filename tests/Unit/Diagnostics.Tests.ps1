@@ -187,11 +187,14 @@ Describe 'Invoke-DpDiagnosticCheck' -Tag 'Unit' {
 
         @($result.checks.id) | Should -Be @(
             'configuration', 'data-path', 'engine-module', 'project', 'engine',
-            'engine-auth', 'git', 'mcp', 'intercom', 'update'
+            'engine-auth', 'git', 'mcp', 'browser-automation', 'intercom', 'update'
         )
         ($result.checks | Where-Object id -EQ 'project').state | Should -Be 'healthy'
         ($result.checks | Where-Object id -EQ 'mcp').state | Should -Be 'healthy'
         ($result.checks | Where-Object id -EQ 'intercom').state | Should -Be 'not configured'
+        # Off by default, so the honest report is that it is not configured
+        # rather than that something is wrong with it.
+        ($result.checks | Where-Object id -EQ 'browser-automation').state | Should -Be 'not configured'
         @($result.checks | Where-Object { $_.state -notin @('healthy', 'degraded', 'unavailable', 'not configured') }) |
             Should -HaveCount 0
         @($result.checks | Where-Object { $_.explanation.Length -gt 300 -or $_.action.Length -gt 200 }) |
@@ -335,7 +338,7 @@ Describe 'Diagnostic Host Server state' -Tag 'Unit' {
         $snapshot.engine.authenticated | Should -BeTrue
         $snapshot.mcp.healthyCount | Should -Be 1
         $json | Should -Not -Match 'MESSAGE-CONTENT|UNKNOWN-STATE|ENVIRONMENT-VALUE|telegram-secret|host-session-secret|engine-token-value|fingerprint-secret'
-        $snapshot.Keys | Should -Be @('versions', 'paths', 'configuration', 'project', 'engine', 'mcp', 'intercom', 'update')
+        $snapshot.Keys | Should -Be @('versions', 'paths', 'configuration', 'project', 'engine', 'mcp', 'intercom', 'browser', 'update')
     }
 
     It 'starts the self-check off-thread and reaps its result' {

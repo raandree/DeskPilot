@@ -24,7 +24,7 @@ function Merge-DpSettings {
     )
 
     $validEfforts = @('minimal', 'low', 'medium', 'high', 'xhigh', 'max')
-    $permissionKeys = @('browsing', 'file', 'terminal', 'askUser', 'userTools', 'mcp')
+    $permissionKeys = @('browsing', 'file', 'terminal', 'askUser', 'userTools', 'browserAutomation', 'mcp')
     # Bounded numeric Intercom keys: name -> minimum, maximum.
     $intercomRanges = @{
         heartbeatMinutes       = @(1, 1440)

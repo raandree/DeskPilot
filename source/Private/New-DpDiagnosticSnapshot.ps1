@@ -133,6 +133,9 @@ function New-DpDiagnosticSnapshot {
             healthy   = $intercomHealthy
             error     = $intercomError
         }
+        browser       = [ordered]@{
+            enabled = [bool](Get-DpPropertyValue -InputObject $permission -Name @('browserAutomation') -Default $false)
+        }
         update        = [ordered]@{
             checked         = -not [string]::IsNullOrWhiteSpace([string](Get-DpPropertyValue -InputObject $update -Name @('checkedUtc') -Default ''))
             checking        = [bool](Get-DpPropertyValue -InputObject $update -Name @('checking') -Default $false)

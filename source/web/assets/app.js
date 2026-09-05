@@ -191,6 +191,7 @@ const PERMISSIONS = [
     { key: 'terminal', name: 'Terminal', note: 'Run commands as you.', powerful: true },
     { key: 'askUser', name: 'Ask you', note: 'Pause to ask a question.', powerful: false },
     { key: 'userTools', name: 'Your tools', note: 'Call tools you registered.', powerful: false },
+    { key: 'browserAutomation', name: 'Browser', note: 'Open a throwaway browser and follow links. Asks before leaving the site.', powerful: true },
     { key: 'mcp', name: 'MCP servers', note: 'Call tools from servers you attached.', powerful: true },
 ];
 

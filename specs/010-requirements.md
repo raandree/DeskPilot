@@ -134,6 +134,28 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 | FR-PA11 | M | Record every decision in the Activity trail and the diagnostics log, without the command text. There is no durable on-disk approval log. |
 | FR-PA12 | S | Approval applies **after** the category Permission, never instead of it. Terminal Permission off keeps the Tool unavailable. Your Tools off stands approval down rather than removing the terminal, because a withdrawn Permission must never be the thing that widens access. |
 
+### Contained browser automation
+
+The first slice is **read-only** and proves one workflow: read a city forecast by
+following links through a public weather site. See decision 0003 for the gate
+this passed and the trifecta analysis behind it.
+
+| ID | Priority | Requirement |
+| --- | --- | --- |
+| FR-BA1 | M | Expose a single Tool, `browser_page`, with exactly four actions: `open`, `click_link`, `read_page`, `screenshot`. **No action has an external effect** - nothing submits, uploads, downloads, buys, sends or deletes - so an injected page has no irreversible action to reach for. |
+| FR-BA2 | M | Gate the Tool behind its own `browserAutomation` Permission, shipped **off**. The Browsing Permission must not imply it: retrieving one address and driving a live page are different amounts of authority. Your Tools off stands the browser down, for the same reason as FR-PA12. |
+| FR-BA3 | M | Drive a **throwaway browser profile** in a supervised child process: no personal cookies, extensions, password store, history, downloads or ambient single sign-on, and no local file access. Never fall back to a browser found on the machine, because that browser's profile is the user's. |
+| FR-BA4 | M | Derive the run's **scope** from the address the task names (that host and its subdomains, `https` only), plus the Project's validated `browserDomains`, plus hosts approved during this run. The user is never asked to predict a domain list in advance. |
+| FR-BA5 | M | Raise an approval card for any top-level navigation outside scope, **before the request leaves**, showing the whole URL including the query string - that is where an injected page puts what it is trying to send out. Approval is for that run only; there is no "always allow" beside the prompt, and durable widening happens only in Settings. |
+| FR-BA6 | M | Refuse outright, with **no approvable card**, anything that cannot be scoped or that reaches the local machine: a scheme other than `https` (`file:`, `data:`, `javascript:`, `blob:`, plain `http`), credentials embedded in the URL, any IP literal, single-label hosts, and `.local`/`.localhost` names. The refusal is evaluated **before** the scope match, so a Project entry cannot re-open it. |
+| FR-BA7 | M | Enforce policy **below the Model**, inside the supervisor's request interceptor, so it also covers redirect chains, nested frames, pop-ups and sub-resources that a pre-flight check cannot see. Page content may never widen scope. Both enforcement points are held to one shared conformance corpus. |
+| FR-BA8 | M | Block off-origin script, WebSocket, XHR, fetch, beacon and every download; allow off-origin images, stylesheets and fonts. The page controls sub-resources and the page knows no secrets - the asymmetry that makes an off-origin image safe is the one that makes an off-origin navigation dangerous. |
+| FR-BA9 | M | Treat all page output as untrusted data: bound page text, link lists, screenshots and error messages, label page text as information rather than instructions, and never interpolate page-supplied text into a selector, a script or a URL. Follow links by accessible name, never by a page-supplied selector string. |
+| FR-BA10 | M | Correlate a navigation approval with the Conversation, Turn and exact URL by fingerprint, exactly as FR-PA7 does for commands. An answer that does not carry this navigation's fingerprint authorizes nothing. |
+| FR-BA11 | M | Bound the run: actions, navigations, page text, link count, screenshots and per-action wall clock. Stop, and the end of a Turn, close the **whole browser process tree** - a window that outlives its Turn is an orphan nothing in the UI accounts for. |
+| FR-BA12 | M | Never acquire an executable without being asked. Node is detected, never installed. The pinned Playwright package and its matching browser build install only from an explicit Diagnostics action, into the data directory. A missing, mismatched or partly installed runtime reports **unavailable** and offers repair; it never falls back and never reports ready. |
+| FR-BA13 | S | Report the browser runtime in Diagnostics - Node version, pinned versus installed Playwright, browser presence - and distinguish "switched off" from "switched on but unusable", because only one of those has a fix. |
+
 ### Localization
 
 | ID | Priority | Requirement |

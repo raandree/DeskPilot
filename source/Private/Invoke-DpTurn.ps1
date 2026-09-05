@@ -420,6 +420,32 @@ function Invoke-DpTurn {
             $script:DeskPilot.Engine.ApprovalBridge.BeginTurn([string]$Conversation.id)
         }
 
+        # DeskPilot's contained browser, behind its own Permission. Re-registered
+        # every Turn for the same reason as the terminal Tool: the navigation
+        # approval's fingerprint is scoped to a Conversation and a Turn, which is
+        # what stops an answer being replayed against a later address. It also
+        # closes any browser the previous Turn left open, so a window cannot
+        # outlive the Turn that opened it.
+        $selectedProject = $null
+        if ($settings.selectedProjectId) {
+            $selectedProject = @($settings.projects) | Where-Object { $_.id -eq $settings.selectedProjectId } | Select-Object -First 1
+        }
+        $browserRuntime = Get-DpBrowserRuntime
+        $browserToolParams = @{
+            Runspace       = $script:DeskPilot.Engine.Runspace
+            Enabled        = (Test-DpBrowserActive -Settings $settings -Runtime $browserRuntime)
+            TimeoutMinutes = [int]$settings.approvalTimeoutMinutes
+            Bridge         = $script:DeskPilot.Engine.ApprovalBridge
+            Context        = @{
+                conversationId = [string]$Conversation.id
+                turnId         = [string]$assistantId
+                project        = [string]$settings.workspaceFolder
+                projectDomains = @(if ($selectedProject) { $selectedProject.browserDomains })
+                runtimeRoot    = [string]$browserRuntime.runtimeRoot
+            }
+        }
+        $null = Set-DpBrowserTool @browserToolParams
+
         $userMessage = @{
             id         = New-DpId -Prefix 'm'
             role       = 'user'

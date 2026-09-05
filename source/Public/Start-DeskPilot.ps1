@@ -208,6 +208,9 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/diagnostics/check'; Name = 'runDiagnosticCheck' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/log/clear'; Name = 'clearDiagnosticLog' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/support-bundle'; Name = 'exportSupportBundle' }
+            # Downloads executable content, so it is a POST the user triggers from
+            # Diagnostics and never something a Turn can reach.
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/install'; Name = 'installBrowserRuntime' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
             @{ Method = 'POST'; Pattern = '/api/auth/start'; Name = 'authStart' }
             @{ Method = 'GET'; Pattern = '/api/models'; Name = 'models' }

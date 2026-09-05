@@ -1,0 +1,13 @@
+{
+  "name": "deskpilot-browser",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Supervised Playwright process for DeskPilot's contained browser automation. This manifest is the pin; it is copied into the DeskPilot data directory and installed there on explicit user consent, never from the module folder and never silently.",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

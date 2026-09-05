@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **DeskPilot can read a web page by working through it, not just fetching it.**
+  A new **Browser** permission lets the agent open a page in a real browser,
+  follow links, and read what it finds — the way you would click from a country
+  list to a city to reach a forecast. It is off until you switch it on, and
+  switching it on is separate from the existing Browsing permission, because
+  fetching one address and driving a live page are not the same thing.
+
+  The browser it opens is not yours. It is a throwaway with none of your
+  sign-ins, saved passwords, history or extensions, it cannot open files on your
+  computer, and it is closed when the turn ends.
+
+  It stays on the site your task started from. If a page tries to send it
+  somewhere else, DeskPilot stops *before* anything is contacted and asks you,
+  showing the whole address — including the part after the question mark, which
+  is where a hostile page hides what it is trying to smuggle out. Declining
+  means it does not happen. Approving covers that one address, for that one run;
+  if you want a site allowed permanently, you add it to the project in settings,
+  never from the card.
+
+  This first version only reads. There is nothing in it that fills in a form,
+  uploads, downloads, buys, sends or deletes, so a page that tries to talk the
+  agent into doing something cannot find anything to do. Addresses that could
+  reach your own machine — local files, your network, numeric addresses,
+  DeskPilot's own controls — are refused outright and are never offered to you as
+  a choice.
+
+  Before it can run, DeskPilot needs Node.js and a browser it manages itself.
+  It never installs either behind your back: **Diagnostics** reports what is
+  missing and downloads the browser only when you ask it to.
+
 - **DeskPilot asks before it runs a command.** When per-call approval is on, the
   agent's own terminal is taken away and replaced by DeskPilot's, which stops and
   asks you first. The card shows the command exactly as it will run, the folder

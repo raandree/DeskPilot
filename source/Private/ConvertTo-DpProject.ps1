@@ -56,5 +56,36 @@ function ConvertTo-DpProject {
     # in when the operator was the only possible caller.
     $intercomGroup = [bool](& $read $InputObject 'intercomGroup')
 
-    @{ id = $id; name = $name; path = $path; intercom = $intercom; intercomGroup = $intercomGroup }
+    # Hosts this Project's browser automation may reach without raising a card,
+    # on top of the site the task itself names. Widened only from Settings, never
+    # from a button beside an approval prompt - see decision 0008 on safeCommands
+    # for why "always allow this" next to a question is the wrong affordance.
+    #
+    # A bad entry throws rather than being dropped: silently discarding one would
+    # report the domain as remembered and then keep asking, and silently widening
+    # to something unintended would be permanent. This runs on the API patch path
+    # where the user can still be told. Get-DpBrowserScope, which runs per Turn
+    # where nobody can be told, drops instead.
+    $browserDomains = [System.Collections.Generic.List[string]]::new()
+    $seenDomains = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in @(& $read $InputObject 'browserDomains')) {
+        $domain = ([string]$entry).Trim().TrimEnd('.').ToLowerInvariant()
+        if (-not $domain) { continue }
+        # Two or more labels of letters, digits and inner hyphens. Rejects
+        # wildcards, schemes, ports, paths, spaces and single-label intranet names.
+        if ($domain -notmatch '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$') {
+            throw "'$entry' is not a domain DeskPilot can allow. Use a host name such as example.com."
+        }
+        if ($seenDomains.Add($domain)) { $browserDomains.Add($domain) }
+    }
+    if ($browserDomains.Count -gt 200) { throw 'At most 200 browser domains can be added to a project.' }
+
+    @{
+        id             = $id
+        name           = $name
+        path           = $path
+        intercom       = $intercom
+        intercomGroup  = $intercomGroup
+        browserDomains = $browserDomains.ToArray()
+    }
 }

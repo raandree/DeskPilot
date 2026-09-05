@@ -92,6 +92,7 @@
         run_command      = 'command'
         run_terminal_command = 'command'
         fetch_url        = 'url'
+        browser_page     = 'url'
         read_file        = 'path'
         list_directory   = 'path'
         write_file       = 'path'

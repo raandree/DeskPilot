@@ -65,6 +65,12 @@ function ConvertTo-DpActivityAction {
         # can be declined, and only its name reaches the gate.
         run_terminal_command = @{ kind = 'run'; field = 'command' }
         fetch_url        = @{ kind = 'fetch'; field = 'url' }
+        # DeskPilot's contained browser. Its own kind rather than 'fetch' because
+        # the two differ in what the user needs to see: fetch_url retrieves one
+        # address, while this drives a live page and may have been refused or
+        # approved on the way. The address is the field that matters, and for the
+        # actions that have no address the kind alone is the whole story.
+        browser_page     = @{ kind = 'browse'; field = 'url' }
         search_files     = @{ kind = 'search'; field = 'pattern' }
         search_text      = @{ kind = 'search'; field = 'query' }
         ask_user         = @{ kind = 'ask'; field = 'question' }
