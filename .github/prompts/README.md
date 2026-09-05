@@ -23,12 +23,12 @@ later feature's prerequisites or value.
 3. [Implement Microsoft 365 work integration](implement-microsoft-365-integration.prompt.md)
    begins with one read-only, delegated, least-privilege workflow. Keep send,
    share, and mutation operations out of the first slice.
-4. [Implement Playwright browser automation](implement-browser-automation.prompt.md)
-   follows approval and isolation. Name one workflow, target environment,
-   permitted domains, private-data inputs, and outbound actions before starting.
-5. [Implement parallel Agents](implement-parallel-agents.prompt.md) comes after
+4. [Implement parallel Agents](implement-parallel-agents.prompt.md) comes after
    approval and isolation because it multiplies concurrency, Permission, Usage,
    cancellation, and file-integration concerns.
+
+Playwright browser automation has [shipped](archive/README.md) and is no longer
+in this sequence.
 
 ## Dependency gates
 
@@ -36,11 +36,10 @@ later feature's prerequisites or value.
 flowchart LR
     A[Per-call approval: Terminal] --> I[Isolated Tool execution]
     A --> M[Microsoft 365 integration]
-    A --> B[Playwright browser automation]
-    I --> B
     A --> P[Parallel Agents]
     I --> P
     C[specs/120 Engine contract] --> R[Per-call approval: files + MCP]
+    B[Playwright browser automation: shipped]
 ```
 
 A Prompt File with an unmet gate may still be invoked for design discovery, but
@@ -58,8 +57,12 @@ describe as closed. Re-derive them before trusting either record:
   backend — it now does: DeskPilot owns `run_command` and delegates to the
   Engine's `Invoke-RunCommandTool` through an injected executor, which is the
   seam an isolation backend would replace.
-- **Playwright (0003) and parallel Agents (0005)** each require approval *and*
-  isolation. Half of each gate is now met; both remain blocked on isolation.
+- **Playwright (0003)** shipped on 2026-09-05 without 0001's isolation, because
+  0003 scopes that prerequisite out on the record: the browser carries its own
+  boundary - a separate supervised process with a disposable profile - and needs
+  no container runtime. That scoping is browser-only and is not a precedent.
+- **Parallel Agents (0005)** still requires approval *and* isolation. Half the
+  gate is met; it remains blocked on isolation.
 
 ## Optional timing changes
 

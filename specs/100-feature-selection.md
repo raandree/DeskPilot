@@ -48,7 +48,7 @@ acceptance criteria, and rollback paths.
 | Localization | **Shipped** (English + German). | [Archived](../.github/prompts/archive/implement-localization.prompt.md) |
 | Isolated Tool execution | Choose after per-call approval; this is an architectural security boundary, not a UI-only feature. | [Implement isolated Tool execution](../.github/prompts/implement-isolated-tool-execution.prompt.md) |
 | Parallel Agents | Later bet; requires approval and isolation plus separate child state and reviewable file integration. | [Implement parallel Agents](../.github/prompts/implement-parallel-agents.prompt.md) |
-| Playwright browser automation | Later bet; DeskPilot currently fetches URLs but cannot control a page. Requires one named workflow, approval, isolation, and a broken lethal-trifecta path. | [Implement Playwright browser automation](../.github/prompts/implement-browser-automation.prompt.md) |
+| Playwright browser automation | **Shipped 2026-09-05.** Contained browser behind its own Permission, one workflow, per-Project write capabilities each approved per action. | [Archived brief](../.github/prompts/archive/implement-browser-automation.prompt.md), decision 0003 |
 | Microsoft 365 work integration | Begin read-only with delegated identity, least privilege, provenance, and no send/share actions. | [Implement Microsoft 365 work integration](../.github/prompts/implement-microsoft-365-integration.prompt.md) |
 | Condition-triggered automation | **Shipped**, locked to `safe` mode. | [Archived](../.github/prompts/archive/implement-event-triggered-automation.prompt.md) |
 

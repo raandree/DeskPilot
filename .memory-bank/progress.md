@@ -443,3 +443,15 @@ and tests are in place and verified.
   a full set of modules per variant so the relative imports resolve to the copies.
   Mutation coverage **36/36**. Gate: **2215 tests, 0 failures, 0 warnings**;
   hostile-site **25/25**; workflow **11/11**.
+- **2026-09-05 - Browser automation merged to `main` and its brief archived.**
+  The nine-commit branch fast-forwarded onto `main` and was pushed. The Prompt
+  File moved to `.github/prompts/archive/` per the folder''s own convention, with
+  a row recording what it shipped as, and the two references that would have
+  dangled were repointed (`specs/100`, decision 0003). The active README drops it
+  from the sequence and now states plainly that Playwright shipped **without**
+  decision 0001''s isolation because 0003 scopes that prerequisite out on the
+  record - a browser-only scoping that leaves parallel Agents blocked exactly
+  where it was. The archive README also carries the cost, for whoever writes the
+  next brief: five review rounds, ten Blockers, and the fact that the loop only
+  stopped being a treadmill when the work shifted from adding controls to
+  measuring whether their tests could fail.

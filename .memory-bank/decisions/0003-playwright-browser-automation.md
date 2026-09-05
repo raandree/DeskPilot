@@ -24,7 +24,7 @@ decision the same day. Implementation of one read-only workflow is authorised.
 
 ## The gate
 
-`.github/prompts/implement-browser-automation.prompt.md`:
+`.github/prompts/archive/implement-browser-automation.prompt.md`:
 
 > Require shipped per-call approval and isolated execution. Require the user to
 > name the first workflow, target environment, permitted domains, required
