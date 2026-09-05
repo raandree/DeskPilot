@@ -10,6 +10,61 @@ source: repository evidence
 
 ## Status
 
+**Backend approved, installed and demonstrated 2026-09-05.** The operator
+approved Docker Desktop plus WSL2 and then asked for the install to be done for
+them; the session already held Administrator, so no UAC prompt was involved.
+`wsl --install --no-distribution` brought WSL **2.7.13** and flipped
+`Microsoft-Windows-Subsystem-Linux` and `VirtualMachinePlatform` from Disabled
+to Enabled (Hyper-V was already on). `winget install Docker.DockerDesktop`
+installed **4.89.0**. **No reboot was needed** despite DISM asking for one: the
+engine answered 47 s after Docker Desktop was started. Backend is WSL2 —
+`wsl -l -v` shows the `docker-desktop` distro Running at VERSION 2. Server
+engine 29.7.2, `linux/amd64`, context `desktop-linux`.
+
+Prerequisite 3 is therefore closed. Prerequisites 2, 4, 5 and 6 are open, and no
+runtime code has been written.
+
+## What the backend was measured to guarantee
+
+Run against `alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce`,
+pinned by digest as the decision requires. Four of the chosen properties hold on
+this machine:
+
+| Property | Evidence |
+| --- | --- |
+| Network default-deny | `--network none`: outbound fetch fails, **0** non-loopback interfaces |
+| Project mounted read-only | `-v <project>:/project:ro`: `README.md` readable, `touch` refused |
+| No host reach | none of `/mnt/c`, `/mnt/d`, `/c`, `/d`, `/host_mnt`, `/Users`, `/run/desktop/mnt/host` exists |
+| No ambient environment | a `ghp_`-shaped marker exported in the host shell is absent from `env` |
+| Cleanup | `--rm` left **0** containers |
+
+### The junction did not escape, and the reason is not a refusal
+
+The sharpest measurement, and the one that must not be written down as a
+guarantee. A fixture was built on the same drive: a mounted folder containing an
+NTFS **junction** pointing at a sibling secret folder outside it. Reading through
+the junction failed, and so did `..` traversal — but the mechanism is not
+containment.
+
+`/proc/mounts` shows the bind as 9p with **`aname=drvfs;path=D:\`**: the share is
+rooted at the **whole D: drive**, not at the Project. Narrow reach is enforced by
+the *mount point*, not by the share. And the junction is translated into a
+symlink — `esc -> /mnt/host/d/dp-escape-secret`, per the mount's own
+`symlinkroot=/mnt/host/` option. The read fails only because **`/mnt/host` does
+not exist inside the container**.
+
+So the escape is blocked by what is *absent* from the namespace, and it inverts
+the moment anything is present there. Mounting the host at `/mnt/host` — a
+plausible convenience — would turn every junction inside a Project into a live
+read of the host. That is an **invariant to test on every run**, not a property
+to assume: nothing may be mounted at `/mnt/host`, and a test must fail if
+something is. It seeds prerequisite 5.
+
+This is the same shape as the five Blockers decision 0003 records: a correct fact
+about one component written down as a guarantee about another.
+
+---
+
 **Dependency approved 2026-09-05; still blocked, now on the install itself.**
 The operator approved Docker Desktop plus WSL2 when the trade was put to them
 with today's measurements. That closes prerequisite 3 as a *decision* and
@@ -208,15 +263,14 @@ isolation suite is not release evidence.
    including that the capability probe rejects an Engine without the fix. What is
    still unproven is a real Model choosing the Tool and a real operator answering
    the card.
-3. **Install the approved backend.** The dependency question is closed — Docker
-   Desktop plus WSL2, approved 2026-09-05 — so what is left is the install, and
-   it is now the controlling blocker. `wsl --install`, then Docker Desktop, both
-   elevated and both the operator's own hands: an agent must not drive a UAC
-   prompt. `docker version` and a `--network none` run have to be observed from
-   this machine before any production code is written.
+3. ~~**Install the approved backend.**~~ **Done 2026-09-05.** WSL 2.7.13 plus
+   Docker Desktop 4.89.0, WSL2 backend, engine 29.7.2, no reboot required. The
+   four chosen properties are demonstrated above.
 4. A Diagnostics probe for backend presence, version and orphaned containers.
 5. A hostile-workload test corpus: a build script that reads `$HOME`, resolves
    cloud metadata, opens a socket, and follows a junction out of the mount.
+   **Seeded 2026-09-05** by the junction fixture above, which also produced the
+   `/mnt/host` invariant the corpus has to assert.
 6. **Isolated mode must own the Tool independently of `perCallApproval`.** Today
    `Set-DpTerminalTool` registers the owned Tool only when `Test-DpApprovalActive`
    is true, so with approval off there is no seam at all. Isolation cannot

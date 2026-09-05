@@ -10,8 +10,8 @@ source: repository evidence
 
 ## Current focus
 
-**Isolated Tool execution: the dependency is approved, the backend is not
-installed, and no code was written.** Re-running the isolation Prompt File on
+**Isolated Tool execution: the backend is now installed and demonstrated, and
+still no isolation code exists.** Re-running the isolation Prompt File on
 2026-09-05 re-measured both gates rather than reading them back.
 
 The prompt's own gate — per-call approval implemented *and* enforced — is met as
@@ -22,20 +22,29 @@ probe fails closed everywhere but this machine, and the boundary isolation is
 meant to stand on cannot be switched on in any shipped configuration. Put to the
 operator as a competing priority; they chose to record it.
 
-The controlling blocker was never that gate. It was the dependency, and the
-operator **approved Docker Desktop plus WSL2** on 2026-09-05, over the Windows
-Sandbox fallback, over shipping no isolation, and over the zero-dependency
-`Set-ShpToolPolicy` alternative. Approval is not installation: `docker`,
-`podman` and `nerdctl` are absent, `wsl --list` exits 1 with *the Subsystem is
-not installed*, and `Containers-DisposableClientVM` is Disabled — identical to
-2026-09-03. Both installs need elevation, so they are the operator's own hands.
+The controlling blocker was the dependency. The operator **approved Docker
+Desktop plus WSL2**, then asked for it to be installed for them. The session
+already held Administrator, so no UAC prompt was involved: WSL **2.7.13** via
+`wsl --install --no-distribution`, Docker Desktop **4.89.0** via winget, engine
+**29.7.2** on the WSL2 backend. **No reboot was needed** despite DISM asking for
+one — the engine answered 47 s after Docker Desktop started.
 
-**Nothing was built, deliberately.** Every isolation test would have skipped,
-and the prompt says a skipped isolation suite is not release evidence. Decision
-0001 already records why a mode switch that contains nothing is worse than its
-absence: it converts an honest limitation into a false promise. Next session
-starts by observing `docker version` and a `--network none` run from this
-machine — not by writing a backend.
+Four of the chosen properties are demonstrated: `--network none` gives 0
+non-loopback interfaces and no egress; a `:ro` Project mount reads and refuses
+writes; no host root is reachable; a `ghp_`-shaped host environment marker does
+not survive; `--rm` leaves 0 containers.
+
+**The finding that matters is the junction.** It did not escape — and the reason
+is not a refusal. The bind is 9p with `path=D:\`, so the *share* is the whole
+drive and only the mount point makes reach narrow; the junction is translated to
+`esc -> /mnt/host/d/...` per the mount's own `symlinkroot=/mnt/host/`, and the
+read fails purely because `/mnt/host` is absent inside the container. Containment
+here is a property of what is **not** mounted, and it inverts the moment anything
+is. Never mount `/mnt/host`; assert it. Decision 0001 carries the detail.
+
+Next step is prerequisite 6 — `Set-DpTerminalTool` registers the owned Tool only
+when `Test-DpApprovalActive` is true, so with approval off there is no executor
+seam for isolation to occupy.
 
 ## Previous focus — contained browser automation
 
