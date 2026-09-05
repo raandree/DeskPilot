@@ -59,6 +59,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder rather than into your project, so it never gets mistaken for your own
   work, and DeskPilot never opens or runs it.
 
+- **The browser only goes where you said, not where the agent decides.**
+  DeskPilot works out which sites are allowed from **your own message** — name a
+  site and it is allowed for that task. It deliberately does not take this from
+  the address the agent picks, because a page that had talked the agent into
+  something could then send it anywhere without asking you.
+
+  You are also asked when the agent invents a web address on a site you did name
+  — a made-up search query rather than a link the page actually offered. Normal
+  page-to-page navigation does not interrupt you.
+
+  The browser now closes when a turn ends and when you press **Stop**, rather
+  than when you next send a message. Diagnostics reports anything left behind
+  after an unexpected shutdown and offers to close it, and can uninstall the
+  downloaded browser without touching Node or the files you saved.
+
 - **DeskPilot asks before it runs a command.** When per-call approval is on, the
   agent's own terminal is taken away and replaced by DeskPilot's, which stops and
   asks you first. The card shows the command exactly as it will run, the folder

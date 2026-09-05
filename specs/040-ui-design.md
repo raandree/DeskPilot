@@ -451,29 +451,68 @@ DOM APIs, never concatenated HTML, because names and prompts are user text.
 
 ## Approval card
 
-When the agent proposes a Terminal command the safe-list does not cover, an
-approval card appears in the thread — in the same slot the Ask-User card uses,
-because it is the same kind of interruption: the Turn is parked and waiting on
-the reader.
+When the agent proposes something that needs a decision — a Terminal command the
+safe-list does not cover, a navigation off the site a task started from, or any
+browser write — an approval card appears in the thread, in the same slot the
+Ask-User card uses, because it is the same kind of interruption: the Turn is
+parked and waiting on the reader.
 
-It is deliberately the plainest card in the app. A one-line risk statement, the
-**command exactly as it will run**, the folder it will run in, an optional note
-field, and two buttons: **Run it** and **No**. The command is written through
-`textContent` into a `<code>` block that wraps rather than truncates — an
-ellipsis would hide the trailing argument, which is usually where the danger is.
-The model's own explanation of why it wants the command is not shown at all; it
-is the party being checked.
+It is deliberately the plainest card in the app. A one-line risk statement, then
+**what is actually being approved**, an optional note field, and two buttons. The
+model's own explanation of why it wants this is not shown at all; it is the party
+being checked.
+
+What the card shows depends on the class, and **every field the request carries
+is rendered** — a payload field the card omits is a field nobody approved:
+
+| Class | Title | Body |
+| --- | --- | --- |
+| `Terminal` | The agent wants to run a command | The command exactly as it will run, and the folder |
+| `BrowserNavigation` | The agent wants to open another site | The **site** on its own line, then the whole address including the query string |
+| `BrowserAction` / `fill_form` | The agent wants to fill in this form | Every field name and the exact value going into it, then the button it will press afterwards |
+| `BrowserAction` / `click_button` | The agent wants to press a control on the page | The site, the address, and the control's name |
+| `BrowserAction` / `upload_file` | The agent wants to send one of your files | The site and the file's full resolved path |
+| `BrowserAction` / `download_file` | The agent wants to save a file from this site | The site and the holding folder it lands in |
+
+The host is shown on its own line above the address because a long URL buries the
+one part that says whose site this is. Values are written through `textContent`
+into blocks that wrap rather than truncate — an ellipsis would hide the trailing
+argument or the query parameter, which is usually where the danger is. An empty
+value renders as *(empty)* rather than as nothing, so a blank is visibly a blank.
+
+If the card cannot describe the action at all, it says so and tells the reader to
+decline. A card that renders blank is worse than no card, because it teaches the
+reader that approving is a formality.
 
 **No** is focused by default, so a reflexive `Enter` declines rather than
-approves. The card is bordered in the warning colour rather than the accent, so
-it is not mistaken at a glance for the questionnaire it sits beside. There is no
-"always allow this" control: widening the safe-list happens in Settings, because
-a button offered next to a prompt is the one a tired operator presses.
+approves. The approve button reads **Run it** only for a Terminal command; for
+everything else it reads **Allow**, because nothing is being run. The card is
+bordered in the warning colour rather than the accent, so it is not mistaken at a
+glance for the questionnaire it sits beside. There is no "always allow this"
+control: widening the safe-list, the browser's allowed sites, or its write
+capabilities all happen in Settings, because a button offered next to a prompt is
+the one a tired operator presses.
 
 After a decision the card disables its controls and states the outcome in place.
 A reload while a card is pending re-fetches it from
 `GET /api/conversations/{id}/approval`, so a browser refresh does not leave a
 Turn that looks stalled with no way to answer it.
+
+Verified by screenshot at 1440, 820, 720, 700, 620 and 400 px
+(`tests/live/Invoke-DpBrowserUiScreenshot.ps1`), which renders the real card
+builder rather than a hand-written copy of its markup.
+
+## Project browser settings
+
+Each Project row in Settings carries what its browser may do beyond reading:
+four ticks — **fill in forms**, **press buttons**, **send files**, **save
+downloads** — and a field for extra sites the browser may open without asking.
+All four start off. Reading needs no grant.
+
+Each tick confirms once, in plain language, naming what it enables and what it
+cannot undo. That confirmation lives here rather than beside the approval card
+for the same reason the safe-list does: a considered edit in Settings is not the
+same act as a reflex in the middle of a task.
 
 ## States
 

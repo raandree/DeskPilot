@@ -87,6 +87,16 @@ function Get-DpBrowserRuntime {
     $ready = $nodePresent -and ($nodePresent -and $node.major -ge $minimumNodeMajor) -and
     $packageInstalled -and $versionMatch -and $browserInstalled
 
+    # A hook that weakens the boundary must reach a surface the user looks at. A
+    # warning stream inside the Engine Runspace reaches nobody.
+    $testHooks = @(
+        foreach ($name in 'DESKPILOT_BROWSER_TEST_ROOT', 'DESKPILOT_BROWSER_TEST_ARGS', 'DESKPILOT_BROWSER_TEST_INSECURE') {
+            if (-not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable($name))) { $name }
+        })
+    if ($testHooks.Count -gt 0) {
+        $issues.Add("Browser test hooks are set in the environment ($($testHooks -join ', ')). Certificate checking, browser arguments or the supervisor itself are not the shipped ones.")
+    }
+
     $action = if ($ready) { '' }
     elseif (-not $nodePresent -or ($nodePresent -and $node.major -lt $minimumNodeMajor)) {
         "Install Node.js $minimumNodeMajor or newer from nodejs.org, then set up browser automation from Diagnostics."
@@ -106,6 +116,7 @@ function Get-DpBrowserRuntime {
         packageInstalled = $packageInstalled
         versionMatch     = $versionMatch
         browserInstalled = $browserInstalled
+        testHooks        = $testHooks
         issues           = $issues.ToArray()
         action           = $action
     }

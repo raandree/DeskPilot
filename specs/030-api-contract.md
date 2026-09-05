@@ -162,7 +162,6 @@ and is never persisted automatically.
 ```
 
 ### `POST /api/diagnostics/support-bundle`
-
 Creates a support bundle only on this explicit request and returns its exact
 destination. The SPA displays that path.
 
@@ -192,6 +191,34 @@ clients cannot supply a destination. It refuses traversal, reparse-point
 redirection, overwrite, and a concurrent export (`409 export_running`). Other
 creation failures return `400` for a refused destination/bound or `500` for an
 I/O failure.
+
+### `POST /api/diagnostics/browser/install`
+
+Downloads and installs the pinned Playwright package and its matching browser
+into `<DataDir>/browser`. This is the **only** path that acquires an executable,
+and it exists as a user-initiated route precisely so no Turn, Tool or Model
+decision can reach it — silently downloading a browser engine is what the
+security model forbids outright. Node is detected, never installed.
+
+Returns `201` with `{ "ok": true, "pinnedVersion": "1.63.0", "nodeVersion": "v22.11.0", "ready": true }`,
+or `500 browser_install_failed` with the tool output attached. A partial install
+leaves the runtime reporting **not ready** rather than usable.
+
+### `POST /api/diagnostics/browser/cleanup`
+
+Closes browser processes DeskPilot started and did not close — the state a killed
+Host Server or a wedged supervisor leaves behind. Returns
+`{ "ok": true, "found": 2, "closed": 2, "failed": [] }`.
+
+The discriminator is the executable path under `<DataDir>/browser/browsers`,
+never a process name: matching on "chrome" would sweep up the user's own browser.
+
+### `POST /api/diagnostics/browser/uninstall`
+
+Deletes the downloaded runtime, closing any leftover process first so the folder
+is not removed underneath a running Chromium. Returns
+`{ "ok": true, "removed": true, "alreadyAbsent": false }`, or `500 browser_uninstall_failed`.
+Node is never touched — DeskPilot did not install it.
 
 ## Models
 
@@ -995,8 +1022,9 @@ question id must match, so a delayed response cannot answer another Turn.
 
 ### `POST /api/conversations/{id}/approval`
 
-Decides one pending Terminal approval while the owned `run_terminal_command`
-Tool is blocking the active Turn. Body:
+Decides one pending approval while the Tool that raised it is blocking the active
+Turn. The same route serves Terminal commands and browser actions; only the
+`class` on the request differs. Body:
 `{ "requestId": "…", "decision": "approve" | "deny", "note": "use --dry-run first" }`.
 `note` is optional, trimmed and bounded to 500 characters; on a denial it is
 handed to the Agent so a refusal can steer rather than dead-end.
@@ -1017,7 +1045,20 @@ there is no durable on-disk approval log.
 What a reloaded browser asks to find out whether the Turn it rejoined is waiting
 on it. Returns `{ "pending": false }` when nothing is pending — never an error,
 because that is the normal case — or
-`{ "pending": true, "id": "…", "tool": "run_command", "class": "Terminal", "risk": "…", "summary": { "command": "…", "workingDirectory": "…", "project": "…" } }`.
+`{ "pending": true, "id": "…", "tool": "run_terminal_command", "class": "Terminal", "risk": "…", "summary": { … } }`.
+
+`class` selects what the card must show, and **every field the summary carries
+must be rendered** — a payload field the card omits is a field nobody approved:
+
+| `class` | `summary` fields |
+| --- | --- |
+| `Terminal` | `command`, `workingDirectory`, `project` |
+| `BrowserNavigation` | `host`, `url` — the whole URL including the query string, which is where an injected page puts what it is trying to send out |
+| `BrowserAction` | `action`, `host`, `url`, plus `fields` (an array of `{ name, value }`) for `fill_form`, `control` for a button or field name, and `filePath` for an upload's resolved path or a download's destination |
+
+`action` is one of `fill_form`, `click_button`, `upload_file`, `download_file`.
+The fingerprint covers the values themselves, so an approval for one set of form
+values cannot be spent on another.
 
 ### SSE `approval` frame
 

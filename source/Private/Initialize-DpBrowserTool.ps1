@@ -52,6 +52,7 @@ function Initialize-DpBrowserTool {
         'Resolve-DpBrowserUrlDecision'
         'Get-DpBrowserScope'
         'Get-DpBrowserRefusal'
+        'Test-DpBrowserUrlFromPage'
         'ConvertTo-DpBrowserField'
         'Resolve-DpWorkspacePath'
         'New-DpApprovalRequest'

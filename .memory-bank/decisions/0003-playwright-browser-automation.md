@@ -165,6 +165,73 @@ slice and bounded by scope, but it is the one action with a plausible external
 effect that is not gated. Naming it rather than quietly relying on "links are
 reads".
 
+## Security review, 2026-09-05
+
+An independent agentic-security review returned **FAIL — 4 Blockers, 7 Majors**,
+and found **four of the ten design claims false as stated**. Every Blocker and
+Major is now fixed and carries a regression test. The review is the most
+valuable thing that happened to this feature and its findings are recorded here
+rather than summarised away.
+
+**B-1 — the Model seeded its own scope.** The first `open` of a run seeded the
+scope from the URL the *Model* chose, and a fresh state is created every Turn.
+So every Turn had one free, unapproved navigation to any host on the internet:
+inject on Turn N, exfiltrate on Turn N+1 with no card. Same-origin egress was
+never approved either, so a Model-composed query string on the user's own site
+was an open channel. **Fixed by changing the design**: scope now comes from
+hosts the *user* named in their own message, plus the Project's list, plus
+per-run grants; and an in-scope URL whose query the Model composed rather than
+took from a link on the page just read is approved like a departure
+(`Test-DpBrowserUrlFromPage`). This costs one card on a task whose site the user
+did not name, and removes a complete exfiltration channel. That trade is the
+reason this section exists.
+
+**B-2 — the two enforcement points disagreed on 26 of 80 URLs.** `System.Uri`
+performs no IDNA mapping and the WHATWG parser does, so `weathercity。com`
+(U+3002) read as a single label in PowerShell and as `weathercity.com` in
+Chromium. The approval card — the entire control for an off-scope navigation —
+was showing a host the browser would never contact. The stated "never more
+permissive" invariant had never been tested. **Fixed** by comparing on
+`IdnHost` on both sides, treating an empty `:@` as userinfo, adding the
+divergence cases to the corpus, and asserting both equality *and* the one-way
+invariant.
+
+**B-3 — Stop did not close the browser.** `Close-DpBrowserSession` had exactly
+one caller: the *start of the next Turn*. Its own docstring claimed "called when
+a Turn ends". Pressing Stop, or simply not sending another message, left a
+visible Chromium running an attacker-controlled page with scope installed and
+script executing, indefinitely. This is precisely the failure mode this
+repository already records twice: a control asserted in a comment and absent
+from the code. **Fixed** in the Turn's `finally` and on the stop route.
+
+**B-4 — an unguarded environment variable replaced the whole boundary.**
+`DESKPILOT_BROWSER_ROOT` overrode the asset root, and the supervisor sources are
+re-copied on every session start — so it replaced `policy.mjs` and
+`supervisor.mjs` with arbitrary Node code, silently, with no test, no warning
+and no mention in the security model. The two *weaker* `DESKPILOT_BROWSER_TEST_*`
+hooks had all three. **Fixed** by renaming it under the tested prefix and
+surfacing every active hook through the runtime and Diagnostics.
+
+Majors fixed: the per-run grant was dead code and never reached the supervisor
+(M-1); the protocol inherited the console code page, so a card promising
+`Straße` typed `Stra?e` (M-2); active hooks were only surfaced by a
+`Write-Warning` inside the Engine Runspace that reaches nobody (M-3); `href` and
+`title` were unbounded page-controlled text reaching the Model (M-4); the
+declared download cap was never read (M-5); a public name with a private A
+record reached the LAN, so the peer address is now checked after the navigation
+lands (M-6); and a write was not bound to the page it was approved on (M-7).
+
+The review also confirmed sound, having actively tried to break them: the deny‑
+beats‑scope ordering, the write-capability gate, the credential-field refusal,
+upload confinement and download filename sanitising, the no-silent-executable
+property, orphan discrimination by path, absence of XSS on the card, absence of
+any page-content path into a selector/URL/path/shell/eval, and the line-protocol
+correlation design.
+
+**The lesson worth keeping**: every Blocker was a claim this repository had
+written down about itself. Three were in docstrings, one was in a header
+comment. None had a test. The fixes all carry one now.
+
 ## Domain policy: scope-plus-prompt
 
 Rejected: an open allow-list. The user's objection — nobody can enumerate in

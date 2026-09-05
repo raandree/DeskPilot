@@ -125,8 +125,20 @@ function Invoke-DpBrowserTool {
     # for - a redirect makes those different, and the card must show the real one.
     $finish = {
         param($Response)
-        if ($Response.ok -and $Response.result -and $Response.result.PSObject.Properties['url']) {
-            $state.lastUrl = [string]$Response.result.url
+        if ($Response.ok -and $Response.result) {
+            if ($Response.result.PSObject.Properties['url']) { $state.lastUrl = [string]$Response.result.url }
+            # The link set is the page's own offer of where to go next, and it is
+            # what tells a Model-composed address from one the site authored.
+            if ($Response.result.PSObject.Properties['links']) {
+                $state.session.pageLinks = @($Response.result.links | ForEach-Object { [string]$_.href })
+            }
+        }
+        elseif ($state.session) {
+            # A failed navigation can still have moved the browser - the
+            # out-of-scope redirect path parks it on about:blank - so the page a
+            # later approval names must not keep pointing at the previous one.
+            $state.lastUrl = ''
+            $state.session.pageLinks = @()
         }
         ConvertFrom-DpBrowserResult -Response $Response -Session $state.session
     }
@@ -139,18 +151,29 @@ function Invoke-DpBrowserTool {
     if ($Action -eq 'open') {
         if ([string]::IsNullOrWhiteSpace($Url)) { return (& $refuse 'An address is required.') }
 
-        # The first navigation seeds the scope from the address the task named;
-        # after that the scope is fixed and a new host has to be approved.
-        $scope = if ($null -eq $state.session) {
-            @(Get-DpBrowserScope -StartUrl $Url -ProjectDomain @($context.projectDomains) -GrantedHost @($state.granted))
-        }
-        else {
-            @($state.scope)
-        }
+        # The scope is seeded from what the *user* named - the hosts in their own
+        # message, plus the Project's list - never from the address the Model
+        # chose. Seeding from the Model's first URL gave every Turn one free,
+        # unapproved navigation to any host on the internet, which is a complete
+        # exfiltration channel: the Model's context holds the conversation and
+        # the Workspace Folder path, and a URL carries it out. Recorded as
+        # Blocker B-1 in the security review of 2026-09-05.
+        $scope = @(Get-DpBrowserScope `
+                -StartUrl ([string]$context.userUrl) `
+                -ProjectDomain @($context.projectDomains) `
+                -GrantedHost @($state.granted))
 
         $decision = Resolve-DpBrowserUrlDecision -Url $Url -Scope $scope
         if ($decision.decision -eq 'deny') {
             return (& $refuse (Get-DpBrowserRefusal -Reason $decision.reason -TargetHost $decision.host))
+        }
+
+        # An in-scope host is not a blank cheque. The Model composes the whole
+        # address, so a query string it invented on a site the user named is the
+        # same channel one hop shorter. A URL whose query or fragment did not
+        # come from a link on the page just read is approved like a departure.
+        if ($decision.decision -eq 'allow' -and -not (Test-DpBrowserUrlFromPage -Url $Url -Session $state.session)) {
+            $decision = @{ decision = 'ask'; reason = 'model-composed'; host = $decision.host; url = $decision.url }
         }
 
         if ($decision.decision -eq 'ask') {
@@ -160,7 +183,10 @@ function Invoke-DpBrowserTool {
             if (-not $approval.approved) { return (& $refuse $approval.message) }
 
             $state.granted = @(@($state.granted) + $decision.host)
-            $scope = @(Get-DpBrowserScope -StartUrl $Url -ProjectDomain @($context.projectDomains) -GrantedHost @($state.granted))
+            $scope = @(Get-DpBrowserScope `
+                    -StartUrl ([string]$context.userUrl) `
+                    -ProjectDomain @($context.projectDomains) `
+                    -GrantedHost @($state.granted))
         }
 
         if ($null -eq $state.session) {
@@ -174,7 +200,10 @@ function Invoke-DpBrowserTool {
             catch { return (& $refuse "The browser could not start: $_") }
             $state.scope = $scope
         }
-        elseif (@($scope).Count -ne @($state.scope).Count) {
+        # Compared by content, not by count. The counts were equal in almost
+        # every real case, so an approved host was never pushed to the supervisor
+        # and the navigation the user had just authorised was then refused by it.
+        elseif (($scope -join "`n") -ne (@($state.scope) -join "`n")) {
             $applied = Invoke-DpBrowserRequest -Session $state.session -Command 'scope' -Payload @{ hosts = $scope } -TimeoutSeconds 15
             if (-not $applied.ok) { return (& $refuse 'The browser refused the updated list of allowed sites, so nothing was opened.') }
             $state.scope = @($applied.result.scope)
@@ -217,7 +246,7 @@ function Invoke-DpBrowserTool {
             -Subject 'filling in this form' -Bridge $bridge -TimeoutMinutes $timeoutMinutes
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
-        $payload = @{ fields = $parsed.fields }
+        $payload = @{ fields = $parsed.fields; expectedUrl = $pageUrl }
         if ($submitting) { $payload.submitWith = $SubmitWith }
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'fill' -Payload $payload -TimeoutSeconds 90
         return (& $finish $response)
@@ -240,7 +269,7 @@ function Invoke-DpBrowserTool {
             -Subject "pressing $ButtonText" -Bridge $bridge -TimeoutMinutes $timeoutMinutes
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
-        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'press' -Payload @{ buttonText = $ButtonText } -TimeoutSeconds 90
+        $response = Invoke-DpBrowserRequest -Session $state.session -Command 'press' -Payload @{ buttonText = $ButtonText; expectedUrl = $pageUrl } -TimeoutSeconds 90
         return (& $finish $response)
     }
 
@@ -276,7 +305,7 @@ function Invoke-DpBrowserTool {
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'upload' `
-            -Payload @{ fieldName = $FieldName; path = $full } -TimeoutSeconds 120
+            -Payload @{ fieldName = $FieldName; path = $full; expectedUrl = $pageUrl } -TimeoutSeconds 120
         return (& $finish $response)
     }
 
@@ -299,7 +328,7 @@ function Invoke-DpBrowserTool {
         if (-not $approval.approved) { return (& $refuse $approval.message) }
 
         $response = Invoke-DpBrowserRequest -Session $state.session -Command 'download' `
-            -Payload @{ controlText = $ButtonText } -TimeoutSeconds 120
+            -Payload @{ controlText = $ButtonText; expectedUrl = $pageUrl } -TimeoutSeconds 120
         return (& $finish $response)
     }
 

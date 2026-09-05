@@ -1441,6 +1441,65 @@ button.tree-row {
     font-size: 13px;
 }
 
+/* One label-and-value row per thing being approved. The label is quiet; the
+   value is the part the reader is here to check. */
+.approval-detail {
+    display: grid;
+    gap: 8px;
+}
+
+.approval-row-label {
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+}
+
+.approval-row-value {
+    overflow-wrap: anywhere;
+}
+
+.approval-fields {
+    display: grid;
+    gap: 4px;
+}
+
+.approval-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 8px;
+    align-items: baseline;
+}
+
+.approval-field-name {
+    color: var(--muted);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+/* Values wrap in full for the same reason the command does: an ellipsis would
+   hide the part that matters. */
+.approval-field-value {
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: var(--code-bg, rgba(127, 127, 127, 0.12));
+    font-family: var(--mono, ui-monospace, monospace);
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.approval-field-empty {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.approval-unknown {
+    color: var(--warn, #d08a00);
+    font-weight: 600;
+}
+
 /* The command is the thing being approved, so it wraps in full rather than
    being clipped: an ellipsis here would hide the argument that matters. */
 .approval-command {
@@ -2681,6 +2740,28 @@ button.tree-row {
     margin-right: 12px;
     color: var(--muted);
     cursor: pointer;
+}
+
+/* Separated from the phone-control ticks above it: these grant the browser
+   powers on someone else's website, which is a different kind of trust. */
+.project-browser {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+}
+
+.project-browser-label {
+    display: block;
+    color: var(--muted);
+    margin-bottom: 2px;
+}
+
+.project-browser-sites {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 6px;
+    font-size: 12px;
 }
 
 .intercom-candidate {

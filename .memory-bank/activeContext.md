@@ -10,68 +10,67 @@ source: repository evidence
 
 ## Current focus
 
-**Contained browser automation, now with per-Project write capabilities.**
-The read-only slice shipped first (decision 0003) after the prerequisite gate
-opened; write actions were added on request immediately afterwards.
+**Contained browser automation is complete and has survived an independent
+security review.** Every open item from the prompt's Definition of Done is done:
+the approval card, the Settings surface, Diagnostics orphan cleanup and
+uninstall, the hostile-site suite, the live workflow, UI screenshots, specs
+030/040/060, `docs/browser-automation.md`, and the review itself.
 
-Reading — `open`, `click_link`, `read_page`, `screenshot` — is always available
-and has no external effect. Writing — `fill_form`, `click_button`,
-`upload_file`, `download_file` — exists only where a Project grants the matching
-capability from `browserActions` (`fill`, `submit`, `upload`, `download`), all
-absent by default.
+## What the review changed
 
-**This materially changed the security posture and the record says so.** The
-read-only surface broke the agency leg of the trifecta by architecture. Write
-capabilities give part of it back, so approval stops being a backstop and
-becomes the only thing between an injected page and an irreversible action.
-That is why there is no safe-list, why the card carries the values, and why the
-fingerprint covers them.
+It returned **FAIL — 4 Blockers, 7 Majors**, and found **four of ten design
+claims false as stated**. All are fixed with regression tests; decision 0003
+carries the detail. The four that mattered most:
+
+- **The Model seeded its own scope**, giving every Turn one free unapproved
+  navigation to any host — a complete exfiltration channel. Scope now comes from
+  the user's own message, and a Model-composed query even on an in-scope host is
+  approved like a departure.
+- **The two enforcement points disagreed on 26 of 80 URLs**, because
+  `System.Uri` performs no IDNA mapping and Chromium does. The card could name a
+  host the browser would never contact. Both sides now compare on `IdnHost`, and
+  the corpus asserts equality *and* the never-more-permissive invariant that had
+  been claimed in a header comment and never tested.
+- **Stop did not close the browser.** `Close-DpBrowserSession` had one caller:
+  the start of the *next* Turn. Its own docstring said otherwise.
+- **`DESKPILOT_BROWSER_ROOT` replaced the entire policy with arbitrary Node
+  code**, silently, while the two strictly weaker test hooks beside it had a
+  guard test, a warning and a ready-line flag.
+
+Every Blocker was a claim this repository had written about itself, three of
+them in docstrings. None had a test. All four do now.
 
 ## Evidence
 
-- Browser suite: **333 tests.** Includes an 83-case shared corpus run through
-  both the PowerShell classifier and `policy.mjs` with a one-way "never more
-  permissive" invariant, and the credential-field cases run through Node because
-  only the live DOM check can decide them.
-- Full Sampler gate: **1995 passed, 0 failed, 0 errors, 0 warnings.**
-- PSScriptAnalyzer on `source/` steady at 47 findings; both non-house-style ones
-  are pre-existing and in other files.
+- Full Sampler gate: **2098 passed, 0 failed, 0 errors, 0 warnings.**
+- Hostile-site proof against a real attacking page over HTTPS: **24/24.**
+- Live Osorno workflow against the real site: **11/11.**
+- UI screenshots at 1440, 820, 720, 700, 620 and 400 px, rendering the real card
+  builder rather than a hand-written copy of its markup.
+- PSScriptAnalyzer on `source/`: 48 findings, both non-house-style ones
+  pre-existing and in other files.
 
-Two defects were caught by tooling rather than by reasoning, both worth keeping:
-the first `Invoke-DpBrowserProcess` collected output through
-`Register-ObjectEvent -Action` scriptblocks, which cannot reach the enclosing
-`$buffer`; and `Should -Invoke -Times 0` without `-Exactly` asserts nothing, so
-every "never contacted anything" assertion was vacuous until it was added.
-
-## Next step
-
-**The live proof still needs consent to install a browser engine.** The
-hostile-site harness (`tests/live/Invoke-DpBrowserHostileTest.ps1`) and the
-attacking site (`tests/live/hostile-site.mjs`) report honestly that the runtime
-is absent. Running them means downloading Playwright 1.63.0 and Chromium into
-the data directory, which is the consent gate this feature was built around.
-
-The hostile site does **not** yet attack the write surface. It should grow a
-form whose fields are relabelled after approval, a password box wearing an
-innocuous name, a file input the page tries to point at something outside the
-Project, and a download with a traversal filename. Until then the write path is
-proved by unit tests and a stand-in supervisor, not by a real hostile page.
+Defects found by running things rather than by reading them: the pop-up handler
+was registered before `state.page` existed, so it closed the page `newPage()`
+had just created and every navigation failed; `, $array.ToArray()` on an empty
+list produced a phantom element that made the proof report an orphan that did
+not exist; and `Should -Invoke -Times 0` without `-Exactly` asserts nothing, so
+every "never contacted anything" test was vacuous.
 
 ## Deliberate gaps, not oversights
 
-- **No Settings UI for `browserDomains` or `browserActions`.** Both are accepted
-  and validated by the API and honoured per Turn; neither has a control yet, so
-  granting a write capability currently means editing settings by hand.
 - **`click_link` is not gated.** A link can have a side effect on a badly-built
-  site. It is bounded by scope and unchanged from the read-only slice, but it is
-  the one action with a plausible external effect that raises no card.
-- **The approval card has no browser-specific rendering.** It carries `url`,
-  `host`, `action`, `control`, `filePath` and `fields`, but the SPA still draws
-  it with the terminal card's layout — so the values that make a write approval
-  meaningful are in the payload and not yet on screen. This is the largest gap.
-- **No screenshots at supported viewports**, and **no independent
-  agent-security review**. The second is now more strongly recommended than it
-  was: the change touches an outbound path that can submit, upload and delete.
+  site. Bounded by scope, unchanged since the read-only slice, and the one action
+  with a plausible external effect that raises no card.
+- **Minors m-1, m-2, m-3, m-9, m-10, m-11, m-12 from the review are open.** The
+  substantive ones are locator ambiguity when two elements match the Model's
+  substring (m-1), and off-origin passive sub-resources remaining allowed after
+  an approved fill has put Model-derived data into the DOM (m-2).
+- **The test hooks remain a residual risk**, now surfaced through the runtime,
+  Diagnostics and a warning. `DESKPILOT_BROWSER_TEST_ARGS` accepts arbitrary
+  Chromium arguments including `--user-data-dir`, so anyone able to set a
+  user-scoped environment variable can point the "throwaway profile" at a real
+  one. Asset hashing against the manifest would close it properly.
 
 ## Inherited approval work
 
@@ -86,15 +85,10 @@ does not touch that.
 
 ## The lesson this session keeps re-teaching
 
-Two more inherited claims were measured and corrected. `systemPatterns.md` still
-asserted that `-DisableTerminal` gated dispatch in 0.4.0 — the exact claim the
-anti-patterns section below it already records as false — and
-`specs/100-feature-selection.md` still said Playwright and interactive page
-control were absent. A record that contradicts itself in two places is a record
-nobody re-read.
-
-The same trap reappeared within this feature: adding write actions made "the
-Tool surface contains no action with an external effect" false in four separate
-documents that had just been written. Every one was corrected in the same edit
-rather than left for the next reader to trip over.
+It stopped being a lesson about inherited claims and became one about claims
+made *in the same session*. Adding write actions falsified "no action has an
+external effect" in four documents written hours earlier. The security review
+then falsified four more, all of them written down by this repository about
+itself, none of them tested. The pattern is now recorded in `systemPatterns.md`
+as **grep for the caller before believing the comment**.
 

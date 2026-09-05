@@ -442,14 +442,20 @@ function Invoke-DpTurn {
                 project        = [string]$settings.workspaceFolder
                 projectRoot    = [string]$settings.workspaceFolder
                 projectDomains = @(if ($selectedProject) { $selectedProject.browserDomains })
+                # The user's own words. The browser scope is seeded from hosts
+                # named here, never from the address the Model chooses, so a Turn
+                # cannot open an arbitrary host without a card.
+                userUrl        = [string]$Prompt
                 # Write capabilities are granted per Project and default absent,
                 # so a Project that never asked for them has a read-only browser.
                 actions        = @(if ($selectedProject) { $selectedProject.browserActions })
                 runtimeRoot    = [string]$browserRuntime.runtimeRoot
                 # Downloads land outside the Project on purpose: a file the site
                 # chose must not appear where the File Tools would read it as the
-                # user's own work.
-                downloadRoot   = (Join-Path $browserRuntime.runtimeRoot 'downloads')
+                # user's own work. Also outside the browser runtime folder, which
+                # uninstall deletes wholesale - removing the browser must not
+                # take the files the user approved and saved with it.
+                downloadRoot   = (Join-Path (Get-DpDataDir) 'browser-downloads')
             }
         }
         $null = Set-DpBrowserTool @browserToolParams
@@ -968,6 +974,11 @@ function Invoke-DpTurn {
         $script:DeskPilot.PendingApproval = $null
         $script:DeskPilot.TurnRunning = $false
         $script:DeskPilot.CancelRequested = $false
+        # A browser opened during this Turn must not outlive it. Waiting for the
+        # next Turn to re-register the Tool would leave a window running an
+        # attacker-controlled page, with the scope still installed and script
+        # still executing, for as long as the user does not send another message.
+        try { Close-DpBrowserSession -Runspace $script:DeskPilot.Engine.Runspace } catch { $null = $_ }
         if ($shell) { try { $shell.Dispose() } catch { $null = $_ } }
         try { $writer.Flush(); $writer.Dispose() } catch { $null = $_ }
     }

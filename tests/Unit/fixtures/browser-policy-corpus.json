@@ -54,7 +54,16 @@
     { "url": "https://93.184.216.34/", "expect": "deny", "note": "even a public IP literal evades a name-based allow-list" },
     { "url": "https://intranet/", "expect": "deny", "note": "single-label host resolves through search domains" },
     { "url": "https://printer.local/", "expect": "deny", "note": "mDNS" },
-    { "url": "https://host.localhost/", "expect": "deny", "note": "loopback alias" }
+    { "url": "https://host.localhost/", "expect": "deny", "note": "loopback alias" },
+
+    { "url": "https://:@weathercity.com/", "expect": "deny", "note": "empty userinfo still carries an @" },
+    { "url": "https://@weathercity.com/", "expect": "deny", "note": "bare @ in the authority" },
+    { "url": "https://weathercity.com@attacker.test/", "expect": "deny", "note": "the trusted name is the user, not the host" },
+    { "url": "https://weathercity。com/", "expect": "allow", "note": "U+3002 is a label separator after IDNA, and Chromium contacts weathercity.com" },
+    { "url": "https://attacker.test。weathercity.com/", "expect": "allow", "note": "IDNA-normalises to a real subdomain of the scoped host" },
+    { "url": "https://ＷＥＡＴＨＥＲＣＩＴＹ.com/", "expect": "allow", "note": "fullwidth letters fold to the scoped host" },
+    { "url": "https://weathercity.com⁄attacker.test/", "expect": "ask", "note": "U+2044 looks like a slash but is a label character" },
+    { "url": "https://①②⑦.0.0.1/", "expect": "deny", "note": "circled digits normalise to an address" }
   ],
   "resourceCases": [
     { "url": "https://weathercity.com/app.js", "type": "script", "expect": true, "note": "in scope, any type" },
@@ -103,5 +112,29 @@
     { "field": { "type": "text", "name": "note", "disabled": true }, "expect": false, "note": "disabled" },
     { "field": { "type": "text", "name": "note", "readOnly": true }, "expect": false, "note": "read only" },
     { "field": {}, "expect": true, "note": "an unremarkable field with nothing declared" }
+  ],
+  "addressCases": [
+    { "address": "127.0.0.1", "expect": true, "note": "loopback" },
+    { "address": "127.9.9.9", "expect": true, "note": "the whole 127/8" },
+    { "address": "10.0.0.5", "expect": true, "note": "RFC1918 class A" },
+    { "address": "172.16.0.1", "expect": true, "note": "RFC1918 class B low" },
+    { "address": "172.31.255.254", "expect": true, "note": "RFC1918 class B high" },
+    { "address": "192.168.1.1", "expect": true, "note": "RFC1918 class C" },
+    { "address": "169.254.169.254", "expect": true, "note": "cloud metadata" },
+    { "address": "100.64.0.1", "expect": true, "note": "CGNAT" },
+    { "address": "0.0.0.0", "expect": true, "note": "unspecified" },
+    { "address": "::1", "expect": true, "note": "IPv6 loopback" },
+    { "address": "[::1]", "expect": true, "note": "bracketed IPv6 loopback" },
+    { "address": "fd00::1", "expect": true, "note": "IPv6 unique local" },
+    { "address": "fe80::1", "expect": true, "note": "IPv6 link local" },
+    { "address": "::ffff:127.0.0.1", "expect": true, "note": "IPv4-mapped loopback" },
+
+    { "address": "93.184.216.34", "expect": false, "note": "an ordinary public address" },
+    { "address": "172.32.0.1", "expect": false, "note": "just above the RFC1918 class B range" },
+    { "address": "172.15.0.1", "expect": false, "note": "just below it" },
+    { "address": "192.169.0.1", "expect": false, "note": "adjacent to 192.168/16" },
+    { "address": "169.255.0.1", "expect": false, "note": "adjacent to link local" },
+    { "address": "2606:4700::1111", "expect": false, "note": "a public IPv6 address" },
+    { "address": "", "expect": false, "note": "nothing to judge" }
   ]
 }

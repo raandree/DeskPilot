@@ -74,12 +74,29 @@ function Start-DpBrowserSession {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    # Without these .NET falls back to the console code page, which on a Windows
+    # machine is typically an OEM one. The card would then show 'Straße', the
+    # fingerprint would bind 'Straße', and the supervisor would type 'Stra?e' -
+    # the action performed would not be the action approved, silently, for every
+    # non-ASCII value.
+    $psi.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $psi.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $psi.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
     $psi.CreateNoWindow = $true
 
     # Deliberately not the caller's environment. Only what the child needs.
     foreach ($name in @('PATH', 'Path', 'SystemRoot', 'windir', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LOCALAPPDATA')) {
         $value = [System.Environment]::GetEnvironmentVariable($name)
         if ($value) { $psi.Environment[$name] = $value }
+    }
+    # The hostile-site harness needs a real https origin on a real hostname,
+    # because the policy correctly refuses plain http, IP literals and
+    # single-label hosts. Its hooks are forwarded by prefix rather than named
+    # here, and DeskPilot never assigns one - they can only arrive from the
+    # environment the Host Server was started in, which no page and no model can
+    # reach. An active hook is reported in the ready line so it cannot be silent.
+    foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+        if ([string]$entry.Key -like 'DESKPILOT_BROWSER_TEST_*') { $psi.Environment[[string]$entry.Key] = [string]$entry.Value }
     }
     $psi.Environment['PLAYWRIGHT_BROWSERS_PATH'] = Join-Path $RuntimeRoot 'browsers'
     $psi.Environment['NODE_ENV'] = 'production'
@@ -103,6 +120,13 @@ function Start-DpBrowserSession {
         throw 'The browser supervisor started but did not report ready.'
     }
     $session.limits = $ready.limits
+    # The asset-root hook is checked here rather than in the supervisor, because
+    # by the time the supervisor runs it *is* whatever that folder contained.
+    $session.testHooks = [bool]$ready.testHooks -or
+        -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable('DESKPILOT_BROWSER_TEST_ROOT'))
+    if ($session.testHooks) {
+        Write-Warning 'DeskPilot browser test hooks are set in the environment. Certificate checking, browser arguments or the supervisor itself are not the shipped ones.'
+    }
 
     $applied = Invoke-DpBrowserRequest -Session $session -Command 'scope' -Payload @{ hosts = @($Scope) } -TimeoutSeconds 15
     if (-not $applied.ok) {

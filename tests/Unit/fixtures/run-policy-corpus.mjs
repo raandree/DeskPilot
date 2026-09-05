@@ -5,7 +5,7 @@
 // Usage: node run-policy-corpus.mjs <corpus.json>
 
 import { readFileSync } from 'node:fs';
-import { resolveUrlDecision, isResourceAllowed, isFieldFillable } from '../../../source/browser/policy.mjs';
+import { resolveUrlDecision, isResourceAllowed, isFieldFillable, isInternalAddress } from '../../../source/browser/policy.mjs';
 
 const corpusPath = process.argv[2];
 if (!corpusPath) {
@@ -15,14 +15,13 @@ if (!corpusPath) {
 
 const corpus = JSON.parse(readFileSync(corpusPath, 'utf8'));
 
-const urlResults = corpus.urlCases.map((testCase) => ({
-    url: testCase.url,
+const urlResults = corpus.urlCases.map((testCase, index) => ({
+    index,
     actual: resolveUrlDecision(testCase.url, corpus.scope).decision
 }));
 
-const resourceResults = corpus.resourceCases.map((testCase) => ({
-    url: testCase.url,
-    type: testCase.type,
+const resourceResults = corpus.resourceCases.map((testCase, index) => ({
+    index,
     actual: isResourceAllowed(testCase.url, testCase.type, corpus.scope)
 }));
 
@@ -31,4 +30,9 @@ const fieldResults = (corpus.fieldCases ?? []).map((testCase, index) => ({
     actual: isFieldFillable(testCase.field).fillable
 }));
 
-process.stdout.write(JSON.stringify({ urlResults, resourceResults, fieldResults }));
+const addressResults = (corpus.addressCases ?? []).map((testCase, index) => ({
+    index,
+    actual: isInternalAddress(testCase.address)
+}));
+
+process.stdout.write(JSON.stringify({ urlResults, resourceResults, fieldResults, addressResults }));

@@ -18,9 +18,9 @@
 
 import { chromium } from 'playwright';
 import { createInterface } from 'node:readline';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, statSync, rmSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { resolveUrlDecision, isResourceAllowed, isFieldFillable, normalizeScopeEntry } from './policy.mjs';
+import { resolveUrlDecision, isResourceAllowed, isFieldFillable, isInternalAddress, normalizeScopeEntry } from './policy.mjs';
 
 // Bounds, so a hostile or merely broken page cannot exhaust the session. Every
 // one of these is a refusal the user can see, not a silent truncation of intent.
@@ -28,6 +28,8 @@ const LIMITS = {
     actions: 50,
     navigations: 20,
     pageTextChars: 20000,
+    titleChars: 500,
+    hrefChars: 2048,
     links: 200,
     screenshots: 10,
     downloads: 10,
@@ -40,6 +42,7 @@ const state = {
     scope: [],
     allowDownload: false,
     downloadRoot: null,
+    testInsecure: false,
     browser: null,
     context: null,
     page: null,
@@ -54,29 +57,49 @@ const state = {
 function emit(payload) {
     process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
-
 // Refusals are reported, never silently dropped: a page that tried to reach
 // somewhere is evidence, and Activity is where the user sees it. Bounded so a
 // page looping on a blocked request cannot grow the process without limit.
 function recordBlocked(reason, url, resourceType) {
     const entry = { reason, url: String(url).slice(0, 500), resourceType };
-    if (state.blocked.length < 200) state.blocked.push(entry);
+    // Bounds the array *and* the emit. A page looping on a blocked request would
+    // otherwise write unbounded lines to stdout even though the array stopped.
+    if (state.blocked.length >= 200) return;
+    state.blocked.push(entry);
     emit({ event: 'blocked', ...entry });
 }
 
 async function ensureBrowser() {
     if (state.browser) return;
 
+    // Test hooks for the hostile-site harness, which has to serve a real https
+    // origin on a real hostname to exercise the policy honestly - the policy
+    // correctly refuses plain http, IP literals and single-label hosts, and
+    // weakening any of those to make testing easier would test the wrong thing.
+    //
+    // Environment only. A page cannot set one, the model cannot set one, and
+    // nothing in source/Private sets one either - which is asserted by a test
+    // rather than merely intended.
+    // One argument per line: a Chromium argument value can legitimately contain
+    // a comma, as --host-resolver-rules does.
+    const testArgs = (process.env.DESKPILOT_BROWSER_TEST_ARGS ?? '').split(/\r?\n/).map((a) => a.trim()).filter(Boolean);
+    // Also permits an internal peer address: the harness serves its hostile site
+    // on loopback with a self-signed certificate, which is the same test-rig
+    // condition, so it reuses this hook rather than adding another.
+    const testInsecure = process.env.DESKPILOT_BROWSER_TEST_INSECURE === '1';
+    state.testInsecure = testInsecure;
+
     state.browser = await chromium.launch({
         headless: false,
         // No personal profile is reachable from here: launch() plus a fresh
         // context is ephemeral by construction - no cookie jar on disk, no
         // history, no password store, no extensions, no ambient single sign-on.
-        args: ['--no-default-browser-check', '--no-first-run', '--disable-extensions']
+        args: ['--no-default-browser-check', '--no-first-run', '--disable-extensions', ...testArgs]
     });
 
     state.context = await state.browser.newContext({
         acceptDownloads: state.allowDownload,
+        ignoreHTTPSErrors: testInsecure,
         // Nothing is granted. A page asking for geolocation, notifications,
         // camera or clipboard is refused without reaching the user, because the
         // first workflow needs none of them and a prompt is a decision surface
@@ -110,14 +133,6 @@ async function ensureBrowser() {
         return route.continue();
     });
 
-    // A pop-up is a navigation that skipped the approval path, so it is closed
-    // rather than policed.
-    state.context.on('page', async (opened) => {
-        if (opened === state.page) return;
-        recordBlocked('popup', opened.url(), 'document');
-        await opened.close().catch(() => {});
-    });
-
     if (typeof state.context.routeWebSocket === 'function') {
         await state.context.routeWebSocket('**/*', (ws) => {
             const url = ws.url();
@@ -128,6 +143,15 @@ async function ensureBrowser() {
     }
 
     state.page = await state.context.newPage();
+
+    // Registered only after the main page exists. The 'page' event fires for
+    // newPage() too, so a handler installed earlier closes the page it was
+    // meant to protect - which aborts every navigation with a detached frame.
+    state.context.on('page', async (opened) => {
+        if (opened === state.page) return;
+        recordBlocked('popup', opened.url(), 'document');
+        await opened.close().catch(() => {});
+    });
 
     state.page.on('download', async (download) => {
         // A download the user did not approve is still refused even when the
@@ -165,20 +189,42 @@ function budget(kind) {
 // Page text and link lists are untrusted data. They are bounded and returned as
 // values; nothing here interpolates them into a selector, a script or a URL.
 async function readPage() {
-    const text = await state.page.evaluate(() => document.body?.innerText ?? '');
-    const links = await state.page.evaluate(() =>
+    // A read can race a navigation the interceptor just aborted, which destroys
+    // the execution context mid-evaluate. That is an ordinary outcome of the
+    // policy doing its job, so it is waited out rather than reported as a fault.
+    const evaluate = async (fn) => {
+        try {
+            return await state.page.evaluate(fn);
+        }
+        catch (error) {
+            if (!/execution context|destroyed|navigation/i.test(String(error?.message ?? ''))) throw error;
+            await state.page.waitForLoadState('domcontentloaded').catch(() => {});
+            return state.page.evaluate(fn);
+        }
+    };
+
+    const text = await evaluate(() => document.body?.innerText ?? '');
+    const links = await evaluate(() =>
         Array.from(document.querySelectorAll('a[href]'))
             .map((a) => ({ text: (a.textContent ?? '').trim().slice(0, 200), href: a.href }))
             .filter((link) => link.text.length > 0)
     );
 
     const trimmed = text.slice(0, LIMITS.pageTextChars);
+    const title = await state.page.title().catch(() => '');
     return {
         url: state.page.url(),
-        title: await state.page.title(),
+        title: String(title).slice(0, LIMITS.titleChars),
         text: trimmed,
         truncated: text.length > LIMITS.pageTextChars,
-        links: links.slice(0, LIMITS.links)
+        // href and title are page-controlled text that reaches the model, so
+        // they are bounded like page text. Unbounded hrefs turned the 20,000
+        // character page-text bound into a formality and could fault the session
+        // by overrunning the protocol line cap.
+        links: links.slice(0, LIMITS.links).map((link) => ({
+            text: link.text,
+            href: String(link.href).slice(0, LIMITS.hrefChars)
+        }))
     };
 }
 
@@ -235,14 +281,35 @@ async function clickControl(text) {
 // exactly like a navigation - a form that posts to another site is a navigation
 // wearing a button.
 async function pressControl(text) {
+    const before = state.blocked.length;
     await clickControl(text);
     await state.page.waitForLoadState('domcontentloaded').catch(() => {});
+
+    // The interceptor may already have refused the post, in which case the page
+    // never moved and the scope check below would see nothing wrong. Saying so
+    // is the difference between "that did not work" and "that was not allowed".
+    const refused = state.blocked.slice(before).find((entry) => String(entry.reason).startsWith('navigation-'));
+    if (refused) {
+        throw new Error(`That control tried to send the page to ${refused.url}, which is not in scope, so nothing was sent.`);
+    }
 
     const landed = resolveUrlDecision(state.page.url(), state.scope);
     if (landed.decision !== 'allow') {
         recordBlocked(`action-${landed.reason}`, state.page.url(), 'document');
         await state.page.goto('about:blank').catch(() => {});
         throw new Error(`That control led to ${landed.host || 'somewhere else'}, which is not in scope.`);
+    }
+}
+
+// A page can navigate itself while the user reads the card - a meta refresh or a
+// setTimeout is enough - and the values approved for one page would then be
+// typed into another. The approved URL travels with the action and is checked
+// here, at the moment it would happen.
+function assertSamePage(expectedUrl) {
+    if (!expectedUrl) return;
+    if (state.page.url() !== expectedUrl) {
+        recordBlocked('page-changed', state.page.url(), 'document');
+        throw new Error('The page changed while this was waiting for approval, so nothing was done. Read the page again first.');
     }
 }
 
@@ -268,6 +335,17 @@ const handlers = {
         budget('navigation');
         await ensureBrowser();
         const response = await state.page.goto(url, { waitUntil: 'domcontentloaded' });
+
+        // A public name can hold a private A record, and a pre-flight resolve is
+        // a TOCTOU against rebinding - so the address the connection actually
+        // landed on is what decides. Without this, a name is a way around the
+        // IP-literal refusal to reach dev servers and router admin pages.
+        const peer = await response?.serverAddr?.().catch(() => null);
+        if (peer && !state.testInsecure && isInternalAddress(peer.ipAddress)) {
+            recordBlocked('internal-address', state.page.url(), 'document');
+            await state.page.goto('about:blank').catch(() => {});
+            throw new Error('That address is on this machine or the local network, so DeskPilot will not open it.');
+        }
 
         // The landing URL is checked again because a redirect chain can end
         // somewhere the first check never saw.
@@ -317,9 +395,10 @@ const handlers = {
     // has shown the user the page, the values and the control, and blocked until
     // they answered. What is enforced here is the part an approval cannot cover,
     // because the user is judging a description and this is judging the live DOM.
-    async fill({ fields, submitWith }) {
+    async fill({ fields, submitWith, expectedUrl }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
+        assertSamePage(expectedUrl);
 
         const filled = [];
         for (const entry of fields ?? []) {
@@ -348,22 +427,24 @@ const handlers = {
         return { filled, submitted: Boolean(submitWith), ...(await readPage()) };
     },
 
-    async press({ buttonText }) {
+    async press({ buttonText, expectedUrl }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
+        assertSamePage(expectedUrl);
         await pressControl(buttonText);
         return readPage();
     },
 
-    async upload({ fieldName, path }) {
+    async upload({ fieldName, path, expectedUrl }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
+        assertSamePage(expectedUrl);
         if (typeof path !== 'string' || !path) throw new Error('A file path is required.');
 
         // The path arrives already resolved and confined to the project folder by
         // PowerShell. Nothing here derives a path from the page, which is the
         // rule that keeps an injected page from choosing what gets uploaded.
-        const locator = findField(fieldName, 'file');
+        const locator = findField(fieldName);
         const descriptor = await describeField(locator);
         if (!descriptor.found) throw new Error(`No file field called '${fieldName}' was found on this page.`);
         if (descriptor.type !== 'file') throw new Error(`'${fieldName}' is not a file field.`);
@@ -376,9 +457,10 @@ const handlers = {
     // asked and never where other Tools would pick it up by accident. The
     // suggested name is page-controlled, so it is reduced to a leaf and stripped
     // before it is ever joined to a path.
-    async download({ controlText }) {
+    async download({ controlText, expectedUrl }) {
         budget('action');
         if (!state.page) throw new Error('No page is open.');
+        assertSamePage(expectedUrl);
         if (!state.allowDownload) throw new Error('This project does not allow downloads.');
         if (state.downloads >= LIMITS.downloads) throw new Error(`This run has used its ${LIMITS.downloads} downloads.`);
         if (!state.downloadRoot) throw new Error('DeskPilot has nowhere to put a download.');
@@ -398,8 +480,18 @@ const handlers = {
             const target = join(state.downloadRoot, `${Date.now()}-${suggested}`);
 
             await download.saveAs(target);
+            // The declared cap has to be a refusal rather than a constant: an
+            // approved download of an enormous file would otherwise fill the
+            // disk. Checked after the write because the size is not known
+            // beforehand, so the oversized file is deleted rather than kept.
+            const written = statSync(target).size;
+            if (written > LIMITS.downloadBytes) {
+                rmSync(target, { force: true });
+                throw new Error(`That file is larger than the ${Math.round(LIMITS.downloadBytes / 1048576)} MB DeskPilot will save, so it was discarded.`);
+            }
+
             state.downloads += 1;
-            return { savedAs: target, name: suggested, from: download.url(), url: state.page.url() };
+            return { savedAs: target, name: suggested, bytes: written, from: download.url(), url: state.page.url() };
         }
         finally {
             state.pendingDownload = false;
@@ -477,4 +569,9 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     });
 }
 
-emit({ event: 'ready', limits: LIMITS });
+emit({
+    event: 'ready',
+    limits: LIMITS,
+    // Reported so a hook left set cannot be silent.
+    testHooks: Boolean(process.env.DESKPILOT_BROWSER_TEST_ARGS || process.env.DESKPILOT_BROWSER_TEST_INSECURE)
+});

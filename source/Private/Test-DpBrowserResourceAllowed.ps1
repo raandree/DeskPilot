@@ -1,8 +1,17 @@
 function Test-DpBrowserResourceAllowed {
     <#
     .SYNOPSIS
-        Whether a sub-resource request may leave the browser.
+        The conformance oracle for the supervisor's sub-resource rule. NOT an
+        enforcement point.
     .DESCRIPTION
+        Enforcement happens in the supervisor's request interceptor, which is the
+        only place a sub-resource request is visible; PowerShell never sees one.
+        This function exists so the shared corpus can hold both implementations
+        to the same answers, and it has no runtime caller by design. The synopsis
+        says so explicitly because this repository has a recorded history of
+        controls that were asserted in a docstring and absent from the code, and
+        a function named Test-...Allowed reads like a gate.
+
         Navigation is the Model's choice; sub-resources are the page's. That
         asymmetry is the whole rule, because the two parties know different
         things: the Model holds the conversation, the Workspace Folder path and

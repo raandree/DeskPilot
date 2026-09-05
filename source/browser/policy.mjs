@@ -54,12 +54,17 @@ export function resolveUrlDecision(rawUrl, scope) {
     const host = parsed.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase();
     if (!host) return deny('no-host');
 
+    // Empty credentials still carry an '@', and reading username/password as
+    // truthiness misses 'https://:@host' - a form built to split two parsers.
+    const hasUserinfo = parsed.username !== '' || parsed.password !== ''
+        || /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(rawUrl);
+
     // Rebuilt without userinfo so a password in the URL cannot travel onward.
-    const safeUrl = parsed.username || parsed.password
+    const safeUrl = hasUserinfo
         ? `${parsed.protocol}//${parsed.host}${parsed.pathname}${parsed.search}`
         : rawUrl;
 
-    if (parsed.username || parsed.password) return deny('userinfo', host, safeUrl);
+    if (hasUserinfo) return deny('userinfo', host, safeUrl);
     if (isAddressLiteral(host)) return deny('ip-literal', host, safeUrl);
     if (!host.includes('.')) return deny('single-label-host', host, safeUrl);
     if (host.endsWith('.localhost') || host.endsWith('.local')) return deny('private-host', host, safeUrl);
@@ -104,7 +109,38 @@ const CREDENTIAL_AUTOCOMPLETE = new Set([
     'current-password', 'new-password', 'one-time-code',
     'cc-number', 'cc-csc', 'cc-exp', 'cc-exp-month', 'cc-exp-year'
 ]);
-const CREDENTIAL_NAME = /pass(word|wd|phrase)|\bpin\b|otp|mfa|2fa|totp|secret|token|api[-_\s]?key|cvv|cvc|security[-_\s]?(answer|question)|recovery[-_\s]?code/i;
+const CREDENTIAL_NAME = /pass(word|wd|phrase)|\bpin\b|otp|mfa|2fa|totp|secret|token|api[-_\s]?key|cvv|cvc|security[-_\s]?(answer|question)|(recovery|verification|sms|auth|access|login|one[-_\s]?time)[-_\s]?code|\bcode\b/i;
+
+// Ranges a browser DeskPilot drives has no business reaching. Checked against
+// the address the connection actually landed on, because a name with a public
+// A record can point inward and a pre-flight resolve is a TOCTOU against
+// rebinding - the peer address is the load-bearing check.
+export function isInternalAddress(address) {
+    const text = String(address ?? '').trim().replace(/^\[|\]$/g, '').toLowerCase();
+    if (!text) return false;
+
+    if (text.includes(':')) {
+        if (text === '::1' || text === '::') return true;
+        const mapped = text.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+        if (mapped) return isInternalAddress(mapped[1]);
+        const head = parseInt(text.split(':')[0] || '0', 16);
+        if ((head & 0xfe00) === 0xfc00) return true;       // fc00::/7 unique local
+        if ((head & 0xffc0) === 0xfe80) return true;       // fe80::/10 link local
+        return false;
+    }
+
+    const parts = text.split('.').map(Number);
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;               // link local + metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;     // CGNAT
+    if (a === 198 && (b === 18 || b === 19)) return true;  // benchmarking
+    if (a === 192 && b === 0) return true;
+    return false;
+}
 
 export function isFieldFillable(descriptor) {
     const field = descriptor ?? {};

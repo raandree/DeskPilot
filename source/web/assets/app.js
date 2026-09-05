@@ -2348,34 +2348,116 @@ function renderUserPrompt(node, request, conversationId) {
 
 // The approval card. The agent is parked inside the tool while this is on
 // screen, so nothing has run yet — which is the only reason the card means
-// anything. Deliberately plain: the command verbatim, where it would run, and
-// two buttons. The model's own account of why it wants this is not shown,
-// because the model is the thing being checked.
+// anything. Deliberately plain, and deliberately specific: whatever is being
+// approved is shown verbatim, because a card that says "submit a form" without
+// the values is asking for a decision nobody can make, and a card that shows
+// nothing at all trains the reader to click through. The model's own account of
+// why it wants this is never shown, because the model is the thing being checked.
+const APPROVAL_TITLES = {
+    BrowserNavigation: 'approval.title.navigation',
+    // A browser action this build does not recognise must not fall back to the
+    // terminal title, which would describe it as something it is not.
+    BrowserAction: 'approval.title.action',
+    'BrowserAction:fill_form': 'approval.title.fill',
+    'BrowserAction:click_button': 'approval.title.press',
+    'BrowserAction:upload_file': 'approval.title.upload',
+    'BrowserAction:download_file': 'approval.title.download',
+};
+
+// Every value here is model-authored or page-influenced, so each one is set
+// through textContent. Nothing on this card is ever built as markup.
+function approvalRow(labelKey, value, mono) {
+    if (!value) return null;
+    const row = el('approval-row');
+    const label = el('approval-row-label');
+    label.textContent = t(labelKey);
+    const body = el(mono ? 'approval-command' : 'approval-row-value', mono ? 'code' : 'div');
+    body.textContent = String(value);
+    row.append(label, body);
+    return row;
+}
+
+function approvalDetail(request) {
+    const summary = request.summary || {};
+    const kind = String(request.class || 'Terminal');
+    const action = String(summary.action || '');
+    const rows = [];
+
+    if (kind === 'BrowserNavigation' || kind === 'BrowserAction') {
+        // The host first and on its own line: a long address can bury the one
+        // part that says whose site this is, which is the part being judged.
+        rows.push(approvalRow('approval.site', summary.host, false));
+        // Then the whole address, query string included: that is where an
+        // injected page puts what it is trying to send out, so clipping it
+        // would hide the only part worth reading.
+        rows.push(approvalRow('approval.address', summary.url, true));
+    } else {
+        rows.push(approvalRow('approval.command', summary.command, true));
+        rows.push(approvalRow('approval.in', summary.workingDirectory, false));
+    }
+
+    if (kind === 'BrowserAction') {
+        const fields = Array.isArray(summary.fields) ? summary.fields : [];
+        if (fields.length) {
+            const wrap = el('approval-row');
+            const label = el('approval-row-label');
+            label.textContent = t('approval.values');
+            const list = el('approval-fields');
+            for (const field of fields) {
+                const item = el('approval-field');
+                const name = el('approval-field-name');
+                name.textContent = String(field.name || '');
+                const value = el('approval-field-value', 'code');
+                const text = String(field.value ?? '');
+                value.textContent = text === '' ? t('approval.empty') : text;
+                if (text === '') value.classList.add('approval-field-empty');
+                item.append(name, value);
+                list.appendChild(item);
+            }
+            wrap.append(label, list);
+            rows.push(wrap);
+        }
+
+        if (summary.control) {
+            rows.push(approvalRow(action === 'fill_form' ? 'approval.thenPresses' : 'approval.control', summary.control, false));
+        }
+        if (summary.filePath) {
+            rows.push(approvalRow(action === 'download_file' ? 'approval.savesTo' : 'approval.file', summary.filePath, false));
+        }
+    }
+
+    return rows.filter(Boolean);
+}
+
 function renderApproval(node, request, conversationId) {
     if (!node || !request || !request.id) return;
     const requestId = String(request.id);
     if (Array.from(node.children).some((child) => child.dataset.approvalId === requestId)) return;
 
     const summary = request.summary || {};
+    const kind = String(request.class || 'Terminal');
+    const action = String(summary.action || '');
     const card = el('user-prompt-card approval-card');
     card.dataset.approvalId = requestId;
     card.setAttribute('role', 'group');
     card.setAttribute('aria-label', t('approval.title'));
 
     const head = el('approval-head');
-    head.textContent = t('approval.title');
+    head.textContent = t(APPROVAL_TITLES[`${kind}:${action}`] || APPROVAL_TITLES[kind] || 'approval.title');
 
     const risk = el('approval-risk');
     risk.textContent = String(request.risk || t('approval.risk'));
 
-    // textContent, never innerHTML: the command is model-authored text and this
-    // is the one place the user is asked to read it exactly as it will run.
-    const command = el('approval-command', 'code');
-    command.textContent = String(summary.command || '');
-
-    const where = el('approval-where');
-    const dir = String(summary.workingDirectory || '');
-    if (dir) where.textContent = t('approval.in') + ' ' + dir;
+    const detail = el('approval-detail');
+    const rows = approvalDetail(request);
+    for (const row of rows) detail.appendChild(row);
+    // A card with nothing to show is worse than no card, because it teaches the
+    // reader that approving is a formality. Say so instead of rendering blank.
+    if (!rows.length) {
+        const empty = el('approval-row-value approval-unknown');
+        empty.textContent = t('approval.noDetail');
+        detail.appendChild(empty);
+    }
 
     const noteWrap = el('approval-note-wrap');
     const note = el('approval-note', 'input');
@@ -2388,13 +2470,13 @@ function renderApproval(node, request, conversationId) {
     const actions = el('approval-actions');
     const approve = el('btn primary approval-approve', 'button');
     approve.type = 'button';
-    approve.textContent = t('approval.approve');
+    approve.textContent = t(kind === 'Terminal' ? 'approval.approve' : 'approval.allow');
     const deny = el('btn approval-deny', 'button');
     deny.type = 'button';
     deny.textContent = t('approval.deny');
     actions.append(deny, approve);
 
-    card.append(head, risk, command, where, noteWrap, status, actions);
+    card.append(head, risk, detail, noteWrap, status, actions);
     node.appendChild(card);
     scrollThread();
     deny.focus();
@@ -3391,6 +3473,96 @@ async function projectAction(patch) {
     } catch (e) { toast(e.message); }
 }
 
+// What the browser may do beyond reading, per project. Reading needs no grant;
+// each of these gives back part of the agency the read-only surface removes, so
+// each is its own tick and each is confirmed once here — never from the approval
+// card, which is the button a tired operator presses.
+const BROWSER_CAPABILITIES = [
+    {
+        key: 'fill',
+        label: 'fill in forms',
+        confirm: 'Let the agent type into forms on websites in this project?\n\n'
+            + 'Whatever it types leaves your computer. It will show you every field and value and wait for you each time.\n\n'
+            + 'It will never type into a password, one-time code or security question box.',
+    },
+    {
+        key: 'submit',
+        label: 'press buttons',
+        confirm: 'Let the agent press buttons on websites in this project?\n\n'
+            + 'A button can send, buy, change or delete something on that site, and DeskPilot cannot undo it. '
+            + 'It will name the button and wait for you each time.',
+    },
+    {
+        key: 'upload',
+        label: 'send files',
+        confirm: 'Let the agent attach files from this project to websites?\n\n'
+            + 'Only files inside the project folder can be sent. It will show you the full path and wait for you each time.',
+    },
+    {
+        key: 'download',
+        label: 'save downloads',
+        confirm: 'Let the agent save files that websites offer?\n\n'
+            + 'They go into a separate holding folder, never into your project, and DeskPilot never opens or runs them.',
+    },
+];
+
+function renderProjectBrowser(p) {
+    const wrap = el('project-browser tiny');
+    const granted = Array.isArray(p.browserActions) ? p.browserActions : [];
+
+    const heading = document.createElement('span');
+    heading.className = 'project-browser-label';
+    heading.textContent = 'Browser can also:';
+    wrap.appendChild(heading);
+
+    for (const capability of BROWSER_CAPABILITIES) {
+        const label = document.createElement('label');
+        label.className = 'project-remote tiny';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = granted.includes(capability.key);
+        box.onchange = () => {
+            if (box.checked && !window.confirm(capability.confirm)) {
+                box.checked = false;
+                return;
+            }
+            const next = projects().map((x) => {
+                if (x.id !== p.id) return x;
+                const current = Array.isArray(x.browserActions) ? x.browserActions.slice() : [];
+                const without = current.filter((a) => a !== capability.key);
+                return Object.assign({}, x, {
+                    browserActions: box.checked ? without.concat(capability.key) : without,
+                });
+            });
+            projectAction({ projects: next });
+        };
+        label.append(box, document.createTextNode(' ' + capability.label));
+        wrap.appendChild(label);
+    }
+
+    // Extra sites the browser may reach without asking, on top of whatever the
+    // task itself names. A bad entry is rejected by the API rather than dropped,
+    // so the toast is the whole error handling this needs.
+    const sites = document.createElement('input');
+    sites.type = 'text';
+    sites.className = 'project-browser-sites';
+    sites.placeholder = 'extra sites, e.g. portal.example.com';
+    sites.title = 'Sites the browser may open without asking, on top of the one a task starts from';
+    sites.value = (Array.isArray(p.browserDomains) ? p.browserDomains : []).join(', ');
+    const applySites = () => {
+        const wanted = sites.value.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+        const current = Array.isArray(p.browserDomains) ? p.browserDomains : [];
+        if (wanted.join('\u0000') === current.join('\u0000')) return;
+        const next = projects().map((x) => (x.id === p.id ? Object.assign({}, x, { browserDomains: wanted }) : x));
+        projectAction({ projects: next });
+    };
+    sites.onchange = applySites;
+    sites.onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); applySites(); } };
+    wrap.appendChild(sites);
+
+    return wrap;
+}
+
 function renderProjectsManager() {
     const container = $('set-projects');
     if (!container) return;
@@ -3449,6 +3621,7 @@ function renderProjectsManager() {
         group.append(groupBox, document.createTextNode(' also from a group chat'));
         meta.appendChild(remote);
         meta.appendChild(group);
+        meta.appendChild(renderProjectBrowser(p));
         const actions = el('project-actions');
         if (!isSel) {
             const use = document.createElement('button');

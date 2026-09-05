@@ -84,7 +84,14 @@ function Resolve-DpBrowserUrlDecision {
 
     if ($uri.Scheme -ne 'https') { return (& $refuse 'scheme') }
 
-    $hostName = $uri.DnsSafeHost
+    # IdnHost, never DnsSafeHost. DnsSafeHost performs no IDNA mapping, so a
+    # host containing U+3002 (ideographic full stop) or fullwidth letters reads
+    # as one label here and as weathercity.com in Chromium - and the approval
+    # card would then name a host the browser will never contact. IdnHost is the
+    # punycode form, which is what actually goes on the wire.
+    $hostName = ''
+    try { $hostName = $uri.IdnHost } catch { $hostName = '' }
+    if ([string]::IsNullOrWhiteSpace($hostName)) { $hostName = $uri.DnsSafeHost }
     if ([string]::IsNullOrWhiteSpace($hostName)) { return (& $refuse 'no-host') }
     # The root label's trailing dot is legal and resolves identically, so it is
     # normalised away rather than allowed to miss a scope entry.
@@ -95,7 +102,12 @@ function Resolve-DpBrowserUrlDecision {
     # the decision, whatever the caller does with it.
     $safeUrl = if ($uri.UserInfo) { '{0}://{1}{2}' -f $uri.Scheme, $uri.Authority, $uri.PathAndQuery } else { $Url }
 
-    if ($uri.UserInfo) { return (& $refuse 'userinfo' $safeUrl $hostName) }
+    # $uri.UserInfo is '' for 'https://:@host', but the '@' is still there and
+    # the WHATWG parser reads it as empty credentials. Checking the raw authority
+    # keeps the two implementations agreeing on a form built to split them.
+    $authority = $Url -replace '^[a-zA-Z][a-zA-Z0-9+.-]*://', ''
+    $authority = ($authority -split '[/?#]', 2)[0]
+    if ($uri.UserInfo -or $authority.Contains('@')) { return (& $refuse 'userinfo' $safeUrl $hostName) }
 
     $address = $null
     if ([System.Net.IPAddress]::TryParse($hostName, [ref]$address)) {

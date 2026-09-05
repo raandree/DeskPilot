@@ -211,6 +211,8 @@ function Start-DeskPilot {
             # Downloads executable content, so it is a POST the user triggers from
             # Diagnostics and never something a Turn can reach.
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/install'; Name = 'installBrowserRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/cleanup'; Name = 'cleanupBrowserRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/uninstall'; Name = 'uninstallBrowserRuntime' }
             @{ Method = 'GET'; Pattern = '/api/auth/status'; Name = 'authStatus' }
             @{ Method = 'POST'; Pattern = '/api/auth/start'; Name = 'authStart' }
             @{ Method = 'GET'; Pattern = '/api/models'; Name = 'models' }

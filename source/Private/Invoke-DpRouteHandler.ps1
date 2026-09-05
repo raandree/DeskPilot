@@ -96,6 +96,31 @@ function Invoke-DpRouteHandler {
                 ready = [bool]$result.runtime.ready
             }
         }
+        'cleanupBrowserRuntime' {
+            $runtime = Get-DpBrowserRuntime
+            $result = Remove-DpBrowserOrphan -RuntimeRoot $runtime.runtimeRoot -Confirm:$false
+            Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' -Component 'browser' `
+                -EventId 'browser.cleanup' -Summary "Closed $($result.closed) of $($result.found) leftover browser process(es)."
+            Write-DpResponse -Stream $Stream -Json @{
+                ok = ($result.failed.Count -eq 0)
+                found = [int]$result.found
+                closed = [int]$result.closed
+                failed = @($result.failed)
+            }
+        }
+        'uninstallBrowserRuntime' {
+            $runtime = Get-DpBrowserRuntime
+            $result = Uninstall-DpBrowserRuntime -RuntimeRoot $runtime.runtimeRoot -Confirm:$false
+            if (-not $result.removed -and -not $result.alreadyAbsent) {
+                Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'error' -Component 'browser' `
+                    -EventId 'browser.uninstall.failed' -Summary $result.error
+                Write-DpResponse -Stream $Stream -Status 500 -Json @{ error = @{ code = 'browser_uninstall_failed'; message = $result.error } }
+                return
+            }
+            Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' -Component 'browser' `
+                -EventId 'browser.uninstall.completed' -Summary 'The downloaded browser runtime was removed.'
+            Write-DpResponse -Stream $Stream -Json @{ ok = $true; removed = [bool]$result.removed; alreadyAbsent = [bool]$result.alreadyAbsent }
+        }
         'exportSupportBundle' {
             if ($state.Diagnostics.Exporting) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'export_running'; message = 'A support bundle is already being created.' } }
@@ -1578,6 +1603,10 @@ function Invoke-DpRouteHandler {
             # Stop has to release this bridge too or the pipeline never unwinds and
             # the Stop button appears to do nothing.
             if ($state.Engine.ApprovalBridge) { $state.Engine.ApprovalBridge.Cancel() }
+            # Stop has to mean the browser stops too. The Turn's own finally also
+            # closes it, but that only runs once the pipeline unwinds, and a page
+            # keeps executing script in the meantime.
+            try { Close-DpBrowserSession -Runspace $state.Engine.Runspace } catch { $null = $_ }
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
         }
         'titleConversation' {

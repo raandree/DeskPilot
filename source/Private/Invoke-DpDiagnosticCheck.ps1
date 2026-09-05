@@ -128,9 +128,30 @@ function Invoke-DpDiagnosticCheck {
     $browserConfigured = [bool]$Snapshot.browser.enabled
     $browserAvailable = [bool]$browserRuntime -and [bool]$browserRuntime.nodePresent
     $browserHealthy = [bool]$browserRuntime -and [bool]$browserRuntime.ready
+
+    # A window left running with nothing in the UI accounting for it. Reported
+    # even when the runtime is otherwise healthy, because that is exactly when
+    # nobody would think to look.
+    $orphans = @()
+    if ($browserRuntime) {
+        try { $orphans = @(Get-DpBrowserOrphan -RuntimeRoot $browserRuntime.runtimeRoot) } catch { $orphans = @() }
+    }
+    if ($orphans.Count -gt 0) { $browserHealthy = $false }
+
+    # A test hook weakens the boundary for every browser Turn, permanently and
+    # invisibly, so it is reported as degraded rather than merely logged.
+    $browserHooks = @(if ($browserRuntime) { $browserRuntime.testHooks })
+    if ($browserHooks.Count -gt 0) { $browserHealthy = $false }
+
     $browserState = Resolve-DpDiagnosticState -Configured:$browserConfigured -Available:$browserAvailable -Healthy:$browserHealthy
     $browserExplanation = if (-not $browserConfigured) {
         'Browser automation is switched off. DeskPilot can still read a page address without it.'
+    }
+    elseif ($browserHooks.Count -gt 0) {
+        "Browser test hooks are set in the environment ($($browserHooks -join ', ')). Certificate checking, browser arguments or the supervisor itself are not the shipped ones."
+    }
+    elseif ($orphans.Count -gt 0) {
+        "$($orphans.Count) browser process(es) from an earlier run are still open."
     }
     elseif ($browserHealthy) {
         "A contained browser is ready. It uses a throwaway profile with none of your sign-ins, and it stays on the site a task starts from."
@@ -143,12 +164,14 @@ function Invoke-DpDiagnosticCheck {
     }
     & $add (New-DpDiagnosticCheck -Id 'browser-automation' -Label 'Browser automation' -State $browserState `
             -Explanation $browserExplanation `
-            -Action $(if ($browserHealthy -or -not $browserConfigured) { '' } elseif ($browserRuntime) { [string]$browserRuntime.action } else { 'Open Diagnostics again to retry the check.' }) `
+            -Action $(if ($browserHooks.Count -gt 0) { 'Remove the DESKPILOT_BROWSER_TEST_* variables from your environment and restart DeskPilot.' } elseif ($orphans.Count -gt 0) { 'Use Close leftover browsers in Diagnostics.' } elseif ($browserHealthy -or -not $browserConfigured) { '' } elseif ($browserRuntime) { [string]$browserRuntime.action } else { 'Open Diagnostics again to retry the check.' }) `
             -Detail @{
                 nodeVersion      = [string]$(if ($browserRuntime) { $browserRuntime.nodeVersion })
                 pinnedVersion    = [string]$(if ($browserRuntime) { $browserRuntime.pinnedVersion })
                 installedVersion = [string]$(if ($browserRuntime) { $browserRuntime.installedVersion })
                 browserInstalled = [bool]$(if ($browserRuntime) { $browserRuntime.browserInstalled })
+                orphanCount      = [int]$orphans.Count
+                testHooks        = @($browserHooks)
             })
 
     $intercomState = Resolve-DpDiagnosticState -Configured:([bool]$Snapshot.intercom.enabled) `

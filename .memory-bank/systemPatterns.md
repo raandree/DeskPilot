@@ -1075,6 +1075,32 @@ source: repository evidence
   leaked secret. A check that can only deny is safe to be approximate; one that
   can permit is not.
 
+- **Never let the constrained party choose the constraint.** The browser scope
+  was seeded from the first URL the *Model* opened, which meant the Model set the
+  boundary it was about to be judged against — one free, unapproved navigation to
+  any host, every Turn. It read as safe because the first URL "comes from the
+  task", but nothing tied it to the user's words. Scope now comes from the user's
+  own message. When a boundary takes an input, ask who authored that input; if it
+  is the party being contained, it is not a boundary.
+
+- **Two parsers, two answers, one of them shown to the user.** `System.Uri`
+  performs no IDNA mapping and the WHATWG URL parser does, so `weathercity。com`
+  is one label to .NET and `weathercity.com` to Chromium. The approval card was
+  built from the .NET answer while the browser acted on the Chromium one — the
+  card could name a host that would never be contacted. Whenever two runtimes
+  parse the same string, pick the one that *acts* on it as authoritative, derive
+  the display from that, and test the pair against a corpus rather than asserting
+  agreement in a comment.
+
+- **A cleanup path needs a caller, and the docstring is not one.**
+  `Close-DpBrowserSession` documented itself as "called when a Turn ends and when
+  the Tool is re-registered". Only the second was implemented, so Stop left a
+  browser running an attacker-controlled page until the user happened to send
+  another message. Same shape as the `-DisableTerminal` claim and the
+  `downloadBytes` limit that existed only as a constant: **grep for the caller
+  before believing the comment**, and prefer a test that observes the effect over
+  one that observes the intent.
+
 ## Anti-patterns to avoid
 
 - **Announcing a boundary the code cannot enforce.** A `Local`/`Isolated` mode

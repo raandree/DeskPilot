@@ -281,6 +281,22 @@ and tests are in place and verified.
   outright against the live input's own type. Uploads are confined to the Project
   by the shared workspace-path test before the card is raised; downloads are
   quarantined outside it. Gate: **1995 tests, 0 failures.**
+- **2026-09-05 — Browser automation completed and independently reviewed.**
+  The approval card now renders what is being approved (it previously showed the
+  terminal's two fields, both empty for every browser card, while the risk line
+  told the reader to check an address that was not there). Settings grows the
+  per-Project browser controls, Diagnostics grows orphan cleanup and uninstall,
+  and specs 030/040/060 plus `docs/browser-automation.md` are written.
+
+  An independent agentic-security review returned **FAIL — 4 Blockers, 7
+  Majors**, with four of ten design claims false. All are fixed with regression
+  tests: the Model seeded its own scope (one free unapproved navigation per
+  Turn), the two enforcement points disagreed on 26 of 80 URLs because
+  `System.Uri` does no IDNA mapping, Stop never closed the browser despite a
+  docstring saying it did, and an unguarded environment variable replaced the
+  entire policy with arbitrary Node code. Full gate: **2098 tests, 0 failures**;
+  hostile-site proof **24/24**; live workflow **11/11**; UI screenshots at six
+  widths.
 
 - **2026-09-03 — Per-call approval for Terminal commands shipped** (`3c3048e`).
   DeskPilot owns `run_command` and passes `-DisableTerminal`; the gate blocks

@@ -133,6 +133,32 @@ who the user is across sessions, rather than starting cold every Conversation.
   the data directory, capped at 2 MiB input / 3 MiB archive and protected from
   traversal, reparse redirection, overwrite, and concurrent export.
 
+### Phase 2.10 — Contained browser automation
+
+- ~~**A browser DeskPilot drives, not the user's own.**~~ **Done** — a supervised
+  Playwright child process with a throwaway profile (no sign-ins, no history, no
+  extensions, no local file access), behind its own `browserAutomation`
+  Permission that ships off. Reading (`open`, `click_link`, `read_page`,
+  `screenshot`) is always available; writing (`fill_form`, `click_button`,
+  `upload_file`, `download_file`) exists only where a Project grants the matching
+  capability, and every write is approved individually with its values shown.
+
+  Egress is bounded by a scope derived from the address the task names. Policy is
+  enforced twice because neither point sees what the other does — in PowerShell
+  before a navigation so the card can be raised first, and in the supervisor's
+  request interceptor where redirects, frames, pop-ups and sub-resources are
+  visible — and both are held to one shared conformance corpus.
+
+  Playwright is pinned and installs only from an explicit Diagnostics action;
+  Diagnostics also reports leftover browsers and offers cleanup and uninstall.
+  Proved by a hostile-site suite (24 cases) that attacks the boundary from a real
+  page, and by the authorised workflow running end to end against the live site.
+
+- **Still open.** General desktop, keyboard, mouse and screen control remains a
+  separate later decision and is explicitly out of scope. `click_link` follows
+  in-scope links without a card, which is a residual gap on a site with
+  destructive GET links.
+
 ### Deliberately deferred (constraint or Engine bound)
 
 - **External memory providers** (pluggable third-party memory backends such as
