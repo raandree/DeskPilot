@@ -35,6 +35,13 @@ Approval covers one child at a time, private proposals, and no recursive
 delegation. It does not approve decision 0005's two-child topology or applying
 proposals to the real Project. Child support remains off by default.
 
+On 2026-09-06, during the admission continuation, the operator chose **Keep V2
+unchanged; close out verified groundwork** after the complete-request counting
+gap was rechecked. Conditional Engine reservations can be implemented and
+reviewed, but a fixture counter or a token estimate cannot satisfy the approved
+bound. Complete integration and authenticated live proof remain open. This
+decision does not weaken any numeric limit or authorize child startup.
+
 ## Boundary and Engine integration
 
 The Host Server retains the ordinary parent Engine Runspace, which stays idle
@@ -211,6 +218,20 @@ proof. Complete the requested independent security review and resolve every
 Blocker and Major before release. An unavailable or skipped check is open.
 
 ## Current evidence
+
+- Admission continuation, 2026-09-06: conditional Engine `RequestLimits` and
+  `RequestTokenCounter` reserve a trusted complete-request count, maximum
+  output, and Engine-priced cost before dispatch. Failed/unknown Usage retains
+  capacity and remains explicitly unknown. Final focused proof: 38 public and
+  seven helper cases. Retained Engine commit: `7b8937d` on
+  `ai/child-provider-boundary`. No verified Copilot counter is supplied.
+- Continuation full gates: Engine **1,810 passed, no failures/skips**, 89.12%
+  coverage; unchanged DeskPilot **2,373 passed, five existing browser skips**.
+  Both ran 16 tasks without errors/warnings. Independent review approved the
+  admission diff with no Blockers/Majors; its Minor test gap is closed. Review
+  package: `$env:TEMP/deskpilot-admission-review-20260906-2030`. This does not
+  approve the complete child profile or independently re-review the earlier
+  storage credential-filter correction. V2 and the startup refusal stay intact.
 
 - Final DeskPilot Sampler build/test gate after the review correction:
   **2,373 passed, zero failures, five existing browser skips**, 16 tasks,

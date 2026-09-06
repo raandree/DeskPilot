@@ -10,27 +10,44 @@ source: local Git history and verified Sampler test and build outputs
 
 ## Current focus
 
-Consolidate the reviewed local feature Branches into `main`, retain their useful
-changes, and remove their local Branch names after verified Merge. The five
-Branches form one fast-forward chain with eight commits beyond `2eb4975`.
-The integration Branch is `ai/integrate-feature-branches`; no remote mutation
-or publication is authorized.
+Close out verified admission groundwork for the single-child V2 prerequisite from `main`
+(`64b8b16`). DeskPilot work is on `ai/complete-child-isolation`; limited Engine
+work remains in `D:/Git/ShellPilot-child-isolation` on
+`ai/child-provider-boundary`. No remote mutation or publication is authorized.
+The reviewed Engine groundwork is retained in local commit `7b8937d`; it is not
+a published or clean-install dependency.
 
-| Branch | Retained tip | Contribution |
-| --- | --- | --- |
-| `ai/isolation-dependency-decision` | `9d8211b` | Optional Terminal isolation, dependency evidence, and operator documentation |
-| `ai/parallel-agents-prerequisite-plan` | `293d5a5` | Parallel-Agent prerequisite decision and dependency plan |
-| `ai/child-agent-isolation-prompt` | `2d86925` | Single-child implementation Prompt File and acceptance cases |
-| `ai/child-agent-isolation` | `275cd6b` | Guarded private Tool storage and its component tests |
-| `ai/parallel-agents-prerequisite-gate` | `31f2d07` | Reassessed parallel-Agent gate with child startup still unavailable |
+The operator initially requested admission, complete child integration, and
+proof/review. After inspection confirmed the missing provider counting contract,
+the operator chose **Keep V2 unchanged; close out verified groundwork**.
+Estimated-count fallback and weaker hard limits are not approved. Complete
+child integration and authenticated live proof remain blocked, not completed.
 
-All eleven initially modified files matched their index blobs after Git content
-normalization. Refreshing those exact index entries cleared the flags without
-rewriting files, discarding code, or creating an empty commit. A fresh origin
-fetch found no additional work. `origin/ai/safety-and-automation` was already an
-ancestor of `main`; remote Branches remain untouched.
+The Engine now has conditional `RequestLimits` / `RequestTokenCounter`
+admission with frozen limits/pricing, pre-dispatch reservations, request-bound
+counts, and failed/unknown Usage accounting. Its 38 public admission regressions
+pass with an explicitly identified fixture counter. The helper QA repair passed
+680 checks, including seven named helper tests. Final Sampler gates passed:
+Engine 1,810 tests without failures/skips and 89.12% coverage; DeskPilot 2,373
+passed with five existing browser skips. Each ran 16 tasks with zero errors or
+warnings. Independent review approved the admission diff with no Blockers/Majors;
+its Minor missing-test finding was closed with two parameter-guard cases.
+No release or profile readiness claim.
+DeskPilot runtime and startup refusal are unchanged.
 
-## Fresh verification
+Current evidence is under `$env:TEMP`:
+
+- `deskpilot-admission-review-20260906-2030` contains both diffs, source hashes,
+  full-suite reports, review approval, and the test-only resolution ledger.
+- `shp-admission-final-full-4a824e8b899c4609989844727a653408.log` is the Engine
+  full gate, completed 20:32:45 UTC.
+- `deskpilot-admission-full-042764484c9b4fdb813bcbd080b8e4eb.log` is the DeskPilot
+  full gate, completed 20:28:44 UTC. Docker inspection found no child or Terminal
+  containers afterwards.
+- `shp-admission-review-guards-f770241ad3a7463fa7df486846801f24.log` is the final
+  38-case public admission suite, completed 20:45:08 UTC.
+
+## Previous integration verification
 
 - `build.ps1 -Tasks test`: **2,373 passed, zero failures, five existing browser
   Unicode skips, zero unrun cases**. PowerShell 7.6.5, Pester 6.1.0; nine tasks,

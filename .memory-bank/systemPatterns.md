@@ -82,6 +82,11 @@ source: repository implementation and decision records
   Approval of a prerequisite design does not approve downstream concurrency or
   a new Tool/egress profile. Reassess the controlling readiness/refusal path
   against a named source revision, not the presence of a prepared image.
+- **A conditional counter is not a verified provider bound.** A request digest
+  and trusted counting callback can support reservations, but labels such as
+  `exact` are not proof of Model-specific framing or provider-added tokens.
+  Keep fixture evidence separate, hold reservations when Usage is unknown, and
+  refuse child startup until the actual provider contract is verified.
 
 ## Data, changes and diagnostics
 

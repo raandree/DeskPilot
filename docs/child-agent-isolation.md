@@ -52,8 +52,12 @@ that runs after a completed request. Deterministic provider fixtures reproduced:
 
 Limited tracked Engine changes now add `NoAutomaticRetry` and a credentialless
 `RequestTransport` callback. They are tested locally, not installed over the
-ignored dependency or published. They do not supply a verified complete-request
-token bound, Engine-priced reservation, or the trusted transport process.
+ignored dependency or published. The 2026-09-06 continuation also implements
+conditional `RequestLimits` and `RequestTokenCounter`: a trusted count can be
+reserved with maximum output and Engine-priced cost before dispatch. Failed or
+unknown Usage retains its reservation and stays explicitly unknown. The 38
+public and seven helper tests use identified deterministic counters; they do not
+supply a verified Copilot complete-request bound or trusted transport process.
 
 The missing admission contract must cover all submitted messages, system text,
 Tool schemas, maximum output, Model-specific framing and pricing, failed or
@@ -66,6 +70,21 @@ overhead; it is not a Copilot complete-request bound.
 Do not substitute completed spend, a locally scripted response, a caller's
 unverified count, or a provider hostname allow-list for this contract. Until a
 supported bound is verified, full child startup must remain unavailable.
+
+On 2026-09-06 the operator chose **Keep V2 unchanged; close out verified
+groundwork** after this counting gap was confirmed. No estimated-count fallback
+was approved. The remaining complete child Engine, approval bridge, whole-run
+limits, restart/retention integration, authenticated live proof, and complete
+profile security review remain open. The admission extension is not a readiness
+claim, a release, or approval of parallel Agents.
+
+The admission continuation passed the full Engine gate (1,810 tests, no failures
+or skips, 89.12% coverage) and the unchanged DeskPilot gate (2,373 passed, five
+existing browser skips). Both completed 16 tasks without errors or warnings.
+Independent review approved the admission diff with no Blocker or Major; its
+one Minor test gap was closed with two additional parameter-guard cases. This
+approval covers admission groundwork, not the complete child profile or the
+earlier child-storage credential-filter correction.
 
 ## Implemented storage boundary
 
