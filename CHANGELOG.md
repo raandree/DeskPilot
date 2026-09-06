@@ -9,14 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Terminal execution can be isolated in disposable Docker containers.**
-  Select Local or Isolated, mount the Project read-only or read-write, keep
-  network off or grant exact HTTPS origins, and pass only selected environment
-  variables. Approvals and Activity show the boundary. Resource limits, Stop,
-  cleanup, and Diagnostics runtime preparation are included. Requires Windows,
-  Docker Desktop/WSL2, PowerShell 7.4+, and an Engine enforcing disabled Tools.
-  There is no silent Local fallback. Other Tools are not isolated; read-write
-  Project disk quota is unsupported. See [setup](docs/isolated-terminal.md).
+- **Add optional isolated Terminal execution in disposable Docker containers.**
+  Keep Local behavior by default; opt in through Settings after preparing the
+  runtime in Diagnostics. Isolated commands run in Linux with the selected
+  Project read-only and network off by default. Explicitly grant read-write
+  access, exact HTTPS origins, or selected environment variables when needed.
+  Approvals and Activity show the boundary; resource limits, Stop, and cleanup
+  govern each command. Requires Windows, Docker Desktop/WSL2, PowerShell 7.4+,
+  and an Engine enforcing disabled Tools. There is no silent Local fallback.
+  Returning to Local or removing the runtime does not undo Project edits.
+  Other Tools are not isolated; a total read-write Project disk quota is not
+  supported. See [setup, migration, and removal](docs/isolated-terminal.md).
 
 - **DeskPilot can read a web page by working through it, not just fetching it.**
   A new **Browser** permission lets the agent open a page in a real browser,

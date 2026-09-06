@@ -4,6 +4,22 @@ DeskPilot can run Terminal commands in disposable Linux containers on Windows.
 This optional boundary applies only to the Terminal Tool. File, Browsing, MCP,
 Intercom, the Model, and the Host Server retain their existing authority.
 
+## What changes for you
+
+Existing users remain in **Local** mode. Preparing the runtime does not select
+Isolated execution or enable Terminal Permission; those are separate choices.
+
+| When you select Isolated | User-visible effect |
+| --- | --- |
+| Run a Terminal command | It runs in Linux with the selected Project at `/project`, not in your Windows shell. Host-installed programs and PowerShell profiles are not carried over. |
+| Review a command | Terminal Permission, approval details, and command Activity identify the execution mode. Isolated approvals also show Project access, network grants, environment names, and limits. |
+| Inspect unfamiliar files | Project access starts read-only and network access starts off. Grant read-write access or exact HTTPS origins only when needed; non-routine commands still require approval. |
+| Stop work | DeskPilot cancels the command and removes its disposable environment. Cleanup failures remain visible and block further Isolated work; they never trigger Local execution instead. |
+| Review edited files | Read-write Project changes remain after the container closes and appear in pending changes. Keep, Save, and Undo retain their distinct meanings. |
+
+Isolation is not a substitute for approval or a boundary around every Tool.
+Review the other Permissions separately before working with untrusted content.
+
 ## Prerequisites
 
 - Windows with PowerShell 7.4 or newer for the Host Server.
@@ -31,6 +47,18 @@ Existing Settings default to **Local**. No dependency error, approval denial,
 proxy failure, or cleanup failure switches back to Local. Policy edits apply to
 the next Turn, not to a pending approval. Non-routine commands require individual
 approval in Isolated mode even when Local approval is off.
+
+### Moving existing work to Isolated
+
+No manual Settings migration is required to keep using Local execution. Before
+switching a workflow, check that its commands work in Linux and that required
+programs exist in the prepared runtime. Use Project-relative paths or `/project`
+instead of host drive paths. Dependencies installed only inside a command
+container do not survive to the next command.
+
+Save the execution policy before sending the next prompt. An active Turn keeps
+the policy it started with, including a command waiting for approval. Switching
+modes does not rewrite earlier Messages or their recorded Activity.
 
 ## Files and credentials
 
@@ -107,11 +135,18 @@ runtime**, **Clean up**. Cleanup matches the ownership label, generated name,
 and owning process. It does not prune globally or stop another live DeskPilot
 process's containers. Containers and private CAs are never reused across commands.
 
-To roll back, stop active work, clean up environments, explicitly select **Local**,
-and save. This does not undo read-write Project changes; use pending changes or
-Checkpoints. **Remove runtime** removes this installation's image tag and
-provenance record, not Docker, WSL, shared base layers, or Project files. Dependency
-removal is a separate operator action because other workloads may use them.
+### Return to Local or remove the runtime
+
+1. Stop active work and use **Clean up** for any remaining owned containers.
+2. Explicitly select **Local** in Terminal execution Settings and save the policy.
+3. Review any read-write Project changes separately. Selecting Local or removing
+  a container does not undo them; use pending changes or Checkpoints.
+4. Optionally choose **Remove runtime**. This removes this installation's image
+  tag and provenance record, not Docker, WSL, shared base layers, or Project
+  files. Removing the runtime alone does not change the saved execution mode.
+
+Docker or WSL removal is a separate operator action because other workloads may
+use them. Keep them installed while any other work depends on them.
 
 ## Provenance and verification
 

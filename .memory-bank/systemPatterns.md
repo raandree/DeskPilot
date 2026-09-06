@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-05
+last-verified: 2026-09-06
 source: repository implementation and decision records
 ---
 
@@ -89,7 +89,8 @@ source: repository implementation and decision records
 
 Use test-first changes and real positive/negative security controls. Full HTTP
 tests catch StrictMode and array-shape gaps. Detach Pester/Sampler and keep logs
-outside build output.
+outside build output. Keep review, local tests, live authentication, and released
+dependencies as separate gates. Documentation checks are not new executable runs.
 
 Detailed patterns, browser and Intercom history, and caveats are preserved in
 [system-patterns-2026-09-05.md](archive/system-patterns-2026-09-05.md). Read its

@@ -2,8 +2,8 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-05
-source: repository history and executable verification
+last-verified: 2026-09-06
+source: repository history, verification, and operator review confirmation
 ---
 
 # Progress
@@ -13,12 +13,15 @@ source: repository history and executable verification
 DeskPilot has a local Host Server, build-free UI, persisted Conversations and
 Settings, Engine integration, visible Permissions/Activity/Usage, pending changes
 and Undo, Diagnostics, Intercom, scheduling, and contained browser automation.
-Optional Terminal isolation is implemented and verified locally, not published.
+Optional Terminal isolation has completed local design, implementation, review,
+and documentation. Live authenticated acceptance and clean-install Engine
+availability remain release follow-ups; nothing has been published.
 
 ## Recent milestones
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-06 | Closed the final technical-writer stage after the operator confirmed the review passed. Documented visible mode changes, migration, return to Local, and removal; refined Unreleased notes. Source/tests/build still match f6af6fd. Markdown rendering and local links pass; prior executable evidence is retained, not rerun. |
 | 2026-09-05 | Implemented optional Local/Isolated Terminal execution on Docker Desktop/WSL2, retaining working nonempty HTTPS allow-lists. Local stays default; no silent fallback. |
 | 2026-09-05 | Full final Sampler gate: 2286 passed, 0 failed, 5 unchanged browser Unicode skips; 16 tasks, zero errors/warnings. Real-container isolation suite: 29/29, no skips. |
 | 2026-09-05 | Independent review found one Major protocol gap, reproduced by HTTP-over-443 and non-CONNECT HTTPS. Explicit encrypted HTTPS/CONNECT gates fixed it; four protocol checks pass. |

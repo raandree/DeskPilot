@@ -2,13 +2,22 @@
 schema-version: 1
 status: accepted
 owner: software-engineer
-last-verified: 2026-09-05
-source: repository evidence
+last-verified: 2026-09-06
+source: repository evidence and operator review confirmation
 ---
 
 # 0001 - Optional isolated Terminal execution
 
 ## Status
+
+**Documentation closeout, 2026-09-06.** The operator confirmed the review passed
+and requested the final technical-writer stage. The local cycle is closed with
+the [operator guide](../../docs/isolated-terminal.md) covering visible changes,
+existing-user compatibility, migration, return to Local, and removal. Source,
+tests, and build settings remain at `f6af6fd`; this stage did not rerun executable
+tests or an independent code review. The recorded implementation evidence below
+still applies. Live authenticated acceptance and an obtainable enforcing Engine
+remain explicit release gates, not evidence supplied by the review confirmation.
 
 **Final local evidence, 2026-09-05 23:38 UTC.** Full Sampler: 2286 passed,
 0 failed, 5 unchanged browser Unicode skips, 16 tasks, zero errors/warnings.
