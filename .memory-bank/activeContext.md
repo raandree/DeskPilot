@@ -10,6 +10,23 @@ source: local Git history and verified Sampler test and build outputs
 
 ## Current focus
 
+Investigate a verified Copilot complete-request counter using the operator's
+existing Engine credential. The 2026-09-06 live attempt is blocked at local
+credential decryption, before a request reaches Copilot. `Initialize-Shp`
+returns the existing FileInfo, but `Get-ShpModel -Endpoint Session -TokenPath`
+then fails to decrypt its DPAPI envelope (`0x8009000B`). The operator confirmed
+the default token-file location. No credential was exposed or replaced, and no
+Model request or count-endpoint probe ran. A fresh Engine sign-in or a working
+credential source is required to resume; returning a file is not auth proof.
+
+OpenAI documents `POST /responses/input_tokens`; whether Copilot exposes that
+operation remains untested. The first-party Copilot client's tokenizer calls
+its Tool and Tool-call overhead calculations estimates. Do not treat those
+local counts, a successful file lookup, or this authentication failure as
+evidence of a verified provider count or an absent Copilot endpoint.
+
+## Completed admission groundwork
+
 Close out verified admission groundwork for the single-child V2 prerequisite from `main`
 (`64b8b16`). DeskPilot work is on `ai/complete-child-isolation`; limited Engine
 work remains in `D:/Git/ShellPilot-child-isolation` on

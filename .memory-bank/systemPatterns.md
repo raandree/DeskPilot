@@ -12,6 +12,11 @@ source: repository implementation and decision records
 
 - **Engine ownership.** ShellPilot owns provider transport, authentication,
   Models and Usage. DeskPilot owns the Host Server, policy and presentation.
+- **Initialization is not authentication proof.** `Initialize-Shp` can return
+  an existing encrypted token file without decoding it or contacting Copilot.
+  Verify usable authentication through an Engine operation such as
+  `Get-ShpModel`; keep local decryption failure separate from provider rejection
+  and never infer endpoint support from either failure.
 - **One Engine Runspace.** A fresh PowerShell pipeline runs each Turn on one
   long-lived Runspace. Tool registration and globals are Runspace-local;
   environment and process working directory are process-global. Set only the

@@ -86,6 +86,28 @@ one Minor test gap was closed with two additional parameter-guard cases. This
 approval covers admission groundwork, not the complete child profile or the
 earlier child-storage credential-filter correction.
 
+### Live counting investigation
+
+On 2026-09-06 the operator requested a live count investigation with the existing
+Engine credential. `Initialize-Shp` returned the named token file, as its public
+contract specifies. `Get-ShpModel` using that returned path failed during local
+DPAPI decryption with `0x8009000B`, before contacting Copilot. Returning FileInfo
+does not prove that the encrypted token is usable. No credential was displayed,
+replaced, or sent to a new service; no Model or count-endpoint request ran.
+
+The [first-party Copilot tokenizer](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/tokenizer/node/tokenizer.ts)
+explicitly describes Tool and Tool-call overhead calculations as estimates.
+OpenAI separately documents
+[`POST /responses/input_tokens`](https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens).
+That is a concrete candidate for a credentialed Copilot compatibility probe,
+not evidence that Copilot implements it or guarantees the same request framing.
+
+Resume by restoring usable Engine authentication through its normal sign-in
+flow, then testing the candidate operation with non-sensitive inputs. Verify
+complete messages, system text, Tool schemas, and request/count identity before
+wiring a provider counter into admission. Keep V2 and child readiness unchanged
+until the actual provider contract is established.
+
 ## Implemented storage boundary
 
 `ProjectBaseline` captures explicitly selected current files without running
