@@ -17,10 +17,16 @@ Optional Terminal isolation has completed local design, implementation, review,
 and documentation. Live authenticated acceptance and clean-install Engine
 availability remain release follow-ups; nothing has been published.
 
+Parallel Agents remain blocked: Terminal containment is not child Agent
+isolation. Decision 0005 now records the current evidence and proposed topology,
+quotas, security boundaries, recovery, and dependencies; runtime work is not
+authorized until the prerequisites and operator approval are complete.
+
 ## Recent milestones
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-06 | Reassessed Parallel Agents and retained the prerequisite stop. Corrected stale isolation/batch claims and recorded a proposed complete child boundary and dependency plan. Existing Terminal approval suite: 65 passed, zero failures/skips, Pester 5.7.1 with staged ShellPilot 0.4.1; no runtime changes. |
 | 2026-09-06 | Closed the final technical-writer stage after the operator confirmed the review passed. Documented visible mode changes, migration, return to Local, and removal; refined Unreleased notes. Source/tests/build still match f6af6fd. Markdown rendering and local links pass; prior executable evidence is retained, not rerun. |
 | 2026-09-05 | Implemented optional Local/Isolated Terminal execution on Docker Desktop/WSL2, retaining working nonempty HTTPS allow-lists. Local stays default; no silent fallback. |
 | 2026-09-05 | Full final Sampler gate: 2286 passed, 0 failed, 5 unchanged browser Unicode skips; 16 tasks, zero errors/warnings. Real-container isolation suite: 29/29, no skips. |

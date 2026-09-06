@@ -53,6 +53,10 @@ source: repository implementation and decision records
 - **Containment is below the Model.** Narrow mounts and empty ambient identity
   remove host-data access; default-deny egress removes arbitrary outbound access.
   Output is untrusted Tool data. Other enabled Tools retain their own authority.
+- **Child isolation covers every available Tool.** A Terminal container does not
+  confine native File Tools or create a quota-backed child Project. Separate
+  Runspaces do not isolate the process environment. Revalidate the complete child
+  boundary; batch concurrency and completed-spend checks do not supply it.
 - **HTTPS is not host:443.** Require CONNECT or an encrypted HTTPS request.
   Inspect client TLS before upstream contact and authorize HTTP authority first.
   Namespace packet rules still deny direct sockets/DNS if proxy variables vanish.

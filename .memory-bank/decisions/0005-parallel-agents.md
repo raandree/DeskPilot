@@ -1,28 +1,29 @@
 ---
 schema-version: 1
-status: accepted
+status: proposed
 owner: software-engineer
-last-verified: 2026-09-03
-source: repository evidence
+last-verified: 2026-09-06
+source: repository source, focused tests, and prerequisite reassessment
 ---
 
-# 0005 — Parallel Agents: architecture decision and dependency plan
+# 0005 - Parallel Agents: prerequisite gate and dependency plan
 
 ## Status
 
-**Blocked at the prerequisite gate.** Decision and dependency plan recorded; no
-concurrency was added.
+**Blocked at the prerequisite gate, reassessed 2026-09-06.** This is the
+architecture decision and dependency plan requested when a prerequisite is
+absent. No runtime, Settings, API, UI, or test implementation changes are made.
+Ordinary single-Agent Turns continue unchanged.
 
-> **Partly superseded 2026-09-03.** Per-call approval shipped for Terminal
-> (decision 0008), so half the gate below is now met. Isolation is not shipped
-> and the single-Runspace finding stands, so the verdict is unchanged.
->
-> **Re-verified 2026-09-03, later the same day.** The approval half is now met
-> *conditionally* — enforcement needs an Engine build that does not exist on the
-> Gallery. Isolation is still absent from `source/`. And the Engine's only
-> concurrency contract was measured for the first time: `Invoke-ShpBatch` is
-> real, bounded and accounted, and it is structurally unusable for delegation
-> here. The verdict is unchanged.
+The decision to withhold concurrency stands. The future topology and numeric
+limits below are **proposed, not operator-approved or implemented**. Approval of
+this record and executable closure of its dependencies are required before
+delegation runtime work. The request to assess this feature is not a waiver.
+
+This revision replaces the 2026-09-03 claims that Docker and Terminal isolation
+are absent and that additional Runspaces alone establish child isolation. The
+historical Runspace measurements below remain observations, not security or
+performance guarantees for the proposed process topology.
 
 ## The gate
 
@@ -33,40 +34,48 @@ concurrency was added.
 > and dependency plan. Do not add concurrency to the current shared Engine
 > Runspace or shared writable Project state.
 
-**Approval — met, but only against an unreleased Engine.** `Test-DpApprovalActive`,
-`Invoke-DpTerminalApprovalTool` and the `run_terminal_command` registration ship,
-and `Initialize-DpTerminalTool` probes `Invoke-Shp` for the `offeredBuiltInTool`
-refusal and throws without it. That refusal exists in the locally built
-`output/RequiredModules/ShellPilot/0.4.1` and **not** in the installed `0.4.0`,
-which is the newest published build. So the gate is honoured on this machine and
-would fail closed on any other. `perCallApproval` also still defaults to `$false`.
+**Terminal approval: locally implemented and tested, conditionally usable.**
+`Initialize-DpTerminalTool` requires the Engine's disabled-built-in dispatch
+refusal. The focused approval suite currently passes **65 tests, zero failures,
+zero skips**, using Pester 5.7.1 and staged ShellPilot 0.4.1. It exercises actual
+`Invoke-Shp` dispatch with scripted provider responses and inert executors,
+including a positive native-execution control and rejection of an older Engine.
+It is not live Model acceptance or a clean-install distribution proof.
 
-**Isolation — absent.** `source/` contains no container, sandbox, scratch-worktree
-or confinement code of any kind; the only matches for those words are an MCP
-`sandboxRequested` badge and the browser's `<iframe sandbox>`. Decision 0001's
-blockers stand: the Docker/WSL2 dependency is unapproved and this machine has no
-container runtime, no WSL and Windows Sandbox disabled, so no isolation claim
-could be proven against a backend even if one were written.
+Local `perCallApproval` still defaults off; Isolated Terminal requires approval
+independently. Native File writes and MCP calls are not covered by this bridge.
+A child needs its own bridge and enforced Tool policy, not an inherited grant.
 
-One half open is not the gate open. Stop stands.
+**Appropriate child isolation: not implemented.** Docker Desktop/WSL2 and
+optional Terminal isolation now exist. Decision 0001 retains 29 passing
+real-container tests and the full 2286-pass Sampler result from 2026-09-05;
+neither suite was rerun for this documentation-only assessment. However:
 
-## A third blocker, from the Engine — corrected 2026-09-03
+- `New-DpTurnParameter` leaves native File Tools enabled when File Permission
+   is on, even when Terminal is Isolated. Workspace Folder is not confinement.
+- `TerminalSession` bind-mounts the selected Project itself. Its read-write
+   mode has no total Project disk quota and no child-specific change isolation.
+- No child execution profile combines isolated histories, Tools, credentials,
+   Project storage, approvals, lifecycle, and aggregate quotas.
 
-The prompt requires verifying the Engine's delegation and concurrency contract
-from source. DeskPilot holds **one** `[runspacefactory]::CreateRunspace()`
-(`Initialize-DpEngine`), and every Turn runs `Invoke-Shp` on it. ShellPilot
-exposes no child-agent, sub-agent or delegation contract at all — `subagent`,
-`sub-agent`, `child agent` and `delegat` each occur **zero** times in both 0.4.0
-and 0.4.1. It does expose one bounded concurrency contract, measured below.
+The missing boundary is therefore **child Agent isolation**, not the presence
+of a container runtime. A read-only Terminal mount cannot close it while other
+enabled Tools retain host access. An obtainable enforcing Engine and live
+authentication remain separately unverified release dependencies; no current
+Gallery availability claim is made without a fresh distribution check.
 
-**The original version of this record then claimed that two children on one
-Runspace would share Tool registrations and `$global:` state, and that fixing it
-was "a genuinely large change". Measured on 2026-09-03, that claim was wrong**,
-and it was wrong in the direction that matters: it made the blocker look bigger
-than it is.
+## Engine state and historical measurements
 
-Three runspaces were opened in one process, ShellPilot imported into each, and a
-Tool plus a `$global:` variable registered in the first only:
+The current controlling path is `Initialize-DpEngine` creating one Engine
+Runspace and `Invoke-DpTurn` binding every Turn's pipeline to
+`$script:DeskPilot.Engine.Runspace`. The staged Engine source exposes batch
+concurrency, but no parent/child lifecycle or delegated-approval contract was
+found. This is a source finding for the inspected artifact, not a claim about
+future Engine releases.
+
+On 2026-09-03, three separate Runspaces were opened in one process, ShellPilot
+was imported into each, and a Tool plus a global variable were registered in
+the first only:
 
 | Observation | Result |
 | --- | --- |
@@ -76,70 +85,44 @@ Tool plus a `$global:` variable registered in the first only:
 | Import cost | **752 ms** first, then **21 ms** and **17 ms** |
 | Managed heap, three imports | **15 MB** total |
 
-So the Tool table, `$global:` variables and the PowerShell location are **already
-per-runspace**. ShellPilot has no process-global Tool registry, and DeskPilot's
-own per-Turn reconciliation (`Set-DpQuestionnaireTool`, `Set-DpWorkspaceTool` —
-both of which already take a `-Runspace` parameter) would move to a second
-Runspace unchanged. The first import pays JIT and assembly load once; an
-additional Engine Runspace costs roughly 20 ms and 5 MB.
+The Tool table, Runspace globals, and PowerShell location were independent.
+That does not isolate the process environment, filesystem, credentials, or
+mutable objects passed by reference. These measurements do not estimate the
+cost of a contained child process and do not prove that the existing Tool
+reconcilers can be reused unchanged.
 
-## The Engine's one concurrency contract, and why it cannot carry a child
+## Verified Engine batch contract
 
-Measured 2026-09-03 against `ShellPilot.psm1` 0.4.1, identical in 0.4.0. The
-earlier claim that the Engine offers nothing was too broad: **`Invoke-ShpBatch`
-is exported**, and it is a genuine bounded fan-out. `-ThrottleLimit` is
-`ValidateRange(1, 64)` with a default of 4; `Invoke-ShpParallel` (private) wraps
-`ForEach-Object -Parallel`; `-MaxBatchBudgetUSD` gates dispatch against a
-`ConcurrentBag` of spend; each item returns a `ShellPilot.BatchResult` carrying
-`Index`, `Id`, `Success`, `Skipped`, `BudgetExceeded`, `Usage`, `CostUSD`,
-`Credits`, `Iterations`, `ToolCallCount`, `DurationMs` and `Error`; and the
-per-item usage records are merged back into the caller's `$script:ShpUsageLog`.
-Bounded fan-out, honest accounting and a per-child result envelope are exactly
-what this prompt asks for, and they already exist.
+Re-read on 2026-09-06 from staged ShellPilot 0.4.1: `Invoke-ShpBatch` exposes
+`ThrottleLimit` from 1 through 64, default 4. Private `Invoke-ShpParallel` uses
+`ForEach-Object -Parallel`. Each item returns a `ShellPilot.BatchResult` with
+identity, status, Usage, cost, iterations, duration, and error; Usage records
+are merged into the caller's Engine Usage store after the batch.
 
-It still cannot be the mechanism, and the reasons are structural rather than
-missing features. `Invoke-ShpBatch` forces four values onto every item:
+The current batch bootstrap is not a supported DeskPilot delegation mechanism:
 
-| Forced | Line | What it costs a DeskPilot child |
+| Contract | Source symbol | Consequence for a child |
 | --- | --- | --- |
-| `DisableUserPrompts = $true` | 12638 | No Ask-User. **The approval bridge is Ask-User's rendezvous**, so a batch child can never park for an approval — the per-call gate is not merely absent, it is unreachable |
-| `DisableProgressEvents = $true` | 12639 | No `ToolCall` progress records, which is the only source `Get-DpStreamFrame` has. No live Activity, no Thinking, no per-child evidence |
-| `DisableStreaming = $true` | 12637 | No token deltas, so no child progress to expand under the parent Turn |
-| `History = @()` | `Invoke-ShpBatchItem` | Stateless by construction — the minimum parent context the prompt requires cannot be passed as history |
+| `DisableUserPrompts = $true` | `Invoke-ShpBatch` | Native Ask-User is unavailable; this alone does not disable a separately injected approval bridge. |
+| `DisableProgressEvents = $true` | `Invoke-ShpBatch` | No structured live Tool Activity for DeskPilot's stream classifier. |
+| `DisableStreaming = $true` | `Invoke-ShpBatch` | No child answer deltas. |
+| `History = @()` | `Invoke-ShpBatchItem` | No caller-supplied replay history. Minimum task context could still be supplied as prompt data. |
+| One shared invocation parameter set | `Invoke-ShpBatch` | Entries consume Prompt and Id, not independent Agent, Model, Tool, or Permission descriptors. |
+| Re-register User Tools by command name | `Invoke-ShpBatchItem` | DeskPilot's injected backing commands are not imported into the new Runspace; failed registrations are warned and skipped. |
+| MCP attachments are not replayed | `Invoke-ShpBatch` | No supported shared MCP lifecycle. |
+| Check completed spend before dispatch | `Invoke-ShpBatchItem` | `MaxBatchBudgetUSD` is not a hard aggregate cap: in-flight calls can still be billed. |
 
-And the tool table does not survive. A worker runspace "has inherited nothing";
-`Invoke-ShpBatchItem` replays the session context, the model-limit cache, the
-tool policy, the redaction policy and then the registered tools **by command
-name**, catching the failure:
+The batch's `AsJob` option changes how the caller receives its work; it does not
+add child policy, approval, progress, or descendant-cancellation contracts.
 
-> A tool backed by a function that exists only in the caller's session cannot be
-> re-registered, because a worker runspace cannot see it. Report it rather than
-> failing the batch.
+Missing `run_terminal_command` does not justify restoring native Terminal.
+The required profile must refuse to start when an owned Tool or its bridge is
+missing, and independently refuse dispatch of disabled native Tools. The batch
+can copy authentication context and Tool-policy objects; that is not proof of
+separate child credentials or immutable policy ownership.
 
-Every DeskPilot Tool is exactly that. `Initialize-DpQuestionnaireTool`,
-`Initialize-DpWorkspaceTool` and `Initialize-DpTerminalTool` all inject their
-backing functions into the Engine Runspace with `AddScript` before calling
-`Register-ShpTool`; none is a module-exported command. So `ask_questions`,
-`search_files`, `search_text`, `replace_in_file` and `run_terminal_command`
-would each be skipped with a warning, and MCP is refused outright with a warning
-of its own.
-
-**The composite failure is the important one.** A batch child would keep the
-Engine's *built-in* tools — including `run_command` — while silently losing
-DeskPilot's `run_terminal_command` and the bridge that gates it. Unless the
-caller also passed `-DisableTerminal`, that child would run commands on the host
-with no card and no denial: the same bypass fixed upstream this morning, reached
-by a different route and this time with no Engine defect to blame. Passing
-`-DisableTerminal` is the correct call and leaves the child with no terminal at
-all, because the gated replacement cannot register either. There is no
-configuration of `Invoke-ShpBatch` in which a child has *approved* Terminal
-access.
-
-`Invoke-ShpBatch` is therefore right for stateless graded sweeps and wrong for
-delegation. The topology below — DeskPilot creating and owning each child
-Runspace, injecting its own Tools exactly as it does for the parent — is not a
-workaround for an Engine that lacks concurrency. It is the only shape in which a
-child can hold DeskPilot's boundaries at all.
+Use the Engine for provider transport and Usage, not as an assumed orchestration
+contract. Do not patch the ignored dependency in place to manufacture support.
 
 ## What is actually shared, and therefore actually needs a design
 
@@ -151,7 +134,7 @@ A second probe set two runspaces to two different working directories:
 | `[System.Environment]::CurrentDirectory` | process-global, last writer wins | **resolved 2026-09-03**: `Set-DpEngineLocation` no longer writes it, because no Tool reads it |
 | Environment variables | **process-wide** | already recorded (2026-08-11, Engine Runspace environment divergence); still open |
 | A child process spawned from a runspace | inherits that runspace's `$PWD`, not `[Environment]::CurrentDirectory` | measured: a child from runspace 1 reported runspace 1's folder while the process-global value pointed at runspace 2 |
-| Engine OAuth token file | shared on disk | desirable |
+| Engine OAuth token file | shared on disk in the current host integration | not a child credential boundary; never mount it into child Tool reach |
 | MCP attachments | per runspace, started from that runspace's `$PWD` | a second Runspace would start its own third-party server processes |
 
 The working-directory half was closed by measuring what actually reads the
@@ -163,67 +146,355 @@ written file physically landed in A), and ShellPilot starts an MCP server from
 path followed B, and neither DeskPilot nor the Engine makes one. The write was
 therefore removed, with a paired regression test.
 
-What remains genuinely process-wide is the **environment block**. That is a
-smaller problem than a working directory: it is read at process start by child
-processes, and the isolation work (decision 0001) has to solve it anyway through
-a per-variable allow-list.
+The environment block remains process-wide. Decision 0001 now constructs a
+separate allow-listed environment for Terminal commands, not for additional
+Engine Runspaces, File Tools, MCP, or arbitrary User Tools. A Runspace location
+and a scratch Git working tree are neither credential nor filesystem isolation.
 
-## Topology decision
+## Proposed topology and child state
 
-**One process, N+1 Runspaces, N ≤ 2.** A child gets its own Runspace with its own
-ShellPilot import and its own registered Tools; the parent Runspace is untouched.
-The measurements above confirm this is cheap (~20 ms, ~5 MB per child) and that
-the isolation it needs is already the platform's default. Separate *processes*
-were considered and rejected for the first slice: they would need an IPC protocol
-for progress, Usage and cancellation that the in-process `Streams.Information`
-drain already provides.
+Retain one Host Server and the ordinary parent Engine Runspace. For explicitly
+selected delegation, propose at most two supervised child processes, each owning
+one Engine Runspace, history, Tool registry, approval bridge, Usage records, and
+OS-enforced execution boundary. Never run children on the parent's Runspace.
 
-**One working directory at a time — no longer a constraint.** The process-global
-`[System.Environment]::CurrentDirectory` write was removed on 2026-09-03, so each
-child's working directory is its own runspace `$PWD`. Nothing in the Engine's
-Tool set reads a process-wide location.
+Separate processes are proposed for independent environment ownership and
+termination. They add IPC and startup cost, which has not been measured. The
+earlier same-process/multiple-Runspace proposal has lower integration overhead
+but does not remove ambient process state; neither choice removes the need for
+an OS-enforced Tool boundary. The current batch API cannot supply the missing
+DeskPilot-owned bootstrap and lifecycle. These are proposal tradeoffs, not a
+claim that secure in-process orchestration is impossible.
 
-**Project isolation.** A child never writes the user's working tree. Each writable
-child gets a git worktree-style scratch copy under the data directory; results
-come back as a **proposed change set** reviewed through the existing pending-change
-and diff surfaces. Read-only children get the Project read-only. Last-writer-wins
-is not on the table.
+Process separation removes accidental process-environment sharing; it does not
+by itself restrict filesystem or credential access. Every child-accessible Tool
+must be contained, including reads and discovery Tools. Reuse Docker/WSL2 only
+after that complete profile passes its own tests. No host home, token file,
+control socket, SSH agent, ambient credentials, or shared writable mount may be
+reachable. MCP and arbitrary User Tools are absent in the first slice.
 
-**Authority.** A child's Permission set is the ANDed subset of its parent's — the
-same rule and the same helper (`Get-DpScopedSettings`) this session introduced for
-scheduled work. Turn-scoped approvals are never shared between parent and child.
-Recursive delegation is refused in the first slice.
+Engine authentication and provider transport remain Engine-owned. A supported
+explicit, scoped credential/bootstrap and Model-egress contract is a dependency,
+not an implementation supplied by this decision. Do not mount the user's token
+store or copy ambient tokens into every child as a substitute. Provider access
+must not become general Tool network access.
 
-**Accounting.** Child Usage is added to the parent Turn's totals and retained
-per child, including failed work the Engine reports. Hidden child cost is the
-failure mode that makes delegation untrustworthy.
+The delegated parent Turn has three phases: tool-free planning, supervised child
+execution, and tool-free synthesis. Children can progress independently; the
+parent does not mutate the Project while they execute. This avoids needing to
+resume a Tool-enabled parent with untrusted child output. Engine calls in all
+three phases count toward the one visible Turn's budgets and Usage.
 
-**Cancellation.** Stop cancels the parent and every descendant; a child failure
-may be retried only while it is observably side-effect free.
+The Host Server is the sole writer of Conversation, pending-change, scheduling,
+and Usage stores. Child processes return bounded data over separately owned,
+authenticated IPC channels; they receive neither the Host Server session token
+nor references to its mutable state. Bind each channel to its child outside the
+payload, so a child cannot impersonate a sibling by changing an id.
 
-## Dependency plan
+Before launch, persist a versioned claim containing Host Server launch id,
+Conversation id, parent Turn id, child id, attempt id, frozen policy digest,
+Agent identity/body digest, Model, explicit task, Tool allow-list, Permission
+subset, input provenance, budgets, deadline, storage identity, and lifecycle
+state. Never persist credentials. A failed claim write prevents launch.
 
-1. **A published Engine that carries the dispatch refusal.** The approval half of
-   the gate is honoured today only against a locally built 0.4.1. Until that
-   ships, every other machine fails the capability probe and runs with no gate,
-   so no delegation may be enabled on the strength of it. `specs/120` is still
-   required separately, for MCP and for gating the built-in File Tools in place.
-2. Isolation backend (decision 0001) — a writable child is exactly the case that
-   needs it.
-3. **A child Runspace factory that carries DeskPilot's own Tools and its own
-   approval bridge.** New, from the batch measurement above: a child that cannot
-   register `run_terminal_command` and cannot park on a bridge must hold neither
-   Terminal nor File write, and that has to be structural rather than a default.
-   The reconcilers already take `-Runspace`, so the work is a factory, orphan
-   reaping, a per-child bridge instance and a Diagnostics probe for child
-   lifecycle.
-4. Per-variable environment allow-list — the last genuinely process-wide state.
-   Decision 0001 needs it anyway, so it is shared work rather than extra work;
-   process-global CWD is closed.
-5. Scratch-worktree creation, merge review and rollback, built on the existing
-   snapshot and change-set machinery.
-6. Only then: fan-out limits, aggregation UI, and the stress tests for ordering
-   and races the prompt requires.
+States are `queued`, `starting`, `running`, `waiting-approval`, `stopping`, then
+one terminal outcome: `completed`, `failed`, `cancelled`, `timed-out`,
+`limit-exceeded`, or `interrupted`. Keep cleanup status separate from outcome.
+The Host Server owns transitions; a child's claimed success cannot certify
+cleanup, Usage completeness, or an applied change.
 
-Steps 1 and 2 remain the gate. Steps 3 and 4 can be investigated independently
-and are both known to be small.
+## Scheduling, context, and authority
+
+- Allocate at most two child identities over the entire parent Turn, not two
+  per batch. Queue length is two, and queued/running/waiting children together
+  never exceed two. Other Conversations, schedules, and Intercom prompts keep
+  their existing single-Turn dispatcher. No recursive delegation is registered.
+- Admit each child only after validating its task, Agent, Model, exact Tool
+  set, Permission subset, context, iterations, Usage, duration, and storage.
+  A child that cannot satisfy one limit does not start. No silent substitutions.
+- Effective authority is the intersection of the parent's captured allowed
+  authority, live Permissions, the requested subset, and the child profile.
+  Later Settings cannot widen it. Revocation prevents subsequent dispatch and
+  cancels affected waits. Validate individual Tool names as well as categories.
+- Start from an empty, separately owned history. Pass only approved task data
+  and selected input excerpts with source identity and content digests. Do not
+  copy the parent's system prompt, full history, User Profile, Agent Memory,
+  Attachments, Skill roots, or Instruction roots implicitly. The selected
+  Agent's approved body is distinct from retrieved untrusted data.
+- A public-evidence child's task and context may use only inputs the operator
+  designated public. Model-authored task text derived from private parent data
+  is private too. Reject that transfer unless a separate disclosure approval
+  binds the exact payload. Do not infer public status through a content filter
+  or from the child profile's name.
+- Enforce context limits before every provider request, including system text,
+  Tool schemas, replay history, retrieved text, and retries. Disable implicit
+  discovery outside the selected input. Character estimates are not hard token
+  bounds; require verified Engine counting or a conservative proven upper bound.
+- Each child has a separate approval wait. Bind an answer to launch,
+  Conversation, parent Turn, child, attempt, request, policy digest, and exact
+  action fingerprint. Consume it once; reject stale, cross-child, changed-policy,
+  and replayed answers. Approval can narrow but never override a denied Tool.
+
+## Proposed server-side limits
+
+These are proposed policy values, not Settings that exist today. Configuration
+may lower a hard maximum, never raise it; child limits are additionally capped
+by the parent's remaining reservation. Invalid or unsupported bounds refuse
+delegation. All elapsed limits include queueing, approvals, and retries.
+
+| Bound | Proposed default | Hard maximum |
+| --- | --- | --- |
+| Concurrent children / total child identities per parent Turn | 2 / 2 | 2 / 2 |
+| Delegation depth / child queue length | 1 / 2 | 1 / 2 |
+| Parent Turn duration / child duration | 600 s / 300 s | 900 s / 600 s |
+| One approval wait / cancellation grace | 60 s / 5 s | 120 s / 10 s |
+| Child input context per provider request | 16384 tokens | 32768 tokens |
+| Parent input context per provider request | 32768 tokens | 65536 tokens |
+| Child cumulative input plus output | 32768 tokens | 65536 tokens |
+| Parent plus all children cumulative input plus output | 98304 tokens | 196608 tokens |
+| Output per provider request | 4096 tokens | 8192 tokens |
+| Tool iterations per child / aggregate | 8 / 32 | 16 / 64 |
+| Usage cost per child / aggregate | USD 0.25 / USD 1.00 | USD 1.00 / USD 2.00 |
+| Side-effect-free retries per child identity | 0 | 1 |
+| Materialized child storage, including baseline and temporary files | 128 MiB | 256 MiB |
+| Materialized storage for all children | 256 MiB | 512 MiB |
+| Retained proposal and recovery data per parent / installation | 128 MiB / 512 MiB | 256 MiB / 1 GiB |
+| Proposed files per child / aggregate | 200 / 400 | 1000 / 2000 |
+| Unreviewed proposal retention | 24 hours | 7 days |
+| Child process memory / CPU / processes | 1 GiB / 1 / 64 | 2 GiB / 2 / 64 |
+| Child result / one event / retained events per child | 256 KiB / 16 KiB / 300 | 1 MiB / 64 KiB / 1000 |
+
+Reserve worst-case provider input/output and Engine-reported pricing before
+dispatch, atomically against child and aggregate balances. Count planning,
+synthesis, failed attempts, provider retries, and all children. Engine transport
+retries must consume reservations too; a Tool event or a completed-spend check
+cannot enforce this. Unknown pricing or an unsupported reservation contract
+blocks cost-bounded delegation. Unknown Usage remains unknown and retains its
+reservation; never release it as zero to admit more work.
+
+Retained-storage admission includes claims, manifests, before/after file bytes,
+and recovery journals. Reserve recovery capacity before applying any file. An
+unresolved journal cannot expire to free space; refuse new work when capacity
+cannot be reserved. Keep existing Usage stores' retention policy separate.
+
+The deadline ends work even if approvals or Tools hang. Quota exhaustion is a
+structured terminal outcome, not silent truncation or a successful partial
+result. Bound proposal manifests, file counts, IPC buffers, and Diagnostics
+while constructing them. Stop draining child output into UI progress as soon
+as cancellation begins; trusted cleanup and final Usage reconciliation remain
+separate control operations before the parent terminal record is sealed.
+
+## Project isolation and deterministic change review
+
+Freeze selected Project input before any child starts, preserving the user's
+existing uncommitted changes. Read-only children receive an immutable restricted
+copy. Writable children receive independent quota-enforced filesystems, such as
+bounded temporary-memory filesystems, seeded from that baseline. The quota must
+include the seed and all temporary writes, not only exported changes.
+
+Never give children a writable bind to the actual Project, sibling storage, or
+shared Git metadata. A Git worktree alone is not confinement or a storage quota.
+Refuse unsupported links, reparse points, special files, path aliases, and
+baseline sizes. Project reads must not widen into a containing Git repository.
+
+Return proposed files separately from child prose. A bounded manifest carries
+Project-relative path, operation, baseline digest, resulting digest, size,
+binary/text type, and child/attempt provenance. The Host Server independently
+checks bytes, paths, links, and quotas. Child-provided command strings, absolute
+paths, Git hooks, filters, or merge drivers never become host operations.
+
+Combine proposals in stable child-id and canonical-path order. Equal resulting
+bytes can be deduplicated with both sources retained; incompatible edits,
+delete/modify pairs, renames, binary alternatives, case aliases, and overlapping
+paths are conflicts regardless of arrival order. No last-writer-wins behavior.
+
+Show one combined proposal before any Project write. Existing Keep only accepts
+already-applied pending changes and cannot be reused as an implicit apply action.
+Require explicit apply approval bound to the exact combined manifest. Rejection
+writes nothing. Resolve conflicts through a reviewed Merge Plan or explicit
+binary choice, not automatically through a Tool-enabled Agent.
+
+Before applying, take a pre-apply snapshot and journal, acquire exclusive
+DeskPilot Project mutation ownership, and recheck each baseline/current digest.
+An outside edit invalidates the preview instead of being overwritten. The file
+replacement protocol must prevent a check/write race; where the platform cannot
+enforce the required ownership or conditional replacement, refuse application.
+Do not advertise that an in-process lock excludes external editors.
+
+Apply the reviewed set deterministically without touching the user's Git index
+or Branch. Only successfully applied files enter parent Activity, pending
+changes, Undo, and Checkpoint ownership. Rejected child proposals are not
+`filesWritten` in the real Project. On failure or restart, recover from the
+journal; restore only bytes still matching this operation's recorded writes.
+If recovery would overwrite a later user edit, stop and report manual recovery.
+The parent cannot complete while a partial apply or unresolved cleanup exists.
+
+## Results, Activity, Usage, and Intercom
+
+Use a versioned result envelope with launch/Conversation/parent/child/attempt
+identity, sequence, status, Agent, Model, bounded findings, source provenance,
+Activity, Engine Usage with completeness/pricing flags, proposal manifest, and
+cleanup outcome. Accept it only from its bound channel and active generation.
+Reject duplicate, stale, oversized, out-of-order, and cross-child records.
+
+Sequence each child independently; assign an additional Host Server sequence
+when events are accepted. Ordering claims describe receipt, not a fictitious
+total execution order. Retain child evidence while showing one parent Turn with
+expandable child progress and aggregate Usage. Count a completed parent as one
+user-visible Turn, not three; do not add child Usage twice through both the
+parent Message and global counters. Unknown or partial values remain labeled.
+
+Child prose is untrusted data, never a system prompt, Tool call, or executable
+instruction. Validate structure and encode output. Tool-free parent synthesis
+is the enforcement boundary; an injection label alone is not. Rendering child
+evidence must not fetch remote images, execute HTML/SVG, or turn child paths
+into privileged file actions. Children cannot update Agent Memory or global
+Customizations, and delegated parent results are excluded from automatic Memory
+learning. Persisting child findings as Memory requires a separate user decision.
+A later Tool-enabled action requires a new explicit user Turn.
+
+Intercom reports Host Server-authored parent status, child counts, and a
+Conversation link back to DeskPilot. Never forward child prose, raw arguments,
+paths, credentials, or arbitrary child-authored links. Multi-child approvals
+and combined change review occur in DeskPilot; phone replies cannot authorize
+a child action in this slice. Stop retains its existing operator authority and
+cancels the whole parent Turn.
+
+Diagnostics reports child lifecycle state, orphan ownership and cleanup status,
+queue depth, reserved versus reported Usage, remaining aggregate limits, and
+bounded refusal/error codes. Host Server log and Support bundle records are
+constructed from allow-listed fields, never raw child state, prompts, file
+content, arguments, credentials, or environment values. A healthy Terminal
+runtime alone must not report child delegation as ready.
+
+## Cancellation, recovery, and rollback
+
+Stop first closes admission and invalidates the generation, then cancels every
+approval wait and provider request and terminates all owned child processes,
+Tool descendants, and execution environments. Use an independent control path,
+not a second pipeline on a busy Engine Runspace. Verify absence before emitting
+the final stopped record. Cleanup failure stays visible and blocks further
+delegation; do not report successful cancellation while descendants remain.
+
+A child failure may leave sibling work running within existing reservations,
+but the parent must report the partial outcome and never auto-apply its changes.
+Retry only with evidence of no Tool dispatch, no response, and no external
+effect, within the same child identity's original deadlines and quotas. Unknown
+effects forbid retry. Use a fresh attempt id and fresh isolated state; retain
+failed-attempt Usage and invalidate all older approvals/results.
+
+On Host Server restart, reconcile persisted claims before enabling delegation.
+Treat unfinished attempts as interrupted, never automatically replay them.
+Identify owned resources by installation, launch, parent, child, and attempt
+identity plus process start time or immutable container id, not PID alone.
+Independent leases must stop descendants if the Host Server dies. Stop or
+recover orphan resources; refuse new work when ownership or cleanup is uncertain.
+Existing single-Agent behavior must not depend on child infrastructure readiness.
+
+Rollback disables new delegation, cancels and verifies existing children, and
+retains attributable Usage, evidence, and recoverable apply journals. Remove
+only owned expired child/proposal data, with visible expiry; never silently
+discard a reviewed apply journal or Checkpoint reference. Restore applied
+Project files only through the recorded, conflict-aware recovery path. Do not
+uninstall shared Docker/WSL2 or change Local/Isolated Settings as rollback.
+
+## Threat model for each child and the parent
+
+Assume every retrieved file, page, Tool result, and child result is hostile.
+Evaluate the lethal trifecta against the context the caller already knows,
+not just the data stored inside its Tools.
+
+| Execution profile | Private data | Untrusted content | Removed or restricted outbound authority |
+| --- | --- | --- | --- |
+| Internal-source child | Only selected Project input | File contents and Tool results | No general Browsing, browser, MCP, Intercom, or Terminal egress; only the approved Engine provider transport. |
+| Public-evidence child | No internal excerpts, parent history, Memory, or credentials | Public pages | Governed public retrieval; no private mounts or private parent context. |
+| Parent synthesis | Approved child findings | All child output | Every executable Tool disabled; no automatic remote rendering or child-content Intercom forwarding. |
+| Trusted apply operation | Exact approved manifest and baseline | Child file bytes and names | No network or interpretation of child bytes as commands; conditional, path-confined writes only. |
+
+An internal child with arbitrary outbound access is refused, even if its task
+says to be careful. An allow-listed host is not data-loss prevention: a selected
+origin can still receive encoded private content. Any mixed private/public
+profile needs a separately approved, tested disclosure policy; it is not granted
+by a parent Permission alone. Engine provider transport is an explicit trusted
+data-processing boundary, not permission for Tools to call arbitrary endpoints.
+
+## Dependency plan and approval gates
+
+| Order | Owner | Required deliverable | Exit evidence |
+| --- | --- | --- | --- |
+| D1 | Engine maintainers and DeskPilot | Obtainable enforcing Engine; verified per-request Tool dispatch, event, exact-context, retry, Usage-reservation, and scoped authentication contracts. | Clean-install positive/negative contract tests; no ignored local patch as the only source; unknown capabilities fail closed. |
+| D2 | DeskPilot isolation implementation | Complete single-child execution profile with confined reads/writes, no ambient credentials, default-deny Tool egress, real storage quota, independent lease, and verified cleanup. | Actual runtime hostile-workload tests, including sibling/host paths, quota exhaustion, aliases, control sockets, credential canaries, and host death; no skipped controls. |
+| D3 | Operator | Approve this revised process topology, limits, credential design, Project apply semantics, dependency cost, and remaining risks after D1/D2 design details are resolved. | Dated approval recorded here. Prior Terminal approval is not approval of child isolation. |
+| D4 | DeskPilot implementation | Owned child lifecycle, bounded IPC, separate histories and bridges, atomic reservations, server-authoritative scheduling, and restart reconciliation. | Test-first proofs for two independent children, all child/aggregate bounds, stale/cross-child events and approvals, cancellation races, retries, and orphans. |
+| D5 | DeskPilot implementation | Quota-backed input/work areas and deterministic combined proposal review, conditional apply, journal recovery, Undo, and Checkpoints. | Conflicting and rejected proposals write nothing; user edits survive; partial apply, restart, conflict, and rollback tests pass on supported platforms. |
+| D6 | DeskPilot implementation | Parent Turn UI, attributable Activity/Usage, Intercom status, and structurally redacted Diagnostics. | API and desktop/mobile end-to-end tests; correct totals, unknown Usage labels, safe rendering, bounded events, and no progress after final Stop. |
+| D7 | Maintainer and independent security reviewer | Release readiness with all specifications and operational recovery documentation aligned to the approved implementation. | Full suite, ordering/race stress tests, clean live non-sensitive Project proof, and independent security review with every Blocker/Major resolved. |
+
+D1/D2 prerequisites require separately scoped work; this assessment does not
+implement them. Do not begin D4 until both mechanisms are shipped/tested and D3
+is explicitly approved. Enabling native File or MCP behavior outside the owned
+child profile additionally requires the pre-dispatch contract in
+[specification 120](../../specs/120-per-call-approval-engine-contract.md).
+
+The first implementation tests must cover permission escalation, two histories
+and Tool registries, concurrent attempts against one Project, malicious child
+output, aggregate overspend, approval substitution, Stop during each lifecycle
+transition, timeout, partial failure, side-effectful retry refusal, restart,
+orphan cleanup, merge conflict/rejection/recovery, and Usage deduplication.
+Use barriers and injected clocks for ordering tests, plus real-runtime stress
+and positive/negative controls. No product code precedes a relevant failing test.
+
+At D7, update requirements, architecture, API contract, UI design, security model,
+and roadmap together. No new runtime contract or shipped-feature claim is added
+to those specifications while the topology is unapproved and the gate is closed.
+
+## Evidence and limitations
+
+Assessment baseline: DeskPilot `9d8211b`, implementation `f6af6fd`. The staged
+ShellPilot 0.4.1 module inspected and used for dispatch tests has SHA-256
+`1AB55A06244ED302ECAA5B394CF1487DF815EE0237360474178C4BEEAC3DA368`.
+
+| Evidence | Controlling source or retained record |
+| --- | --- |
+| Single Engine Runspace and per-Turn binding | [Initialize-DpEngine](../../source/Private/Initialize-DpEngine.ps1), [Invoke-DpTurn](../../source/Private/Invoke-DpTurn.ps1). |
+| Isolated Terminal does not disable native File access | [New-DpTurnParameter](../../source/Private/New-DpTurnParameter.ps1). |
+| Direct Project bind and bounded temporary storage, not Project quota | [TerminalSession](../../source/isolation/TerminalSession.cs), [operator limits](../../docs/isolated-terminal.md). |
+| Current approval proof: 65 passed, zero failures/skips, Pester 5.7.1 | [TerminalApproval tests](../../tests/Unit/TerminalApproval.Tests.ps1); real Engine dispatch, scripted provider, inert executors. |
+| Earlier Docker, full-suite, UI, and review evidence | [decision 0001](0001-isolated-tool-execution.md); retained, not rerun here. |
+| Approval ownership and remaining native File/MCP dependency | [decision 0008](0008-per-call-approval.md), [security model](../../specs/050-security-model.md). |
+
+Pester 5.7.1 was reused from its existing temporary staging directory; it is not
+currently on the default module path. No dependency was installed or replaced.
+The first verification wrapper expected the older 63-case count and reported
+failure despite 65 passing tests; the corrected wrapper requires all 65 current
+cases, no failures, no skips, and no unrun tests.
+
+The corrected run completed at 07:15 UTC with exit code 0. The local log and
+NUnit XML use the temporary artifact suffix
+`ca9a190975b2463c9e0b327bce246bbd`; they are not published or committed.
+
+Specification 120 remains a proposed native File/MCP callback, not proof of
+current dispatch enforcement. Its older Terminal name and 0.4.0 dispatch claims
+are superseded by decision 0008 and the executable dispatch tests above.
+
+No executable verification is required for these Markdown edits; retained
+native rendering, local link resolution, and scope evidence validate the
+documentation and the existing prerequisite approval, not a child runtime.
+An independent security review completed 2026-09-06 and returned request
+changes: zero Blockers, one Major review-state inconsistency, and one Minor
+missing retained Markdown artifact. These documentation findings are addressed
+by the explicit, artifact-bound review state and the retained validation
+record; the corrections are author-verified and no second independent review or
+operator topology approval has occurred.
+
+The reviewer report and the retained validation basenames exist under
+`$env:TEMP` as local, uncommitted evidence:
+
+- `deskpilot-parallel-review-ca9a190975b2463c9e0b327bce246bbd-report.md`
+- `deskpilot-parallel-review-ca9a190975b2463c9e0b327bce246bbd-validation.json`
+
+Do not interpret these artifacts as reviewer approval of the fixes. Preserve
+that full delegation/stress/live proof, credential isolation, quota
+enforcement, and transactional apply remain unproven; no remote operation,
+publication, authentication change, or production Settings change is
+authorized or performed by this assessment.

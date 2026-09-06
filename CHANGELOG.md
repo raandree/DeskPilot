@@ -386,6 +386,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Clarify the Parallel Agents prerequisite gate.** Terminal isolation is now
+  implemented locally, but does not isolate an entire child Agent or bound
+  writable Project storage. The revised
+  [architecture decision and dependency plan](.memory-bank/decisions/0005-parallel-agents.md)
+  remain proposed; no parallel delegation is enabled by this documentation.
+
 - **Add selectable implementation briefs.** Eight
   Prompt Files now let a maintainer choose per-call approval, diagnostics,
   scheduled work, Windows packaging, localization, isolated Tool execution,
