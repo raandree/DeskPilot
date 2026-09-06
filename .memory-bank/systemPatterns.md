@@ -57,6 +57,10 @@ source: repository implementation and decision records
   confine native File Tools or create a quota-backed child Project. Separate
   Runspaces do not isolate the process environment. Revalidate the complete child
   boundary; batch concurrency and completed-spend checks do not supply it.
+- **A prerequisite implementation task must not require its own completion.**
+  A downstream feature can stop when isolation is absent; the task building that
+  isolation instead obtains focused design approval and implements it. Keep
+  prerequisite proof separate from permission to enable the downstream feature.
 - **HTTPS is not host:443.** Require CONNECT or an encrypted HTTPS request.
   Inspect client TLS before upstream contact and authorize HTTP authority first.
   Namespace packet rules still deny direct sockets/DNS if proxy variables vanish.

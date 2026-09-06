@@ -3,24 +3,30 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-06
-source: repository evidence and prerequisite reassessment
+source: repository evidence and prerequisite Prompt File authoring
 ---
 
 # Active context
 
 ## Current focus
 
-Bounded parallel Agents were assessed on 2026-09-06 and stopped at the user's
-prerequisite gate. The deliverable is the revised
-[decision 0005](decisions/0005-parallel-agents.md) and its dependency plan,
-not a concurrent runtime. The topology and limits are proposed and still require
-operator approval. No runtime, Settings, API, UI, or test implementation changed.
+A new [single-child isolation Prompt File](../.github/prompts/implement-child-agent-isolation.prompt.md)
+prepares the operator to build the missing prerequisite in a new chat. It covers
+one complete child execution profile, quota-bounded private storage, approvals,
+limits, cleanup, and an actual-runtime proof. It requires design approval before
+implementation, then treats missing isolation as work to build rather than a
+reason to repeat the parallel-Agents stop-at-design gate.
 
-Work is on `ai/parallel-agents-prerequisite-plan`, based on `9d8211b` from the
-completed isolated Terminal documentation cycle. Source, tests, and build
-settings remain at implementation `f6af6fd`. No push or publication is requested.
+This turn authors the Prompt File only. It does not invoke the workflow, approve
+a topology, or change runtime, dependencies, Settings, or specifications.
+Parallel scheduling and application of proposals to the real Project remain
+outside this prerequisite slice. Decision 0005 and its remaining gates stand.
 
-## Verified prerequisite state
+Work is on `ai/child-agent-isolation-prompt`, based on `293d5a5`. Source, tests,
+and build settings remain at implementation `f6af6fd`. No push or publication
+is requested.
+
+## Retained prerequisite evidence
 
 - Terminal approval is locally implemented and tested. The focused suite passed
   **65 tests, zero failures, zero skips**, using Pester 5.7.1 and staged
@@ -52,6 +58,16 @@ runtime work starts until those prerequisites and operator approval are met.
 The six runtime specifications remain unchanged pending an approved design.
 
 ## Verification and review
+
+Prompt authoring checks cover YAML frontmatter, native Markdown rendering,
+local links, diagnostics, and the
+[real-conversation acceptance cases](../.github/prompts/evals/child-agent-isolation.md).
+No runtime test was rerun for this authoring task. Native Customization analysis
+and repeated fresh-chat behavioral evaluations have not been run; static checks
+do not establish workflow reliability. The new prompt requests independent
+security review of the eventual implementation, not a review already completed.
+
+The following review belongs to the earlier decision-only task:
 
 An independent security review completed 2026-09-06 and returned request
 changes: zero Blockers, one Major review-state inconsistency, and one Minor

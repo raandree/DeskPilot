@@ -386,6 +386,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Add a dedicated [child Agent isolation brief](.github/prompts/implement-child-agent-isolation.prompt.md)
+  for building the single-child execution boundary and quota-bounded work areas
+  before parallel delegation. Keep design approval, implementation proof, and
+  the later parallel-Agents gate separate; no runtime feature is enabled.
+
 - **Clarify the Parallel Agents prerequisite gate.** Terminal isolation is now
   implemented locally, but does not isolate an entire child Agent or bound
   writable Project storage. The revised
