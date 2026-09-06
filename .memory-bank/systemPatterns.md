@@ -92,6 +92,11 @@ source: repository implementation and decision records
   `exact` are not proof of Model-specific framing or provider-added tokens.
   Keep fixture evidence separate, hold reservations when Usage is unknown, and
   refuse child startup until the actual provider contract is verified.
+- **Probe counting per provider shape.** Copilot can expose Messages token
+  counting while its Responses counting path returns 404. Use authenticated
+  discovery as a control, compare hosted counts with Engine Usage, and record
+  the exact Model, host, request shape, and differences. A few observed
+  overcounts do not establish a general upper bound or a safe correction factor.
 
 ## Data, changes and diagnostics
 

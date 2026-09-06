@@ -25,7 +25,7 @@ bypass the readiness gate. No child start, approval, or proposal UI is enabled.
 | Actual-runtime checks | File/Terminal work, byte/inode quotas, read-only denial, export, Stop, lease, owner death, and reconciliation checks exist. |
 | Complete child Engine process and approval bridge | Not integrated. |
 | Aggregate Engine Usage, context, and resource bounds | Not implemented or proven across the complete V2 run. |
-| Authenticated live proof | Not attempted; hard Engine request admission remains unsupported. |
+| Authenticated live proof | Counting probes and four capped Engine requests succeeded; the complete child profile and its hard request bound remain unproven. |
 | Clean-install Engine support | Not proven; local Engine changes are not a released dependency. |
 | Independent security review | Request changes: three Majors and one Minor. One implemented Major is author-corrected; the two Major integration/admission gates and retention/restart Minor remain open. |
 
@@ -88,25 +88,60 @@ earlier child-storage credential-filter correction.
 
 ### Live counting investigation
 
-On 2026-09-06 the operator requested a live count investigation with the existing
-Engine credential. `Initialize-Shp` returned the named token file, as its public
-contract specifies. `Get-ShpModel` using that returned path failed during local
-DPAPI decryption with `0x8009000B`, before contacting Copilot. Returning FileInfo
-does not prove that the encrypted token is usable. No credential was displayed,
-replaced, or sent to a new service; no Model or count-endpoint request ran.
+The operator refreshed Engine sign-in on 2026-09-06. `Get-ShpModel -Endpoint
+Session` then returned 43 Models at 21:19 UTC. This resolves the earlier local
+DPAPI decryption failure; authentication is no longer the counting blocker.
+
+The Engine-selected host was `api.enterprise.githubcopilot.com`. Read-only
+discovery and non-generating count probes returned:
+
+| Operation | Requested Model | Result |
+| --- | --- | --- |
+| `GET /models` | Not applicable | 200; 43 Models, using the same HTTP client as the Messages probe. |
+| `POST /responses/input_tokens` | `gpt-5-mini` | 404; no count returned. |
+| `POST /v1/messages/count_tokens` | `claude-haiku-4.5` | 200; input-token count returned. |
+
+The hosted Claude counter was then compared with the Engine's existing
+`Invoke-CopilotTurn` Chat transport, using equivalent non-sensitive Messages
+and Chat inputs. Generation was capped at eight output tokens per request,
+with no automatic retries or Tool execution.
+
+| Fixture | Hosted Messages count | Engine-reported input | Difference |
+| --- | ---: | ---: | ---: |
+| Plain text | 11 | 11 | 0 |
+| System text | 31 | 31 | 0 |
+| Tool schema | 587 | 580 | +7 |
+| Tool result | 669 | 662 | +7 |
+
+A count-only variant removed explicit `tool_choice` and returned the same four
+counts, ruling out that setting as the explanation for the difference. These
+are observed results for this account, host, Model, and fixtures, not a
+cross-Model or all-input guarantee. Four generation requests reported 1,284
+input tokens and 19 output tokens in total. No Tool was proposed or executed.
+Credentials were neither displayed nor replaced by the probes.
 
 The [first-party Copilot tokenizer](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/tokenizer/node/tokenizer.ts)
 explicitly describes Tool and Tool-call overhead calculations as estimates.
 OpenAI separately documents
 [`POST /responses/input_tokens`](https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens).
-That is a concrete candidate for a credentialed Copilot compatibility probe,
-not evidence that Copilot implements it or guarantees the same request framing.
+That Responses route was unavailable in the tested Copilot environment; this
+does not imply all Copilot counting routes are absent. Anthropic's
+[Messages counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting)
+describes its returned count as an estimate, which may differ from actual usage.
 
-Resume by restoring usable Engine authentication through its normal sign-in
-flow, then testing the candidate operation with non-sensitive inputs. Verify
-complete messages, system text, Tool schemas, and request/count identity before
-wiring a provider counter into admission. Keep V2 and child readiness unchanged
-until the actual provider contract is established.
+The Claude counting route is usable, but a verified complete-request bound for
+V2 remains open. Observed overcounting in these cases does not prove an upper
+bound for every permitted request. Do not subtract seven as a correction or
+mark a counter `exact` or `upper-bound` on this evidence. Any decision to use
+provider-estimated token/cost budgets needs explicit approval; no such change
+was made. Engine source, production Settings, and child-startup refusal remain
+unchanged.
+
+The temporary reusable probe, its hash, the Engine revision/module hash, and
+sanitized machine-readable evidence are retained under
+`$env:TEMP/deskpilot-copilot-count-20260906-2121`. The probe passed PowerShell
+parsing and PSScriptAnalyzer. This live counting evidence is separate from the
+full child-runtime proof and the earlier full Sampler gates.
 
 ## Implemented storage boundary
 

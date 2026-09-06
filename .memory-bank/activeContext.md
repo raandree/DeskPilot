@@ -3,27 +3,37 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-06
-source: local Git history and verified Sampler test and build outputs
+source: local Git history, Sampler outputs, and bounded authenticated counting probes
 ---
 
 # Active context
 
 ## Current focus
 
-Investigate a verified Copilot complete-request counter using the operator's
-existing Engine credential. The 2026-09-06 live attempt is blocked at local
-credential decryption, before a request reaches Copilot. `Initialize-Shp`
-returns the existing FileInfo, but `Get-ShpModel -Endpoint Session -TokenPath`
-then fails to decrypt its DPAPI envelope (`0x8009000B`). The operator confirmed
-the default token-file location. No credential was exposed or replaced, and no
-Model request or count-endpoint probe ran. A fresh Engine sign-in or a working
-credential source is required to resume; returning a file is not auth proof.
+The operator refreshed Engine sign-in. Authentication is no longer the blocker:
+`Get-ShpModel -Endpoint Session` returned 43 Models at 21:19 UTC on 2026-09-06.
+The earlier DPAPI failure is historical; do not ask for another sign-in without
+new evidence of an authentication failure.
 
-OpenAI documents `POST /responses/input_tokens`; whether Copilot exposes that
-operation remains untested. The first-party Copilot client's tokenizer calls
-its Tool and Tool-call overhead calculations estimates. Do not treat those
-local counts, a successful file lookup, or this authentication failure as
-evidence of a verified provider count or an absent Copilot endpoint.
+Live probes against the Engine-selected `api.enterprise.githubcopilot.com`:
+`GET /models` returned 200 with 43 Models; `POST /responses/input_tokens` with
+`gpt-5-mini` returned 404; `POST /v1/messages/count_tokens` with
+`claude-haiku-4.5` returned 200 and an input count. The Claude counting route
+is available on this account and host; support elsewhere was not tested.
+
+Four small fixtures compared hosted Messages counts with Engine Chat Usage:
+plain text 11/11, system text 31/31, Tool schema 587/580, Tool result 669/662
+(counter/reported input). Removing explicit `tool_choice` did not change the
+counts. The four generation requests had an eight-token output cap, no retries,
+1,284 reported input tokens, 19 output tokens, and zero executed Tools.
+
+An available server count is not yet the verified complete-request upper bound
+V2 requires. Two fixtures matched and two overcounted; the absence of an
+undercount in these cases does not prove a bound for every allowed request.
+Do not subtract seven, label the endpoint exact, or treat it as a verified bound.
+V2, production Settings, Engine source, and child-startup refusal are unchanged.
+Source hashes, the temporary reusable probe, and sanitized results are retained
+under `$env:TEMP/deskpilot-copilot-count-20260906-2121`.
 
 ## Completed admission groundwork
 
@@ -108,7 +118,9 @@ Optional Terminal isolation retains the limitations in
 [decision 0001](decisions/0001-isolated-tool-execution.md) and the
 [operator guide](../docs/isolated-terminal.md). Live authenticated acceptance
 and an obtainable dispatch-enforcing Engine remain separate release gates.
-No Model call, authentication change, or production Settings change occurred.
+The counting continuation used four capped Model requests after operator
+reauthentication. It did not change production Settings or establish the full
+operator acceptance profile.
 
 The separate Engine worktree `D:/Git/ShellPilot-child-isolation` remains on
 `ai/child-provider-boundary`. The original ShellPilot worktree and its unrelated
