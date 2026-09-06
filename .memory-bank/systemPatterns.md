@@ -36,6 +36,7 @@ source: repository implementation and decision records
 | [0006](decisions/0006-windows-packaging.md) | Windows packaging |
 | [0007](decisions/0007-localization.md) | Localization |
 | [0008](decisions/0008-per-call-approval.md) | Individual Terminal approvals |
+| [0009](decisions/0009-single-child-isolation.md) | Approved single-child V2 and partial storage implementation |
 
 ## Execution and approval
 
@@ -71,6 +72,13 @@ source: repository implementation and decision records
 - **Prepared runtime.** Explicit setup verifies bytes, records package/source
   provenance and immutable image identity. Turns use prepared images only.
   Runtime source changes invalidate preparation; do not edit during a proof run.
+- **Preserve ownership when state updates fail.** Strict Windows directory
+  handles block replacement races but also block child-file rename. Keep an
+  immutable prelaunch identity separately from flushed in-place state; a torn
+  state record blocks new child work and is reconciled from that identity.
+- **A component proof is not a profile proof.** Private Tool quota/export/lease
+  tests do not establish child Engine, credentials, approval, or hard Usage
+  admission. Report these gates separately and keep startup unavailable.
 
 ## Data, changes and diagnostics
 

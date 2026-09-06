@@ -18,14 +18,16 @@ and documentation. Live authenticated acceptance and clean-install Engine
 availability remain release follow-ups; nothing has been published.
 
 Parallel Agents remain blocked: Terminal containment is not child Agent
-isolation. Decision 0005 now records the current evidence and proposed topology,
-quotas, security boundaries, recovery, and dependencies; runtime work is not
-authorized until the prerequisites and operator approval are complete.
+isolation. The operator approved single-child design V2 in decision 0009. Its
+private storage/lifecycle components are implemented, but complete child Engine
+integration, approvals, and hard request admission remain open. Decision 0005's
+parallel topology is still proposed; no parallel scheduling is enabled.
 
 ## Recent milestones
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-06 | Approved single-child V2; implemented private Tool storage, capture, IPC, export, lease, Stop/recovery, retention admission, and an explicit Host Server refusal gate. Final component proof: 87 passed, no failures/skips. DeskPilot full: 2,373 passed, five existing skips. Engine full: 1,749 passed. Review requests changes: one implemented Major corrected with red/green tests; two Major full-profile/admission gates and retention/restart Minor remain. Complete child execution stays blocked. |
 | 2026-09-06 | Added a new-chat single-child isolation Prompt File and routed it before parallel Agents. It targets the missing complete Tool boundary and quota-backed storage after design approval; no runtime implementation or topology approval occurred. Added three conversation-based prompt acceptance cases; behavioral evaluation remains unrun. |
 | 2026-09-06 | Reassessed Parallel Agents and retained the prerequisite stop. Corrected stale isolation/batch claims and recorded a proposed complete child boundary and dependency plan. Existing Terminal approval suite: 65 passed, zero failures/skips, Pester 5.7.1 with staged ShellPilot 0.4.1; no runtime changes. |
 | 2026-09-06 | Closed the final technical-writer stage after the operator confirmed the review passed. Documented visible mode changes, migration, return to Local, and removal; refined Unreleased notes. Source/tests/build still match f6af6fd. Markdown rendering and local links pass; prior executable evidence is retained, not rerun. |

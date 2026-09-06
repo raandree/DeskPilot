@@ -48,6 +48,24 @@ short-circuits straight to `done { "authenticated": true }`. Events:
 
 ## Diagnostics
 
+### Child readiness and startup refusal
+
+`GET /api/diagnostics/child` returns `schemaVersion`, `profile`, `enabled`,
+`ready`, `state`, copied `effectiveLimits`, `missingContracts`, and a bounded
+explanation. `ready` is always false in this implementation. The normal
+Diagnostics response also includes this object as `childExecution`. No Engine,
+Docker, network, setup, or cleanup operation is invoked by this read.
+
+`POST /api/conversations/{id}/child-runs` is a reserved, fail-closed operation.
+It returns `403 child_profile_disabled` by default,
+`503 child_profile_unavailable` when the setting is enabled, or `409 busy`
+while another Turn owns execution. It creates no child, Conversation Message,
+approval, or Usage record and never invokes an ordinary Turn as fallback.
+The existing session-token, loopback, and origin controls apply.
+
+The complete start/status/events/approval/Stop/proposal contract is still open;
+see [the current prerequisite status](../docs/child-agent-isolation.md).
+
 Every Diagnostics route uses the same loopback bind, loopback Host and
 same-origin validation, and per-launch session-token gate as the rest of
 `/api/*`.

@@ -11,6 +11,13 @@
 
 ## Process & runspace model
 
+The approved single-child V2 design is not the current Turn topology. Private
+Tool storage and lifecycle components exist, but the credentialless child
+Engine process, trusted provider transport, child approvals, and full accounting
+are not integrated. Child startup is explicitly refused; the ordinary parent
+Engine Runspace model below is unchanged. See
+[demonstrated components and open gates](../docs/child-agent-isolation.md).
+
 - The Host Server runs in the launching PowerShell process and owns the
   `HttpListener` accept loop.
 - At startup the Host Server resolves the Engine via `Resolve-DpEngineModule`

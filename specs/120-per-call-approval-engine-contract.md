@@ -6,7 +6,9 @@ to unblock it. No approval is simulated after a Tool has run.
 
 ## Status
 
-**Terminal shipped, 2026-09-03.** DeskPilot owns `run_command` and gates it; see
+**Terminal locally implemented, 2026-09-03.** DeskPilot owns
+`run_terminal_command`, disables native `run_command`, and requires tested
+disabled-built-in dispatch refusal; see
 `specs/050` for the security properties and `.memory-bank/decisions/0008` for the
 design decisions. The Engine contract below is still required for **MCP calls**
 and for gating the Engine's built-in File Tools in place. It is **not** required
@@ -16,10 +18,10 @@ The original version of this record concluded that per-call approval as a whole
 was blocked on ShellPilot. That conclusion was too broad, and the correction
 matters because it has been shaping the roadmap:
 
-- `Invoke-Shp` exposes **`-DisableTerminal`** as a switch separate from
-  `-DisableUserTools`. Verified in ShellPilot 0.4.0: `$terminalEnabled` gates
-  both the tool definition offered to the Model and the dispatch branch, so a
-  disabled `run_command` is neither advertised nor callable.
+- `Invoke-Shp` exposes **`-DisableTerminal`** separately from
+  `-DisableUserTools`. Earlier 0.4.0 builds withheld the offered schema without
+  refusing dispatch. The locally tested enforcing build is staged 0.4.1;
+  executable dispatch tests, not version strings, establish the boundary.
 - DeskPilot already registers its own Tools into the Engine Runspace
   (`ask_questions`, `search_files`, `search_text`, `replace_in_file`), and
   `ask_questions` **already blocks a Turn mid-flight and resumes it**:

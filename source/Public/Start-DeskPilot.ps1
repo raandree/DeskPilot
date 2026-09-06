@@ -216,6 +216,8 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/cleanup'; Name = 'cleanupBrowserRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/uninstall'; Name = 'uninstallBrowserRuntime' }
             @{ Method = 'GET'; Pattern = '/api/diagnostics/terminal'; Name = 'getTerminalRuntime' }
+            @{ Method = 'GET'; Pattern = '/api/diagnostics/child'; Name = 'getChildReadiness' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/child-runs'; Name = 'startChildRun' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/check'; Name = 'checkTerminalRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/install'; Name = 'installTerminalRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/cleanup'; Name = 'cleanupTerminalRuntime' }

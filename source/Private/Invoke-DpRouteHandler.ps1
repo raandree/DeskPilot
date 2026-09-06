@@ -56,6 +56,22 @@ function Invoke-DpRouteHandler {
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpDiagnosticPayload -AfterSequence $afterSequence)
         }
+        'getChildReadiness' {
+            Write-DpResponse -Stream $Stream -Json (Get-DpChildReadiness -Settings $state.Settings)
+        }
+        'startChildRun' {
+            if ($state.TurnRunning) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'An active Turn already owns execution.' } }
+                return
+            }
+            $readiness = Get-DpChildReadiness -Settings $state.Settings
+            $status = if ($readiness.enabled) { 503 } else { 403 }
+            $code = if ($readiness.enabled) { 'child_profile_unavailable' } else { 'child_profile_disabled' }
+            Write-DpResponse -Stream $Stream -Status $status -Json @{
+                error = @{ code = $code; message = $readiness.message }
+                readiness = $readiness
+            }
+        }
         'runDiagnosticCheck' {
             $started = Start-DpDiagnosticCheck
             if ($started.alreadyRunning) {

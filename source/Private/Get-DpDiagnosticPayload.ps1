@@ -64,6 +64,7 @@ function Get-DpDiagnosticPayload {
             intercomEnabled = [bool]$snapshot.intercom.enabled
         }
         terminalExecution = Get-DpTerminalStatus
+        childExecution = Get-DpChildReadiness -Settings (Get-DpPropertyValue -InputObject $script:DeskPilot -Name 'Settings' -Default @{})
         selfCheck    = @{
             checking = [bool]$diagnostics.Checking
             startedUtc = $diagnostics.CheckStartedUtc

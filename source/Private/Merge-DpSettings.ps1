@@ -41,6 +41,7 @@ function Merge-DpSettings {
     $merged.permissions = @{}
     foreach ($key in $Current.permissions.Keys) { $merged.permissions[$key] = $Current.permissions[$key] }
     $merged.terminalExecution = ConvertTo-DpTerminalExecution -InputObject (Get-DpPropertyValue -InputObject $Current -Name 'terminalExecution')
+    $merged.childExecution = ConvertTo-DpChildExecution -InputObject (Get-DpPropertyValue -InputObject $Current -Name 'childExecution')
     $merged.intercom = @{}
     if ($Current.intercom) {
         foreach ($key in $Current.intercom.Keys) { $merged.intercom[$key] = $Current.intercom[$key] }
@@ -147,6 +148,10 @@ function Merge-DpSettings {
             'perCallApproval' { $merged.perCallApproval = [bool]$value }
             'terminalExecution' {
                 $merged.terminalExecution = ConvertTo-DpTerminalExecution -InputObject $value -Current $merged.terminalExecution
+            }
+            'childExecution' {
+                if ($null -eq $value) { throw 'childExecution must be an object.' }
+                $merged.childExecution = ConvertTo-DpChildExecution -InputObject $value -Current $merged.childExecution
             }
             'approvalTimeoutMinutes' {
                 $minutes = [int]$value

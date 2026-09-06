@@ -451,6 +451,12 @@ DOM APIs, never concatenated HTML, because names and prompts are user text.
 
 ## Approval card
 
+No child execution controls are enabled by the experimental storage work.
+The approved single-child status, approval, and read-only proposal surfaces
+remain unimplemented. A prepared Tool image must not be displayed as a ready
+child Agent; [the readiness contract](030-api-contract.md#child-readiness-and-startup-refusal)
+explicitly reports the missing integration.
+
 Terminal approvals always label execution as **Local** or **Isolated**. Isolated
 cards show Project access, network, exact HTTPS origins, environment names with
 secret markers, every resource limit, and the lack of total read-write Project

@@ -133,6 +133,14 @@ user's directory layout.
 
 ## Optional Terminal isolation
 
+The experimental [child storage components](../docs/child-agent-isolation.md)
+do not change this ordinary Turn boundary. They provide a separate, no-host-mount
+Tool filesystem with kernel byte/inode quotas, authenticated control records,
+bounded proposals, and component lifecycle tests. Full child execution remains
+refused because Engine request admission, credentialless Engine containment,
+child approvals, and aggregate accounting are not integrated. Neither successful
+storage tests nor an enabled setting establish a complete Agent boundary.
+
 Terminal has an opt-in Docker Desktop/WSL2 boundary. Approval and isolation remain
 independent: Isolated mode requires approval for non-routine commands and never
 restores native execution when a Setting or dependency prevents the owned Tool.

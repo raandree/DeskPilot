@@ -38,6 +38,11 @@ Priorities use MoSCoW: **M**ust, **S**hould, **C**ould, **W**on't (this release)
 
 ### Agent Tools & Permissions
 
+The [single-child prerequisite](../docs/child-agent-isolation.md) is experimental
+and incomplete. Its storage proofs do not authorize child execution. Keep
+ordinary Turns unchanged and child startup unavailable until the approved V2
+Engine, approval, accounting, and complete lifecycle gates pass.
+
 | ID | Priority | Requirement |
 | --- | --- | --- |
 | FR-T1 | M | Expose all Engine Tool categories: Browsing, File, Terminal, Ask-User, User Tools. |

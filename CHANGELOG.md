@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Add experimental child storage components and an explicit readiness gate.**
+  Prove private byte/inode quotas, selected-file capture, proposal export,
+  lease, Stop, and recovery without changing ordinary Turns. Full child startup
+  remains unavailable pending Engine request admission and child integration;
+  no parallel Agents or real Project application are enabled. See
+  [status and component proof](docs/child-agent-isolation.md).
+
 - **Add optional isolated Terminal execution in disposable Docker containers.**
   Keep Local behavior by default; opt in through Settings after preparing the
   runtime in Diagnostics. Isolated commands run in Linux with the selected

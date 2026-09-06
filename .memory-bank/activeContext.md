@@ -3,28 +3,43 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-06
-source: repository evidence and prerequisite Prompt File authoring
+source: operator-approved single-child design V2 and test-first implementation
 ---
 
 # Active context
 
 ## Current focus
 
-A new [single-child isolation Prompt File](../.github/prompts/implement-child-agent-isolation.prompt.md)
-prepares the operator to build the missing prerequisite in a new chat. It covers
-one complete child execution profile, quota-bounded private storage, approvals,
-limits, cleanup, and an actual-runtime proof. It requires design approval before
-implementation, then treats missing isolation as work to build rather than a
-reason to repeat the parallel-Agents stop-at-design gate.
+Implement the [single-child isolation prerequisite](decisions/0009-single-child-isolation.md).
+The operator explicitly approved revised design V2 and limited tracked Engine
+contract work on 2026-09-06. V2 uses Host Server integration, a credentialless
+child Engine container, a separate network-disabled Tool container, and trusted
+Engine-owned provider transport. The first proposal was not approved.
 
-This turn authors the Prompt File only. It does not invoke the workflow, approve
-a topology, or change runtime, dependencies, Settings, or specifications.
-Parallel scheduling and application of proposals to the real Project remain
-outside this prerequisite slice. Decision 0005 and its remaining gates stand.
+Work is on `ai/child-agent-isolation`, based on `2d86925`. ShellPilot work uses
+the linked worktree `D:/Git/ShellPilot-child-isolation`, branch
+`ai/child-provider-boundary`, based on `3446e32`. Preserve the unrelated modified
+public test in the original ShellPilot worktree on `ai/edit-file-tool`.
 
-Work is on `ai/child-agent-isolation-prompt`, based on `293d5a5`. Source, tests,
-and build settings remain at implementation `f6af6fd`. No push or publication
-is requested.
+The implemented portion is private Tool storage, selected baseline capture,
+authenticated control records, bounded export, lease, Stop, explicit recovery,
+retention admission, and the Host Server readiness/refusal surface. No child
+Engine has been launched. The final checked-in component proof passed 87 tests,
+including 19 real-container tests, with no failures or skips. DeskPilot's final
+full Sampler gate passed 2,373 tests, no failures, and five existing browser
+skips at 11:36 UTC. ShellPilot's full gate passed 1,749 tests, no failures/skips,
+88.79% coverage. Both full builds completed 16 tasks with zero errors/warnings.
+
+Independent security review returned request changes: zero Blockers, three
+Majors, one Minor. The implemented baseline credential-filter defect is fixed
+with 15 red/green negative cases and a positive ordinary-JSON case; all 31
+baseline tests pass. This correction is author-verified, not independently
+re-reviewed. The two Major acceptance gates remain: complete-request admission
+and the integrated child Engine/approval/accounting profile. Retention age and
+Host Server restart integration remain the Minor open gate. No release is ready.
+
+No push, publication, new shared dependency, or host privilege change is
+authorized. Parallel scheduling and real Project application remain excluded.
 
 ## Retained prerequisite evidence
 
@@ -43,31 +58,33 @@ is requested.
   process environment or filesystem. The historical import measurements are
   not a child containment or performance proof.
 
-## Proposed next work
+## Blocked next work
 
-Resolve the enforcing Engine's obtainable contract and a complete single-child
-execution/storage profile before approving the new topology. Proposed children
-have separate supervised processes, quota-enforced work areas, per-child
-approvals, bounded context and Usage, and independent cleanup. Parent planning
-and synthesis are tool-free; all real Project changes require one reviewed,
-conflict-aware apply operation with a recoverable journal.
+Obtain a verified Engine/provider contract for whole-request token bounds,
+Engine-priced reservations, failed/unknown Usage, and cancellation. The current
+heuristic counter and completed-spend guard cannot enforce the approved caps.
+`NoAutomaticRetry` and `RequestTransport` are local tracked groundwork only.
+Do not install an ignored patch or treat a fixture as released support.
 
-Decision 0005 records the dependency order, numeric caps, threat model,
-cancellation/restart behavior, and required test-first proofs. No delegation
-runtime work starts until those prerequisites and operator approval are met.
-The six runtime specifications remain unchanged pending an approved design.
+Complete the approved credentialless Engine container, trusted Engine transport
+process, child-specific approvals, full-run resource/accounting limits,
+restart/retention integration, and authenticated live proof. Keep
+`Get-DpChildReadiness.ready` false and `startChildRun` refusing until those
+contracts and proofs exist. Parallel scheduling and real Project application
+remain later work in decision 0005. Runtime specifications now explicitly
+describe the partial implementation and closed readiness gate.
 
-## Verification and review
+## Earlier prompt and decision evidence
 
-Prompt authoring checks cover YAML frontmatter, native Markdown rendering,
+Earlier prompt authoring checks cover YAML frontmatter, native Markdown rendering,
 local links, diagnostics, and the
 [real-conversation acceptance cases](../.github/prompts/evals/child-agent-isolation.md).
-No runtime test was rerun for this authoring task. Native Customization analysis
+No runtime test was rerun for that authoring task. Native Customization analysis
 and repeated fresh-chat behavioral evaluations have not been run; static checks
 do not establish workflow reliability. The new prompt requests independent
 security review of the eventual implementation, not a review already completed.
 
-The following review belongs to the earlier decision-only task:
+The following review belongs only to the earlier decision-only task:
 
 An independent security review completed 2026-09-06 and returned request
 changes: zero Blockers, one Major review-state inconsistency, and one Minor

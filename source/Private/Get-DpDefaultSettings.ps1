@@ -82,6 +82,7 @@ function Get-DpDefaultSettings {
         # park until the timeout for every unrecognised command.
         perCallApproval   = $false
         terminalExecution = (ConvertTo-DpTerminalExecution -InputObject @{})
+        childExecution    = (ConvertTo-DpChildExecution -InputObject @{})
         # An unanswered approval holds the single Engine Runspace, so it fails
         # closed after this many minutes rather than blocking every queued run.
         approvalTimeoutMinutes = 15

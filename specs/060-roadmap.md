@@ -178,6 +178,14 @@ See [setup, limitations and rollback](../docs/isolated-terminal.md).
 
 ### Deliberately deferred (constraint or Engine bound)
 
+- **Single-child Agent isolation prerequisite: approved but incomplete.**
+  V2's private Tool storage/lifecycle and Host Server refusal surface are
+  implemented and tested. Complete Engine request admission, the credentialless
+  child Engine process, child approvals, aggregate limits, authenticated live
+  proof, and clean-install support remain open. Independent review returned
+  request changes; no child startup or parallel scheduling is enabled. See
+  [component evidence and open gates](../docs/child-agent-isolation.md).
+
 - **External memory providers** (pluggable third-party memory backends such as
   Honcho or Mem0). DeskPilot now has its own bounded, built-in persistent
   memory (Phase 2.8); pluggable external backends are a larger, later track that

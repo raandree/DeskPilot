@@ -27,6 +27,14 @@ performance guarantees for the proposed process topology.
 
 ## The gate
 
+**Prerequisite work update, 2026-09-06:** the operator approved the focused
+single-child V2 design in [decision 0009](0009-single-child-isolation.md), not
+the two-child topology below. Private Tool storage/lifecycle components and an
+explicit child-start refusal now exist. The complete child Engine profile,
+per-child approvals, hard request admission, authenticated live proof, and
+clean-install Engine support remain open; independent review returned request
+changes. D1/D2 are therefore not closed and parallel scheduling remains blocked.
+
 `.github/prompts/implement-parallel-agents.prompt.md`:
 
 > Confirm per-call approval and an appropriate isolation mechanism are shipped

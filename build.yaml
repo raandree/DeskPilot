@@ -12,6 +12,7 @@ CopyPaths:
   - web
   - browser
   - isolation
+  - child
 Encoding: UTF8
 prefix: Prefix.ps1
 VersionedOutputDirectory: true
