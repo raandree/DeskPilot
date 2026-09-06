@@ -3,90 +3,79 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-06
-source: parallel-Agent prerequisite assessment at DeskPilot 275cd6b
+source: local Git history and verified Sampler test and build outputs
 ---
 
 # Active context
 
 ## Current focus
 
-The requested parallel-Agent implementation stopped at its prerequisite gate.
-[Decision 0005](decisions/0005-parallel-agents.md) now distinguishes implemented
-child Tool storage from the missing complete child Agent boundary and maps the
-readiness refusals to D1/D2 dependencies. The two-child topology and limits remain
-proposed, not operator-approved or implemented.
+Consolidate the reviewed local feature Branches into `main`, retain their useful
+changes, and remove their local Branch names after verified Merge. The five
+Branches form one fast-forward chain with eight commits beyond `2eb4975`.
+The integration Branch is `ai/integrate-feature-branches`; no remote mutation
+or publication is authorized.
 
-This assessment is on `ai/parallel-agents-prerequisite-gate`, based on the clean
-DeskPilot `275cd6b` checkout from `ai/child-agent-isolation`. Only the decision and
-routed Memory Bank records change. No concurrency, runtime, Settings, API, UI,
-or test implementation changes are authorized by the failed prerequisite gate.
-Commit locally; do not push or publish.
+| Branch | Retained tip | Contribution |
+| --- | --- | --- |
+| `ai/isolation-dependency-decision` | `9d8211b` | Optional Terminal isolation, dependency evidence, and operator documentation |
+| `ai/parallel-agents-prerequisite-plan` | `293d5a5` | Parallel-Agent prerequisite decision and dependency plan |
+| `ai/child-agent-isolation-prompt` | `2d86925` | Single-child implementation Prompt File and acceptance cases |
+| `ai/child-agent-isolation` | `275cd6b` | Guarded private Tool storage and its component tests |
+| `ai/parallel-agents-prerequisite-gate` | `31f2d07` | Reassessed parallel-Agent gate with child startup still unavailable |
 
-## Current verification
+All eleven initially modified files matched their index blobs after Git content
+normalization. Refreshing those exact index entries cleared the flags without
+rewriting files, discarding code, or creating an empty commit. A fresh origin
+fetch found no additional work. `origin/ai/safety-and-automation` was already an
+ancestor of `main`; remote Branches remain untouched.
 
-- Fresh focused Pester run completed 2026-09-06 12:03:03 UTC: **93 passed,
-  zero failures/skips/unrun cases**, with PowerShell 7.6.5 and Pester 5.7.1.
-  It covers 65 Terminal approval cases and 28 child policy/readiness/refusal
-  cases. Source hashes match; no live Model call or child container was run.
-- `Get-DpChildReadiness.ready` is always false. Child startup returns disabled,
-  unavailable, or busy without a container launch or ordinary Turn fallback.
-  An enabled Setting and a prepared Tool image do not establish readiness.
-- `Invoke-ShpBatch` in tracked Engine `d1e1e13` supplies batches, not delegation:
-  pooled Runspaces, shared invocation policy, empty histories, no streaming or
-  progress, and completed-spend checks instead of in-flight reservations.
-  With `AsJob`, Usage stays in the job's Engine store, not the caller's store.
-- Native Markdown rendering and local links pass. Independent documentation
-  review approved the frozen change with zero Blockers/Majors/Minors and one
-  evidence-attribution Nit. The unnecessary Engine cleanliness claim was removed;
-  that correction is author-verified. The earlier runtime correction was not
-  independently re-reviewed. Decision 0005 retains the exact review evidence.
+## Fresh verification
 
-## Blocked next work
+- `build.ps1 -Tasks test`: **2,373 passed, zero failures, five existing browser
+  Unicode skips, zero unrun cases**. PowerShell 7.6.5, Pester 6.1.0; nine tasks,
+  zero errors/warnings, completed 2026-09-06 13:29:28 UTC. Includes the actual
+  child-storage and Terminal-container integration suites.
+- `node --test tests/Unit/terminal-isolation-ui.test.mjs`: **3 passed**.
+- `node tests/live/terminal-isolation-ui.mjs`: passed at **1440px and 390px**;
+  screenshots reviewed, no horizontal overflow or overlapping controls.
+- Tests preceded `build.ps1 -Tasks build`: **seven tasks, zero errors/warnings**,
+  completed 13:31:13 UTC. Built version `0.0.1` imports successfully and exports
+  `Start-DeskPilot`. All **34 bundled assets** match their source hashes.
+- Built defaults remain Local and child execution disabled; readiness is false.
+  Independent Docker inspection found no child or Terminal containers left.
+- Integrated diff whitespace check passed. Runtime and tests are unchanged from
+  `31f2d07`; the consolidation record changes only Memory Bank files.
 
-Complete the separately approved
-[single-child V2 prerequisite](decisions/0009-single-child-isolation.md) first:
-verified whole-request token bounds, Engine-priced reservations, failed/unknown
-Usage and cancellation; credentialless Engine containment and trusted transport;
-child approvals; combined resource limits; restart/retention integration; and
-authenticated live proof. Local Engine groundwork is not obtainable released
-support. Do not patch ignored dependencies or enable startup to bypass a gate.
+Logs and copied test reports are retained under `$env:TEMP`:
 
-D3 additionally needs explicit operator approval of the two-child topology.
-The public-evidence child requires an approved public-only input and governed
-retrieval profile; V2's network-disabled File/Terminal profile does not supply
-it. Keep all child startup unavailable until the complete profile is proven.
+- `deskpilot-integrated-tests-be2392aed20d466db73c980d2cd73d2b.log`.
+- `deskpilot-integrated-tests-be2392aed20d466db73c980d2cd73d2b.-evidence`.
+- `deskpilot-integrated-build-db74317bde79463d9de4ce78c8976362.log`.
+- `deskpilot-terminal-ui-DIhsrm` contains the desktop/mobile screenshots.
 
-## Retained single-child work
+## Release boundaries remain unchanged
 
-The operator approved V2 and limited tracked Engine changes on 2026-09-06, not
-parallel scheduling or application to the real Project. Private Tool storage,
-baseline capture, authenticated IPC, bounded export, lease, Stop/recovery,
-retention admission, and Host Server refusal exist. No child Engine has run.
+The [single-child V2 prerequisite](decisions/0009-single-child-isolation.md)
+remains partial. Private Tool storage, baseline capture, authenticated IPC,
+bounded export, lease, Stop/recovery, retention admission, and refusal exist.
+Complete Engine request admission, credentialless child Engine/transport,
+child approvals/accounting, and restart/retention integration remain open.
+The prior credential-filter correction still needs independent re-review;
+the two Major integration/admission gates and retention/restart Minor remain.
+No child Engine, recursive delegation, or parallel scheduling is enabled.
 
-Retained final proof: 87 component tests, including 19 real-container cases;
-DeskPilot full gate 2,373 passed with five existing browser skips; Engine full
-gate 1,749 passed, no skips, 88.79% coverage. These full gates were not rerun for
-this assessment. Decision 0009 owns their source and artifact provenance.
+[Decision 0005](decisions/0005-parallel-agents.md) still requires operator
+approval of the two-child topology. Its public-evidence profile needs a separate
+approved retrieval boundary. Recommend `review: on` before enabling or releasing
+child execution; this consolidation is not an independent security review.
 
-The earlier runtime review still requests changes: its credential-filter Major
-was corrected with red/green tests but not independently re-reviewed; two Major
-admission/integration gates and a retention/restart Minor remain open. A new
-documentation review cannot close those findings or authorize release.
-
-The Engine linked worktree remains `D:/Git/ShellPilot-child-isolation` on
-`ai/child-provider-boundary`. Preserve the unrelated modified public test in
-the original ShellPilot worktree on `ai/edit-file-tool`. No new dependency,
-host privilege change, or remote mutation was performed for this assessment.
-
-## Retained release follow-ups
-
-Optional isolated Terminal implementation, prior full Sampler/Docker/UI evidence,
-and its documentation closeout remain in
+Optional Terminal isolation retains the limitations in
 [decision 0001](decisions/0001-isolated-tool-execution.md) and the
-[operator guide](../docs/isolated-terminal.md). The previous live attempt returned
-`auth_required`; live operator acceptance and an obtainable enforcing Engine
-remain separate release gates. No authentication or production Settings were
-changed for this assessment.
+[operator guide](../docs/isolated-terminal.md). Live authenticated acceptance
+and an obtainable dispatch-enforcing Engine remain separate release gates.
+No Model call, authentication change, or production Settings change occurred.
 
-Earlier browser and Intercom detail remains in the
-[archived active context](archive/active-context-2026-09-05.md).
+The separate Engine worktree `D:/Git/ShellPilot-child-isolation` remains on
+`ai/child-provider-boundary`. The original ShellPilot worktree and its unrelated
+modified test on `ai/edit-file-tool` were outside this task and remain untouched.

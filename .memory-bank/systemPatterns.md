@@ -85,6 +85,10 @@ source: repository implementation and decision records
 
 ## Data, changes and diagnostics
 
+- **Verify Git normalization before discarding edits.** A dirty status with an
+  empty diff can reflect index or line-ending state. Compare normalized worktree
+  blobs with index blobs, then refresh only content-identical entries. Do not
+  overwrite files or create an empty commit to clear those flags.
 - **Hardened command runner.** Git uses a separate argument list, closed stdin,
   disabled terminal prompts, literal pathspecs, deadline-bounded asynchronous
   output and process-tree termination. Every local command can still run hooks.
