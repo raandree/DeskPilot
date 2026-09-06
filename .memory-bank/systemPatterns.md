@@ -79,6 +79,9 @@ source: repository implementation and decision records
 - **A component proof is not a profile proof.** Private Tool quota/export/lease
   tests do not establish child Engine, credentials, approval, or hard Usage
   admission. Report these gates separately and keep startup unavailable.
+  Approval of a prerequisite design does not approve downstream concurrency or
+  a new Tool/egress profile. Reassess the controlling readiness/refusal path
+  against a named source revision, not the presence of a prepared image.
 
 ## Data, changes and diagnostics
 

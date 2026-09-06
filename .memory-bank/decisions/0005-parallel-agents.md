@@ -3,7 +3,7 @@ schema-version: 1
 status: proposed
 owner: software-engineer
 last-verified: 2026-09-06
-source: repository source, focused tests, and prerequisite reassessment
+source: DeskPilot 275cd6b, tracked Engine d1e1e13, and prerequisite evidence
 ---
 
 # 0005 - Parallel Agents: prerequisite gate and dependency plan
@@ -35,6 +35,12 @@ per-child approvals, hard request admission, authenticated live proof, and
 clean-install Engine support remain open; independent review returned request
 changes. D1/D2 are therefore not closed and parallel scheduling remains blocked.
 
+**Reassessment baseline:** DeskPilot `275cd6b` and tracked ShellPilot
+`d1e1e139d0762ace9a3d2aa9ebd013a8c4235e84`.
+The current request does not approve the two-child topology or authorize
+completion of its prerequisites within this task. Only this decision and
+routed Memory Bank records change; no runtime gate is relaxed.
+
 `.github/prompts/implement-parallel-agents.prompt.md`:
 
 > Confirm per-call approval and an appropriate isolation mechanism are shipped
@@ -54,10 +60,12 @@ Local `perCallApproval` still defaults off; Isolated Terminal requires approval
 independently. Native File writes and MCP calls are not covered by this bridge.
 A child needs its own bridge and enforced Tool policy, not an inherited grant.
 
-**Appropriate child isolation: not implemented.** Docker Desktop/WSL2 and
-optional Terminal isolation now exist. Decision 0001 retains 29 passing
-real-container tests and the full 2286-pass Sampler result from 2026-09-05;
-neither suite was rerun for this documentation-only assessment. However:
+**Appropriate child isolation: partial components, no runnable child profile.**
+Docker Desktop/WSL2, optional Terminal isolation, and private child Tool storage
+exist. Decision 0009 retains 87 passing component tests, including 19 actual
+container cases, and a full DeskPilot gate with 2,373 passes, zero failures, and
+five existing browser skips. These are retained results, not new runs for this
+assessment, and do not establish a complete child Agent. In particular:
 
 - `New-DpTurnParameter` leaves native File Tools enabled when File Permission
    is on, even when Terminal is Isolated. Workspace Folder is not confinement.
@@ -65,12 +73,38 @@ neither suite was rerun for this documentation-only assessment. However:
    mode has no total Project disk quota and no child-specific change isolation.
 - No child execution profile combines isolated histories, Tools, credentials,
    Project storage, approvals, lifecycle, and aggregate quotas.
+- `Get-DpChildReadiness` always returns `ready = false`, even when
+  `childExecution.enabled` is true. The `startChildRun` operation refuses with
+  `403 child_profile_disabled`, `503 child_profile_unavailable`, or `409 busy`.
+  Existing tests explicitly require no container launch or ordinary Turn
+  fallback. An enabled Setting or a prepared Tool image is not readiness.
 
 The missing boundary is therefore **child Agent isolation**, not the presence
 of a container runtime. A read-only Terminal mount cannot close it while other
 enabled Tools retain host access. An obtainable enforcing Engine and live
 authentication remain separately unverified release dependencies; no current
 Gallery availability claim is made without a fresh distribution check.
+
+### Remaining prerequisite work
+
+The readiness helper's missing contracts map to concrete dependency work. None
+is satisfied by adding another Engine Runspace or raising `maxChildren`.
+
+| Missing contract or gate | Dependency | Required next evidence |
+| --- | --- | --- |
+| `engine-request-admission` | D1 | Complete-request token bounds and Engine-priced reservations before dispatch, including failed/unknown Usage and all resends; obtainable supported Engine contract. |
+| `child-engine-process` | D2 | The approved V2 credentialless Engine container and separate trusted provider transport integrated with the Host Server, not only a Tool container. |
+| `child-approval-bridge` | D2 | Per-child prepare/approve/dispatch with generation, policy and exact-action binding, revocation and cancellation; no inherited grants. |
+| `complete-run-resource-limits` | D2 | Combined limits across both containers and trusted transport, independent Stop/lease, Host Server restart reconciliation, and retention age enforcement. |
+| `authenticated-live-proof` and open security findings | D1/D2 | Clean, non-sensitive whole-child proof; resolve the two remaining Major acceptance gates and obtain independent review of the credential-filter correction. |
+| Two-child topology approval | D3 | Explicit operator approval of this proposal after the prerequisite contracts and isolation evidence are available. V2 approves one child only. |
+
+Complete the approved single-child prerequisite first. Its File/Terminal-only,
+network-disabled profile does not yet provide public-evidence retrieval: before
+that child type is admitted, D2 also needs a separately approved and tested
+public-only context and governed retrieval profile. Do not enable native
+Browsing, MCP, ambient credentials, or general Tool egress to satisfy the use
+case. No prerequisite implementation or new profile approval is recorded here.
 
 ## Engine state and historical measurements
 
@@ -101,11 +135,15 @@ reconcilers can be reused unchanged.
 
 ## Verified Engine batch contract
 
-Re-read on 2026-09-06 from staged ShellPilot 0.4.1: `Invoke-ShpBatch` exposes
-`ThrottleLimit` from 1 through 64, default 4. Private `Invoke-ShpParallel` uses
+The earlier assessment inspected staged ShellPilot 0.4.1. This reassessment
+re-read `Invoke-ShpBatch` and `Invoke-ShpBatchItem` from tracked Engine commit
+`d1e1e13`: the batch still exposes `ThrottleLimit` from 1 through 64, default 4,
+and delegates execution to `Invoke-ShpParallel`, also inspected, which uses
 `ForEach-Object -Parallel`. Each item returns a `ShellPilot.BatchResult` with
 identity, status, Usage, cost, iterations, duration, and error; Usage records
-are merged into the caller's Engine Usage store after the batch.
+are merged into the caller's Engine Usage store after a synchronous batch.
+With `AsJob`, those records stay in the job's Engine Usage store instead. This
+source check establishes the local batch contract, not released child support.
 
 The current batch bootstrap is not a supported DeskPilot delegation mechanism:
 
@@ -458,8 +496,45 @@ to those specifications while the topology is unapproved and the gate is closed.
 
 ## Evidence and limitations
 
-Assessment baseline: DeskPilot `9d8211b`, implementation `f6af6fd`. The staged
-ShellPilot 0.4.1 module inspected and used for dispatch tests has SHA-256
+The fresh gate assessment uses DeskPilot `275cd6b` and tracked Engine `d1e1e13`.
+Its controlling sources are
+[child readiness](../../source/Private/Get-DpChildReadiness.ps1) and the
+[policy and refusal tests](../../tests/Unit/ChildAgentIsolation.Tests.ps1).
+The approved single-child design, retained component/full-suite evidence, and
+unresolved review findings remain in [decision 0009](0009-single-child-isolation.md).
+No complete child, two-child ordering/stress run, or authenticated live proof
+was executed for this reassessment. The failed prerequisite gate prevents those
+downstream acceptance claims; documentation validation cannot substitute for
+them. Runtime specifications already describe the closed gate and stay unchanged.
+
+Fresh focused verification completed **2026-09-06 12:03:03 UTC**: **93 passed,
+zero failures, skips, or unrun cases**, using PowerShell 7.6.5 and Pester 5.7.1.
+This comprises 65 Terminal approval cases and 28 child policy/readiness/refusal
+cases. It uses real Engine dispatch with scripted provider responses and inert
+executors, not live Model calls or child containers. The detached process exited
+0 and the recorded controlling source/test hashes still match. These tests
+confirm the closed gate, not enforcement by an executing child profile.
+
+Fresh local evidence is retained under `$env:TEMP` in
+`deskpilot-parallel-gate-830ef0e10b9a45f6a69bc86f86ba4811`: the full
+`focused-tests.log`, `focused-tests.xml`, `focused-tests.json`, completion
+marker, native Markdown render, and `decision-validation.json`. These are local
+artifacts, not published evidence. The frozen reviewed document hashes are in
+`review-validation.json`; final checks are in `final-validation.json`.
+
+Independent documentation review returned **approve**, with zero Blockers,
+Majors, or Minors and one evidence-attribution Nit. The report is retained as
+`review-report.md`, bound to `review.diff` in that same directory. The Nit was
+corrected by removing the linked Engine worktree cleanliness claim, rather
+than claiming a retained status artifact that the bundle did not contain.
+That correction is author-verified, not independently re-reviewed. Approval
+covers the reviewed documentation only: V2's unfinished runtime, its prior
+findings, and the proposed two-child topology are not approved by this review.
+
+The following approval evidence and review artifacts belong to the earlier
+assessment, not a fresh review of this revision. Its baseline was DeskPilot
+`9d8211b`, implementation `f6af6fd`. The staged ShellPilot 0.4.1 module inspected
+and used for dispatch tests has SHA-256
 `1AB55A06244ED302ECAA5B394CF1487DF815EE0237360474178C4BEEAC3DA368`.
 
 | Evidence | Controlling source or retained record |
@@ -493,7 +568,8 @@ changes: zero Blockers, one Major review-state inconsistency, and one Minor
 missing retained Markdown artifact. These documentation findings are addressed
 by the explicit, artifact-bound review state and the retained validation
 record; the corrections are author-verified and no second independent review or
-operator topology approval has occurred.
+operator topology approval occurred in that earlier assessment. The current
+documentation review above is a separate, artifact-bound assessment.
 
 The reviewer report and the retained validation basenames exist under
 `$env:TEMP` as local, uncommitted evidence:

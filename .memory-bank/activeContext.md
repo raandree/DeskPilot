@@ -3,99 +3,80 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-06
-source: operator-approved single-child design V2 and test-first implementation
+source: parallel-Agent prerequisite assessment at DeskPilot 275cd6b
 ---
 
 # Active context
 
 ## Current focus
 
-Implement the [single-child isolation prerequisite](decisions/0009-single-child-isolation.md).
-The operator explicitly approved revised design V2 and limited tracked Engine
-contract work on 2026-09-06. V2 uses Host Server integration, a credentialless
-child Engine container, a separate network-disabled Tool container, and trusted
-Engine-owned provider transport. The first proposal was not approved.
+The requested parallel-Agent implementation stopped at its prerequisite gate.
+[Decision 0005](decisions/0005-parallel-agents.md) now distinguishes implemented
+child Tool storage from the missing complete child Agent boundary and maps the
+readiness refusals to D1/D2 dependencies. The two-child topology and limits remain
+proposed, not operator-approved or implemented.
 
-Work is on `ai/child-agent-isolation`, based on `2d86925`. ShellPilot work uses
-the linked worktree `D:/Git/ShellPilot-child-isolation`, branch
-`ai/child-provider-boundary`, based on `3446e32`. Preserve the unrelated modified
-public test in the original ShellPilot worktree on `ai/edit-file-tool`.
+This assessment is on `ai/parallel-agents-prerequisite-gate`, based on the clean
+DeskPilot `275cd6b` checkout from `ai/child-agent-isolation`. Only the decision and
+routed Memory Bank records change. No concurrency, runtime, Settings, API, UI,
+or test implementation changes are authorized by the failed prerequisite gate.
+Commit locally; do not push or publish.
 
-The implemented portion is private Tool storage, selected baseline capture,
-authenticated control records, bounded export, lease, Stop, explicit recovery,
-retention admission, and the Host Server readiness/refusal surface. No child
-Engine has been launched. The final checked-in component proof passed 87 tests,
-including 19 real-container tests, with no failures or skips. DeskPilot's final
-full Sampler gate passed 2,373 tests, no failures, and five existing browser
-skips at 11:36 UTC. ShellPilot's full gate passed 1,749 tests, no failures/skips,
-88.79% coverage. Both full builds completed 16 tasks with zero errors/warnings.
+## Current verification
 
-Independent security review returned request changes: zero Blockers, three
-Majors, one Minor. The implemented baseline credential-filter defect is fixed
-with 15 red/green negative cases and a positive ordinary-JSON case; all 31
-baseline tests pass. This correction is author-verified, not independently
-re-reviewed. The two Major acceptance gates remain: complete-request admission
-and the integrated child Engine/approval/accounting profile. Retention age and
-Host Server restart integration remain the Minor open gate. No release is ready.
-
-No push, publication, new shared dependency, or host privilege change is
-authorized. Parallel scheduling and real Project application remain excluded.
-
-## Retained prerequisite evidence
-
-- Terminal approval is locally implemented and tested. The focused suite passed
-  **65 tests, zero failures, zero skips**, using Pester 5.7.1 and staged
-  ShellPilot 0.4.1 with real dispatch, scripted provider responses, and inert
-  executors. The corrected detached wrapper exited 0 at 07:15 UTC.
-- Terminal isolation now exists, but does not isolate native File Tools, MCP,
-  other child state, or child credentials. A read-write Project bind has no
-  total disk quota and is not a private child working tree.
-- `Invoke-ShpBatch` is bounded concurrency, not the required delegation
-  contract. It forces streaming/progress off, uses empty history, cannot replay
-  DeskPilot's injected Tool implementations, and checks completed spend rather
-  than reserving aggregate in-flight cost.
-- Additional Runspaces isolate Tool tables and Runspace globals, not the
-  process environment or filesystem. The historical import measurements are
-  not a child containment or performance proof.
+- Fresh focused Pester run completed 2026-09-06 12:03:03 UTC: **93 passed,
+  zero failures/skips/unrun cases**, with PowerShell 7.6.5 and Pester 5.7.1.
+  It covers 65 Terminal approval cases and 28 child policy/readiness/refusal
+  cases. Source hashes match; no live Model call or child container was run.
+- `Get-DpChildReadiness.ready` is always false. Child startup returns disabled,
+  unavailable, or busy without a container launch or ordinary Turn fallback.
+  An enabled Setting and a prepared Tool image do not establish readiness.
+- `Invoke-ShpBatch` in tracked Engine `d1e1e13` supplies batches, not delegation:
+  pooled Runspaces, shared invocation policy, empty histories, no streaming or
+  progress, and completed-spend checks instead of in-flight reservations.
+  With `AsJob`, Usage stays in the job's Engine store, not the caller's store.
+- Native Markdown rendering and local links pass. Independent documentation
+  review approved the frozen change with zero Blockers/Majors/Minors and one
+  evidence-attribution Nit. The unnecessary Engine cleanliness claim was removed;
+  that correction is author-verified. The earlier runtime correction was not
+  independently re-reviewed. Decision 0005 retains the exact review evidence.
 
 ## Blocked next work
 
-Obtain a verified Engine/provider contract for whole-request token bounds,
-Engine-priced reservations, failed/unknown Usage, and cancellation. The current
-heuristic counter and completed-spend guard cannot enforce the approved caps.
-`NoAutomaticRetry` and `RequestTransport` are local tracked groundwork only.
-Do not install an ignored patch or treat a fixture as released support.
+Complete the separately approved
+[single-child V2 prerequisite](decisions/0009-single-child-isolation.md) first:
+verified whole-request token bounds, Engine-priced reservations, failed/unknown
+Usage and cancellation; credentialless Engine containment and trusted transport;
+child approvals; combined resource limits; restart/retention integration; and
+authenticated live proof. Local Engine groundwork is not obtainable released
+support. Do not patch ignored dependencies or enable startup to bypass a gate.
 
-Complete the approved credentialless Engine container, trusted Engine transport
-process, child-specific approvals, full-run resource/accounting limits,
-restart/retention integration, and authenticated live proof. Keep
-`Get-DpChildReadiness.ready` false and `startChildRun` refusing until those
-contracts and proofs exist. Parallel scheduling and real Project application
-remain later work in decision 0005. Runtime specifications now explicitly
-describe the partial implementation and closed readiness gate.
+D3 additionally needs explicit operator approval of the two-child topology.
+The public-evidence child requires an approved public-only input and governed
+retrieval profile; V2's network-disabled File/Terminal profile does not supply
+it. Keep all child startup unavailable until the complete profile is proven.
 
-## Earlier prompt and decision evidence
+## Retained single-child work
 
-Earlier prompt authoring checks cover YAML frontmatter, native Markdown rendering,
-local links, diagnostics, and the
-[real-conversation acceptance cases](../.github/prompts/evals/child-agent-isolation.md).
-No runtime test was rerun for that authoring task. Native Customization analysis
-and repeated fresh-chat behavioral evaluations have not been run; static checks
-do not establish workflow reliability. The new prompt requests independent
-security review of the eventual implementation, not a review already completed.
+The operator approved V2 and limited tracked Engine changes on 2026-09-06, not
+parallel scheduling or application to the real Project. Private Tool storage,
+baseline capture, authenticated IPC, bounded export, lease, Stop/recovery,
+retention admission, and Host Server refusal exist. No child Engine has run.
 
-The following review belongs only to the earlier decision-only task:
+Retained final proof: 87 component tests, including 19 real-container cases;
+DeskPilot full gate 2,373 passed with five existing browser skips; Engine full
+gate 1,749 passed, no skips, 88.79% coverage. These full gates were not rerun for
+this assessment. Decision 0009 owns their source and artifact provenance.
 
-An independent security review completed 2026-09-06 and returned request
-changes: zero Blockers, one Major review-state inconsistency, and one Minor
-missing retained Markdown artifact. The decision renders; six local documents
-were rendered and 27 local links resolved. Author-verified documentation
-corrections were applied for these findings; there has been no independent
-re-review and no operator topology approval. See decision 0005 for the retained
-evidence artifact basenames under `$env:TEMP` and the retained validation
-record. The prerequisite-test versus runtime-proof distinction remains: full
-delegation, stress, and clean live proofs cannot establish a feature whose
-isolation mechanism is not implemented and whose topology is unapproved.
+The earlier runtime review still requests changes: its credential-filter Major
+was corrected with red/green tests but not independently re-reviewed; two Major
+admission/integration gates and a retention/restart Minor remain open. A new
+documentation review cannot close those findings or authorize release.
+
+The Engine linked worktree remains `D:/Git/ShellPilot-child-isolation` on
+`ai/child-provider-boundary`. Preserve the unrelated modified public test in
+the original ShellPilot worktree on `ai/edit-file-tool`. No new dependency,
+host privilege change, or remote mutation was performed for this assessment.
 
 ## Retained release follow-ups
 
