@@ -6,7 +6,8 @@
 # The boundary is the pairing: DeskPilot registers its own run_command while
 # Invoke-Shp is given -DisableTerminal, so the Model has no built-in to prefer.
 # The safe-list decides whether the user is interrupted; everything it does not
-# recognise prompts, and there is no Turn-wide grant.
+# recognise prompts unless the operator explicitly grants the same Terminal
+# scope for the current Turn.
 
 BeforeAll {
     $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
@@ -68,6 +69,20 @@ Describe 'New-DpApprovalRequest' -Tag 'Unit' {
     It 'bounds a very long command instead of forwarding all of it' {
         $request = New-DpTestRequest -Command ('a' * 5000)
         $request.summary.command.Length | Should -BeLessOrEqual 2100
+    }
+
+    It 'offers Turn-wide scope only for Terminal approvals' -ForEach @(
+        @{ ToolClass = 'Terminal'; ExpectedScopes = @('once', 'turn') }
+        @{ ToolClass = 'FileWrite'; ExpectedScopes = @('once') }
+        @{ ToolClass = 'Mcp'; ExpectedScopes = @('once') }
+        @{ ToolClass = 'BrowserNavigation'; ExpectedScopes = @('once') }
+        @{ ToolClass = 'BrowserAction'; ExpectedScopes = @('once') }
+    ) {
+        $request = New-DpApprovalRequest -Tool 'scope-test' -Class $ToolClass -Argument @{
+            command = 'npm test'; workingDirectory = 'C:\projects\alpha'
+        } -ProjectName 'Alpha' -ConversationId 'c-1' -TurnId 't-1'
+
+        @($request.allowedScopes) | Should -Be $ExpectedScopes
     }
 }
 

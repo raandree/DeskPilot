@@ -96,6 +96,9 @@ function Invoke-DpIntercomCommand {
             }
             $state.CancelRequested = $true
             if ($state.Engine.UserPromptBridge) { $state.Engine.UserPromptBridge.Cancel() }
+            $approvalBridge = Get-DpPropertyValue -InputObject $state.Engine -Name 'ApprovalBridge'
+            if ($approvalBridge) { $approvalBridge.Cancel() }
+            $state.PendingApproval = $null
             $intercom.PendingQuestion = $null
             $null = Send-DpIntercomMessage -Title 'Stopping the job.' -Kind 'ack'
         }

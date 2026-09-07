@@ -38,12 +38,19 @@ function Switch-DpIntercomProject {
         return
     }
 
+    $previousProjectId = $state.Settings.selectedProjectId
     try {
         $state.Settings = Merge-DpSettings -Current $state.Settings -Patch @{ selectedProjectId = $ProjectId }
     }
     catch {
         $null = Send-DpIntercomMessage -Title 'I could not switch to that project.' -Line @("$_") -Kind 'notice'
         return
+    }
+    if ($state.TurnRunning -and $previousProjectId -cne $state.Settings.selectedProjectId) {
+        $engine = Get-DpPropertyValue -InputObject $state -Name 'Engine'
+        $approvalBridge = Get-DpPropertyValue -InputObject $engine -Name 'ApprovalBridge'
+        if ($approvalBridge) { $approvalBridge.Cancel() }
+        $state.PendingApproval = $null
     }
     if ($state.DataDir) { Save-DpSettings -Settings $state.Settings -Directory $state.DataDir }
 

@@ -135,8 +135,10 @@ Set-Variable -Name DeskPilotTerminalExecutor -Scope Global -Value {
 $runDescription = @"
 Run a shell command on the user's computer. Every command you propose is shown to
 the user for approval before it runs, unless it is on their list of commands that
-never need asking (routine read-only ones such as git status). Approval is not a
-formality: the user can decline, and a declined command does NOT run.
+never need asking (routine read-only ones such as git status) or they explicitly
+approved Terminal for this Turn in the same working directory and execution
+policy. That grant expires on Stop, Turn completion or scope revocation. Approval
+is not a formality: the user can decline, and a declined command does NOT run.
 Because of that, prefer the tools that need no approval and do the job better:
 search_files and search_text instead of dir, ls, find, grep or Select-String, and
 read_file instead of cat or Get-Content.
@@ -167,7 +169,9 @@ The selected Project is mounted at /project. Use Project-relative paths or /proj
 as workingDirectory. Network is off unless the user selected exact HTTPS origins;
 then use the supplied HTTPS proxy and temporary CA. Direct TCP, DNS, SSH and UDP
 are denied. Host programs, host credentials and host paths are unavailable.
-The user approves commands outside their safe-list before any command starts.
+The user approves commands outside their safe-list before any command starts,
+either once or explicitly for this Turn in the same directory and execution
+policy. A Turn grant never changes mounts, network grants, credentials or limits.
 Returns JSON {approved,result}; result carries exitCode, stdout, stderr, failure
 flags, cleanupSucceeded and Project-relative filesWritten. Do not retry a denied
 command or propose changing execution mode. File, Browsing, MCP and Intercom are

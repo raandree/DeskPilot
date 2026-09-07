@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Allow Terminal commands for the current Turn.** Choose **Allow once** or
+  **Allow for this Turn** in an ordinary Terminal approval. Reuse is limited to
+  the same Conversation, Turn, Project, working directory, and execution policy;
+  Stop or scope revocation invalidates it. Activity records the chosen scope.
+  Browser and child approvals remain once-only, and no grant is persisted.
+
 - **Add an opt-in complete private child with explicit estimated budgets.**
   Run one credentialless Engine with confined File and Terminal Tools, exact
   per-action approvals, hard local limits, Stop/recovery, and private proposals.

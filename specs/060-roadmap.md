@@ -39,7 +39,9 @@ task, see Activity and Usage — all from the window.
   DeskPilot passes `-DisableTerminal` and registers its own
   `run_terminal_command`, which blocks before the side effect. A shipped
   safe-list of read-only commands runs without asking; everything else prompts,
-  with no Turn-wide grant. Requires an Engine that refuses to dispatch a
+  unless the operator explicitly selects **Allow for this Turn** for the same
+  Terminal scope. Once-only remains the default; Stop and scope revocation
+  invalidate the grant. Requires an Engine that refuses to dispatch a
   disabled built-in; DeskPilot probes for that and fails loudly without it.
 - **Blocked — per-call approval for the remaining risky actions.** Outside-Project
   writes and mutating MCP calls still need approval while category Permissions

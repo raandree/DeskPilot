@@ -10,14 +10,51 @@ source: final Sampler gates, authenticated built-runtime proof, and independent 
 
 ## Current focus
 
-The approved single-child V3 implementation is complete and locally verified.
-[Decision 0010](decisions/0010-child-budget-estimates.md) explicitly permits
-`provider-estimate` token/cost budgets, not guaranteed invoice caps. Separate
-credentialless Engine/Tool containers, hard local limits, exact approvals,
-Stop/recovery, and private proposals preserve the accepted isolation boundary.
-Ordinary Turns and strict V2 retain their behavior. Parallel Agents, automatic
-proposal application, remote publication, and production enablement are outside
-this task.
+The operator explicitly requested ordinary Terminal **Allow for this Turn**, an
+updated prompt roadmap, and a ShellPilot merge-readiness assessment on
+2026-09-07. Work is on `ai/turn-wide-terminal-approvals`, based on `14cf113`.
+[Decision 0011](decisions/0011-turn-wide-terminal-approval.md) supersedes the
+earlier no-Turn-grant rule only for ordinary Local/Isolated Terminal commands.
+Browser and child approvals stay once-only; no grants are inherited.
+
+Completed bridge-owned scope grants, once-only compatibility, scoped route/UI
+choices, Activity attribution, and window/Intercom revocation on Stop or scope
+changes. The 105-case focused approval suite passed with the enforcing Engine;
+three additional Intercom revocation cases passed red/green. Final full Sampler
+gate: 2,497 passed, zero failures, five existing browser skips, zero unrun;
+16 tasks without errors/warnings, completed 07:46:16 UTC. Log under TEMP:
+`v3-full-turn-wide-final-f13a656ef9f149e78c6484d965453cac.log`.
+
+The real-HTTP proof used actual Engine dispatch and temporary file writes with
+a scripted provider, not live Model requests. One Turn grant approved two
+different commands; the next Turn required two once-only approvals. Reloaded
+cards and persisted Activity matched their scopes. Evidence:
+`TEMP/deskpilot-turn-http-msKbVB/report.json`. Approval-card and complete SPA
+checks passed at 1440px/390px with no page errors or horizontal overflow.
+Analyzer comparison found no new warnings; pre-existing warnings/encoding were
+left unchanged. No child containers remain. Self-review is complete.
+
+The updated Host Server is running at <http://127.0.0.1:50413> with separate data
+under `TEMP/deskpilot-turn-preview-dd19b3bab5ab47e292381cb2298b4cb3`. The authorized
+browser window is open. Preview Terminal/per-call approval is on, but every Turn
+starts without a grant. Normal user Settings are untouched. Do not use the older
+Gallery update notice to replace this development build.
+
+Independent review was not requested for this amendment; recommend `review: on`
+for the authorization change. Restart the Host Server to load the new bridge.
+Do not reuse the earlier child profile proof after these Host source changes.
+Local close-out is recorded in Git; no push, publication, or ShellPilot merge.
+
+The [prompt roadmap](../.github/prompts/README.md) now describes actual remaining
+work. ShellPilot V3 is complete at `d2ab318`; its `main` is `e2269f8`. Merge
+simulation found only activeContext/progress conflicts (ten mainline commits,
+three child-support commits); production code auto-merged. No ShellPilot file,
+branch, or merge was changed. Reconcile both histories and run the full combined
+Engine gate before treating a merge as verified. Specification 120's
+`ToolCallApprover` is a separate future feature.
+
+The earlier V3 evidence below belongs to its original source-bound build. It
+does not prove a rebuilt Host Server after the current approval changes.
 
 ## Final V3 evidence - 2026-09-07
 

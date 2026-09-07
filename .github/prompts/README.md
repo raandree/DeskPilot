@@ -1,91 +1,118 @@
 # DeskPilot Prompt File order
 
-This folder contains implementation Prompt Files for candidate DeskPilot
-features. Invoke one Prompt File at a time. Complete its tests, review, and
-integration before invoking a Prompt File that depends on it.
+Use this guide to choose the next implementation task. Complete one scoped
+change and its verification before starting dependent work. Status was
+reassessed on 2026-09-07; current source and accepted amendments take precedence
+over older wording in the original Prompt Files.
 
-Completed Prompt Files move to [`archive/`](archive/README.md), which records
-what each one shipped as. This folder holds only work that is still open.
+Implemented prompts can remain here while distribution or profile acceptance is
+open. Do not rerun their completed implementation. The
+[archive](archive/README.md) records the other completed features.
 
-The sequence is a recommendation, not a roadmap commitment. Reassess the
-remaining order after each feature because implementation findings can change a
-later feature's prerequisites or value.
+## Current status
 
-## Remaining order
+| Prompt | Implemented | Still open |
+| --- | --- | --- |
+| [Per-call approval](implement-per-call-approval.prompt.md) | Ordinary Terminal approval, including explicit **Allow once** and **Allow for this Turn**. | Outside-Project native File writes and potentially mutating MCP calls require the Engine contract in specification 120. |
+| [Isolated Tool execution](implement-isolated-tool-execution.prompt.md) | Optional Local/Isolated Terminal execution, scoped mounts, default-deny network, limits, lifecycle, and review. | Separate authenticated Terminal-only acceptance and a compatible Engine obtainable on a clean installation. |
+| [Child Agent isolation](implement-child-agent-isolation.prompt.md) | Approved single-child V3, confined File/Terminal, approvals, quotas, Stop/recovery, private proposals, full tests, authenticated built-runtime proof, and independent review. | Supporting Engine distribution and proof for each exact prepared installation. Enablement remains explicit. |
+| [Parallel Agents](implement-parallel-agents.prompt.md) | Proposed design and dependency analysis only. | Updated topology approval, two-child scheduling, aggregate limits, combined proposal review/apply, UI, and complete proof. |
+| [Microsoft 365 integration](implement-microsoft-365-integration.prompt.md) | Read-only identity and data-flow contract recorded. | Application registration, tenant/test account and consent, Graph-versus-governed-MCP choice, implementation, and live verification. |
 
-1. [Implement per-call approval](implement-per-call-approval.prompt.md) — **partly
-   shipped.** Terminal commands are gated (decision 0008); file writes outside the
-   Project and mutating MCP calls are not. Those two need the Engine contract in
-   [`specs/120`](../../specs/120-per-call-approval-engine-contract.md), so this
-   Prompt File stays open with its remaining scope only.
-2. [Implement isolated Tool execution](implement-isolated-tool-execution.prompt.md)
-   contains Terminal actions. It is implemented locally; live acceptance and an
-   obtainable enforcing Engine remain release gates.
-3. [Implement Microsoft 365 work integration](implement-microsoft-365-integration.prompt.md)
-   begins with one read-only, delegated, least-privilege workflow. Keep send,
-   share, and mutation operations out of the first slice.
-4. [Implement child Agent isolation](implement-child-agent-isolation.prompt.md)
-   builds the missing single-child execution boundary and quota-bounded writable
-   work areas. It implements this prerequisite after design approval; missing
-   child isolation is its task, not a reason to stop at another dependency plan.
-5. [Implement parallel Agents](implement-parallel-agents.prompt.md) comes after
-   approval, verified child isolation, and its own topology approval. It adds
-   concurrent scheduling, aggregate limits, and combined change review.
+## Proceed next
 
-Playwright browser automation has [shipped](archive/README.md) and is no longer
-in this sequence.
+1. **Integrate the completed Engine work.** Follow the merge guidance below.
+   Preserve the newer `edit_file` security changes on `main`; the child work is
+   complete without waiting for the separate `ToolCallApprover` feature.
+2. **Close Terminal-only acceptance.** Use the approved enforcing Engine and a
+   non-sensitive Project to verify authenticated execution, approval, Activity,
+   Usage, Stop, cleanup, and Undo. Authentication has been restored; do not
+   repeat the old sign-in blocker without a new failing operation. Single-child
+   live proof does not substitute for this distinct Terminal-only workflow.
+3. **Implement specification 120 in ShellPilot, then finish File/MCP approval.**
+   Start a separate scoped Engine task after explicit permission to edit that
+   repository. Add the synchronous `ToolCallApprover` contract with immutable
+   call identity, annotation validity/provenance, and structured denial. Prove
+   approval happens before effects, cancellation refuses dispatch, and neither
+   category nor Tool policy can be overridden. Then invoke the
+   [approval prompt](implement-per-call-approval.prompt.md) for its remaining
+   DeskPilot scope only.
+4. **Revise and approve the parallel design before runtime work.** Rebase
+   [decision 0005](../../.memory-bank/decisions/0005-parallel-agents.md) on the
+   completed V3 boundary. Its old missing-child claims are historical. Explicitly
+   decide how estimated budgets apply to planning, children, synthesis, and
+   aggregate reservations; V3 approval did not approve two-child financial or
+   resource limits. Then implement scheduling, cascading Stop/recovery,
+   deterministic combined proposals, conflict handling, conditional apply/Undo,
+   and parent/child UI. Public-evidence retrieval needs its own approved boundary;
+   never enable general child network access to obtain it.
+5. **Start Microsoft 365 when identity prerequisites exist.** Supply the client
+   id, tenant, consenting test account, and non-sensitive fixtures; select the
+   smaller auditable Graph or governed MCP boundary. Implement one read-only
+   workflow under [decision 0002](../../.memory-bank/decisions/0002-microsoft-365-read-only-slice.md).
+   No sending, sharing, mutations, scheduled use, or Intercom use in this slice.
+   This task is independent and can move earlier when those prerequisites exist.
 
-## Dependency gates
+## Turn-wide approval contract
 
-```mermaid
-flowchart LR
-    A[Per-call approval: Terminal] --> I[Isolated Tool execution]
-    A --> M[Microsoft 365 integration]
-    A --> P[Parallel Agents]
-   A --> S[Single-child isolation and storage quotas]
-   I --> S
-   S --> P
-    C[specs/120 Engine contract] --> R[Per-call approval: files + MCP]
-    B[Playwright browser automation: shipped]
-```
+On 2026-09-07 the operator explicitly requested **Allow for this Turn**.
+[Decision 0011](../../.memory-bank/decisions/0011-turn-wide-terminal-approval.md)
+supersedes the earlier no-Turn-grant rule for ordinary Terminal commands.
 
-A Prompt File with an unmet gate may still be invoked for design discovery, but
-its own prerequisite section requires implementation to stop before production
-code is shipped. The child-isolation Prompt File is the explicit prerequisite
-implementation task: do not apply the parallel-Agents absence gate to it. The
-Microsoft 365 slice is independent and is not a prerequisite for child isolation.
+- The window offers **Allow once**, **Allow for this Turn**, and **No**.
+- A Turn grant covers the same Terminal Tool, Conversation, Turn, Project,
+  working directory, and frozen execution policy. It does not alter Permissions,
+  mounts, network grants, credentials, or limits.
+- Stop, completion/failure, a new Turn, or live Permission/Project/policy
+  revocation invalidates the grant. It is not a persistent safe-list entry.
+- Browser and child approvals remain action-scoped. Intercom answers remain
+  once-only; a parent grant is never inherited by a child.
+- Native File/MCP approval remains separate work. Do not treat a Terminal grant
+  as authority for another Tool class.
 
-## Current prerequisite status
+## ShellPilot merge guidance
 
-Reverify source and test evidence before treating a recorded capability as ready:
+The completed child support is `ai/child-provider-boundary` at `d2ab318` in
+`D:/Git/ShellPilot-child-isolation`. Its retained full gate passed 1,915 tests
+with no failures/skips and 89.2% coverage; the joint child review was resolved.
+These results cover that branch, not an untested future merge.
 
-- **Isolated Tool execution (decision 0001)** now contains Terminal commands
-   through DeskPilot-owned `run_terminal_command` and an enforcing Engine.
-   It does not confine native File Tools or bound total read-write Project disk.
-- **Playwright (0003)** shipped on 2026-09-05 without 0001's isolation, because
-  0003 scopes that prerequisite out on the record: the browser carries its own
-  boundary - a separate supervised process with a disposable profile - and needs
-  no container runtime. That scoping is browser-only and is not a precedent.
-- **Child Agent isolation** must cover every enabled child Tool, separate state
-   and credentials, hard storage limits, and cleanup. It is not yet implemented.
-- **Parallel Agents (0005)** remains blocked on this complete child boundary,
-   verified Engine contracts, and approval of its proposed topology. Passing the
-   single-child proof alone does not ship parallel delegation or its merge flow.
+At assessment time, local `main` was `e2269f8`: ten mainline-only commits and
+three child-branch-only commits. A non-mutating merge simulation found conflicts
+only in `.memory-bank/activeContext.md` and `.memory-bank/progress.md`.
+Production code, including the shared `Invoke-Shp` changes, auto-merged.
 
-## Optional timing changes
+When the operator requests the merge:
 
-Move the read-only Microsoft 365 slice earlier when it has higher product value
-than isolation. Do not include outbound mutations until the identity and
-data-flow contract has been approved.
+1. Verify both worktrees are clean and recheck ancestry/conflicts if either tip
+   changed. Do not overwrite the original checkout or select one whole side.
+2. Merge the child branch into the `main` worktree. Reconcile the two Memory Bank
+   conflicts by retaining both the `edit_file` security history and child
+   completion evidence. Self-review the combined `Invoke-Shp` dispatch.
+3. Run the full detached ShellPilot build/test gate on the combined result,
+   including the newer `edit_file` and owned-request admission regressions.
+   Do not claim the previous 1,915 passes validate merged bytes.
+4. Rebuild DeskPilot against that exact Engine and run its contract tests before
+   releasing the pair. Changes invalidate old source-bound child proof.
+5. Keep push, package publication, and installation changes separate and subject
+   to explicit operator authorization.
 
-## Selection source
+The merge check performed for this update changed no ShellPilot branch or file.
+The future File/MCP approver is a new feature, not unfinished V3 implementation.
 
-See the [feature selection record](../../specs/100-feature-selection.md) for the
-rationale behind this order, DeskPilot's current baseline, and the decision
-gates each candidate must clear.
+## Proof and distribution boundaries
 
-## Prompt authoring checks
+Single-child V3 uses **estimated** provider budgets, not guaranteed invoice
+caps. Strict V2 remains unavailable without its verified counter; that is not
+a reason to restart or weaken the approved V3 implementation. See the
+[V3 operator guide](../../docs/single-child-v3.md).
 
-The [child-isolation checks](evals/child-agent-isolation.md) retain the initial
-conversation-based acceptance cases. Static prompt checks are not evidence that
-the child runtime works or that the workflow succeeds reliably in a new chat.
+Prepare and prove the exact Host Server, Engine, runtime, images, and policy
+before enabling children. Source-mode and built-mode proof fingerprints differ.
+No local commit, passing component test, or prepared image alone is a release.
+
+## See also
+
+- [Feature selection](../../specs/100-feature-selection.md).
+- [Remaining Engine approval contract](../../specs/120-per-call-approval-engine-contract.md).
+- [Child prompt checks](evals/child-agent-isolation.md), which are not runtime proof.

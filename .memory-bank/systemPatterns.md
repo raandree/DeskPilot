@@ -43,6 +43,7 @@ source: repository implementation and decision records
 | [0008](decisions/0008-per-call-approval.md) | Individual Terminal approvals |
 | [0009](decisions/0009-single-child-isolation.md) | Approved single-child V2 and partial storage implementation |
 | [0010](decisions/0010-child-budget-estimates.md) | Accepted V3 provider estimates with unchanged isolation and hard local bounds |
+| [0011](decisions/0011-turn-wide-terminal-approval.md) | Explicit ordinary Terminal Turn grants and live scope revocation |
 
 ## Execution and approval
 
@@ -51,9 +52,14 @@ source: repository implementation and decision records
   before User Tools. Test the Engine itself: removing an offered schema alone
   does not prove disabled calls cannot execute. Probe enforcement and fail closed.
 - **Approval precedes effects.** The bridge blocks before the executor. A
-  safe-list handles routine reads; everything else is individually approved.
-  Bind command, working directory, Conversation, Turn and execution policy. No
-  Turn-wide grants. Secret values and Model-authored justifications are absent.
+  safe-list handles routine reads. Ordinary Terminal can be approved once or
+  explicitly for the same Turn, Project, directory, Tool/class, and frozen
+  policy. The bridge owns only an in-memory scope digest; Stop, completion,
+  or live scope revocation clears it. Browser and child approvals stay once-only.
+- **Scope types and mutation paths matter.** Read scalar approval scope without
+  a pipeline helper that unwraps one-element arrays. Invalidate grants through
+  both window Settings and Intercom Project/Stop paths. Approval Activity is an
+  allow-listed metadata projection, never a copy of command arguments.
 - **No silent Local fallback.** Isolated mode owns Terminal even with Local
   approval off. Permission/dependency failures refuse work. Freeze each Turn's
   policy and render the recorded boundary, not later Settings edits.

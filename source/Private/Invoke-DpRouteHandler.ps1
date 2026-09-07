@@ -365,7 +365,23 @@
             }
             try {
                 $merged = Merge-DpSettings -Current $state.Settings -Patch $Body
+                $previous = $state.Settings
+                $scopeChanged = $previous.selectedProjectId -cne $merged.selectedProjectId -or
+                    $previous.workspaceFolder -cne $merged.workspaceFolder -or
+                    $previous.perCallApproval -ne $merged.perCallApproval -or
+                    ($previous.permissions.terminal -and -not $merged.permissions.terminal) -or
+                    ($previous.permissions.userTools -and -not $merged.permissions.userTools)
+                foreach ($key in $merged.terminalExecution.Keys) {
+                    if (($previous.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress) -cne
+                        ($merged.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress)) { $scopeChanged = $true }
+                }
                 $state.Settings = $merged
+                if ($state.TurnRunning -and $scopeChanged) {
+                    $engine = Get-DpPropertyValue -InputObject $state -Name 'Engine'
+                    $approvalBridge = Get-DpPropertyValue -InputObject $engine -Name 'ApprovalBridge'
+                    if ($approvalBridge) { $approvalBridge.Cancel() }
+                    $state.PendingApproval = $null
+                }
                 if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }
                 Write-DpResponse -Stream $Stream -Json $merged
             }
@@ -1662,6 +1678,7 @@
                 class   = [string]$pending.request.class
                 risk    = [string]$pending.request.risk
                 summary = $pending.request.summary
+                allowedScopes = @(Get-DpPropertyValue -InputObject $pending.request -Name 'allowedScopes' -Default @('once'))
             }
         }
         'submitApproval' {
@@ -1682,19 +1699,43 @@
                 return
             }
 
+            $scope = 'once'
+            if ($Body -is [System.Collections.IDictionary]) {
+                if ($Body.Contains('scope')) { $scope = $Body['scope'] }
+            }
+            elseif ($Body.PSObject.Properties['scope']) { $scope = $Body.scope }
+            if ($scope -isnot [string] -or $scope -cnotin @('once', 'turn') -or ($decision -eq 'deny' -and $scope -ne 'once')) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{
+                    error = @{ code = 'bad_scope'; message = 'Approval scope must be once, or turn for an eligible Terminal approval.' }
+                }
+                return
+            }
+            if ($scope -ceq 'turn') {
+                $pending = $state.PendingApproval
+                if (-not $pending -or $pending.id -cne $requestId -or $pending.conversationId -cne $conversation.id -or
+                    $pending.request.class -cne 'Terminal' -or $pending.request.tool -cne 'run_terminal_command' -or
+                    @($pending.request.allowedScopes) -cnotcontains 'turn' -or
+                    -not $state.Settings.permissions.terminal -or -not $state.Settings.permissions.userTools) {
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                        error = @{ code = 'stale_approval_scope'; message = 'This live Terminal request does not allow a Turn-wide grant.' }
+                    }
+                    return
+                }
+            }
+
             # The note steers the agent after a refusal, so it is bounded and
             # trimmed like any other text that ends up in a prompt.
             $note = ([string](Get-DpPropertyValue -InputObject $Body -Name @('note') -Default '')).Trim()
             if ($note.Length -gt 500) { $note = $note.Substring(0, 500) }
 
-            $payload = @{ decision = $decision }
+            $payload = @{ decision = $decision; scope = $scope }
             if ($note) { $payload.note = $note }
 
             # SubmitAnswer checks the Conversation and request identifiers itself,
             # so a replayed answer, one aimed at another Conversation, or one for a
             # request that has already been answered authorises nothing.
             $bridge = $state.Engine.ApprovalBridge
-            $accepted = $state.TurnRunning -and $bridge -and
+            $accepted = $state.TurnRunning -and -not $state.CancelRequested -and $bridge -and
                 $bridge.SubmitAnswer([string]$conversation.id, $requestId, ($payload | ConvertTo-Json -Compress))
             if (-not $accepted) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{
@@ -1712,7 +1753,7 @@
             # free text that carries a token it would not.
             Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' `
                 -Component 'approval' -EventId "terminal.$decision" `
-                -Summary "A Terminal command was $(if ($decision -eq 'approve') { 'approved' } else { 'declined' }) in the DeskPilot window."
+                -Summary "An action was $(if ($decision -eq 'approve') { 'approved' } else { 'declined' }) in the DeskPilot window with $scope scope."
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
         }
         'stopTurn' {

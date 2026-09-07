@@ -128,6 +128,12 @@ function New-DpIntercomProject {
         $null = Send-DpIntercomMessage -Title 'I could not add that project.' -Line @("$_") -Kind 'notice'
         return
     }
+    if ($state.TurnRunning) {
+        $engine = Get-DpPropertyValue -InputObject $state -Name 'Engine'
+        $approvalBridge = Get-DpPropertyValue -InputObject $engine -Name 'ApprovalBridge'
+        if ($approvalBridge) { $approvalBridge.Cancel() }
+        $state.PendingApproval = $null
+    }
     if ($state.DataDir) { Save-DpSettings -Settings $state.Settings -Directory $state.DataDir }
 
     $null = Send-DpIntercomMessage -Title $(if ($created) { 'Folder created and added as a project.' } else { 'Project added.' }) -Line @(

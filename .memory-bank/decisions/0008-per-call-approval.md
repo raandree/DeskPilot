@@ -12,6 +12,11 @@ Supersedes the "blocked on the Engine" framing this repository carried for
 Terminal. See `.memory-bank/topics/design-per-call-approval.md` for the full
 Design Concept and `specs/120` for what remains genuinely blocked.
 
+The operator's 2026-09-07 request supersedes this record's no-Turn-grant choice
+for ordinary Terminal approvals. See
+[decision 0011](0011-turn-wide-terminal-approval.md) for the current scoped grant,
+revocation, and unchanged browser/child boundaries.
+
 > **Correction, 2026-09-03 — the mechanism below was wrong, and is now fixed.**
 > Re-verifying this record against ShellPilot 0.4.0 showed that
 > `-DisableTerminal` gated the *offered* tool definition but **not** the
@@ -59,11 +64,11 @@ boundary so `ls` cannot authorise `lsof`, and any entry whose trailing argument
 changes its meaning is `exact` — `git branch` lists, `git branch -D main`
 destroys.
 
-**No Turn-wide grant.** The grant subsystem built earlier the same day
+**Original no-Turn-grant decision, superseded by 0011.** The subsystem built earlier the same day
 (`New-DpApprovalState`, `Add-DpApprovalGrant`, `Resolve-DpApprovalGrant`) was
-deleted. A class-wide grant silently authorises every later risky command once
-one is approved, which is the exact property the gate exists to remove. Two
-identical risky commands in one Turn prompt twice.
+deleted. The original design required each risky command to prompt again.
+The operator now explicitly accepts a bounded Terminal-only Turn grant;
+**Allow once** retains the original behavior.
 
 **The safe-list widens only from Settings.** "Always allow this" beside a prompt
 is the button a tired operator presses. Additions live in `safeCommands` and are
