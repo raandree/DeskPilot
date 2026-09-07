@@ -2,13 +2,78 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-06
-source: local Git history, Sampler outputs, and bounded authenticated counting probes
+last-verified: 2026-09-07
+source: final Sampler gates, authenticated built-runtime proof, and independent review
 ---
 
 # Active context
 
 ## Current focus
+
+The approved single-child V3 implementation is complete and locally verified.
+[Decision 0010](decisions/0010-child-budget-estimates.md) explicitly permits
+`provider-estimate` token/cost budgets, not guaranteed invoice caps. Separate
+credentialless Engine/Tool containers, hard local limits, exact approvals,
+Stop/recovery, and private proposals preserve the accepted isolation boundary.
+Ordinary Turns and strict V2 retain their behavior. Parallel Agents, automatic
+proposal application, remote publication, and production enablement are outside
+this task.
+
+## Final V3 evidence - 2026-09-07
+
+The two local topic branches are `ai/complete-child-isolation` and
+`ai/child-provider-boundary` in `D:/Git/ShellPilot-child-isolation`. Local
+close-out commits are recorded in Git. The original ShellPilot checkout and its
+unrelated edits remain untouched. No push, release, or package publication.
+
+- Engine: 1,915 passed, zero failures/skips/unrun, 89.2% coverage; 16 tasks,
+  zero errors/warnings, completed 01:05:31 UTC. Log under TEMP:
+  `v3-full-engine-final-b20dc432c10a47f1a34805d1e5d9d1e7.log`.
+- DeskPilot: 2,454 passed, zero failures, five existing browser Unicode skips,
+  zero unrun; 16 tasks, zero errors/warnings, completed 01:59:14 UTC. Log:
+  `v3-full-deskpilot-exclusive-2575dc3a7f694ec6a15a50a9cd7ded54.log`.
+- Independent review's one Major and paired Minor were fixed test-first:
+  six expected red cases, then 37 baseline cases passed. Scoped independent
+  recheck resolved both. Post-fix full/live gates satisfy its approval condition;
+  zero Blocker/Major findings remain. Reports, hashes, and closure ledger:
+  `TEMP/deskpilot-v3-review-20260907`.
+- Final authenticated built-controller proof completed 02:00:15 UTC: two
+  initialization, two count, and two generation attempts; 1,601 input and 87
+  output tokens, USD 0.002036, 1,857 reserved tokens/USD 0.00328125. Real private
+  File read, unchanged Project, no writes/commands/proposals, cleanup verified.
+  Log: `deskpilot-v3-built-live-f6e8d33067684f45986136d65d2b758c.log`.
+- Built/source equivalence: 311 functions and 39 child/UI assets match.
+  Real built SPA passed at 1440px/390px with zero page errors or panel overflow;
+  unauthorized Diagnostics returned 401 and disabled child start returned 403.
+  Prior hostile-output browser proof remained inert with no outbound requests.
+
+The first post-fix full run transiently failed six existing Git snapshot cases.
+All 884 helper cases and the exclusive full gate then passed with a stronger
+error assertion. No production snapshot fix was made; overlap with live proof
+is a hypothesis, not an established cause. Preserve the failure log and diagnose
+the returned snapshot error if it recurs.
+
+## Local preview and remaining release boundary
+
+The actual built Host Server is running at <http://127.0.0.1:56992> in a
+separate temporary data directory. Its authorized browser window is open.
+Never print its private launch token. Child readiness is true for this exact
+prepared build, but `childExecution.enabled` is false. Ordinary user Settings
+were not changed. The user must separately enable V3 and consent per run.
+
+Data and built proof: `TEMP/deskpilot-v3-live-0f4a8933488f469eb7baa3e5103c8283`.
+Only exact proven image tags are retained; no child containers remain. The
+source-bound proof is for the built Host Server, not dot-sourced development.
+Rebuilding or changing source/runtime/Engine invalidates it. Do not click the
+older Gallery update as a substitute for this explicit development build.
+
+The [operator guide](../docs/single-child-v3.md) covers limits, preparation,
+proof, consent, and removal. Clean-install availability of the supporting Engine
+and release authorization remain separate work. No parallel topology approval
+or scheduling was added. Earlier sections below are historical groundwork,
+not current V3 completion or readiness status.
+
+## Counting evidence
 
 The operator refreshed Engine sign-in. Authentication is no longer the blocker:
 `Get-ShpModel -Endpoint Session` returned 43 Models at 21:19 UTC on 2026-09-06.
@@ -31,7 +96,8 @@ An available server count is not yet the verified complete-request upper bound
 V2 requires. Two fixtures matched and two overcounted; the absence of an
 undercount in these cases does not prove a bound for every allowed request.
 Do not subtract seven, label the endpoint exact, or treat it as a verified bound.
-V2, production Settings, Engine source, and child-startup refusal are unchanged.
+V3 may use the hosted value only as an explicitly authorized estimate under
+decision 0010. Child-startup refusal remains until the full profile is proven.
 Source hashes, the temporary reusable probe, and sanitized results are retained
 under `$env:TEMP/deskpilot-copilot-count-20260906-2121`.
 
@@ -47,8 +113,9 @@ a published or clean-install dependency.
 The operator initially requested admission, complete child integration, and
 proof/review. After inspection confirmed the missing provider counting contract,
 the operator chose **Keep V2 unchanged; close out verified groundwork**.
-Estimated-count fallback and weaker hard limits are not approved. Complete
-child integration and authenticated live proof remain blocked, not completed.
+That earlier close-out is historical. Decision 0010 now authorizes V3 estimated
+budgets without weakening isolation. Complete child integration and whole-child
+authenticated live proof remain to be implemented and verified.
 
 The Engine now has conditional `RequestLimits` / `RequestTokenCounter`
 admission with frozen limits/pricing, pre-dispatch reservations, request-bound
@@ -100,19 +167,16 @@ Logs and copied test reports are retained under `$env:TEMP`:
 
 ## Release boundaries remain unchanged
 
-The [single-child V2 prerequisite](decisions/0009-single-child-isolation.md)
-remains partial. Private Tool storage, baseline capture, authenticated IPC,
-bounded export, lease, Stop/recovery, retention admission, and refusal exist.
-Complete Engine request admission, credentialless child Engine/transport,
-child approvals/accounting, and restart/retention integration remain open.
-The prior credential-filter correction still needs independent re-review;
-the two Major integration/admission gates and retention/restart Minor remain.
-No child Engine, recursive delegation, or parallel scheduling is enabled.
+The strict [V2 prerequisite](decisions/0009-single-child-isolation.md) still
+lacks a verified provider counter and remains unavailable. V3 now supplies the
+complete reviewed implementation under its separately approved estimate
+contract. The earlier component-review integration and retention findings are
+closed by the full profile evidence above. Recursive delegation and parallel
+scheduling remain unavailable.
 
 [Decision 0005](decisions/0005-parallel-agents.md) still requires operator
 approval of the two-child topology. Its public-evidence profile needs a separate
-approved retrieval boundary. Recommend `review: on` before enabling or releasing
-child execution; this consolidation is not an independent security review.
+approved retrieval boundary. V3 review does not approve either expansion.
 
 Optional Terminal isolation retains the limitations in
 [decision 0001](decisions/0001-isolated-tool-execution.md) and the

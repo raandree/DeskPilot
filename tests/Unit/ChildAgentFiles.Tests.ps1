@@ -132,6 +132,12 @@ Describe 'Child Agent selected Project baseline' -Tag 'Unit' {
         @{ Content = '{"configuration":[{"client_secret":"credential-canary"}]}' }
         @{ Content = '{"access_token":"credential-canary"}' }
         @{ Content = '{"ConnectionStrings":{"Primary":"Server=example;Password=credential-canary"}}' }
+        @{ Content = '{"api key":"credential-canary"}' }
+        @{ Content = '{"client.secret":"credential-canary"}' }
+        @{ Content = '{"shared-access key":"credential-canary"}' }
+        @{ Content = '{"client\tsecret":"credential-canary"}' }
+        @{ Content = '{"auth":{"connection string":"credential-canary"}}' }
+        @{ Content = '{"services":[{"shared access key":"credential-canary"}]}' }
     ) {
         [IO.File]::WriteAllText((Join-Path $project 'settings.json'), $Content)
 

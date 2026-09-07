@@ -1,12 +1,11 @@
 # Child Agent isolation prerequisite
 
-This guide is for operators and contributors validating the single-child
-prerequisite. **The complete child Agent profile is not available.** The current
-implementation provides private Tool storage, baseline capture, authenticated
-IPC, export, lease, Stop, and recovery components. It does not enable parallel
-Agents or apply proposed changes to the real Project.
+This guide preserves the strict V2 prerequisite and historical counting
+investigation. The later accepted estimated-budget profile is implemented and
+documented in [Single-child V3](single-child-v3.md). Its separate proof and
+opt-in requirements do not reinterpret V2 or enable parallel Agents.
 
-## Status and approval
+## Historical V2 status and approval
 
 The operator approved revised design V2 on 2026-09-06. It calls for a
 credentialless child Engine container, a separate Tool container, and trusted
@@ -133,9 +132,9 @@ The Claude counting route is usable, but a verified complete-request bound for
 V2 remains open. Observed overcounting in these cases does not prove an upper
 bound for every permitted request. Do not subtract seven as a correction or
 mark a counter `exact` or `upper-bound` on this evidence. Any decision to use
-provider-estimated token/cost budgets needs explicit approval; no such change
-was made. Engine source, production Settings, and child-startup refusal remain
-unchanged.
+provider-estimated token/cost budgets needs explicit approval. That approval
+was subsequently recorded in decision 0010 for V3 only. These earlier probes
+did not change Engine source, production Settings, or child-startup refusal.
 
 The temporary reusable probe, its hash, the Engine revision/module hash, and
 sanitized machine-readable evidence are retained under

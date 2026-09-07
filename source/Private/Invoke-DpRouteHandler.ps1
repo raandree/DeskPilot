@@ -1,4 +1,4 @@
-function Invoke-DpRouteHandler {
+﻿function Invoke-DpRouteHandler {
     <#
     .SYNOPSIS
         Executes the named API route handler and writes its response.
@@ -35,6 +35,22 @@ function Invoke-DpRouteHandler {
 
     $state = $script:DeskPilot
 
+    if ($Name -in @('regenerateTurn', 'editTurn')) {
+        $conversation = $state.Conversations[$RouteParams.id]
+        if ($conversation) {
+            $target = if ($Name -eq 'regenerateTurn') {
+                @($conversation.messages | Where-Object { $_.role -eq 'user' }) | Select-Object -Last 1
+            } else {
+                $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name 'messageId' -Default '')
+                @($conversation.messages | Where-Object { $_.id -ceq $messageId }) | Select-Object -First 1
+            }
+            if ($target -and (Get-DpPropertyValue -InputObject $target -Name 'childRunId')) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_consent_required'; message = 'Start a new private child with explicit consent; this task cannot fall back to an ordinary Turn.' } }
+                return
+            }
+        }
+    }
+
     switch ($Name) {
         'health' {
             Write-DpResponse -Stream $Stream -Json @{
@@ -57,20 +73,84 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Json (Get-DpDiagnosticPayload -AfterSequence $afterSequence)
         }
         'getChildReadiness' {
-            Write-DpResponse -Stream $Stream -Json (Get-DpChildReadiness -Settings $state.Settings)
+            Update-DpChildPreparation
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $readiness = Get-DpChildReadiness -Settings $state.Settings -Runtime $child.Runtime -Proof $child.Proof -Health $child.Health -CleanupBlocked:([bool]$child.CleanupBlocked)
+            $readiness.preparing = [bool]$child.SetupJob
+            $readiness.operationError = $child.Error
+            Write-DpResponse -Stream $Stream -Json $readiness
+        }
+        { $_ -in @('prepareChildRuntime', 'checkChildRuntime', 'cleanupChildRuntime', 'removeChildRuntime') } {
+            $action = switch ($Name) { 'prepareChildRuntime' { 'prepare' }; 'checkChildRuntime' { 'check' }; 'cleanupChildRuntime' { 'cleanup' }; 'removeChildRuntime' { 'remove' } }
+            try {
+                $started = Start-DpChildPreparation -Action $action
+                Write-DpResponse -Stream $Stream -Status $(if ($started) { 202 } else { 409 }) -Json @{ preparing = $started }
+            } catch {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_runtime_busy'; message = 'Stop active work before child preparation or cleanup.' } }
+            }
         }
         'startChildRun' {
             if ($state.TurnRunning) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'An active Turn already owns execution.' } }
                 return
             }
-            $readiness = Get-DpChildReadiness -Settings $state.Settings
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $readiness = Get-DpChildReadiness -Settings $state.Settings -Runtime $child.Runtime -Proof $child.Proof -Health $child.Health -CleanupBlocked:([bool]$child.CleanupBlocked)
+            if ($readiness.ready -and $readiness.enabled) {
+                $conversation = $state.Conversations[$RouteParams.id]
+                if (-not $conversation) {
+                    Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                    return
+                }
+                try {
+                    $started = Start-DpChildRun -Conversation $conversation -Body $Body
+                    Write-DpResponse -Stream $Stream -Status 202 -Json $started
+                } catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'child_admission_refused'; message = 'Child consent, selected Model, scope, or current runtime proof is invalid.' } }
+                }
+                return
+            }
             $status = if ($readiness.enabled) { 503 } else { 403 }
             $code = if ($readiness.enabled) { 'child_profile_unavailable' } else { 'child_profile_disabled' }
             Write-DpResponse -Stream $Stream -Status $status -Json @{
                 error = @{ code = $code; message = $readiness.message }
                 readiness = $readiness
             }
+        }
+        { $_ -in @('getChildRun', 'getChildEvents', 'getChildProposal') } {
+            try {
+                $record = Get-DpChildRunRecord -ConversationId $RouteParams.id -Id $RouteParams.childId -Proposal:($Name -eq 'getChildProposal')
+                if (-not $record) {
+                    Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Child run not found in this Conversation.' } }
+                    return
+                }
+                if ($Name -eq 'getChildEvents') { $record = @{ id = $record.id; events = @($record.events) } }
+                Write-DpResponse -Stream $Stream -Json $record
+            } catch {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_data_unavailable'; message = 'The bounded child record or proposal is unavailable.' } }
+            }
+        }
+        { $_ -in @('approveChildRun', 'stopChildRun') } {
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $controller = $child.Controller
+            if (-not $controller -or $controller.Id -cne $RouteParams.childId -or $controller.ConversationId -cne $RouteParams.id) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Active child run not found in this Conversation.' } }
+                return
+            }
+            if ($Name -eq 'stopChildRun') {
+                $controller.Stop()
+                Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
+                return
+            }
+            $approvalId = [string](Get-DpPropertyValue -InputObject $Body -Name 'approvalId' -Default '')
+            $fingerprint = [string](Get-DpPropertyValue -InputObject $Body -Name 'fingerprint' -Default '')
+            $decision = [string](Get-DpPropertyValue -InputObject $Body -Name 'decision' -Default '')
+            if ($decision -cnotin @('approve', 'deny') -or $fingerprint -cnotmatch '^[a-f0-9]{64}$' -or
+                -not $controller.SubmitApproval($RouteParams.id, $RouteParams.childId, $approvalId, $fingerprint, ($decision -ceq 'approve'))) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'stale_child_approval'; message = 'This exact child action is not awaiting a decision.' } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
         }
         'runDiagnosticCheck' {
             $started = Start-DpDiagnosticCheck
@@ -1637,6 +1717,12 @@ function Invoke-DpRouteHandler {
         }
         'stopTurn' {
             $state.CancelRequested = $true
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child'
+            if ($child -and $child.Controller) {
+                $child.Controller.Stop()
+                Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
+                return
+            }
             if ($state.Engine.TerminalSession) { $state.Engine.TerminalSession.Cancel() }
             $bridge = $state.Engine.UserPromptBridge
             if ($bridge) { $bridge.Cancel() }
@@ -2297,4 +2383,3 @@ function Invoke-DpRouteHandler {
         }
     }
 }
-

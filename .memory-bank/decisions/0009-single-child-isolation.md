@@ -42,6 +42,11 @@ reviewed, but a fixture counter or a token estimate cannot satisfy the approved
 bound. Complete integration and authenticated live proof remain open. This
 decision does not weaken any numeric limit or authorize child startup.
 
+The later [accepted budget amendment](0010-child-budget-estimates.md) authorizes
+single-child V3 with explicit estimated provider budgets and unchanged isolation
+boundaries. V2 and strict Engine admission keep their original meaning; V3
+requires its own implementation, proof, and explicit opt-in.
+
 ## Boundary and Engine integration
 
 The Host Server retains the ordinary parent Engine Runspace, which stays idle

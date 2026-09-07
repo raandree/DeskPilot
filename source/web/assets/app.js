@@ -1,4 +1,5 @@
-import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
+﻿import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
+import { initializeChildPanel } from './child.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import {
     isBinaryDiff,
@@ -1438,7 +1439,13 @@ function buildUserEl(m) {
     if (m && m.text) {
         const actions = el('user-actions');
         actions.appendChild(buildCopyButton(() => copyMessageText(m.text)));
-        if (m.id) {
+        if (m.childRunId) {
+            const view = el('msg-action-btn', 'button');
+            view.textContent = t('composer.child.view');
+            view.onclick = () => childPanel.open(m.childRunId);
+            actions.appendChild(view);
+        }
+        if (m.id && !m.childRunId) {
             const edit = el('msg-action-btn', 'button');
             edit.type = 'button';
             edit.title = 'Edit & resend';
@@ -1482,6 +1489,15 @@ function buildAssistantEl(m) {
 
 function finalizeAssistant(wrap, m, opts) {
     const r = wrap._refs;
+    if (m.childRunId) {
+        r.content.textContent = m.text || 'Private child run';
+        const view = el('btn', 'button');
+        view.textContent = t('composer.child.view');
+        view.onclick = () => childPanel.open(m.childRunId);
+        r.content.append(document.createElement('br'), view);
+        renderUsage(r.usage, m);
+        return wrap;
+    }
     if (m.stopped) {
         showInlineError(wrap, m.stopReason || 'Turn stopped.');
     } else {
@@ -2721,6 +2737,7 @@ function revealThinking() {
 
 // ===== Sending a Turn =====
 async function send() {
+    if (childPanel.active()) { await childPanel.open(); return; }
     if (voice.listening) stopDictation();
     // While streaming, the Send button is the dispatch chevron's parent — clicking
     // it should not silently stop. Plain clicks here mean "open the dispatch menu"
@@ -9569,4 +9586,12 @@ function wireGlobal() {
     initVoice();
 }
 
+const childPanel = initializeChildPanel({
+    api,
+    getContext: () => ({ conversation: state.current, settings: state.settings, streaming: state.streaming, prompt: $('prompt').value }),
+    settingsChanged: (settings) => { state.settings = settings; },
+    finished: async () => { await refreshCurrentConversation(); await refreshUsage(); },
+    notify: toast,
+});
+$('btn-child').onclick = () => childPanel.open();
 init();

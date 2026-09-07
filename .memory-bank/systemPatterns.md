@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-06
+last-verified: 2026-09-07
 source: repository implementation and decision records
 ---
 
@@ -42,6 +42,7 @@ source: repository implementation and decision records
 | [0007](decisions/0007-localization.md) | Localization |
 | [0008](decisions/0008-per-call-approval.md) | Individual Terminal approvals |
 | [0009](decisions/0009-single-child-isolation.md) | Approved single-child V2 and partial storage implementation |
+| [0010](decisions/0010-child-budget-estimates.md) | Accepted V3 provider estimates with unchanged isolation and hard local bounds |
 
 ## Execution and approval
 
@@ -97,6 +98,29 @@ source: repository implementation and decision records
   discovery as a control, compare hosted counts with Engine Usage, and record
   the exact Model, host, request shape, and differences. A few observed
   overcounts do not establish a general upper bound or a safe correction factor.
+- **Named Tool results preserve correlation.** The Engine adds `name` to Chat
+  Tool-result messages. Messages represents that name through its preceding
+  `tool_use` and `tool_use_id`; require exact name/id agreement, never silently
+  ignore a contradictory field.
+- **Created is not running.** Docker `wait` can return zero before a container
+  starts. Require an authenticated process-ready acknowledgment before treating
+  lease expiry or process exit as runtime proof.
+- **Drain archive padding before waiting.** Tar readers stop at an end marker
+  while Docker can still be writing padded blocks. Drain the remaining bounded
+  stream before waiting for process exit, including no-change proposals.
+- **Approval identity is not authentication.** Generate an independent launch
+  identifier for child approval facts; never reuse the Host Server token.
+- **Stop must not wait behind dispatch.** Close admission atomically and cancel
+  independently of a blocked IPC send. All cleanup commands and owned process
+  siblings share one nonextendable grace deadline.
+- **Loaded bytes are part of proof.** PowerShell cannot unload runtime types.
+  Record loaded source and assembly hashes, require exact assembly identity for
+  V3, and require restart after replacement. Source and built Host Server
+  fingerprints differ; prove the actual launch surface.
+- **Credential fields need structural normalization.** Traverse JSON objects
+  and arrays, normalize non-alphanumeric separators before credential-name
+  comparison, and retain spaced/dotted/tabbed regression cases. This safeguard
+  does not establish that arbitrary selected content contains no secrets.
 
 ## Data, changes and diagnostics
 

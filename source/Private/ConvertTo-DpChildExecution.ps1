@@ -24,6 +24,10 @@ function ConvertTo-DpChildExecution {
 
     $policy = @{
         enabled = $false
+        profile = 'single-child-v2'
+        budgetMode = 'verified'
+        model = 'claude-haiku-4.5'
+        requestBytes = 262144
         projectAccess = 'read-only'
         network = 'off'
         maxChildren = 1
@@ -73,6 +77,16 @@ function ConvertTo-DpChildExecution {
     }
 
     if ($policy.enabled -isnot [bool]) { throw 'childExecution.enabled must be a boolean.' }
+    if ($policy.profile -isnot [string] -or $policy.profile -cnotin @('single-child-v2','single-child-v3')) {
+        throw 'childExecution.profile is unsupported.'
+    }
+    $expectedMode = if ($policy.profile -ceq 'single-child-v3') { 'provider-estimate' } else { 'verified' }
+    if ($policy.budgetMode -isnot [string] -or $policy.budgetMode -cne $expectedMode) {
+        throw 'childExecution.budgetMode must be explicitly paired with its profile.'
+    }
+    if ($policy.model -isnot [string] -or $policy.model -cne 'claude-haiku-4.5') {
+        throw 'childExecution.model is not approved for the child provider profile.'
+    }
     if ($policy.projectAccess -isnot [string] -or $policy.projectAccess -cnotin @('read-only', 'read-write')) {
         throw 'childExecution.projectAccess must be read-only or read-write.'
     }
@@ -81,6 +95,7 @@ function ConvertTo-DpChildExecution {
     }
 
     $ranges = @{
+        requestBytes = @(1024, 1048576)
         maxChildren = @(1, 1)
         maxRetries = @(0, 0)
         storageBytes = @(33554432, 268435456)
@@ -127,6 +142,12 @@ function ConvertTo-DpChildExecution {
 
     $hostStorage = $policy.storageBytes - $policy.toolStorageBytes
     $recordBytes = $policy.resultBytes + ($policy.eventBytes * $policy.eventLimit)
+    if ($policy.profile -ceq 'single-child-v3') {
+        $bufferReservation = ($policy.requestBytes * 12) + ($policy.outputBytes * 8) + $recordBytes + 65536
+        if ($bufferReservation -ge $hostStorage) {
+            throw 'childExecution request, response, and record buffers exceed their reserved host storage partition.'
+        }
+    }
     if ($hostStorage -lt ($policy.proposalBytes + $recordBytes) -or
         $hostStorage -gt 67108864 -or $policy.baselineBytes -ge $policy.toolStorageBytes -or
         $policy.retentionBytes -lt $policy.storageBytes) {

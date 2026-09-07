@@ -1,4 +1,4 @@
-// English resources. This is the source locale AND the fallback: every key that
+﻿// English resources. This is the source locale AND the fallback: every key that
 // exists anywhere must exist here, and tests enforce that both ways.
 //
 // Keys are dotted and flat (no nesting) so a missing-key check is a set
@@ -14,6 +14,9 @@
 //     warning to make it fit a control.
 
 export const en = {
+    'composer.child': 'Private child',
+    'composer.child.title': 'Start or inspect a private child',
+    'composer.child.view': 'View private child',
     // Sidebar and navigation
     'app.newConversation': '+ New conversation',
     'app.home.title': 'DeskPilot home — close the current chat',

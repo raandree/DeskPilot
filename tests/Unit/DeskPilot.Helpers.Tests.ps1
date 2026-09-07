@@ -5053,6 +5053,7 @@ Describe 'Pending change set against a real repository' -Skip:(-not (Get-Command
         [System.IO.File]::WriteAllText((Join-Path $script:csRepo 'tracked.txt'), "one`ntwo`nmine`n")
         $before = & git -C $script:csRepo status --porcelain 2>$null
         $script:csSnapshot = New-DpChangeSnapshot -Root $script:csRepo -Id 't_one'
+        $script:csSnapshot.error | Should -BeNullOrEmpty
         $script:csSnapshot.sha | Should -Match '^[0-9a-f]{40}$'
         $script:csSnapshot.ref | Should -Be 'refs/deskpilot/snapshots/t_one'
         (& git -C $script:csRepo status --porcelain 2>$null) | Should -Be $before

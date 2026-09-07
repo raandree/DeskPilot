@@ -134,7 +134,7 @@ namespace DeskPilot.Child
             }
         }
 
-        private static void ValidateJson(ReadOnlyMemory<byte> payload)
+        internal static void ValidateJson(ReadOnlyMemory<byte> payload)
         {
             using JsonDocument document = JsonDocument.Parse(payload, new JsonDocumentOptions { MaxDepth = 24 });
             if (document.RootElement.ValueKind != JsonValueKind.Object)

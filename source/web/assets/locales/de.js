@@ -1,4 +1,4 @@
-// Deutsche Ressourcen. Jeder Schlüssel aus en.js muss hier existieren; die Tests
+﻿// Deutsche Ressourcen. Jeder Schlüssel aus en.js muss hier existieren; die Tests
 // prüfen das in beide Richtungen, ebenso wie die Platzhalter jedes Textes.
 //
 // Übersetzungsentscheidungen, die bewusst getroffen wurden:
@@ -11,6 +11,9 @@
 //     ist keine Warnung.
 
 export const de = {
+    'composer.child': 'Privater untergeordneter Agent',
+    'composer.child.title': 'Privaten untergeordneten Agent starten oder anzeigen',
+    'composer.child.view': 'Privaten untergeordneten Agent anzeigen',
     // Seitenleiste und Navigation
     'app.newConversation': '+ Neue Unterhaltung',
     'app.home.title': 'DeskPilot-Start — aktuelle Unterhaltung schließen',
