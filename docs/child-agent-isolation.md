@@ -1,12 +1,11 @@
 # Child Agent isolation prerequisite
 
-This guide is for operators and contributors validating the single-child
-prerequisite. **The complete child Agent profile is not available.** The current
-implementation provides private Tool storage, baseline capture, authenticated
-IPC, export, lease, Stop, and recovery components. It does not enable parallel
-Agents or apply proposed changes to the real Project.
+This guide preserves the strict V2 prerequisite and historical counting
+investigation. The later accepted estimated-budget profile is implemented and
+documented in [Single-child V3](single-child-v3.md). Its separate proof and
+opt-in requirements do not reinterpret V2 or enable parallel Agents.
 
-## Status and approval
+## Historical V2 status and approval
 
 The operator approved revised design V2 on 2026-09-06. It calls for a
 credentialless child Engine container, a separate Tool container, and trusted
@@ -25,7 +24,7 @@ bypass the readiness gate. No child start, approval, or proposal UI is enabled.
 | Actual-runtime checks | File/Terminal work, byte/inode quotas, read-only denial, export, Stop, lease, owner death, and reconciliation checks exist. |
 | Complete child Engine process and approval bridge | Not integrated. |
 | Aggregate Engine Usage, context, and resource bounds | Not implemented or proven across the complete V2 run. |
-| Authenticated live proof | Not attempted; hard Engine request admission remains unsupported. |
+| Authenticated live proof | Counting probes and four capped Engine requests succeeded; the complete child profile and its hard request bound remain unproven. |
 | Clean-install Engine support | Not proven; local Engine changes are not a released dependency. |
 | Independent security review | Request changes: three Majors and one Minor. One implemented Major is author-corrected; the two Major integration/admission gates and retention/restart Minor remain open. |
 
@@ -52,8 +51,12 @@ that runs after a completed request. Deterministic provider fixtures reproduced:
 
 Limited tracked Engine changes now add `NoAutomaticRetry` and a credentialless
 `RequestTransport` callback. They are tested locally, not installed over the
-ignored dependency or published. They do not supply a verified complete-request
-token bound, Engine-priced reservation, or the trusted transport process.
+ignored dependency or published. The 2026-09-06 continuation also implements
+conditional `RequestLimits` and `RequestTokenCounter`: a trusted count can be
+reserved with maximum output and Engine-priced cost before dispatch. Failed or
+unknown Usage retains its reservation and stays explicitly unknown. The 38
+public and seven helper tests use identified deterministic counters; they do not
+supply a verified Copilot complete-request bound or trusted transport process.
 
 The missing admission contract must cover all submitted messages, system text,
 Tool schemas, maximum output, Model-specific framing and pricing, failed or
@@ -66,6 +69,78 @@ overhead; it is not a Copilot complete-request bound.
 Do not substitute completed spend, a locally scripted response, a caller's
 unverified count, or a provider hostname allow-list for this contract. Until a
 supported bound is verified, full child startup must remain unavailable.
+
+On 2026-09-06 the operator chose **Keep V2 unchanged; close out verified
+groundwork** after this counting gap was confirmed. No estimated-count fallback
+was approved. The remaining complete child Engine, approval bridge, whole-run
+limits, restart/retention integration, authenticated live proof, and complete
+profile security review remain open. The admission extension is not a readiness
+claim, a release, or approval of parallel Agents.
+
+The admission continuation passed the full Engine gate (1,810 tests, no failures
+or skips, 89.12% coverage) and the unchanged DeskPilot gate (2,373 passed, five
+existing browser skips). Both completed 16 tasks without errors or warnings.
+Independent review approved the admission diff with no Blocker or Major; its
+one Minor test gap was closed with two additional parameter-guard cases. This
+approval covers admission groundwork, not the complete child profile or the
+earlier child-storage credential-filter correction.
+
+### Live counting investigation
+
+The operator refreshed Engine sign-in on 2026-09-06. `Get-ShpModel -Endpoint
+Session` then returned 43 Models at 21:19 UTC. This resolves the earlier local
+DPAPI decryption failure; authentication is no longer the counting blocker.
+
+The Engine-selected host was `api.enterprise.githubcopilot.com`. Read-only
+discovery and non-generating count probes returned:
+
+| Operation | Requested Model | Result |
+| --- | --- | --- |
+| `GET /models` | Not applicable | 200; 43 Models, using the same HTTP client as the Messages probe. |
+| `POST /responses/input_tokens` | `gpt-5-mini` | 404; no count returned. |
+| `POST /v1/messages/count_tokens` | `claude-haiku-4.5` | 200; input-token count returned. |
+
+The hosted Claude counter was then compared with the Engine's existing
+`Invoke-CopilotTurn` Chat transport, using equivalent non-sensitive Messages
+and Chat inputs. Generation was capped at eight output tokens per request,
+with no automatic retries or Tool execution.
+
+| Fixture | Hosted Messages count | Engine-reported input | Difference |
+| --- | ---: | ---: | ---: |
+| Plain text | 11 | 11 | 0 |
+| System text | 31 | 31 | 0 |
+| Tool schema | 587 | 580 | +7 |
+| Tool result | 669 | 662 | +7 |
+
+A count-only variant removed explicit `tool_choice` and returned the same four
+counts, ruling out that setting as the explanation for the difference. These
+are observed results for this account, host, Model, and fixtures, not a
+cross-Model or all-input guarantee. Four generation requests reported 1,284
+input tokens and 19 output tokens in total. No Tool was proposed or executed.
+Credentials were neither displayed nor replaced by the probes.
+
+The [first-party Copilot tokenizer](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/tokenizer/node/tokenizer.ts)
+explicitly describes Tool and Tool-call overhead calculations as estimates.
+OpenAI separately documents
+[`POST /responses/input_tokens`](https://developers.openai.com/api/reference/resources/responses/subresources/input_tokens).
+That Responses route was unavailable in the tested Copilot environment; this
+does not imply all Copilot counting routes are absent. Anthropic's
+[Messages counting documentation](https://platform.claude.com/docs/en/build-with-claude/token-counting)
+describes its returned count as an estimate, which may differ from actual usage.
+
+The Claude counting route is usable, but a verified complete-request bound for
+V2 remains open. Observed overcounting in these cases does not prove an upper
+bound for every permitted request. Do not subtract seven as a correction or
+mark a counter `exact` or `upper-bound` on this evidence. Any decision to use
+provider-estimated token/cost budgets needs explicit approval. That approval
+was subsequently recorded in decision 0010 for V3 only. These earlier probes
+did not change Engine source, production Settings, or child-startup refusal.
+
+The temporary reusable probe, its hash, the Engine revision/module hash, and
+sanitized machine-readable evidence are retained under
+`$env:TEMP/deskpilot-copilot-count-20260906-2121`. The probe passed PowerShell
+parsing and PSScriptAnalyzer. This live counting evidence is separate from the
+full child-runtime proof and the earlier full Sampler gates.
 
 ## Implemented storage boundary
 

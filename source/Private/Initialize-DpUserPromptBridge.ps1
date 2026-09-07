@@ -56,6 +56,7 @@ namespace DeskPilot
         private string question;
         private string questionCandidate;
         private string answer;
+        private string turnScope;
 
         public bool Enabled
         {
@@ -65,6 +66,45 @@ namespace DeskPilot
         public bool Waiting
         {
             get { lock (syncRoot) { return waiting; } }
+        }
+
+        public bool Cancelled
+        {
+            get { lock (syncRoot) { return cancelled; } }
+        }
+
+        public bool GrantTurnScope(string activeConversationId, string scopeFingerprint)
+        {
+            if (scopeFingerprint == null || scopeFingerprint.Length != 64)
+            {
+                return false;
+            }
+            foreach (char character in scopeFingerprint)
+            {
+                if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')))
+                {
+                    return false;
+                }
+            }
+            lock (syncRoot)
+            {
+                if (!enabled || cancelled || !String.Equals(conversationId, activeConversationId, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+                turnScope = scopeFingerprint;
+                return true;
+            }
+        }
+
+        public bool HasTurnScope(string activeConversationId, string scopeFingerprint)
+        {
+            lock (syncRoot)
+            {
+                return enabled && !cancelled && turnScope != null &&
+                    String.Equals(conversationId, activeConversationId, StringComparison.Ordinal) &&
+                    String.Equals(turnScope, scopeFingerprint, StringComparison.Ordinal);
+            }
         }
 
         public void BeginTurn(string activeConversationId)
@@ -90,6 +130,7 @@ namespace DeskPilot
                 question = null;
                 questionCandidate = null;
                 answer = null;
+                turnScope = null;
                 answerReady.Reset();
             }
         }
@@ -230,12 +271,13 @@ namespace DeskPilot
         {
             lock (syncRoot)
             {
+                cancelled = true;
+                turnScope = null;
                 if (!waiting)
                 {
                     return;
                 }
 
-                cancelled = true;
                 answerReady.Set();
             }
         }
@@ -245,6 +287,7 @@ namespace DeskPilot
             lock (syncRoot)
             {
                 enabled = false;
+                turnScope = null;
                 questionCandidate = null;
                 conversationId = null;
                 if (waiting)

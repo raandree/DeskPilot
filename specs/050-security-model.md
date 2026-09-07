@@ -210,10 +210,14 @@ asking the Engine to pause.
   Conversation, Turn, command and working directory, so an answer cannot be
   replayed against a different command, a different chat or a later Turn. The
   first answer wins; a second is refused.
-- **There is no Turn-wide grant.** Every command the safe-list does not cover is
-  answered on its own merits, so two identical risky commands prompt twice. A
-  class-wide grant would have silently authorised every later risky command once
-  one was approved - which is the property the gate exists to remove.
+- **Turn-wide grants require explicit scope acceptance.** The operator amended
+  the earlier once-only Terminal decision on 2026-09-07. A grant is limited to
+  the same Tool/class, Conversation, Turn, Project, working directory, and frozen
+  execution policy. Later command text may differ. This accepts broader command
+  authority, not confinement; Local mode retains the user's privileges. Stop,
+  completion/failure, a new Turn, or live Permission/Project/policy revocation
+  clears the grant. No grant is persisted, inherited by children, or created
+  from browser/MCP/File approvals or Intercom answers.
 - **An unanswered request is denied, not held.** The Engine has one Runspace,
   so a parked approval blocks every queued run. It expires after
   `approvalTimeoutMinutes` (default 15) and the bridge is released.

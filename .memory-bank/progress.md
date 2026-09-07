@@ -2,8 +2,8 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-06
-source: repository history, verification, and operator review confirmation
+last-verified: 2026-09-07
+source: final full gates, built-runtime live proof, and independent review closure
 ---
 
 # Progress
@@ -18,15 +18,23 @@ and documentation. Live authenticated acceptance and clean-install Engine
 availability remain release follow-ups; nothing has been published.
 
 Parallel Agents remain blocked: Terminal containment is not child Agent
-isolation. The operator approved single-child design V2 in decision 0009. Its
-private storage/lifecycle components are implemented, but complete child Engine
-integration, approvals, and hard request admission remain open. Decision 0005's
-parallel topology is still proposed; no parallel scheduling is enabled.
+isolation. The approved single-child V3 now provides complete confined execution,
+approvals, bounded provider attempts/bytes, explicit estimated budgets, and
+verified lifecycle. Its local prepared preview is proven but disabled. Strict
+V2 still requires its unavailable verified provider counter. Decision 0005's
+parallel topology remains proposed; no parallel scheduling is enabled.
 
 ## Recent milestones
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-07 | Store a standalone Desktop roadmap and user-testing guide covering verified repository state, safe temporary-data launch, Turn-wide/once/Stop/Isolated acceptance checks, pass/fail recording, post-acceptance Merge gates, and remaining File/MCP, Parallel Agents, and Microsoft Graph work. Render and secret-pattern checks passed; repository records remain authoritative. |
+| 2026-09-07 | Independent security/quality review approved Turn-wide Terminal grants with zero Blockers/Majors and one Minor test gap. Added the complete Terminal execution-policy revocation matrix; 117 approval contracts passed against merged ShellPilot. ShellPilot child-provider support merged into `main` as `4ab9eed`, passed 1,937 tests with three existing Unix-only skips and 89.04% coverage, then was pushed to `origin/main`. No package publication. |
+| 2026-09-07 | Add operator-requested ordinary Terminal **Allow for this Turn**, bound to Tool/class, Conversation/Turn, Project/directory, and execution policy. Stop, end/failure, and window/Intercom scope changes revoke it; browser/child approvals remain once-only. Focused 105 cases plus three Intercom regressions passed; final full gate 2,497 passed, five existing skips, no failures/unrun, 16 tasks without errors/warnings. Real-HTTP proof verified two commands with one Turn grant and fresh approvals next Turn; desktop/mobile passed. Updated prompt roadmap and ShellPilot merge guidance; Engine itself was not changed or merged. |
+| 2026-09-07 | Complete accepted single-child V3 with explicit estimated provider budgets, separate credentialless Engine/Tool containers, exact approvals, hard local limits, Stop/recovery, and private proposals. Final Engine: 1,915 passed, 89.2% coverage; DeskPilot: 2,454 passed, five existing skips, no failures or unrun cases. Both full gates: 16 tasks, zero errors/warnings. Independent Major/Minor fixed red/green and rechecked; approval conditions satisfied. Built-controller authenticated proof: 1,601 input/87 output tokens, USD 0.002036, unchanged Project and verified cleanup. Real built SPA passed desktop/mobile; local proof is ready but child execution stays disabled. No push/publication; clean-install Engine distribution remains separate. |
+| 2026-09-06 | Operator sign-in restored usable Engine authentication: 43 Models returned. Same-client models control returned 200; Responses input_tokens returned 404, but Claude v1/messages/count_tokens returned 200. Four counter/Engine input pairs were 11/11, 31/31, 587/580, and 669/662; omitting tool_choice did not change counts. Four capped generation requests reported 1,284 input and 19 output tokens, no Tools executed. Authentication is resolved and a hosted count is available; a guaranteed complete-request bound remains unproven. V2, source, Settings, and child readiness are unchanged. Evidence: TEMP/deskpilot-copilot-count-20260906-2121. |
+| 2026-09-06 | Investigated the operator's request for live Copilot counting. Public Initialize-Shp returns the named existing credential file, but Get-ShpModel fails during DPAPI decryption before network access (0x8009000B). No credential was exposed or replaced and no Model/count request ran. First-party client counts Tool overhead as an estimate; OpenAI's documented responses/input_tokens operation is a candidate, not verified Copilot support. Resume requires usable Engine authentication; V2 and readiness remain unchanged. |
+| 2026-09-06 | Implemented conditional admission in the separate Engine worktree: frozen limits/pricing, request-bound reservations, failed/unknown Usage, and refusal of invalid reports. Engine full gate: 1,810 passed, no failures/skips, 89.12% coverage; DeskPilot: 2,373 passed, five existing skips. Independent review approved the admission diff; its Minor test gap is closed, final focused proof 38 public plus seven helper cases. Operator chose to keep V2 unchanged and close out groundwork: verified provider counting, complete child integration/live proof, and clean-install support remain open. Child startup and parallel scheduling remain unavailable; no push or publication. |
 | 2026-09-06 | Retained the eight-commit chain from five local feature Branches for Merge into main. Eleven dirty-file flags were normalization-only; refreshed the index without discarding content. Fresh full Sampler tests: 2,373 passed, zero failures, five existing skips. Node UI tests: 3 passed; desktop/mobile proof passed. Subsequent build: seven tasks, zero errors/warnings; import and 34 bundled asset hashes verified, no child/Terminal containers remain. Child startup and release gates stay closed; no push or remote Branch deletion. |
 | 2026-09-06 | Rechecked parallel-Agent prerequisites at DeskPilot 275cd6b and tracked Engine d1e1e13. Fresh approval and child refusal suites: 93 passed, no failures/skips/unrun cases, completed 12:03 UTC. Updated decision 0005 with remaining Engine/profile/public-retrieval dependencies. Independent documentation review approved; its evidence-attribution Nit was corrected. Topology approval is still absent and runtime remains unchanged. |
 | 2026-09-06 | Approved single-child V2; implemented private Tool storage, capture, IPC, export, lease, Stop/recovery, retention admission, and an explicit Host Server refusal gate. Final component proof: 87 passed, no failures/skips. DeskPilot full: 2,373 passed, five existing skips. Engine full: 1,749 passed. Review requests changes: one implemented Major corrected with red/green tests; two Major full-profile/admission gates and retention/restart Minor remain. Complete child execution stays blocked. |
@@ -45,9 +53,13 @@ parallel topology is still proposed; no parallel scheduling is enabled.
 
 ## Open release work
 
-- Reauthenticate Copilot and rerun the live Model/operator acceptance profile.
-  The attempted live run returned `auth_required`; scripted-provider acceptance
-  is labeled and does not establish live billing or authentication success.
+- Rerun the full live Model/operator acceptance profile. Operator sign-in and
+  four capped Engine comparison requests succeeded on 2026-09-06. These counting
+  probes resolve the authentication blocker, not the full acceptance profile;
+  the earlier `auth_required` result and scripted-provider evidence are historical.
+- Single-child V3's authenticated complete built-runtime proof and independent
+  review are now complete; do not repeat the earlier counter investigation as
+  a V3 blocker. Terminal-only live acceptance remains a separate profile.
 - Make a dispatch-enforcing Engine obtainable for clean installations. Staged
   ShellPilot 0.4.1 passes; installed 0.4.0 fails closed. No publication is
   authorized by the current request.

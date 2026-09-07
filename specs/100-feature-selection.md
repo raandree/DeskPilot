@@ -127,10 +127,10 @@ Recommended first slice:
 - Do not begin with a permanent wildcard policy editor.
 
 > **Shipped for Terminal on 2026-09-03.** See decision 0008. The delivered
-> design differs from this brief in two ways, both deliberate: the gate is
-> risk-tiered against a safe-list rather than firing on every command, and
-> there is **no** "allow for this Turn" option, because a class-wide grant
-> silently authorises every later command of that class.
+> design is risk-tiered against a safe-list rather than firing on every command.
+> On 2026-09-07 the operator explicitly requested **Allow for this Turn**;
+> decision 0011 now permits scoped ordinary Terminal grants. Browser and child
+> approvals remain once-only; native File/MCP approval is still separate work.
 
 ### 2. Diagnostics and support bundle
 

@@ -17,10 +17,10 @@ function Invoke-DpTerminalApprovalTool {
         2. **Approval blocks the call, it does not follow it.** The function
            parks on the approval bridge, the same rendezvous ask_questions uses,
            so no command has run when the question reaches the user.
-        3. **There is no Turn-wide grant.** Every command the safe-list does not
-           cover is answered on its own merits. Two identical risky commands in
-           one Turn ask twice. A class-wide grant would have silently authorised
-           every later risky command once one was approved.
+          3. **Turn-wide approval is explicit and scoped.** Allow once remains the
+              default. Allow for this Turn covers later Terminal commands only in
+              the same Conversation, Turn, Project, working directory and execution
+              policy. Stop or the Turn boundary clears the in-memory grant.
 
         Execution is delegated to the Engine's own run_command through the
         injected executor. DeskPilot owns the gate; it does not re-implement
@@ -79,21 +79,36 @@ function Invoke-DpTerminalApprovalTool {
         catch { return (& $refuse $_.Exception.Message) }
     }
 
+    $bridge = & $read 'DeskPilotApprovalBridge'
+    $approvalScope = 'once'
+    $approvalSource = 'prompt'
+    $recordApproval = {
+        param([string]$Status, [string]$Scope, [string]$Source)
+        Write-Information -Tags 'DeskPilotApproval' -MessageData ([pscustomobject]@{
+            Kind = 'TerminalApproval'; Status = $Status; Scope = $Scope; Source = $Source
+            ConversationId = [string]$context.conversationId; TurnId = [string]$context.turnId
+        })
+    }
     $run = {
+        if ($bridge -and $bridge.Cancelled) {
+            & $recordApproval 'denied' 'once' 'cancelled'
+            return (& $refuse 'Terminal approval was cancelled, so nothing was run.')
+        }
+        if ($approvalSource -cne 'safe-list') { & $recordApproval 'approved' $approvalScope $approvalSource }
         $output = ''
         try { $output = & $executor $Command $directory $TimeoutSeconds }
         catch { return (& $refuse "The command was approved but did not run: $_") }
-        (@{ approved = $true; result = [string]$output } | ConvertTo-Json -Compress)
+        (@{ approved = $true; approvalScope = $approvalScope; approvalSource = $approvalSource; result = [string]$output } | ConvertTo-Json -Compress)
     }
 
     # An absent or corrupt list yields an empty list, so everything prompts.
     $safeList = @(& $read 'DeskPilotSafeCommand')
     if (Test-DpCommandSafe -Command $Command -SafeCommand $safeList) {
+        $approvalSource = 'safe-list'
         return (& $run)
     }
 
-    $bridge = & $read 'DeskPilotApprovalBridge'
-    if ($null -eq $bridge -or -not $bridge.Enabled) {
+    if ($null -eq $bridge -or -not $bridge.Enabled -or $bridge.Cancelled) {
         return (& $refuse 'DeskPilot cannot ask the user to approve this command right now, so it was not run.')
     }
 
@@ -103,6 +118,12 @@ function Invoke-DpTerminalApprovalTool {
         -ConversationId ([string]$context.conversationId) `
         -TurnId ([string]$context.turnId)
 
+    if ($bridge.HasTurnScope([string]$context.conversationId, $request.scopeFingerprint)) {
+        $approvalScope = 'turn'
+        $approvalSource = 'turn-grant'
+        return (& $run)
+    }
+    & $recordApproval 'requested' 'once' 'prompt'
     $bridge.CaptureQuestion(($request | ConvertTo-Json -Depth 6 -Compress))
 
     $timeoutMinutes = [int](& $read 'DeskPilotApprovalTimeoutMinutes')
@@ -111,9 +132,11 @@ function Invoke-DpTerminalApprovalTool {
     $answerText = ''
     try { $answerText = $bridge.RequestAnswer($timeoutMinutes * 60) }
     catch [System.TimeoutException] {
+        & $recordApproval 'denied' 'once' 'timeout'
         return (& $refuse "Nobody approved this command within $timeoutMinutes minute(s), so it was not run.")
     }
     catch {
+        & $recordApproval 'denied' 'once' 'cancelled'
         return (& $refuse 'The turn was stopped before this command was approved, so it was not run.')
     }
 
@@ -122,11 +145,24 @@ function Invoke-DpTerminalApprovalTool {
 
     $decision = if ($answer -and $answer.PSObject.Properties['decision']) { [string]$answer.decision } else { 'deny' }
     if ($decision -ne 'approve') {
+        & $recordApproval 'denied' 'once' 'prompt'
         $note = if ($answer -and $answer.PSObject.Properties['note']) { ([string]$answer.note).Trim() } else { '' }
         $message = 'The user declined this command, so it was not run.'
         $message += if ($note) { " They said: $note" } else { ' Suggest a different approach, or explain why it is needed.' }
         return (& $refuse $message)
     }
 
+    $scope = 'once'
+    if ($answer.PSObject.Properties['scope']) { $scope = $answer.scope }
+    if ($scope -isnot [string] -or $scope -cnotin @('once', 'turn')) {
+        return (& $refuse 'The approval scope was invalid, so nothing was run.')
+    }
+    if (-not $bridge.Enabled -or $bridge.Cancelled) {
+        return (& $refuse 'The Turn ended before this command was approved, so nothing was run.')
+    }
+    if ($scope -ceq 'turn' -and -not $bridge.GrantTurnScope([string]$context.conversationId, $request.scopeFingerprint)) {
+        return (& $refuse 'The Turn-wide approval is no longer valid, so nothing was run.')
+    }
+    $approvalScope = $scope
     & $run
 }

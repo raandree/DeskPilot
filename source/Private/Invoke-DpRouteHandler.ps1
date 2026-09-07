@@ -1,4 +1,4 @@
-function Invoke-DpRouteHandler {
+﻿function Invoke-DpRouteHandler {
     <#
     .SYNOPSIS
         Executes the named API route handler and writes its response.
@@ -35,6 +35,22 @@ function Invoke-DpRouteHandler {
 
     $state = $script:DeskPilot
 
+    if ($Name -in @('regenerateTurn', 'editTurn')) {
+        $conversation = $state.Conversations[$RouteParams.id]
+        if ($conversation) {
+            $target = if ($Name -eq 'regenerateTurn') {
+                @($conversation.messages | Where-Object { $_.role -eq 'user' }) | Select-Object -Last 1
+            } else {
+                $messageId = [string](Get-DpPropertyValue -InputObject $Body -Name 'messageId' -Default '')
+                @($conversation.messages | Where-Object { $_.id -ceq $messageId }) | Select-Object -First 1
+            }
+            if ($target -and (Get-DpPropertyValue -InputObject $target -Name 'childRunId')) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_consent_required'; message = 'Start a new private child with explicit consent; this task cannot fall back to an ordinary Turn.' } }
+                return
+            }
+        }
+    }
+
     switch ($Name) {
         'health' {
             Write-DpResponse -Stream $Stream -Json @{
@@ -57,20 +73,84 @@ function Invoke-DpRouteHandler {
             Write-DpResponse -Stream $Stream -Json (Get-DpDiagnosticPayload -AfterSequence $afterSequence)
         }
         'getChildReadiness' {
-            Write-DpResponse -Stream $Stream -Json (Get-DpChildReadiness -Settings $state.Settings)
+            Update-DpChildPreparation
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $readiness = Get-DpChildReadiness -Settings $state.Settings -Runtime $child.Runtime -Proof $child.Proof -Health $child.Health -CleanupBlocked:([bool]$child.CleanupBlocked)
+            $readiness.preparing = [bool]$child.SetupJob
+            $readiness.operationError = $child.Error
+            Write-DpResponse -Stream $Stream -Json $readiness
+        }
+        { $_ -in @('prepareChildRuntime', 'checkChildRuntime', 'cleanupChildRuntime', 'removeChildRuntime') } {
+            $action = switch ($Name) { 'prepareChildRuntime' { 'prepare' }; 'checkChildRuntime' { 'check' }; 'cleanupChildRuntime' { 'cleanup' }; 'removeChildRuntime' { 'remove' } }
+            try {
+                $started = Start-DpChildPreparation -Action $action
+                Write-DpResponse -Stream $Stream -Status $(if ($started) { 202 } else { 409 }) -Json @{ preparing = $started }
+            } catch {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_runtime_busy'; message = 'Stop active work before child preparation or cleanup.' } }
+            }
         }
         'startChildRun' {
             if ($state.TurnRunning) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'An active Turn already owns execution.' } }
                 return
             }
-            $readiness = Get-DpChildReadiness -Settings $state.Settings
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $readiness = Get-DpChildReadiness -Settings $state.Settings -Runtime $child.Runtime -Proof $child.Proof -Health $child.Health -CleanupBlocked:([bool]$child.CleanupBlocked)
+            if ($readiness.ready -and $readiness.enabled) {
+                $conversation = $state.Conversations[$RouteParams.id]
+                if (-not $conversation) {
+                    Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Conversation not found.' } }
+                    return
+                }
+                try {
+                    $started = Start-DpChildRun -Conversation $conversation -Body $Body
+                    Write-DpResponse -Stream $Stream -Status 202 -Json $started
+                } catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'child_admission_refused'; message = 'Child consent, selected Model, scope, or current runtime proof is invalid.' } }
+                }
+                return
+            }
             $status = if ($readiness.enabled) { 503 } else { 403 }
             $code = if ($readiness.enabled) { 'child_profile_unavailable' } else { 'child_profile_disabled' }
             Write-DpResponse -Stream $Stream -Status $status -Json @{
                 error = @{ code = $code; message = $readiness.message }
                 readiness = $readiness
             }
+        }
+        { $_ -in @('getChildRun', 'getChildEvents', 'getChildProposal') } {
+            try {
+                $record = Get-DpChildRunRecord -ConversationId $RouteParams.id -Id $RouteParams.childId -Proposal:($Name -eq 'getChildProposal')
+                if (-not $record) {
+                    Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Child run not found in this Conversation.' } }
+                    return
+                }
+                if ($Name -eq 'getChildEvents') { $record = @{ id = $record.id; events = @($record.events) } }
+                Write-DpResponse -Stream $Stream -Json $record
+            } catch {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'child_data_unavailable'; message = 'The bounded child record or proposal is unavailable.' } }
+            }
+        }
+        { $_ -in @('approveChildRun', 'stopChildRun') } {
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child' -Default @{}
+            $controller = $child.Controller
+            if (-not $controller -or $controller.Id -cne $RouteParams.childId -or $controller.ConversationId -cne $RouteParams.id) {
+                Write-DpResponse -Stream $Stream -Status 404 -Json @{ error = @{ code = 'not_found'; message = 'Active child run not found in this Conversation.' } }
+                return
+            }
+            if ($Name -eq 'stopChildRun') {
+                $controller.Stop()
+                Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
+                return
+            }
+            $approvalId = [string](Get-DpPropertyValue -InputObject $Body -Name 'approvalId' -Default '')
+            $fingerprint = [string](Get-DpPropertyValue -InputObject $Body -Name 'fingerprint' -Default '')
+            $decision = [string](Get-DpPropertyValue -InputObject $Body -Name 'decision' -Default '')
+            if ($decision -cnotin @('approve', 'deny') -or $fingerprint -cnotmatch '^[a-f0-9]{64}$' -or
+                -not $controller.SubmitApproval($RouteParams.id, $RouteParams.childId, $approvalId, $fingerprint, ($decision -ceq 'approve'))) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'stale_child_approval'; message = 'This exact child action is not awaiting a decision.' } }
+                return
+            }
+            Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
         }
         'runDiagnosticCheck' {
             $started = Start-DpDiagnosticCheck
@@ -285,7 +365,23 @@ function Invoke-DpRouteHandler {
             }
             try {
                 $merged = Merge-DpSettings -Current $state.Settings -Patch $Body
+                $previous = $state.Settings
+                $scopeChanged = $previous.selectedProjectId -cne $merged.selectedProjectId -or
+                    $previous.workspaceFolder -cne $merged.workspaceFolder -or
+                    $previous.perCallApproval -ne $merged.perCallApproval -or
+                    ($previous.permissions.terminal -and -not $merged.permissions.terminal) -or
+                    ($previous.permissions.userTools -and -not $merged.permissions.userTools)
+                foreach ($key in $merged.terminalExecution.Keys) {
+                    if (($previous.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress) -cne
+                        ($merged.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress)) { $scopeChanged = $true }
+                }
                 $state.Settings = $merged
+                if ($state.TurnRunning -and $scopeChanged) {
+                    $engine = Get-DpPropertyValue -InputObject $state -Name 'Engine'
+                    $approvalBridge = Get-DpPropertyValue -InputObject $engine -Name 'ApprovalBridge'
+                    if ($approvalBridge) { $approvalBridge.Cancel() }
+                    $state.PendingApproval = $null
+                }
                 if ($state.DataDir) { Save-DpSettings -Settings $merged -Directory $state.DataDir }
                 Write-DpResponse -Stream $Stream -Json $merged
             }
@@ -1582,6 +1678,7 @@ function Invoke-DpRouteHandler {
                 class   = [string]$pending.request.class
                 risk    = [string]$pending.request.risk
                 summary = $pending.request.summary
+                allowedScopes = @(Get-DpPropertyValue -InputObject $pending.request -Name 'allowedScopes' -Default @('once'))
             }
         }
         'submitApproval' {
@@ -1602,19 +1699,43 @@ function Invoke-DpRouteHandler {
                 return
             }
 
+            $scope = 'once'
+            if ($Body -is [System.Collections.IDictionary]) {
+                if ($Body.Contains('scope')) { $scope = $Body['scope'] }
+            }
+            elseif ($Body.PSObject.Properties['scope']) { $scope = $Body.scope }
+            if ($scope -isnot [string] -or $scope -cnotin @('once', 'turn') -or ($decision -eq 'deny' -and $scope -ne 'once')) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{
+                    error = @{ code = 'bad_scope'; message = 'Approval scope must be once, or turn for an eligible Terminal approval.' }
+                }
+                return
+            }
+            if ($scope -ceq 'turn') {
+                $pending = $state.PendingApproval
+                if (-not $pending -or $pending.id -cne $requestId -or $pending.conversationId -cne $conversation.id -or
+                    $pending.request.class -cne 'Terminal' -or $pending.request.tool -cne 'run_terminal_command' -or
+                    @($pending.request.allowedScopes) -cnotcontains 'turn' -or
+                    -not $state.Settings.permissions.terminal -or -not $state.Settings.permissions.userTools) {
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{
+                        error = @{ code = 'stale_approval_scope'; message = 'This live Terminal request does not allow a Turn-wide grant.' }
+                    }
+                    return
+                }
+            }
+
             # The note steers the agent after a refusal, so it is bounded and
             # trimmed like any other text that ends up in a prompt.
             $note = ([string](Get-DpPropertyValue -InputObject $Body -Name @('note') -Default '')).Trim()
             if ($note.Length -gt 500) { $note = $note.Substring(0, 500) }
 
-            $payload = @{ decision = $decision }
+            $payload = @{ decision = $decision; scope = $scope }
             if ($note) { $payload.note = $note }
 
             # SubmitAnswer checks the Conversation and request identifiers itself,
             # so a replayed answer, one aimed at another Conversation, or one for a
             # request that has already been answered authorises nothing.
             $bridge = $state.Engine.ApprovalBridge
-            $accepted = $state.TurnRunning -and $bridge -and
+            $accepted = $state.TurnRunning -and -not $state.CancelRequested -and $bridge -and
                 $bridge.SubmitAnswer([string]$conversation.id, $requestId, ($payload | ConvertTo-Json -Compress))
             if (-not $accepted) {
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{
@@ -1632,11 +1753,17 @@ function Invoke-DpRouteHandler {
             # free text that carries a token it would not.
             Add-DpDiagnosticLog -Log $state.Diagnostics.Log -Severity 'information' `
                 -Component 'approval' -EventId "terminal.$decision" `
-                -Summary "A Terminal command was $(if ($decision -eq 'approve') { 'approved' } else { 'declined' }) in the DeskPilot window."
+                -Summary "An action was $(if ($decision -eq 'approve') { 'approved' } else { 'declined' }) in the DeskPilot window with $scope scope."
             Write-DpResponse -Stream $Stream -Status 202 -Json @{ accepted = $true }
         }
         'stopTurn' {
             $state.CancelRequested = $true
+            $child = Get-DpPropertyValue -InputObject $state -Name 'Child'
+            if ($child -and $child.Controller) {
+                $child.Controller.Stop()
+                Write-DpResponse -Stream $Stream -Status 202 -Json @{ stopping = $true }
+                return
+            }
             if ($state.Engine.TerminalSession) { $state.Engine.TerminalSession.Cancel() }
             $bridge = $state.Engine.UserPromptBridge
             if ($bridge) { $bridge.Cancel() }
@@ -2297,4 +2424,3 @@ function Invoke-DpRouteHandler {
         }
     }
 }
-

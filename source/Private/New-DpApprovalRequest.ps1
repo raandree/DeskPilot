@@ -115,7 +115,18 @@ function New-DpApprovalRequest {
         $action.Trim(), $control.Trim(), $filePath.Trim(), $fieldMaterial, $executionMaterial
     ) -join [char]31
     $sha = [System.Security.Cryptography.SHA256]::Create()
-    try { $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material)) }
+    $scopeFingerprint = $null
+    try {
+        $digest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($material))
+        if ($Class -eq 'Terminal') {
+            $scopeMaterial = [ordered]@{
+                tool = $Tool; class = $Class; conversationId = $ConversationId; turnId = $TurnId
+                project = [string]$ProjectName; workingDirectory = $workingDirectory; execution = $executionMaterial
+            } | ConvertTo-Json -Depth 6 -Compress
+            $scopeDigest = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($scopeMaterial))
+            $scopeFingerprint = -join ($scopeDigest | ForEach-Object { $_.ToString('x2') })
+        }
+    }
     finally { $sha.Dispose() }
     $fingerprint = -join ($digest | ForEach-Object { $_.ToString('x2') })
 
@@ -147,6 +158,8 @@ function New-DpApprovalRequest {
         conversationId = $ConversationId
         turnId         = $TurnId
         fingerprint    = $fingerprint
+        allowedScopes  = if ($Class -eq 'Terminal') { @('once', 'turn') } else { @('once') }
+        scopeFingerprint = $scopeFingerprint
         summary        = @{
             command          = $shown
             workingDirectory = $workingDirectory

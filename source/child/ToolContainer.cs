@@ -23,6 +23,7 @@ namespace DeskPilot.Child
         private readonly JsonDocument _policy;
         private readonly CancellationTokenSource _cancel = new CancellationTokenSource();
         private readonly Stopwatch _clock = Stopwatch.StartNew();
+        private readonly Stopwatch _cleanupClock = new Stopwatch();
         private readonly object _stopLock = new object();
         private readonly ManualResetEventSlim _toolOutput = new ManualResetEventSlim(false);
         private readonly FileStream? _owner;
@@ -30,7 +31,11 @@ namespace DeskPilot.Child
         private readonly ProjectBaseline? _runRoot;
         private readonly DateTime _createdUtc = DateTime.UtcNow;
         private readonly SortedDictionary<string, string> _baseline = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        private Process? _attach;
+        private readonly OwnedProcess? _hostProcess;
+        private readonly bool _ownsHostProcess;
+        private EngineContainer? _engine;
+        private readonly CancellationTokenRegistration _externalCancellation;
+        private ControlProcess? _attach;
         private AuthenticatedChannel? _channel;
         private Timer? _renewal;
         private Timer? _deadline;
@@ -43,8 +48,33 @@ namespace DeskPilot.Child
 
         /// <summary>Creates ownership before launch and validates the effective container profile.</summary>
         public ToolContainer(string docker, string image, string directory, string policyJson)
+            : this(docker, image, directory, policyJson, null, null) { }
+
+        /// <summary>Creates a Tool container whose control processes share the trusted host budget.</summary>
+        public ToolContainer(string docker, string image, string directory, string policyJson, OwnedProcess? hostProcess)
+            : this(docker, image, directory, policyJson, hostProcess, null) { }
+
+        /// <summary>Creates and records a suspended provider within the complete-run resource budget.</summary>
+        public ToolContainer(string docker, string image, string directory, string policyJson, ProcessStartInfo providerStart)
+            : this(docker, image, directory, policyJson, null, providerStart) { }
+
+        /// <summary>Creates complete-run ownership under an external admission deadline.</summary>
+        public ToolContainer(string docker, string image, string directory, string policyJson,
+            ProcessStartInfo providerStart, string runId, CancellationToken cancellationToken)
+            : this(docker, image, directory, policyJson, null, providerStart, runId, cancellationToken) { }
+
+        private ToolContainer(string docker, string image, string directory, string policyJson,
+            OwnedProcess? hostProcess, ProcessStartInfo? providerStart, string? runId = null, CancellationToken cancellationToken = default)
         {
+            if (runId != null)
+            {
+                if (!System.Text.RegularExpressions.Regex.IsMatch(runId, "^[a-f0-9]{32}$")) { throw new ArgumentException("Invalid child identity."); }
+                _runId = runId;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            _externalCancellation = cancellationToken.Register(() => _cancel.Cancel());
             _docker = docker;
+            _hostProcess = hostProcess;
             _policy = JsonDocument.Parse(policyJson);
             string installation = Path.Combine(Path.GetFullPath(directory), "child-runs");
             _controlRoot = ProjectBaseline.CreateControlDirectory(installation);
@@ -67,6 +97,35 @@ namespace DeskPilot.Child
                 File.WriteAllText(Path.Combine(_directory, "config.json"), "{\"auths\":{},\"proxies\":{}}", new UTF8Encoding(false));
                 SaveClaim("starting");
                 JsonElement policy = _policy.RootElement;
+                if (providerStart != null)
+                {
+                    using (var profileBarrier = new FileStream(Path.Combine(_directory, "AppData"), FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    {
+                        profileBarrier.Flush(true);
+                    }
+                    var environment = new Dictionary<string, string>
+                    {
+                        ["SystemRoot"] = Environment.GetEnvironmentVariable("SystemRoot") ?? @"C:\Windows",
+                        ["TEMP"] = _directory, ["TMP"] = _directory, ["USERPROFILE"] = _directory,
+                        ["APPDATA"] = _directory, ["LOCALAPPDATA"] = _directory,
+                        ["PSModulePath"] = Path.Combine(Path.GetDirectoryName(providerStart.FileName)!, "Modules"),
+                        ["HOME"] = _directory, ["DOTNET_EnableDiagnostics"] = "0",
+                        ["DOTNET_PROCESSOR_COUNT"] = "1", ["POWERSHELL_TELEMETRY_OPTOUT"] = "1",
+                        ["PSModuleAnalysisCachePath"] = "NUL"
+                    };
+                    _ownsHostProcess = true;
+                    _hostProcess = new OwnedProcess(providerStart.FileName, new List<string>(providerStart.ArgumentList).ToArray(),
+                        _directory, environment, policy.GetProperty("memoryBytes").GetInt64() / 4,
+                        policy.GetProperty("cpuCount").GetDouble() / 4, 8);
+                    byte[] identity = JsonSerializer.SerializeToUtf8Bytes(new
+                    {
+                        schemaVersion = 1, runId = _runId, processId = _hostProcess.Id,
+                        startTimeUtcTicks = _hostProcess.StartTimeUtcTicks
+                    });
+                    using var record = new FileStream(Path.Combine(_directory, "provider.json"), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    record.Write(identity);
+                    record.Flush(true);
+                }
                 string access = policy.GetProperty("projectAccess").GetString()!;
                 var arguments = new List<string>
                 {
@@ -101,11 +160,11 @@ namespace DeskPilot.Child
                 SaveClaim("created");
                 _attach = Start(new[] { "start", "--attach", "--interactive", _containerId });
                 byte[] key = RandomNumberGenerator.GetBytes(32);
-                _channel = new AuthenticatedChannel(_attach.StandardOutput.BaseStream, _attach.StandardInput.BaseStream, key, true, 16384);
-                _attach.StandardInput.BaseStream.Write(key);
-                _attach.StandardInput.BaseStream.Flush();
+                _channel = new AuthenticatedChannel(_attach.Output, _attach.Input, key, true, 16384);
+                _attach.Input.Write(key);
+                _attach.Input.Flush();
                 CryptographicOperations.ZeroMemory(key);
-                _ = DrainAsync(_attach.StandardError.BaseStream, new OutputBudget(16384), _cancel, null);
+                _ = DrainAsync(_attach.Error, new OutputBudget(16384), _cancel, null);
                 ReceiveControl("ready");
                 int renewalMs = Math.Max(100, policy.GetProperty("leaseSeconds").GetInt32() * 1000 / 3);
                 _renewal = new Timer(_ =>
@@ -120,6 +179,7 @@ namespace DeskPilot.Child
             catch
             {
                 Stop();
+                if (_ownsHostProcess) { _hostProcess?.Dispose(); }
                 _owner?.Dispose();
                 _runRoot?.Dispose();
                 _controlRoot.Dispose();
@@ -131,6 +191,24 @@ namespace DeskPilot.Child
         public string ClaimPath { get; }
         /// <summary>Immutable Docker identity, not a child-provided identity.</summary>
         public string ContainerId => _containerId;
+        /// <summary>Host-owned run identity shared by both containers and the transport.</summary>
+        public string RunId => _runId;
+        /// <summary>Private bounded control storage, never sent to the child.</summary>
+        public string DirectoryPath => _directory;
+        /// <summary>The trusted aggregate job; provider code remains suspended until Host Server resume.</summary>
+        public OwnedProcess? HostProcess => _hostProcess;
+        internal long HostStorageLimit => _policy.RootElement.GetProperty("storageBytes").GetInt64() - _policy.RootElement.GetProperty("toolStorageBytes").GetInt64();
+        internal JsonElement Policy => _policy.RootElement;
+        internal bool IsStopped => _stopped;
+
+        internal void AttachEngine(EngineContainer engine)
+        {
+            lock (_stopLock)
+            {
+                if (_stopped || _engine != null) { throw new InvalidOperationException("Child Engine ownership is unavailable."); }
+                _engine = engine;
+            }
+        }
         /// <summary>True only after verified removal.</summary>
         public bool CleanupSucceeded { get; private set; }
 
@@ -225,9 +303,9 @@ namespace DeskPilot.Child
                     "-Count", _policy.RootElement.GetProperty("inodeLimit").GetInt32().ToString(CultureInfo.InvariantCulture) });
                 NativeResult validation = Call(validate, Array.Empty<byte>(), 10000, 16384, _cancel.Token);
                 if (validation.ExitCode != 0) { throw new InvalidDataException("Unsafe export file, link or mount was refused."); }
-                using Process copy = Start(new[] { "exec", "--user", "0:0", _containerId,
+                using ControlProcess copy = Start(new[] { "exec", "--user", "0:0", _containerId,
                     "/usr/bin/tar", "--format=pax", "--one-file-system", "-C", "/work", "-cf", "-", "--", "project" });
-                copy.StandardInput.Close();
+                copy.Input.Close();
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_cancel.Token);
                 deadline.CancelAfter(RemainingMilliseconds());
                 using CancellationTokenRegistration kill = deadline.Token.Register(() =>
@@ -235,10 +313,10 @@ namespace DeskPilot.Child
                     try { if (!copy.HasExited) { copy.Kill(true); } }
                     catch (InvalidOperationException) { }
                 });
-                Task<byte[]> errors = DrainAsync(copy.StandardError.BaseStream, new OutputBudget(16384), deadline, null);
+                Task<byte[]> errors = DrainAsync(copy.Error, new OutputBudget(16384), deadline, null);
                 long archiveLimit = _policy.RootElement.GetProperty("toolStorageBytes").GetInt64() +
                     _policy.RootElement.GetProperty("inodeLimit").GetInt64() * 4096;
-                using var bounded = new BoundedReadStream(copy.StandardOutput.BaseStream, archiveLimit);
+                using var bounded = new BoundedReadStream(copy.Output, archiveLimit);
                 using var archive = new TarReader(bounded, leaveOpen: true);
                 var files = new List<object>();
                 var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -290,6 +368,7 @@ namespace DeskPilot.Child
                         files.Add(new { path = baseline.Key, operation = "delete", size = 0, baselineSha256 = baseline.Value,
                             resultSha256 = (string?)null, contentBase64 = (string?)null });
                     }
+                    bounded.CopyToAsync(Stream.Null, 8192, deadline.Token).GetAwaiter().GetResult();
                     copy.WaitForExitAsync(deadline.Token).GetAwaiter().GetResult();
                     errors.GetAwaiter().GetResult();
                     if (copy.ExitCode != 0) { throw new IOException("The contained export did not complete."); }
@@ -302,7 +381,10 @@ namespace DeskPilot.Child
                 });
                 long hostLimit = _policy.RootElement.GetProperty("storageBytes").GetInt64() -
                     _policy.RootElement.GetProperty("toolStorageBytes").GetInt64();
-                if (Encoding.UTF8.GetByteCount(proposal) > hostLimit - 8192)
+                long reserved = _engine == null ? 8192 : 65536 + _policy.RootElement.GetProperty("resultBytes").GetInt64() +
+                    _policy.RootElement.GetProperty("eventBytes").GetInt64() * _policy.RootElement.GetProperty("eventLimit").GetInt64() +
+                    _policy.RootElement.GetProperty("requestBytes").GetInt64() * 12 + _policy.RootElement.GetProperty("outputBytes").GetInt64() * 8;
+                if (Encoding.UTF8.GetByteCount(proposal) > hostLimit - reserved)
                 {
                     throw new InvalidDataException("The retained proposal storage limit was exceeded.");
                 }
@@ -339,11 +421,24 @@ namespace DeskPilot.Child
             {
                 if (mount.GetProperty("Type").GetString() != "tmpfs") { hostMounts++; }
             }
+            JsonElement host = state.GetProperty("HostConfig");
+            long memory = _policy.RootElement.GetProperty("memoryBytes").GetInt64() / 2;
+            long cpu = (long)(_policy.RootElement.GetProperty("cpuCount").GetDouble() / 2 * 1000000000);
+            if (state.GetProperty("Id").GetString() != _containerId || hostMounts != 0 ||
+                state.GetProperty("Config").GetProperty("Labels").GetProperty("io.deskpilot.child.run").GetString() != _runId ||
+                !host.GetProperty("ReadonlyRootfs").GetBoolean() || host.GetProperty("Privileged").GetBoolean() ||
+                host.GetProperty("NetworkMode").GetString() != "none" || host.GetProperty("IpcMode").GetString() != "none" ||
+                host.GetProperty("Memory").GetInt64() != memory || host.GetProperty("MemorySwap").GetInt64() != memory ||
+                host.GetProperty("NanoCpus").GetInt64() != cpu || host.GetProperty("PidsLimit").GetInt64() != 40 ||
+                quota.RootElement.GetProperty("bytes").GetUInt64() != (ulong)_policy.RootElement.GetProperty("toolStorageBytes").GetInt64() ||
+                quota.RootElement.GetProperty("inodes").GetUInt64() != (ulong)_policy.RootElement.GetProperty("inodeLimit").GetInt64())
+            { throw new InvalidDataException("The effective child Tool profile does not match its authority."); }
             return JsonSerializer.Serialize(new
             {
                 bytes = quota.RootElement.GetProperty("bytes").GetUInt64(),
                 inodes = quota.RootElement.GetProperty("inodes").GetUInt64(),
-                network = state.GetProperty("HostConfig").GetProperty("NetworkMode").GetString(), hostMounts
+                network = host.GetProperty("NetworkMode").GetString(), hostMounts,
+                memoryBytes = memory, cpuNano = cpu, pids = 40, readOnly = true
             });
         }
 
@@ -394,7 +489,7 @@ namespace DeskPilot.Child
             if (!_sealed || _frozen || _stopped || _cancel.IsCancellationRequested) { throw new InvalidOperationException("The child Tool container is not running."); }
         }
 
-        private int RemainingMilliseconds()
+        internal int RemainingMilliseconds()
         {
             long remaining = _policy.RootElement.GetProperty("durationSeconds").GetInt32() * 1000L - _clock.ElapsedMilliseconds;
             if (remaining <= 0) { throw new TimeoutException("The complete child deadline expired."); }
@@ -459,7 +554,7 @@ namespace DeskPilot.Child
                     int fileCount = 0;
                     foreach (string file in Directory.EnumerateFileSystemEntries(directory))
                     {
-                        if (++fileCount > 4 || (File.GetAttributes(file) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                        if (++fileCount > 9 || (File.GetAttributes(file) & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
                         {
                             throw new InvalidDataException("Unsupported retained child data.");
                         }
@@ -477,7 +572,7 @@ namespace DeskPilot.Child
             return retained;
         }
 
-        private Process Start(IEnumerable<string> arguments)
+        internal ControlProcess Start(IEnumerable<string> arguments)
         {
             var start = new ProcessStartInfo(_docker)
             {
@@ -495,14 +590,19 @@ namespace DeskPilot.Child
             start.ArgumentList.Add("--config");
             start.ArgumentList.Add(_directory);
             foreach (string argument in arguments) { start.ArgumentList.Add(argument); }
-            var process = new Process { StartInfo = start };
-            process.Start();
-            return process;
+            return new ControlProcess(start, _hostProcess);
         }
 
-        private string Control(IEnumerable<string> arguments, int timeout)
+        internal string Control(IEnumerable<string> arguments, int timeout)
         {
-            NativeResult result = Call(arguments, Array.Empty<byte>(), timeout, 1048576, CancellationToken.None);
+            if (_stopped)
+            {
+                int remaining = _policy.RootElement.GetProperty("cleanupSeconds").GetInt32() * 1000 - (int)_cleanupClock.ElapsedMilliseconds;
+                if (remaining <= 0) { throw new TimeoutException("The complete child cleanup grace expired."); }
+                timeout = Math.Min(timeout, remaining);
+            }
+            else { timeout = Math.Min(timeout, RemainingMilliseconds()); }
+            NativeResult result = Call(arguments, Array.Empty<byte>(), timeout, 1048576, _stopped ? CancellationToken.None : _cancel.Token);
             if (result.ExitCode != 0) { throw new IOException("Docker child control failed: " + result.Error); }
             return result.Output;
         }
@@ -511,7 +611,7 @@ namespace DeskPilot.Child
             CancellationToken cancellation, ManualResetEventSlim? observed = null)
         {
             cancellation.ThrowIfCancellationRequested();
-            using Process process = Start(arguments);
+            using ControlProcess process = Start(arguments);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
             deadline.CancelAfter(timeout);
             using CancellationTokenRegistration kill = deadline.Token.Register(() =>
@@ -520,9 +620,9 @@ namespace DeskPilot.Child
                 catch (InvalidOperationException) { }
             });
             var budget = new OutputBudget(limit);
-            Task<byte[]> output = DrainAsync(process.StandardOutput.BaseStream, budget, deadline, observed);
-            Task<byte[]> error = DrainAsync(process.StandardError.BaseStream, budget, deadline, observed);
-            Task write = WriteInputAsync(process.StandardInput.BaseStream, input, deadline.Token);
+            Task<byte[]> output = DrainAsync(process.Output, budget, deadline, observed);
+            Task<byte[]> error = DrainAsync(process.Error, budget, deadline, observed);
+            Task write = WriteInputAsync(process.Input, input, deadline.Token);
             try
             {
                 Task.WhenAll(output, error, write, process.WaitForExitAsync(deadline.Token)).GetAwaiter().GetResult();
@@ -543,7 +643,7 @@ namespace DeskPilot.Child
             finally { stream.Close(); }
         }
 
-        private static async Task<byte[]> DrainAsync(Stream stream, OutputBudget budget,
+        internal static async Task<byte[]> DrainAsync(Stream stream, OutputBudget budget,
             CancellationTokenSource cancellation, ManualResetEventSlim? observed)
         {
             using var result = new MemoryStream();
@@ -569,20 +669,26 @@ namespace DeskPilot.Child
             {
                 if (_stopped) { return; }
                 _stopped = true;
+                _cleanupClock.Start();
+                _hostProcess?.BeginCleanup(Math.Max(1, _policy.RootElement.GetProperty("cleanupSeconds").GetInt32() * 1000 - (int)_cleanupClock.ElapsedMilliseconds));
                 _renewal?.Dispose();
                 _deadline?.Dispose();
                 _cancel.Cancel();
                 try
                 {
+                    _engine?.Stop();
                     string found = Control(new[] { "ps", "--all", "--filter", "name=^/" + _name + "$", "--filter", "label=io.deskpilot.child.run=" + _runId, "--format", "{{.ID}}" }, 5000).Trim();
                     if (found.Length > 0) { Control(new[] { "rm", "--force", found }, 15000); }
                     string remaining = Control(new[] { "ps", "--all", "--filter", "name=^/" + _name + "$", "--format", "{{.ID}}" }, 5000).Trim();
-                    CleanupSucceeded = remaining.Length == 0;
-                    SaveClaim(CleanupSucceeded ? "stopped" : "cleanup-failed");
+                    CleanupSucceeded = remaining.Length == 0 && (_engine == null || _engine.CleanupSucceeded);
                 }
                 catch { CleanupSucceeded = false; }
                 finally
                 {
+                    try { if (_ownsHostProcess) { _hostProcess?.Stop(); } }
+                    catch { CleanupSucceeded = false; }
+                    try { SaveClaim(CleanupSucceeded ? "stopped" : "cleanup-failed"); }
+                    catch { CleanupSucceeded = false; }
                     _channel?.Dispose();
                     if (_attach != null)
                     {
@@ -597,6 +703,8 @@ namespace DeskPilot.Child
         public void Dispose()
         {
             Stop();
+            if (_ownsHostProcess) { _hostProcess?.Dispose(); }
+            _externalCancellation.Dispose();
             _owner?.Dispose();
             _runRoot?.Dispose();
             _controlRoot.Dispose();
@@ -609,7 +717,7 @@ namespace DeskPilot.Child
             public string Error { get; set; } = string.Empty;
         }
 
-        private sealed class OutputBudget
+        internal sealed class OutputBudget
         {
             private readonly int _limit;
             private int _bytes;

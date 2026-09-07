@@ -45,8 +45,15 @@ Review the other Permissions separately before working with untrusted content.
 
 Existing Settings default to **Local**. No dependency error, approval denial,
 proxy failure, or cleanup failure switches back to Local. Policy edits apply to
-the next Turn, not to a pending approval. Non-routine commands require individual
-approval in Isolated mode even when Local approval is off.
+the next Turn and revoke the current approval context. Non-routine commands
+require approval in Isolated mode even when Local approval is off.
+
+Choose **Allow once** for one command or **Allow for this Turn** for later
+Terminal commands in the same working directory and frozen execution policy.
+The latter can authorize different commands without another question. It never
+changes mounts, network grants, credentials, limits, or other Tool Permissions.
+Stop, completion/failure, the next Turn, or Permission/Project/policy revocation
+invalidates the grant. Child and browser approvals stay once-only.
 
 ### Moving existing work to Isolated
 
@@ -57,8 +64,9 @@ instead of host drive paths. Dependencies installed only inside a command
 container do not survive to the next command.
 
 Save the execution policy before sending the next prompt. An active Turn keeps
-the policy it started with, including a command waiting for approval. Switching
-modes does not rewrite earlier Messages or their recorded Activity.
+its original execution boundary; changing policy invalidates its approval
+context and requires a new Turn. Switching modes does not rewrite earlier
+Messages or their recorded Activity.
 
 ## Files and credentials
 

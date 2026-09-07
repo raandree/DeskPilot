@@ -1,4 +1,5 @@
-import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
+﻿import { getImagePaths, prepareVisionUploads, wireClipboardAttachments } from './attachments.js';
+import { initializeChildPanel } from './child.js';
 import { AUTH_WAITING_STATUS, applyAuthLine, createAuthProgress } from './auth.js';
 import {
     isBinaryDiff,
@@ -1438,7 +1439,13 @@ function buildUserEl(m) {
     if (m && m.text) {
         const actions = el('user-actions');
         actions.appendChild(buildCopyButton(() => copyMessageText(m.text)));
-        if (m.id) {
+        if (m.childRunId) {
+            const view = el('msg-action-btn', 'button');
+            view.textContent = t('composer.child.view');
+            view.onclick = () => childPanel.open(m.childRunId);
+            actions.appendChild(view);
+        }
+        if (m.id && !m.childRunId) {
             const edit = el('msg-action-btn', 'button');
             edit.type = 'button';
             edit.title = 'Edit & resend';
@@ -1482,6 +1489,15 @@ function buildAssistantEl(m) {
 
 function finalizeAssistant(wrap, m, opts) {
     const r = wrap._refs;
+    if (m.childRunId) {
+        r.content.textContent = m.text || 'Private child run';
+        const view = el('btn', 'button');
+        view.textContent = t('composer.child.view');
+        view.onclick = () => childPanel.open(m.childRunId);
+        r.content.append(document.createElement('br'), view);
+        renderUsage(r.usage, m);
+        return wrap;
+    }
     if (m.stopped) {
         showInlineError(wrap, m.stopReason || 'Turn stopped.');
     } else {
@@ -1532,6 +1548,7 @@ const ACTIVITY_KINDS = {
     write: { ico: '✏️', label: 'Wrote', noun: 'files' },
     create: { ico: '📂', label: 'Created', noun: 'folders' },
     run: { ico: '⌘', label: 'Ran', noun: 'commands' },
+    approval: { ico: '?', label: 'Approval', noun: 'decisions' },
     fetch: { ico: '🌐', label: 'Fetched', noun: 'pages' },
     search: { ico: '🔎', label: 'Searched', noun: 'searches' },
     ask: { ico: '❓', label: 'Asked', noun: 'questions' },
@@ -2484,12 +2501,26 @@ function renderApproval(node, request, conversationId) {
     deny.textContent = t('approval.deny');
     actions.append(deny, approve);
 
-    card.append(head, risk, detail, noteWrap, status, actions);
+    const turnAllowed = request.class === 'Terminal' && Array.isArray(request.allowedScopes) && request.allowedScopes.includes('turn');
+    let approveTurn = null;
+    card.append(head, risk, detail);
+    if (turnAllowed) {
+        const turnRisk = el('approval-risk approval-turn-risk');
+        turnRisk.textContent = t('approval.turnRisk');
+        turnRisk.id = `approval-turn-risk-${requestId}`;
+        approveTurn = el('btn approval-turn', 'button');
+        approveTurn.type = 'button';
+        approveTurn.textContent = t('approval.allowTurn');
+        approveTurn.setAttribute('aria-describedby', turnRisk.id);
+        actions.append(approveTurn);
+        card.append(turnRisk);
+    }
+    card.append(noteWrap, status, actions);
     node.appendChild(card);
     scrollThread();
     deny.focus();
 
-    const decide = async (decision) => {
+    const decide = async (decision, scope = 'once') => {
         card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
         status.textContent = t('approval.sending');
         status.classList.remove('error-text');
@@ -2497,10 +2528,13 @@ function renderApproval(node, request, conversationId) {
             await api('POST', `/api/conversations/${encodeURIComponent(conversationId)}/approval`, {
                 requestId,
                 decision,
+                scope,
                 note: note.value.trim(),
             });
             card.classList.add('answered');
-            status.textContent = decision === 'approve' ? t('approval.approved') : t('approval.denied');
+            status.textContent = decision === 'approve'
+                ? t(scope === 'turn' ? 'approval.approvedTurn' : 'approval.approved')
+                : t('approval.denied');
         } catch (error) {
             card.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
             status.textContent = errorText(error);
@@ -2509,6 +2543,7 @@ function renderApproval(node, request, conversationId) {
     };
 
     approve.onclick = () => decide('approve');
+    if (approveTurn) approveTurn.onclick = () => decide('approve', 'turn');
     deny.onclick = () => decide('deny');
 }
 
@@ -2721,6 +2756,7 @@ function revealThinking() {
 
 // ===== Sending a Turn =====
 async function send() {
+    if (childPanel.active()) { await childPanel.open(); return; }
     if (voice.listening) stopDictation();
     // While streaming, the Send button is the dispatch chevron's parent — clicking
     // it should not silently stop. Plain clicks here mean "open the dispatch menu"
@@ -9569,4 +9605,12 @@ function wireGlobal() {
     initVoice();
 }
 
+const childPanel = initializeChildPanel({
+    api,
+    getContext: () => ({ conversation: state.current, settings: state.settings, streaming: state.streaming, prompt: $('prompt').value }),
+    settingsChanged: (settings) => { state.settings = settings; },
+    finished: async () => { await refreshCurrentConversation(); await refreshUsage(); },
+    notify: toast,
+});
+$('btn-child').onclick = () => childPanel.open();
 init();

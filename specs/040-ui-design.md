@@ -469,7 +469,7 @@ Ask-User card uses, because it is the same kind of interruption: the Turn is
 parked and waiting on the reader.
 
 It is deliberately the plainest card in the app. A one-line risk statement, then
-**what is actually being approved**, an optional note field, and two buttons. The
+**what is actually being approved**, an optional note field, and explicit action buttons. The
 model's own explanation of why it wants this is not shown at all; it is the party
 being checked.
 
@@ -496,8 +496,11 @@ decline. A card that renders blank is worse than no card, because it teaches the
 reader that approving is a formality.
 
 **No** is focused by default, so a reflexive `Enter` declines rather than
-approves. The approve button reads **Run it** only for a Terminal command; for
-everything else it reads **Allow**, because nothing is being run. The card is
+approves. Terminal offers **Allow once** and, only when the Host Server advertises
+the scope, **Allow for this Turn**. A visible warning bound to the Turn button's
+accessible description names later Terminal commands, unchanged scope, expiry,
+and exclusion of other Tools/children. Browser approvals retain **Allow** only.
+The card is
 bordered in the warning colour rather than the accent, so it is not mistaken at a
 glance for the questionnaire it sits beside. There is no "always allow this"
 control: widening the safe-list, the browser's allowed sites, or its write
@@ -505,6 +508,7 @@ capabilities all happen in Settings, because a button offered next to a prompt i
 the one a tired operator presses.
 
 After a decision the card disables its controls and states the outcome in place.
+A Turn grant has a distinct confirmation and Activity records identify its reuse.
 A reload while a card is pending re-fetches it from
 `GET /api/conversations/{id}/approval`, so a browser refresh does not leave a
 Turn that looks stalled with no way to answer it.

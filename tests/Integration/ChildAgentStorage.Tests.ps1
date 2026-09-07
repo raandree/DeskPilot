@@ -53,7 +53,96 @@ Describe 'Child Agent private quota-backed storage' -Tag 'Integration' {
         $state.inodes | Should -Be 128
         $state.network | Should -BeExactly 'none'
         $state.hostMounts | Should -Be 0
+        $state.memoryBytes | Should -Be ($script:policy.memoryBytes / 2)
+        $state.cpuNano | Should -Be ([long]($script:policy.cpuCount * 500000000))
+        $state.pids | Should -Be 40
+        $state.readOnly | Should -BeTrue
         Test-Path -LiteralPath $script:container.ClaimPath | Should -BeTrue
+    }
+
+    It 'refuses stale loaded runtime types before creating another container' {
+        $first = New-DpChildToolContainer -Runtime $script:runtime -DataDirectory $script:control -Policy $script:policy
+        $first.Dispose()
+        $key = 'DeskPilot.Child.LoadedSourceHash'
+        $previous = [AppDomain]::CurrentDomain.GetData($key)
+        $attempt = @{ Container = $null }
+        try {
+            [AppDomain]::CurrentDomain.SetData($key, ('0' * 64))
+            { $attempt.Container = New-DpChildToolContainer -Runtime $script:runtime -DataDirectory $script:control -Policy $script:policy } |
+                Should -Throw -ExpectedMessage '*restart*'
+        } finally {
+            [AppDomain]::CurrentDomain.SetData($key, $previous)
+            if ($attempt.Container) { $attempt.Container.Dispose() }
+        }
+    }
+
+    It 'requires exact loaded assembly bytes for complete-profile execution' {
+        Import-DpChildRuntime -Runtime $script:runtime
+        $key = 'DeskPilot.Child.LoadedAssemblyHash'
+        $previous = [AppDomain]::CurrentDomain.GetData($key)
+        try {
+            [AppDomain]::CurrentDomain.SetData($key, ('0' * 64))
+            { Import-DpChildRuntime -Runtime $script:runtime -ExactAssembly } | Should -Throw -ExpectedMessage '*restart*'
+        } finally { [AppDomain]::CurrentDomain.SetData($key, $previous) }
+    }
+
+    It 'uses the V3 aggregate host job for Docker control and Tool clients' {
+        Import-DpChildRuntime -Runtime $script:runtime
+        $environment = [System.Collections.Generic.Dictionary[string,string]]::new()
+        $environment['SystemRoot'] = $env:SystemRoot
+        $environment['TEMP'] = $TestDrive
+        $environment['TMP'] = $TestDrive
+        $owner = $null
+        try {
+            $owner = [DeskPilot.Child.OwnedProcess]::new((Join-Path $PSHOME 'pwsh.exe'), @('-NoProfile','-NonInteractive','-Command','[Console]::ReadLine() | Out-Null'), $TestDrive, $environment, 268435456, 0.25, 8)
+            $owner.Resume()
+            $script:policy.profile = 'single-child-v3'
+            $script:policy.budgetMode = 'provider-estimate'
+            $script:policy.requestBytes = 65536
+            $script:policy.outputBytes = 65536
+            $script:container = New-DpChildToolContainer -Runtime $script:runtime -DataDirectory $script:control -Policy $script:policy -HostProcess $owner
+            $script:container.Seal()
+            ($script:container.Execute('Write-Output bounded') | ConvertFrom-Json).stdout.Trim() | Should -BeExactly 'bounded'
+            $script:container.Stop()
+            $script:container.CleanupSucceeded | Should -BeTrue
+            $owner.HasExited | Should -BeFalse
+        } finally { if ($script:container) { $script:container.Dispose() }; if ($owner) { $owner.Dispose() } }
+    }
+
+    It 'records trusted provider ownership before resuming any provider code' {
+        $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PSHOME 'pwsh.exe'))
+        $start.Environment.Clear()
+        $start.Environment['SystemRoot'] = $env:SystemRoot
+        foreach ($argument in @('-NoProfile', '-NonInteractive', '-Command', '[Console]::WriteLine("provider-ready"); [Console]::ReadLine() | Out-Null')) {
+            $start.ArgumentList.Add($argument)
+        }
+        $script:policy.profile = 'single-child-v3'
+        $script:policy.budgetMode = 'provider-estimate'
+        $script:policy.requestBytes = 65536
+        $script:policy.outputBytes = 65536
+        $script:container = New-DpChildToolContainer -Runtime $script:runtime -DataDirectory $script:control -Policy $script:policy -ProviderStart $start
+        $script:container.HostProcess.Resumed | Should -BeFalse
+        $script:container.HostProcess.IsInOwnedJob | Should -BeTrue
+        $identity = Get-Content -LiteralPath (Join-Path $script:container.DirectoryPath 'provider.json') -Raw | ConvertFrom-Json
+        $identity.processId | Should -Be $script:container.HostProcess.Id
+        $identity.startTimeUtcTicks | Should -Be $script:container.HostProcess.StartTimeUtcTicks
+        $identity.runId | Should -BeExactly $script:container.RunId
+        $barrier = Get-Item -LiteralPath (Join-Path $script:container.DirectoryPath 'AppData')
+        $barrier.PSIsContainer | Should -BeFalse
+        $barrier.Length | Should -Be 0
+        @(Get-ChildItem -LiteralPath $script:container.DirectoryPath -Force | Sort-Object Name | Select-Object -ExpandProperty Name) |
+            Should -Be @('AppData', 'claim.json', 'config.json', 'ownership.json', 'provider.json') -Because 'provider code has not been resumed'
+        $script:container.HostProcess.Resume()
+        $reader = [IO.StreamReader]::new($script:container.HostProcess.Output, [Text.Encoding]::UTF8, $false, 1024, $true)
+        $deadline = [Threading.CancellationTokenSource]::new(10000)
+        try { $reader.ReadLineAsync($deadline.Token).GetAwaiter().GetResult() | Should -BeExactly 'provider-ready' }
+        finally { $reader.Dispose(); $deadline.Dispose() }
+        $script:container.HostProcess.HasExited | Should -BeFalse
+        $script:container.Stop()
+        $script:container.HostProcess.HasExited | Should -BeTrue
+        $script:container.CleanupSucceeded | Should -BeTrue
+        @(Get-ChildItem -LiteralPath $script:container.DirectoryPath -Force | Sort-Object Name | Select-Object -ExpandProperty Name) |
+            Should -Be @('AppData', 'claim.json', 'config.json', 'ownership.json', 'provider.json')
     }
 
     It 'exhausts the actual writable byte quota through the File path' {

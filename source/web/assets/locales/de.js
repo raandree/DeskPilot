@@ -1,4 +1,4 @@
-// Deutsche Ressourcen. Jeder Schlüssel aus en.js muss hier existieren; die Tests
+﻿// Deutsche Ressourcen. Jeder Schlüssel aus en.js muss hier existieren; die Tests
 // prüfen das in beide Richtungen, ebenso wie die Platzhalter jedes Textes.
 //
 // Übersetzungsentscheidungen, die bewusst getroffen wurden:
@@ -11,6 +11,9 @@
 //     ist keine Warnung.
 
 export const de = {
+    'composer.child': 'Privater untergeordneter Agent',
+    'composer.child.title': 'Privaten untergeordneten Agent starten oder anzeigen',
+    'composer.child.view': 'Privaten untergeordneten Agent anzeigen',
     // Seitenleiste und Navigation
     'app.newConversation': '+ Neue Unterhaltung',
     'app.home.title': 'DeskPilot-Start — aktuelle Unterhaltung schließen',
@@ -66,8 +69,11 @@ export const de = {
     'approval.empty': '(leer)',
     'approval.noDetail': 'DeskPilot konnte diese Aktion nicht beschreiben, es gibt also nichts zu prüfen. Lehnen Sie ab.',
     'approval.in': 'In',
-    'approval.approve': 'Ausführen',
+    'approval.approve': 'Einmal erlauben',
     'approval.allow': 'Erlauben',
+    'approval.allowTurn': 'Für diesen Turn erlauben',
+    'approval.turnRisk': 'Diese Freigabe erlaubt weitere Terminal-Befehle im angezeigten Arbeitsordner mit derselben Ausführungsrichtlinie ohne erneute Nachfrage. Sie endet mit dem Turn, beim Stoppen oder bei geänderten Berechtigungen oder Geltungsbereichen. Andere Werkzeuge und untergeordnete Ausführungen sind nicht eingeschlossen.',
+    'approval.approvedTurn': 'Terminal für diesen Turn im angezeigten Geltungsbereich freigegeben.',
     'approval.deny': 'Nein',
     'approval.notePlaceholder': 'Optional: Sagen Sie dem Agent, warum nicht oder was er stattdessen tun soll',
     'approval.sending': 'Wird gesendet\u2026',

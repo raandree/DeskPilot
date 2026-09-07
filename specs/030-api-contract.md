@@ -1093,9 +1093,18 @@ question id must match, so a delayed response cannot answer another Turn.
 Decides one pending approval while the Tool that raised it is blocking the active
 Turn. The same route serves Terminal commands and browser actions; only the
 `class` on the request differs. Body:
-`{ "requestId": "…", "decision": "approve" | "deny", "note": "use --dry-run first" }`.
+`{ "requestId": "…", "decision": "approve" | "deny", "scope": "once" | "turn", "note": "use --dry-run first" }`.
 `note` is optional, trimmed and bounded to 500 characters; on a denial it is
 handed to the Agent so a refusal can steer rather than dead-end.
+
+`scope` defaults to `once`. `turn` requires an approved, matching live
+`run_terminal_command` request with Terminal class and `turn` in its
+`allowedScopes`. Browser, child, File, and MCP approvals cannot create this
+grant. Non-string/unknown scopes and `deny` with `turn` return `400 bad_scope`;
+a stale, ineligible, or permission-revoked grant returns
+`409 stale_approval_scope`. Stop and Turn completion invalidate grants, including
+while no approval is pending. Live Permission/Project/execution-policy changes
+cancel the current approval context; later Settings cannot widen its authority.
 
 Returns `202` with `{ "accepted": true }`, after which the Engine resumes inside
 the same Tool call and the original SSE response stays open. Returns
@@ -1113,7 +1122,12 @@ there is no durable on-disk approval log.
 What a reloaded browser asks to find out whether the Turn it rejoined is waiting
 on it. Returns `{ "pending": false }` when nothing is pending — never an error,
 because that is the normal case — or
-`{ "pending": true, "id": "…", "tool": "run_terminal_command", "class": "Terminal", "risk": "…", "summary": { … } }`.
+`{ "pending": true, "id": "…", "tool": "run_terminal_command", "class": "Terminal", "allowedScopes": ["once", "turn"], "risk": "…", "summary": { … } }`.
+
+Non-Terminal requests advertise only `once`; older requests without
+`allowedScopes` must not display the Turn-wide option. The grant's scope digest
+binds Tool/class, Conversation/Turn, Project/directory, and policy, excluding
+command text. The initial reply still binds one exact pending action.
 
 `class` selects what the card must show, and **every field the summary carries
 must be rendered** — a payload field the card omits is a field nobody approved:

@@ -19,8 +19,8 @@ Move a file back to `../` only if its feature is materially reopened.
 
 ## Why the browser prompt shipped without decision 0001's isolation
 
-The Prompt File requires "shipped isolated execution", and 0001's isolation -
-container confinement for terminal commands - is still blocked. Decision 0003
+The Prompt File required "shipped isolated execution", and 0001's Terminal
+containment was still blocked when the browser decision was made. Decision 0003
 scopes that prerequisite out deliberately rather than by omission: browser
 automation carries its own boundary, a separate supervised process with a
 disposable profile that has no cookies, extensions, password store, history or
@@ -47,7 +47,8 @@ names three surfaces — Terminal commands, file writes outside the Project, and
 mutating MCP calls — and only Terminal has shipped (decision 0008). The other two
 need the Engine contract in [`specs/120`](../../../specs/120-per-call-approval-engine-contract.md).
 
-It also asks for an `Allow for this Turn` option that was deliberately **not**
-built: the signed-off design removed Turn-wide grants because one approval would
-silently authorise every later command of that class. That deviation is recorded
-in decision 0008, not left to be rediscovered from the diff.
+The original decision 0008 deliberately omitted `Allow for this Turn`. On
+2026-09-07 the operator reversed that choice for ordinary Terminal commands;
+[decision 0011](../../../.memory-bank/decisions/0011-turn-wide-terminal-approval.md)
+now defines the explicit, scoped grant and its invalidation. Browser and child
+approvals remain once-only. Native File/MCP approval is still open.

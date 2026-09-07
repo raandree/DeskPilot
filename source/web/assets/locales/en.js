@@ -1,4 +1,4 @@
-// English resources. This is the source locale AND the fallback: every key that
+﻿// English resources. This is the source locale AND the fallback: every key that
 // exists anywhere must exist here, and tests enforce that both ways.
 //
 // Keys are dotted and flat (no nesting) so a missing-key check is a set
@@ -14,6 +14,9 @@
 //     warning to make it fit a control.
 
 export const en = {
+    'composer.child': 'Private child',
+    'composer.child.title': 'Start or inspect a private child',
+    'composer.child.view': 'View private child',
     // Sidebar and navigation
     'app.newConversation': '+ New conversation',
     'app.home.title': 'DeskPilot home — close the current chat',
@@ -69,8 +72,11 @@ export const en = {
     'approval.empty': '(empty)',
     'approval.noDetail': 'DeskPilot could not describe this action, so there is nothing to check. Decline it.',
     'approval.in': 'In',
-    'approval.approve': 'Run it',
+    'approval.approve': 'Allow once',
     'approval.allow': 'Allow',
+    'approval.allowTurn': 'Allow for this Turn',
+    'approval.turnRisk': 'Turn-wide approval allows later Terminal commands in this working directory under the same execution policy without another question. It expires when the Turn ends, you stop it, or its permissions or scope change. Other Tools and child runs are not included.',
+    'approval.approvedTurn': 'Terminal approved for this Turn in the displayed scope.',
     'approval.deny': 'No',
     'approval.notePlaceholder': 'Optional: tell the agent why not, or what to do instead',
     'approval.sending': 'Sending…',

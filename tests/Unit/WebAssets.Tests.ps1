@@ -1,4 +1,4 @@
-#requires -Version 7.0
+﻿#requires -Version 7.0
 
 # Guards for the web/ assets that are bundled into the module and published to
 # the PowerShell Gallery (see build.yaml CopyPaths). These tests read the SOURCE
@@ -244,7 +244,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match ([regex]::Escape('const userEl = buildUserEl({ text: displayText, dispatch, attachments });'))
         $js | Should -Not -Match ([regex]::Escape('if (m && m.id && m.text) {'))
         # Edit-and-resend re-runs a stored message, so it stays gated on the id.
-        $js | Should -Match '(?s)function buildUserEl.{0,2000}if \(m\.id\) \{.{0,400}Edit & resend'
+        $js | Should -Match '(?s)function buildUserEl(?:(?!\r?\nfunction ).)*if \(m\.id && !m\.childRunId\) \{.{0,400}Edit & resend'
     }
 
     It 'closes the open conversation before starting a new one' {
@@ -537,7 +537,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match ([regex]::Escape('wrap._refs = { content, flow, steps,'))
         # Rendered from the persisted Message, so it survives done, stopped, and a
         # rebuild of the thread from storage.
-        $js | Should -Match '(?s)function finalizeAssistant.{0,900}?renderSteps\(r\.steps,'
+        $js | Should -Match '(?s)function finalizeAssistant(?:(?!\r?\nfunction ).)*renderSteps\(r\.steps,'
         $js | Should -Match 'function renderSteps\(node, narration\)'
         # Absent rather than empty when the Turn had no intermediate narration.
         $js | Should -Match '(?s)function renderSteps.{0,300}?if \(!blocks\.length\) \{ node\.classList\.add\(''hidden''\); return; \}'

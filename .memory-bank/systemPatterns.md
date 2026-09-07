@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-06
+last-verified: 2026-09-07
 source: repository implementation and decision records
 ---
 
@@ -12,6 +12,11 @@ source: repository implementation and decision records
 
 - **Engine ownership.** ShellPilot owns provider transport, authentication,
   Models and Usage. DeskPilot owns the Host Server, policy and presentation.
+- **Initialization is not authentication proof.** `Initialize-Shp` can return
+  an existing encrypted token file without decoding it or contacting Copilot.
+  Verify usable authentication through an Engine operation such as
+  `Get-ShpModel`; keep local decryption failure separate from provider rejection
+  and never infer endpoint support from either failure.
 - **One Engine Runspace.** A fresh PowerShell pipeline runs each Turn on one
   long-lived Runspace. Tool registration and globals are Runspace-local;
   environment and process working directory are process-global. Set only the
@@ -37,6 +42,8 @@ source: repository implementation and decision records
 | [0007](decisions/0007-localization.md) | Localization |
 | [0008](decisions/0008-per-call-approval.md) | Individual Terminal approvals |
 | [0009](decisions/0009-single-child-isolation.md) | Approved single-child V2 and partial storage implementation |
+| [0010](decisions/0010-child-budget-estimates.md) | Accepted V3 provider estimates with unchanged isolation and hard local bounds |
+| [0011](decisions/0011-turn-wide-terminal-approval.md) | Explicit ordinary Terminal Turn grants and live scope revocation |
 
 ## Execution and approval
 
@@ -45,9 +52,14 @@ source: repository implementation and decision records
   before User Tools. Test the Engine itself: removing an offered schema alone
   does not prove disabled calls cannot execute. Probe enforcement and fail closed.
 - **Approval precedes effects.** The bridge blocks before the executor. A
-  safe-list handles routine reads; everything else is individually approved.
-  Bind command, working directory, Conversation, Turn and execution policy. No
-  Turn-wide grants. Secret values and Model-authored justifications are absent.
+  safe-list handles routine reads. Ordinary Terminal can be approved once or
+  explicitly for the same Turn, Project, directory, Tool/class, and frozen
+  policy. The bridge owns only an in-memory scope digest; Stop, completion,
+  or live scope revocation clears it. Browser and child approvals stay once-only.
+- **Scope types and mutation paths matter.** Read scalar approval scope without
+  a pipeline helper that unwraps one-element arrays. Invalidate grants through
+  both window Settings and Intercom Project/Stop paths. Approval Activity is an
+  allow-listed metadata projection, never a copy of command arguments.
 - **No silent Local fallback.** Isolated mode owns Terminal even with Local
   approval off. Permission/dependency failures refuse work. Freeze each Turn's
   policy and render the recorded boundary, not later Settings edits.
@@ -82,6 +94,39 @@ source: repository implementation and decision records
   Approval of a prerequisite design does not approve downstream concurrency or
   a new Tool/egress profile. Reassess the controlling readiness/refusal path
   against a named source revision, not the presence of a prepared image.
+- **A conditional counter is not a verified provider bound.** A request digest
+  and trusted counting callback can support reservations, but labels such as
+  `exact` are not proof of Model-specific framing or provider-added tokens.
+  Keep fixture evidence separate, hold reservations when Usage is unknown, and
+  refuse child startup until the actual provider contract is verified.
+- **Probe counting per provider shape.** Copilot can expose Messages token
+  counting while its Responses counting path returns 404. Use authenticated
+  discovery as a control, compare hosted counts with Engine Usage, and record
+  the exact Model, host, request shape, and differences. A few observed
+  overcounts do not establish a general upper bound or a safe correction factor.
+- **Named Tool results preserve correlation.** The Engine adds `name` to Chat
+  Tool-result messages. Messages represents that name through its preceding
+  `tool_use` and `tool_use_id`; require exact name/id agreement, never silently
+  ignore a contradictory field.
+- **Created is not running.** Docker `wait` can return zero before a container
+  starts. Require an authenticated process-ready acknowledgment before treating
+  lease expiry or process exit as runtime proof.
+- **Drain archive padding before waiting.** Tar readers stop at an end marker
+  while Docker can still be writing padded blocks. Drain the remaining bounded
+  stream before waiting for process exit, including no-change proposals.
+- **Approval identity is not authentication.** Generate an independent launch
+  identifier for child approval facts; never reuse the Host Server token.
+- **Stop must not wait behind dispatch.** Close admission atomically and cancel
+  independently of a blocked IPC send. All cleanup commands and owned process
+  siblings share one nonextendable grace deadline.
+- **Loaded bytes are part of proof.** PowerShell cannot unload runtime types.
+  Record loaded source and assembly hashes, require exact assembly identity for
+  V3, and require restart after replacement. Source and built Host Server
+  fingerprints differ; prove the actual launch surface.
+- **Credential fields need structural normalization.** Traverse JSON objects
+  and arrays, normalize non-alphanumeric separators before credential-name
+  comparison, and retain spaced/dotted/tabbed regression cases. This safeguard
+  does not establish that arbitrary selected content contains no secrets.
 
 ## Data, changes and diagnostics
 

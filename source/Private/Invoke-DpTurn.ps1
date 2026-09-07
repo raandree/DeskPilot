@@ -294,6 +294,7 @@ function Invoke-DpTurn {
                     class   = [string]$request.class
                     risk    = [string]$request.risk
                     summary = $request.summary
+                    allowedScopes = @(Get-DpPropertyValue -InputObject $request -Name 'allowedScopes' -Default @('once'))
                 }))
         try {
             Send-DpIntercomApproval -RequestId ([string]$pending.Id) -ConversationId ([string]$pending.ConversationId) -Request $request

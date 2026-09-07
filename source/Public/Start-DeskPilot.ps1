@@ -128,6 +128,7 @@ function Start-DeskPilot {
         Engine          = $engine
         TerminalRuntime = $null
         TerminalSetupJob = $null
+        Child = Initialize-DpChildState -DataDirectory $dataDirFull
         # Which Engine MCP servers each configured row attached. The Engine holds a
         # registration only for the life of the session and discovers nothing on its
         # own, so this map is how Sync-DpMcpServer knows which live server belongs to
@@ -217,7 +218,16 @@ function Start-DeskPilot {
             @{ Method = 'POST'; Pattern = '/api/diagnostics/browser/uninstall'; Name = 'uninstallBrowserRuntime' }
             @{ Method = 'GET'; Pattern = '/api/diagnostics/terminal'; Name = 'getTerminalRuntime' }
             @{ Method = 'GET'; Pattern = '/api/diagnostics/child'; Name = 'getChildReadiness' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/child/prepare'; Name = 'prepareChildRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/child/check'; Name = 'checkChildRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/child/cleanup'; Name = 'cleanupChildRuntime' }
+            @{ Method = 'POST'; Pattern = '/api/diagnostics/child/remove'; Name = 'removeChildRuntime' }
             @{ Method = 'POST'; Pattern = '/api/conversations/{id}/child-runs'; Name = 'startChildRun' }
+            @{ Method = 'GET'; Pattern = '/api/conversations/{id}/child-runs/{childId}'; Name = 'getChildRun' }
+            @{ Method = 'GET'; Pattern = '/api/conversations/{id}/child-runs/{childId}/events'; Name = 'getChildEvents' }
+            @{ Method = 'GET'; Pattern = '/api/conversations/{id}/child-runs/{childId}/proposal'; Name = 'getChildProposal' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/child-runs/{childId}/approval'; Name = 'approveChildRun' }
+            @{ Method = 'POST'; Pattern = '/api/conversations/{id}/child-runs/{childId}/stop'; Name = 'stopChildRun' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/check'; Name = 'checkTerminalRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/install'; Name = 'installTerminalRuntime' }
             @{ Method = 'POST'; Pattern = '/api/diagnostics/terminal/cleanup'; Name = 'cleanupTerminalRuntime' }
@@ -386,6 +396,8 @@ function Start-DeskPilot {
 
     try {
         while ($true) {
+            Update-DpChildPreparation
+            Update-DpChildRunState
             # A relaunch (Restart-DpHost) sets StopRequested after spawning a fresh
             # instance; break so the finally releases the listener and this process
             # ends, letting the new instance (with the updated modules) take over.
@@ -418,6 +430,7 @@ function Start-DeskPilot {
     }
     finally {
         $script:DeskPilot.Listener = $null
+        if ($script:DeskPilot.Child.Controller) { $script:DeskPilot.Child.Controller.Dispose() }
         if ($script:DeskPilot.UpdateJob) { $script:DeskPilot.UpdateJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.UpdateJob = $null }
         if ($script:DeskPilot.Diagnostics.CheckJob) { $script:DeskPilot.Diagnostics.CheckJob | Remove-Job -Force -ErrorAction SilentlyContinue; $script:DeskPilot.Diagnostics.CheckJob = $null }
         # Tell the phone we are going, so silence never has to be interpreted.

@@ -44,6 +44,8 @@ namespace DeskPilot.Child
     /// <summary>Owns stable Windows handles for an explicitly selected baseline.</summary>
     public sealed class ProjectBaseline : IDisposable
     {
+        private static readonly Regex JsonCredentialKeyNormalizer =
+            new Regex("[^A-Za-z0-9]+", RegexOptions.CultureInvariant | RegexOptions.Compiled);
         private readonly List<SafeFileHandle> _handles = new List<SafeFileHandle>();
         private readonly Dictionary<string, SafeFileHandle> _directories =
             new Dictionary<string, SafeFileHandle>(StringComparer.OrdinalIgnoreCase);
@@ -237,7 +239,7 @@ namespace DeskPilot.Child
             {
                 foreach (JsonProperty property in value.EnumerateObject())
                 {
-                    string name = property.Name.Replace("_", string.Empty).Replace("-", string.Empty).ToLowerInvariant();
+                    string name = JsonCredentialKeyNormalizer.Replace(property.Name, string.Empty).ToLowerInvariant();
                     if (name is "secret" or "secrets" or "credential" or "credentials" or "password" or "passwd" or "pwd" or
                         "token" or "tokens" or "accesstoken" or "refreshtoken" or "sessiontoken" or "githubtoken" or
                         "apikey" or "privatekey" or "clientsecret" or "authorization" or "cookie" or "cookies" or
