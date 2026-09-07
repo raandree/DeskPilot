@@ -56,6 +56,12 @@ coverage; DeskPilot passed all 117 paired approval contracts. Package publicatio
 and clean-install child proof remain separate. Specification 120's
 `ToolCallApprover` is a future File/MCP approval feature.
 
+A standalone operator copy of the roadmap, user-acceptance checks, pass/fail
+criteria, and post-acceptance sequence is stored at
+`C:/Users/install/Desktop/deskpilot-roadmap-and-user-testing.md`. It contains no
+Host Server launch token or credential value. Repository records remain
+authoritative if that external copy becomes stale.
+
 The earlier V3 evidence below belongs to its original source-bound build. It
 does not prove a rebuilt Host Server after the current approval changes.
 
