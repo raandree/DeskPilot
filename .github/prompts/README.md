@@ -72,32 +72,23 @@ supersedes the earlier no-Turn-grant rule for ordinary Terminal commands.
 
 ## ShellPilot merge guidance
 
-The completed child support is `ai/child-provider-boundary` at `d2ab318` in
-`D:/Git/ShellPilot-child-isolation`. Its retained full gate passed 1,915 tests
-with no failures/skips and 89.2% coverage; the joint child review was resolved.
-These results cover that branch, not an untested future merge.
+ShellPilot child support was merged into `main` as `4ab9eed` and pushed to
+`origin/main` on 2026-09-07. Production source auto-merged. The only conflicts
+were `.memory-bank/activeContext.md` and `.memory-bank/progress.md`; their
+resolution retains both the newer cross-platform `edit_file` security history
+and child-provider completion evidence.
 
-At assessment time, local `main` was `e2269f8`: ten mainline-only commits and
-three child-branch-only commits. A non-mutating merge simulation found conflicts
-only in `.memory-bank/activeContext.md` and `.memory-bank/progress.md`.
-Production code, including the shared `Invoke-Shp` changes, auto-merged.
+The merged Engine passed 1,937 tests with zero failures, three existing
+Unix-only skips, zero unrun cases, and 89.04% coverage; all 16 tasks completed
+without errors/warnings. DeskPilot passed all 117 approval contracts against
+the exact merged module after closing the independent review's test-only Minor.
+The fetched and subsequently verified remote tip matched the local merge.
 
-When the operator requests the merge:
+What remains is **distribution**, not source integration: publish an approved
+ShellPilot package and rebuild/re-prove DeskPilot against that exact released
+Engine before enabling child execution on a clean installation. Do not reuse
+the older source-bound child proof after Host Server or Engine changes.
 
-1. Verify both worktrees are clean and recheck ancestry/conflicts if either tip
-   changed. Do not overwrite the original checkout or select one whole side.
-2. Merge the child branch into the `main` worktree. Reconcile the two Memory Bank
-   conflicts by retaining both the `edit_file` security history and child
-   completion evidence. Self-review the combined `Invoke-Shp` dispatch.
-3. Run the full detached ShellPilot build/test gate on the combined result,
-   including the newer `edit_file` and owned-request admission regressions.
-   Do not claim the previous 1,915 passes validate merged bytes.
-4. Rebuild DeskPilot against that exact Engine and run its contract tests before
-   releasing the pair. Changes invalidate old source-bound child proof.
-5. Keep push, package publication, and installation changes separate and subject
-   to explicit operator authorization.
-
-The merge check performed for this update changed no ShellPilot branch or file.
 The future File/MCP approver is a new feature, not unfinished V3 implementation.
 
 ## Proof and distribution boundaries

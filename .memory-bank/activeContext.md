@@ -40,18 +40,21 @@ browser window is open. Preview Terminal/per-call approval is on, but every Turn
 starts without a grant. Normal user Settings are untouched. Do not use the older
 Gallery update notice to replace this development build.
 
-Independent review was not requested for this amendment; recommend `review: on`
-for the authorization change. Restart the Host Server to load the new bridge.
-Do not reuse the earlier child profile proof after these Host source changes.
-Local close-out is recorded in Git; no push, publication, or ShellPilot merge.
+Independent security/quality review approved commit `3a4c411` with zero
+Blockers/Majors, one Minor test-coverage gap, and no Nits. The Minor is closed
+with a complete revocation matrix for Project access, network, allowed hosts,
+environment, timeout, CPU, memory, process, output, and temporary storage.
+All 117 approval contracts pass against merged ShellPilot `main`; no production
+code changed after review. Report: `TEMP/deskpilot-turn-grant-review-20260907`.
+Restart the Host Server to load the new bridge. Do not reuse the earlier child
+profile proof after these Host source changes.
 
 The [prompt roadmap](../.github/prompts/README.md) now describes actual remaining
-work. ShellPilot V3 is complete at `d2ab318`; its `main` is `e2269f8`. Merge
-simulation found only activeContext/progress conflicts (ten mainline commits,
-three child-support commits); production code auto-merged. No ShellPilot file,
-branch, or merge was changed. Reconcile both histories and run the full combined
-Engine gate before treating a merge as verified. Specification 120's
-`ToolCallApprover` is a separate future feature.
+work. ShellPilot V3 was merged and pushed to `origin/main` at `4ab9eed`.
+The merged Engine passed 1,937 tests, three existing Unix-only skips, and 89.04%
+coverage; DeskPilot passed all 117 paired approval contracts. Package publication
+and clean-install child proof remain separate. Specification 120's
+`ToolCallApprover` is a future File/MCP approval feature.
 
 The earlier V3 evidence below belongs to its original source-bound build. It
 does not prove a rebuilt Host Server after the current approval changes.

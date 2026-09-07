@@ -100,7 +100,16 @@ Describe 'Terminal Turn approval routes' {
         @{ Case = 'approval disabled'; Patch = @{ perCallApproval = $false } }
         @{ Case = 'Project changed'; Patch = @{ workspaceFolder = 'C:\changed-project' } }
         @{ Case = 'execution mode changed'; Patch = @{ terminalExecution = @{ mode = 'isolated' } } }
+        @{ Case = 'Project access changed'; Patch = @{ terminalExecution = @{ projectAccess = 'read-write' } } }
+        @{ Case = 'network policy changed'; Patch = @{ terminalExecution = @{ network = 'allow-list'; allowedHosts = @('example.com') } } }
+        @{ Case = 'allowed host changed'; Patch = @{ terminalExecution = @{ allowedHosts = @('example.com') } } }
+        @{ Case = 'environment grant changed'; Patch = @{ terminalExecution = @{ environment = @(@{ name = 'DP_TOKEN'; secret = $true }) } } }
         @{ Case = 'execution limit changed'; Patch = @{ terminalExecution = @{ timeoutSeconds = 60 } } }
+        @{ Case = 'CPU limit changed'; Patch = @{ terminalExecution = @{ cpuCount = 2.0 } } }
+        @{ Case = 'memory limit changed'; Patch = @{ terminalExecution = @{ memoryMB = 2048 } } }
+        @{ Case = 'process limit changed'; Patch = @{ terminalExecution = @{ processLimit = 65 } } }
+        @{ Case = 'output limit changed'; Patch = @{ terminalExecution = @{ outputBytes = 2097152 } } }
+        @{ Case = 'temporary storage limit changed'; Patch = @{ terminalExecution = @{ tempMB = 256 } } }
     ) {
         Invoke-DpRouteHandler -Name putSettings -Body $Patch -Stream $script:stream
 
