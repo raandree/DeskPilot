@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: security-reviewer
-last-verified: 2026-09-02
+last-verified: 2026-09-07
 source: repository evidence
 ---
 
@@ -11,6 +11,71 @@ source: repository evidence
 Episodic record of security assessments: date, scope, verdict, top findings,
 remediation status. Newest first. Retention: two years, then archive to a dated
 topic file.
+
+## 2026-09-07 — Staged `main` merge candidate (`64b8b16` + `MERGE_HEAD 7631b10`)
+
+**Scope:** the uncommitted 97-file merge of `ai/turn-wide-terminal-approvals`
+into `main` — single-child V3, ordinary Terminal Turn grants, and their docs.
+75 code files, 30 test files, 19 Markdown files.
+
+**Verdict: REQUEST CHANGES.** No Blocker or Major was found in the changed V3
+containment or Turn-grant logic itself, and the merged gate is green. The merge
+is blocked by FIND-008, a pre-existing defect in a shared approval helper this
+candidate modifies.
+
+| ID | Severity | CVSS | Finding | Status |
+| --- | --- | --- | --- | --- |
+| FIND-008 | High | 7.5 | `New-DpApprovalRequest` truncates commands/URLs at 2,000 characters and form values at 500, and derives the form fingerprint from the truncated copy — while the executors dispatch the full value. An approval can authorize content it never displayed | **closed** |
+| FIND-009 | Minor | — | Child stderr drain tasks (`_providerErrors`, `_errors`) are assigned and never observed, so a 16 KiB overflow surfaces as a deadline timeout with a misleading reason instead of its real cause | **open** |
+| FIND-010 | Minor | — | The new `stopTurn` active-child branch has no direct route test; `ChildRoutes.Tests.ps1` covers only `stopChildRun` | **open** |
+
+### Evidence
+
+- Full merged gate: **2,506 passed, 0 failed, 5 existing browser skips, 0 unrun**;
+  16 tasks, zero errors/warnings. Coverage was disabled for this run.
+- `git diff --cached --check` passed; no unresolved paths; no secret-like paths.
+- FIND-008 proven twice with inert fixtures, no real command and no browser:
+  a 5,002-character command displayed 2,032 characters and forwarded 5,002; two
+  distinct 519-character form values produced identical displayed values **and**
+  identical fingerprints.
+- No owned child or Isolated Terminal containers remained afterwards.
+
+### Notes
+
+FIND-008 predates this candidate — every truncation branch exists at `64b8b16` —
+but it contradicts the exact-value contract in specification 040 and the
+changelog, so it is reported against the merge rather than deferred. Remediate by
+refusing overlong commands before approval, rendering bounded browser values
+completely or refusing them, and fingerprinting the complete normalized action.
+The refreshed built-runtime V3 proof had not yet run against this candidate.
+
+### Remediation, 2026-09-07 (same day)
+
+Verdict moves **REQUEST CHANGES → CLEARED for the merge**. The merge is committed
+as `e109c55`; the fix follows it on `main`.
+
+- **FIND-008 — closed, test-first.** Nothing in an approval card is shortened
+  now. `New-DpApprovalRequest` renders the command, the whole URL including its
+  query string, and every form value in full, and the fingerprint is derived from
+  those complete values. Content above what the card can show is refused rather
+  than displayed in part: 2,000 characters for a command, 4,096 for a URL, 5,000
+  for a field value — each matching the ceiling its own caller already enforced,
+  so the throw is a fail-closed backstop rather than a new limit. Local Terminal
+  gained the 2,000-character guard that Isolated and child Terminal already had,
+  returning an ordinary Tool refusal instead of running an unshowable command.
+- **Evidence.** Nine tests were written first and failed for the right reasons
+  (7 red on the helper, plus the Local guard case), then passed. The two original
+  reproductions now invert: the two 519-character form values produce different
+  display text *and* different fingerprints, and the 5,002-character command is
+  refused with zero characters reaching the executor. Full gate on the merged and
+  fixed tree: 2,514 passed, zero failures, five existing browser skips, 16 tasks
+  without errors or warnings. `Invoke-ScriptAnalyzer` shows no new warning against
+  the pre-merge baseline for either edited file.
+- **FIND-009 and FIND-010 remain open.** Both are Minor, neither blocks the
+  merge, and both are carried as follow-up work rather than closed silently.
+- Specification 050 no longer claims the command is "bounded and marked when
+  truncated"; it now states the refusal rule and why a shared prefix would
+  otherwise collide.
 
 ## 2026-09-02 — Intercom group chat (`ee0bdd7`, branch `ai/intercom-group-chat`)
 

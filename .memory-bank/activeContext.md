@@ -10,6 +10,32 @@ source: final Sampler gates, authenticated built-runtime proof, and independent 
 
 ## Current focus
 
+`ai/turn-wide-terminal-approvals` is merged into local `main` as `e109c55`
+(parents `64b8b16` and `7631b10`, 97 files, no conflicts). The FIND-008 approval
+fix follows it as a separate commit. Nothing has been pushed and no package has
+been published.
+
+Security review of the merge candidate returned REQUEST CHANGES on
+[FIND-008](assessment-log.md): `New-DpApprovalRequest` shortened commands, URLs
+and form values for display while the executors dispatched the full string, and
+derived the form fingerprint from the shortened copy — so an approval could
+authorize content it never showed, and two values sharing a 500-character prefix
+produced the same card and the same answer. That is now fixed test-first:
+nothing is shortened, the fingerprint covers the complete value, and anything
+above the card's ceiling is refused rather than shown in part. Local Terminal
+gained the 2,000-character guard Isolated and child Terminal already had.
+
+Full gate on the merged and fixed tree: 2,514 passed, zero failures, five
+existing browser skips, 16 tasks without errors or warnings; no owned containers
+remained. Log under TEMP:
+`deskpilot-find008-full-b6d5bba2f78e4228b5c18053186561ee.log`.
+
+Two Minor findings stay open as follow-up work: child stderr drain tasks are
+never observed, so a 16 KiB overflow reports as a deadline timeout rather than
+its real cause; and the `stopTurn` active-child branch has no direct route test.
+The refreshed built-runtime V3 proof has still not run against this tree, so
+child execution remains disabled and unproven for these exact bytes.
+
 The operator explicitly requested ordinary Terminal **Allow for this Turn**, an
 updated prompt roadmap, and a ShellPilot merge-readiness assessment on
 2026-09-07. Work is on `ai/turn-wide-terminal-approvals`, based on `14cf113`.

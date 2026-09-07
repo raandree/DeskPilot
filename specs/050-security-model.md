@@ -203,7 +203,10 @@ asking the Engine to pause.
 - **The summary is an allow-list.** Only the command, working directory and
   Project are carried. Tool arguments are exactly where a token or a file body
   would be, so a blacklist would have to be right about every future argument.
-  The command is bounded and marked when truncated. The Model's own account of
+  The command is shown in full; one too long to show is refused rather than
+  shortened, because a hidden suffix is content nobody approved and two actions
+  sharing a prefix would otherwise produce the same card and the same answer.
+  The Model's own account of
   why it wants the command is **not** shown: the Model is the party being
   checked, and its reasons are attacker-reachable text.
 - **An answer is bound to one action.** The fingerprint covers Tool, class,

@@ -58,6 +58,13 @@ function Invoke-DpTerminalApprovalTool {
         (@{ approved = $false; error = $Message } | ConvertTo-Json -Compress)
     }
 
+    # Isolated and child Terminal already refuse a command this long. Local was
+    # the outlier, and an unbounded command is what let a card show a prefix
+    # while the whole string ran.
+    if ($Command.Length -gt 2000) {
+        return (& $refuse 'That command is longer than DeskPilot can show you for approval, so it was not run. Propose a shorter command, or put the long part in a file.')
+    }
+
     # Runspace globals are how an injected Tool receives what must not become a
     # Tool parameter; read through Get-Variable, like the workspace Tools do.
     $read = {

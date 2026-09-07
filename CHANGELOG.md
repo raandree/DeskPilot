@@ -151,6 +151,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An approval card can no longer authorise text it never showed you.** A long
+  command, web address or form value was shortened for the card with a
+  "...[truncated]" marker while the whole string was still handed to the
+  terminal or the page — so the part you never saw ran anyway. Form values were
+  worse: two different values that shared their first 500 characters produced
+  the same card *and* the same approval, so saying yes to one also said yes to
+  the other.
+
+  Nothing is shortened now. The card shows the command, the whole address
+  including everything after the question mark, and every field value in full,
+  and your answer is bound to that complete text. Anything too long to show is
+  refused outright instead of shown in part, and the agent is told to propose
+  something shorter. A local terminal command is now capped at 2,000 characters
+  — the limit isolated and private-child commands already had.
+
 - **The approval gate now actually stops the command.** DeskPilot's replacement
   terminal was registered under the same name as the agent engine's built-in
   one, and the engine reaches its own built-in first — so a command ran without

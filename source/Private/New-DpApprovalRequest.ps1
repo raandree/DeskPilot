@@ -57,7 +57,14 @@ function New-DpApprovalRequest {
         [string]$TurnId
     )
 
+    # The card is the security boundary, so it shows exactly what will happen.
+    # Anything above these ceilings is refused rather than shortened: a hidden
+    # suffix is content nobody approved, and an approval derived from shortened
+    # text would also collide with a different action sharing that prefix.
+    # Callers bound their own input to the same numbers; this is the backstop.
     $maxCommand = 2000
+    $maxUrl = 4096
+    $maxFieldValue = 5000
     $command = if ($Argument.ContainsKey('command')) { [string]$Argument['command'] } else { '' }
     $workingDirectory = if ($Argument.ContainsKey('workingDirectory')) { [string]$Argument['workingDirectory'] } else { '' }
     # A browser navigation is identified by where it goes. The full URL is shown
@@ -66,11 +73,11 @@ function New-DpApprovalRequest {
     $url = if ($Argument.ContainsKey('url')) { [string]$Argument['url'] } else { '' }
     $targetHost = if ($Argument.ContainsKey('host')) { [string]$Argument['host'] } else { '' }
 
-    # A browser write action is judged on its values, so they are carried rather
-    # than summarised away - "submit a form" is not a decision anyone can make.
-    # They are bounded, and they are bound into the fingerprint below so an
-    # approval for one set of values cannot be spent on another. Credential
-    # fields never reach here: the supervisor refuses to fill one at all.
+    # A browser write action is judged on its values, so they are carried whole
+    # rather than summarised away - "submit a form" is not a decision anyone can
+    # make. They are bound into the fingerprint below so an approval for one set
+    # of values cannot be spent on another. Credential fields never reach here:
+    # the supervisor refuses to fill one at all.
     $action = if ($Argument.ContainsKey('action')) { [string]$Argument['action'] } else { '' }
     $filePath = if ($Argument.ContainsKey('filePath')) { [string]$Argument['filePath'] } else { '' }
     $control = if ($Argument.ContainsKey('control')) { [string]$Argument['control'] } else { '' }
@@ -79,8 +86,8 @@ function New-DpApprovalRequest {
         $fields = @(@($Argument['fields']) | Select-Object -First 50 | ForEach-Object {
                 $fieldName = [string](Get-DpPropertyValue -InputObject $_ -Name @('name') -Default '')
                 $fieldValue = [string](Get-DpPropertyValue -InputObject $_ -Name @('value') -Default '')
-                if ($fieldValue.Length -gt 500) {
-                    $fieldValue = $fieldValue.Substring(0, 500) + " ...[truncated, $($fieldValue.Length) characters]"
+                if ($fieldValue.Length -gt $maxFieldValue) {
+                    throw "The value for '$fieldName' is $($fieldValue.Length) characters; an approval card cannot show more than $maxFieldValue."
                 }
                 @{ name = $fieldName; value = $fieldValue }
             })
@@ -98,14 +105,12 @@ function New-DpApprovalRequest {
         $executionMaterial = ($canonical | ConvertTo-Json -Depth 6 -Compress) + [char]30 + [string]$Argument.policyId
     }
 
-    $shown = $command
-    if ($shown.Length -gt $maxCommand) {
-        $shown = $shown.Substring(0, $maxCommand) + " ...[truncated, $($command.Length) characters]"
+    if ($command.Length -gt $maxCommand) {
+        throw "This command is $($command.Length) characters; an approval card cannot show more than $maxCommand."
     }
 
-    $shownUrl = $url
-    if ($shownUrl.Length -gt $maxCommand) {
-        $shownUrl = $shownUrl.Substring(0, $maxCommand) + " ...[truncated, $($url.Length) characters]"
+    if ($url.Length -gt $maxUrl) {
+        throw "This address is $($url.Length) characters; an approval card cannot show more than $maxUrl."
     }
 
     $material = @(
@@ -161,10 +166,10 @@ function New-DpApprovalRequest {
         allowedScopes  = if ($Class -eq 'Terminal') { @('once', 'turn') } else { @('once') }
         scopeFingerprint = $scopeFingerprint
         summary        = @{
-            command          = $shown
+            command          = $command
             workingDirectory = $workingDirectory
             project          = [string]$ProjectName
-            url              = $shownUrl
+            url              = $url
             host             = $targetHost
             action           = $action
             control          = $control

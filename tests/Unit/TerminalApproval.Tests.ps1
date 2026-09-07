@@ -66,9 +66,13 @@ Describe 'New-DpApprovalRequest' -Tag 'Unit' {
         (New-DpTestRequest -TurnId 't-2').fingerprint | Should -Not -Be $base
     }
 
-    It 'bounds a very long command instead of forwarding all of it' {
-        $request = New-DpTestRequest -Command ('a' * 5000)
-        $request.summary.command.Length | Should -BeLessOrEqual 2100
+    It 'shows a command at the ceiling in full' {
+        $command = 'a' * 2000
+        (New-DpTestRequest -Command $command).summary.command | Should -BeExactly $command
+    }
+
+    It 'refuses a command it cannot show in full' {
+        { New-DpTestRequest -Command ('a' * 2001) } | Should -Throw
     }
 
     It 'offers Turn-wide scope only for Terminal approvals' -ForEach @(
@@ -83,6 +87,50 @@ Describe 'New-DpApprovalRequest' -Tag 'Unit' {
         } -ProjectName 'Alpha' -ConversationId 'c-1' -TurnId 't-1'
 
         @($request.allowedScopes) | Should -Be $ExpectedScopes
+    }
+}
+
+Describe 'New-DpApprovalRequest fidelity' -Tag 'Unit' {
+    BeforeAll {
+        function New-DpFieldRequest {
+            param([string]$Value)
+            New-DpApprovalRequest -Tool 'browser_page' -Class 'BrowserAction' -Argument @{
+                action = 'fill_form'; url = 'https://example.test/'; host = 'example.test'
+                fields = @(@{ name = 'memo'; value = $Value })
+            } -ProjectName 'Alpha' -ConversationId 'c-1' -TurnId 't-1'
+        }
+    }
+
+    It 'shows a long form value in full rather than an ellipsis' {
+        $value = 'v' * 4000
+        (New-DpFieldRequest -Value $value).summary.fields[0].value | Should -BeExactly $value
+    }
+
+    It 'separates two values that share their first 500 characters' {
+        $prefix = 'a' * 500
+        $first = New-DpFieldRequest -Value ($prefix + 'ONE')
+        $second = New-DpFieldRequest -Value ($prefix + 'TWO')
+
+        $first.summary.fields[0].value | Should -Not -BeExactly $second.summary.fields[0].value
+        $first.fingerprint | Should -Not -BeExactly $second.fingerprint
+    }
+
+    It 'shows a long URL in full, including its query string' {
+        $url = 'https://example.test/?q=' + ('u' * 3000)
+        $request = New-DpApprovalRequest -Tool 'browser_page' -Class 'BrowserNavigation' `
+            -Argument @{ url = $url; host = 'example.test' } `
+            -ProjectName 'Alpha' -ConversationId 'c-1' -TurnId 't-1'
+
+        $request.summary.url | Should -BeExactly $url
+    }
+
+    It 'refuses <Case> it cannot show faithfully' -ForEach @(
+        @{ Case = 'a command'; ToolClass = 'Terminal'; Argument = @{ command = ('a' * 2001); workingDirectory = 'C:\p' } }
+        @{ Case = 'a URL'; ToolClass = 'BrowserNavigation'; Argument = @{ url = ('https://example.test/' + ('u' * 4096)); host = 'example.test' } }
+        @{ Case = 'a form value'; ToolClass = 'BrowserAction'; Argument = @{ action = 'fill_form'; url = 'https://example.test/'; fields = @(@{ name = 'memo'; value = ('v' * 5001) }) } }
+    ) {
+        { New-DpApprovalRequest -Tool 'fidelity-test' -Class $ToolClass -Argument $Argument `
+                -ProjectName 'Alpha' -ConversationId 'c-1' -TurnId 't-1' } | Should -Throw
     }
 }
 
@@ -207,6 +255,14 @@ Describe 'Invoke-DpTerminalApprovalTool' -Tag 'Unit' {
         Test-Path -LiteralPath $script:marker | Should -BeTrue
         $script:bridge.Waiting | Should -BeFalse -Because 'a recognised read must not interrupt the user'
         ($result | ConvertFrom-Json).approved | Should -BeTrue
+    }
+
+    It 'refuses a command longer than the card can show, without running it' {
+        $result = Invoke-DpTerminalApprovalTool -Command ('a' * 2001) | ConvertFrom-Json
+
+        $result.approved | Should -BeFalse
+        Test-Path -LiteralPath $script:marker | Should -BeFalse
+        $script:bridge.Waiting | Should -BeFalse -Because 'nothing may be offered that the card cannot show in full'
     }
 
     It 'asks before running a command the safe-list does not cover' {
