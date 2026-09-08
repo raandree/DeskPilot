@@ -107,6 +107,8 @@ separate. Consult accepted Decisions and [earlier patterns](archive/system-patte
   developer cache. Resolve Pester from `latest` per user policy and validate
   against Pester 6. Verify the loaded version and Sampler's resolved test paths
   in the log; intended configuration alone is not proof.
+- Bind hosted CI evidence to the pushed commit SHA, not the newest run by time.
+  Monitor deployment as well as the test matrix before reporting completion.
 - Compile dependent Add-Type test sources as one guarded set. Use dedicated
   threads for deliberately blocking concurrency probes, preserving deadlines.
 - Use `Get-Item -Force` for hidden temporary-file metadata on Unix. Never relax

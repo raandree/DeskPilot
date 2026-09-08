@@ -3,36 +3,24 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: user-requested Pester 6 migration and artifact-based CI reproductions
+source: user-authorized main push and GitHub Actions run 34214508250
 ---
 
 # Active context
 
 ## Current focus
 
-The user committed and pushed the terminal themes as `912b158` on `main`, then
-requested CI monitoring and repair. [CI run 34209511633](https://github.com/raandree/DeskPilot/actions/runs/34209511633)
-packaged successfully but failed all three test jobs. Repairs are on local
-`ai/ci-test-repair`; no repair push, remote workflow dispatch, or publication
-is authorized. The earlier theme preview and watcher have stopped.
+The user authorized merging the CI repair into `main`, pushing, and monitoring
+CI on 2026-09-08. `main` fast-forwarded from `912b158` to `07b57eb` and was
+pushed to `origin/main`. The merge tree exactly matches the tested repair.
+Both repair commits (`8cd138e` and `07b57eb`) are included; no force-push or
+manual workflow dispatch was performed. The earlier theme preview is stopped.
 
-The user rejected the Pester 5.7.1 pin and requested Pester 6. RequiredModules
-now restores `latest`; the README and repository guidance target Pester 6.
-Both clean full gates passed with Pester 6.1.0: Windows 2,492 passed, zero
-failed, 13 skipped; Linux 2,448 passed, zero failed, 57 skipped. Each completed
-17 tasks without errors or warnings and returned exit zero. Windows also ran
-dependency resolution. No test rewrites or assertion changes were needed after
-the earlier CI fixes. Counts and skips match the Pester 5 baseline; the earlier
-5.7.1 results below are historical evidence only.
-
-The first Pester 6 Linux attempt lacked Node.js in the local container, causing
-22 failures and 199 skips. Correcting that validation harness required no
-repository code changes. Do not report that attempt as a Pester incompatibility.
-
-Pester 6 logs under TEMP:
-
-- `deskpilot-pester6-windows-2d53969304aa45dc8c6e7c5fefc91986.log`
-- `deskpilot-pester6-linux-complete-1add7121a3b447f7a123a75b61400717.log`
+Pester resolves from `latest` per user policy; the verified version is 6.1.0.
+Do not restore the earlier 5.7.1 pin. The original failed run
+[34209511633](https://github.com/raandree/DeskPilot/actions/runs/34209511633)
+is historical evidence; the current pushed run is
+[34214508250](https://github.com/raandree/DeskPilot/actions/runs/34214508250).
 
 The repair passes QA/Unit paths through Sampler's supported
 `Pester.Configuration.Run.Path` and keeps Integration tests opt-in. Existing
@@ -47,40 +35,47 @@ byte ceilings are unchanged. No production child authority code was changed.
 
 ## Verification
 
-- Reproductions use clean copies of `912b158` and the downloaded CI artifact:
-  Sampler 0.120.1, ShellPilot 0.3.1, PowerShell 7.6.5. Pester 6.1.0 from the
-  original artifact is replaced by the verified 5.7.1 pin.
-- Focused Linux baseline: 57 passed, 31 failed. After the initial fixes:
-  53 passed, zero failed, 38 platform skips. Existing Support bundle tests
-  failed before the hidden-file fix and pass afterward.
-- Initial repaired Windows full gate: 2,492 passed, zero failed, 13 skipped.
-  Full Linux exposed duplicate channel compilation and a queued Stop probe.
-  All 12 IPC tests now pass together; all nine authority tests pass with only
-  one thread-pool worker, which deterministically starved the original probe.
-- Final Linux default build: 2,448 passed, zero failed, 57 platform skips;
-  17 tasks without errors/warnings. Final Windows test workflow: 2,492 passed,
-  zero failed, 13 skips; nine tasks without errors/warnings. All 29 JavaScript
-  tests pass on each platform. Both detached result markers are zero.
-- Hosted/macOS verification remains pending a user-authorized push. Static
-  parsing passes; the production helper has no analyzer warnings/errors.
-  Existing IPC test variable warnings are unrelated to the changed setup.
-  Self-review found no Blocker/Major. Independent review is off; recommend
-  `review: on` for the Support bundle filesystem change and concurrency probe.
+- Clean local Pester 6.1.0 full gates passed: Windows 2,492 passed, 13 skipped;
+  Linux 2,448 passed, 57 skipped. Zero failures, 17 tasks without errors or
+  warnings on each. Windows also resolved dependencies. Counts and skips
+  match the Pester 5 baseline; no further test rewrites were required.
+- The prior local gate passed all 29 JavaScript tests on each platform.
+  Existing Support bundle regressions failed before the Unix fix and pass
+  afterward. IPC and constrained-thread-pool authority tests pass.
+- Current hosted run started at 10:15:50 UTC for exact commit
+  `07b57eb94097f0fd41769ccfffac5dbf986763cc`, version `0.5.0-preview.21+113`.
+  All five jobs succeeded: Package Module, Windows, macOS, Ubuntu, and Deploy
+  Module. Deployment finished at 10:20:46 UTC. Every test job used Pester 6.1.0:
+  Windows 2,492 passed/13 skipped; macOS and Ubuntu each 2,450 passed/55 skipped.
+  No failures or unrun tests; all three test workflows had zero errors/warnings.
+- Deployment published Preview `0.5.0-preview0021`. Public GitHub metadata
+  confirms a non-draft prerelease with its NuGet asset; the Gallery metadata
+  confirms that exact version, published at 10:20:41.89 UTC. Both were checked
+  at 10:24 UTC. This is package publication, not a fresh authenticated child
+  runtime or clean-install acceptance proof.
+- Static checks and prior self-review passed. Existing IPC test variable
+  warnings are unchanged. Independent review remains off; `review: on` is
+  recommended for the earlier filesystem change and concurrency probe.
 
-Final logs under TEMP:
+Evidence under TEMP:
 
-- `deskpilot-ci-linux-final-93d5817952e24611b4ce9b5f06c88b51.log`
-- `deskpilot-ci-windows-final-3056cf47e11642f290ad0e5ca67f4ce6.log`
+- `deskpilot-pester6-windows-2d53969304aa45dc8c6e7c5fefc91986.log`
+- `deskpilot-pester6-linux-complete-1add7121a3b447f7a123a75b61400717.log`
+- `deskpilot-ci-34214508250-monitor.jsonl`
+- `deskpilot-ci-34214508250-{Package,Windows,macOS,Ubuntu,Deploy}.log`
 
 ## Next action
 
-The local repair is verified and ready for user-controlled integration and a
-hosted recheck. Retain the failed remote run as historical evidence. No data
-migration is needed; reverting the repair commit restores the previous code
-and build configuration. A push to `main` can trigger publication
-when repository secrets are configured; do not infer permission to push from
-the request to monitor CI. The existing terminal themes and their earlier
-browser evidence remain unchanged; see [the theme guide](../docs/themes.md).
+CI monitoring is complete and the heartbeat is stopped. A documentation-only
+completion record follows the tested commit with `[skip ci]` to avoid another
+publication cycle; application and build files are unchanged. No further fix
+or rerun is needed for this CI repair. No data migration is required.
+
+The published Preview is available on
+[GitHub](https://github.com/raandree/DeskPilot/releases/tag/v0.5.0-preview0021)
+and [PowerShell Gallery](https://www.powershellgallery.com/packages/DeskPilot/0.5.0-preview0021).
+Installation remains a separate user action. The existing terminal themes and
+browser evidence are unchanged; see [the theme guide](../docs/themes.md).
 
 ## Retained release boundaries
 

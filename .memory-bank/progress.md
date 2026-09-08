@@ -15,7 +15,8 @@ Settings, Engine integration, visible Permissions/Activity/Usage, pending change
 and Undo, Diagnostics, Intercom, scheduling, and contained browser automation.
 Optional Terminal isolation has completed local design, implementation, review,
 and documentation. Live authenticated acceptance and clean-install Engine
-availability remain release follow-ups; nothing has been published.
+availability remain follow-ups. Preview `0.5.0-preview0021` is published on
+GitHub and PowerShell Gallery after the successful hosted CI repair run.
 
 Parallel Agents remain blocked: Terminal containment is not child Agent
 isolation. The approved single-child V3 now provides complete confined execution,
@@ -28,6 +29,7 @@ parallel topology remains proposed; no parallel scheduling is enabled.
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-08 | On explicit user request, fast-forward `main` from `912b158` to `07b57eb` and push to `origin/main`. Hosted CI run `34214508250` passed all five jobs. Pester 6.1.0: Windows 2,492 passed/13 skipped; macOS and Ubuntu each 2,450 passed/55 skipped; zero failures. Deployment completed at 10:20:46 UTC and published Preview `0.5.0-preview0021` to GitHub and PowerShell Gallery, independently verified through public metadata. Monitoring stopped. The final Memory Bank record is documentation-only with `[skip ci]`; no further application or build changes. |
 | 2026-09-08 | Honor the user's Pester 6 policy: restore `Pester = 'latest'` instead of the 5.7.1 pin and update contributor guidance. Clean full Sampler gates using Pester 6.1.0 pass on Windows (2,492 passed, 13 skips) and Linux (2,448 passed, 57 skips), zero failures and 17 tasks without errors/warnings on each. Windows dependency resolution passes. Existing tests need no further rewrites; counts/skips match the earlier baseline. An initial Linux harness missing Node.js was corrected without repository changes. Hosted/macOS verification and any push remain user-controlled. |
 | 2026-09-08 | Monitor the user's pushed `912b158`: CI run `34209511633` packaged successfully but failed all three test jobs. Repair Pester version drift, Sampler QA/Unit selection, Windows-only child test expectations, duplicate IPC type compilation, and a thread-pool-dependent Stop probe. Restore Unix Support bundle exports without relaxing protections. Artifact-based Linux full gate: 2,448 passed, zero failed, 57 platform skips; final Windows test workflow: 2,492 passed, zero failed, 13 skips. All 29 JavaScript tests pass on each platform. Repairs remain local on `ai/ci-test-repair`; hosted/macOS recheck requires an authorized push. |
 | 2026-09-08 | Add Terminal Amber and Terminal Green with a local 3270 web font and independent Theme/Mode selectors. All 16 new theme cases passed red/green; 29 native UI tests pass. Real-frontend desktop/mobile fixture checks verify palettes, contrast, fonts, persistence, translated labels, and unclipped controls. Full Sampler gate: 2,551 passed, zero failures, 18 skips, 17 tasks without errors/warnings. Built asset hashes and real preview HTTP checks pass. Font research and licence are recorded. User requested no commit; changes remain uncommitted on `ai/terminal-themes`, with no push or publication. |
@@ -67,9 +69,10 @@ parallel topology remains proposed; no parallel scheduling is enabled.
   review are now complete; do not repeat the earlier counter investigation as
   a V3 blocker. Terminal-only live acceptance remains a separate profile.
 - Make a dispatch-enforcing Engine obtainable for clean installations. Staged
-  ShellPilot 0.4.1 passes; installed 0.4.0 fails closed. No publication is
-  authorized by the current request.
-- Changes are recorded on the local topic branch; no push or publication.
+  ShellPilot 0.4.1 passes; installed 0.4.0 fails closed. The DeskPilot Preview
+  publication does not by itself prove clean-install Engine availability.
+- The CI repair is merged and pushed to `main`; hosted tests and Preview
+  publication are verified. Further runtime acceptance remains separate work.
 
 ## Stable boundaries
 
