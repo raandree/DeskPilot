@@ -55,6 +55,18 @@ changes mounts, network grants, credentials, limits, or other Tool Permissions.
 Stop, completion/failure, the next Turn, or Permission/Project/policy revocation
 invalidates the grant. Child and browser approvals stay once-only.
 
+### If preparation fails
+
+Terminal runtime shows the preparation error with known credentials redacted
+and long messages shortened, followed by recovery guidance. Review the detail
+before sharing it. Older builds show only generic advice and discard the
+underlying error when the preparation job finishes.
+
+Check Docker Desktop's Linux daemon, available disk space, and access to the
+runtime download sources, then select **Prepare runtime** again. **Check**
+verifies an existing runtime; it does not build a missing one. A failed
+preparation does not change Terminal Permissions or select Local execution.
+
 ### Moving existing work to Isolated
 
 No manual Settings migration is required to keep using Local execution. Before

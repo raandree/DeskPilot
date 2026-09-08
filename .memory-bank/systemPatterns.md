@@ -89,6 +89,9 @@ source: repository implementation and decision records
   preserves user edits. Do not rewrap intact change arrays at route boundaries.
 - Diagnostics projects allow-listed fields. Self-checks call no Model; logs are
   bounded/redacted. Unknown Engine Usage remains unknown, not zero or billing.
+- Preserve preparation-job errors through the existing diagnostics redaction
+  and length bound before reaping the job. Generic recovery advice complements
+  the cause; it must not replace it or imply an unverified failure diagnosis.
 - **Intercom addressing is not authority.** Allow-list first; optionally require
   exact Telegram text/caption mention entities before effects. Direct plain-text
   pending answers also qualify by positive Message id and exact nonempty chat

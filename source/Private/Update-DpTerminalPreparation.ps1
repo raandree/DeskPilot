@@ -18,9 +18,11 @@ function Update-DpTerminalPreparation {
         $state.TerminalRuntime = Get-DpTerminalRuntime -DataDirectory $state.DataDir -Probe
     }
     catch {
+        $preparationError = $_
+        $failure = Protect-DpDiagnosticText -Text "Runtime preparation failed: $($preparationError.Exception.Message)" -MaxLength 400
         $state.TerminalRuntime = @{
             ready = $false; state = 'degraded'; orphanCount = 0
-            issues = @('Runtime preparation failed. Check Docker Desktop, available disk space and access to the verified runtime download sources, then retry.')
+            issues = @($failure, 'Check Docker Desktop, available disk space and access to the verified runtime download sources, then retry.')
         }
     }
     finally {

@@ -167,6 +167,99 @@ Describe 'Isolated Turn preflight' -Tag 'Unit' {
     }
 }
 
+Describe 'Terminal runtime preparation' -Tag 'Unit' {
+    It 'retains the cause of a failed preparation job in the runtime status' {
+        $previous = $script:DeskPilot
+        $job = Start-Job -ScriptBlock {
+            throw 'Docker control operation failed: runtime archive could not be downloaded.'
+        }
+        $script:DeskPilot = @{
+            DataDir = $TestDrive; TurnRunning = $false; TerminalSetupJob = $job
+            TerminalRuntime = $null
+        }
+        try {
+            $null = $job | Wait-Job -Timeout 15
+            $job.State | Should -BeExactly 'Failed'
+
+            $status = & { Set-StrictMode -Version Latest; Get-DpTerminalStatus }
+
+            $status.ready | Should -BeFalse
+            $status.state | Should -BeExactly 'degraded'
+            $status.preparing | Should -BeFalse
+            ($status.issues -join ' ') | Should -Match 'runtime archive could not be downloaded'
+            $script:DeskPilot.TerminalSetupJob | Should -BeNullOrEmpty
+        }
+        finally {
+            if (Get-Job -Id $job.Id -ErrorAction SilentlyContinue) { $job | Remove-Job -Force }
+            $script:DeskPilot = $previous
+        }
+    }
+}
+
+Describe 'Terminal runtime preparation safety' -Tag 'Unit' {
+    It 'redacts credentials and bounds the retained preparation error' {
+        $previous = $script:DeskPilot
+        $errorText = "Runtime download failed: Bearer runtime-bearer-fixture`n" +
+            "https://example.invalid/runtime?token=runtime-query-fixture`n" +
+            'Host Server token runtime-token-fixture ' + ('download context ' * 100)
+        $job = Start-Job -ScriptBlock {
+            throw $using:errorText
+        }
+        $script:DeskPilot = @{
+            DataDir = $TestDrive; TurnRunning = $false; TerminalSetupJob = $job
+            TerminalRuntime = $null; Token = 'runtime-token-fixture'
+        }
+        try {
+            $null = $job | Wait-Job -Timeout 15
+            $job.State | Should -BeExactly 'Failed'
+
+            $status = & { Set-StrictMode -Version Latest; Get-DpTerminalStatus }
+
+            $status.issues[0] | Should -Match 'Runtime download failed'
+            $status.issues[0] | Should -Match '<redacted>'
+            ($status.issues -join ' ') | Should -Not -Match 'runtime-(bearer|query|token)-fixture'
+            $status.issues[0] | Should -Not -Match '[\r\n]'
+            $status.issues[0].Length | Should -BeLessOrEqual 400
+            $status.issues[1] | Should -Match 'Check Docker Desktop'
+        }
+        finally {
+            if (Get-Job -Id $job.Id -ErrorAction SilentlyContinue) { $job | Remove-Job -Force }
+            $script:DeskPilot = $previous
+        }
+    }
+
+    It 'replaces an earlier failure with the verified runtime after preparation succeeds' {
+        $previous = $script:DeskPilot
+        $job = Start-Job -ScriptBlock { @{ image = 'sha256:' + ('a' * 64) } }
+        $script:DeskPilot = @{
+            DataDir = $TestDrive; TurnRunning = $false; TerminalSetupJob = $job
+            TerminalRuntime = @{ ready = $false; state = 'degraded'; issues = @('Earlier failure.') }
+        }
+        Mock Get-DpTerminalRuntime {
+            @{ ready = $true; state = 'healthy'; image = 'sha256:' + ('a' * 64); issues = @() }
+        }
+        try {
+            $null = $job | Wait-Job -Timeout 15
+            $job.State | Should -BeExactly 'Completed'
+
+            $status = & { Set-StrictMode -Version Latest; Get-DpTerminalStatus }
+
+            $status.ready | Should -BeTrue
+            $status.state | Should -BeExactly 'healthy'
+            $status.preparing | Should -BeFalse
+            $status.issues | Should -HaveCount 0
+            $script:DeskPilot.TerminalSetupJob | Should -BeNullOrEmpty
+            Should -Invoke Get-DpTerminalRuntime -Times 1 -Exactly -ParameterFilter {
+                $DataDirectory -eq $TestDrive -and $Probe
+            }
+        }
+        finally {
+            if (Get-Job -Id $job.Id -ErrorAction SilentlyContinue) { $job | Remove-Job -Force }
+            $script:DeskPilot = $previous
+        }
+    }
+}
+
 Describe 'Terminal runtime routes and persisted policy' -Tag 'Unit' {
     It 'returns a partial runtime failure report under StrictMode' {
         $previous = $script:DeskPilot

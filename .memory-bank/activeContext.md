@@ -3,86 +3,76 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: user-authorized main push and GitHub Actions run 34214508250
+source: runtime preparation probes, red-green regressions, and full Windows Sampler gate
 ---
 
 # Active context
 
 ## Current focus
 
-The user authorized merging the CI repair into `main`, pushing, and monitoring
-CI on 2026-09-08. `main` fast-forwarded from `912b158` to `07b57eb` and was
-pushed to `origin/main`. The merge tree exactly matches the tested repair.
-Both repair commits (`8cd138e` and `07b57eb`) are included; no force-push or
-manual workflow dispatch was performed. The earlier theme preview is stopped.
+The user reported a generic Terminal runtime preparation failure. The pinned
+Docker build and complete preparation job both succeeded when reproduced from
+current source. No active Host Server was available to inspect; its old job
+error had already been discarded. Do not attribute that original failure to
+Docker availability, disk space, a download, or a checksum without new evidence.
 
-Pester resolves from `latest` per user policy; the verified version is 6.1.0.
-Do not restore the earlier 5.7.1 pin. The original failed run
-[34209511633](https://github.com/raandree/DeskPilot/actions/runs/34209511633)
-is historical evidence; the current pushed run is
-[34214508250](https://github.com/raandree/DeskPilot/actions/runs/34214508250).
+The confirmed diagnostic defect is fixed on the local Branch
+`ai/terminal-runtime-diagnostics`: the completion handler retains the exception
+through `Protect-DpDiagnosticText`, bounded to 400 characters, alongside recovery
+guidance. The UI already uses `textContent`. Tests cover failed-job detail,
+credential redaction and length, and successful retry replacing stale failure.
 
-The repair passes QA/Unit paths through Sampler's supported
-`Pester.Configuration.Run.Path` and keeps Integration tests opt-in. Existing
-Windows-only child capture/readiness contracts now have platform-aware tests
-and explicit unsupported-host refusal checks. IPC tests compile both channel
-types together. The blocked-send test uses dedicated threads rather than
-depending on thread-pool availability; its 500 ms Stop assertion is unchanged.
+The normal `$LOCALAPPDATA/DeskPilot` data directory had no runtime record.
+Preparation there completed at 15:47:24 UTC. The rebuilt module independently
+verified it at 15:56:52 UTC: healthy, PowerShell 7.6.5, Docker 29.7.2, no issues,
+and zero remaining Terminal containers. The prepared image is:
 
-Support bundle creation includes the hidden temporary archive when reading its
-size on Unix. Destination protections, no-overwrite behavior, redaction, and
-byte ceilings are unchanged. No production child authority code was changed.
+`sha256:4a73b0f90a203f5bb3cc90c787e15c61950b49a469a0dd12e11f1eac558ce06b`
+
+Terminal Permissions, execution mode, Engine authentication, and child execution
+were not changed. The temporary reproduction tag and data directory were removed;
+the usable runtime and shared Docker build cache remain.
 
 ## Verification
 
-- Clean local Pester 6.1.0 full gates passed: Windows 2,492 passed, 13 skipped;
-  Linux 2,448 passed, 57 skipped. Zero failures, 17 tasks without errors or
-  warnings on each. Windows also resolved dependencies. Counts and skips
-  match the Pester 5 baseline; no further test rewrites were required.
-- The prior local gate passed all 29 JavaScript tests on each platform.
-  Existing Support bundle regressions failed before the Unix fix and pass
-  afterward. IPC and constrained-thread-pool authority tests pass.
-- Current hosted run started at 10:15:50 UTC for exact commit
-  `07b57eb94097f0fd41769ccfffac5dbf986763cc`, version `0.5.0-preview.21+113`.
-  All five jobs succeeded: Package Module, Windows, macOS, Ubuntu, and Deploy
-  Module. Deployment finished at 10:20:46 UTC. Every test job used Pester 6.1.0:
-  Windows 2,492 passed/13 skipped; macOS and Ubuntu each 2,450 passed/55 skipped.
-  No failures or unrun tests; all three test workflows had zero errors/warnings.
-- Deployment published Preview `0.5.0-preview0021`. Public GitHub metadata
-  confirms a non-draft prerelease with its NuGet asset; the Gallery metadata
-  confirms that exact version, published at 10:20:41.89 UTC. Both were checked
-  at 10:24 UTC. This is package publication, not a fresh authenticated child
-  runtime or clean-install acceptance proof.
-- Static checks and prior self-review passed. Existing IPC test variable
-  warnings are unchanged. Independent review remains off; `review: on` is
-  recommended for the earlier filesystem change and concurrency probe.
+- The failed-job regression first failed on the generic message, then passed
+  after the fix. All three new preparation cases passed on Pester 6.1.0.
+- `build.ps1 -Tasks build,test`: 2,500 passed, zero failures, eight skips, no
+  unrun tests; 16 tasks, zero build errors or warnings. Completed 15:54:07 UTC.
+- A final explicit `$using:` test-capture cleanup passed the complete Terminal
+  isolation file: 41 passed, no failures or skips. No production change followed
+  the full gate.
+- ScriptAnalyzer: no test diagnostics or new handler diagnostics. The existing
+  handler `ShouldProcess` warning is identical in the baseline. Historical
+  changelog heading/list lint warnings remain; the new guide section renders.
+- The local Sampler artifact uses its 0.0.1 fallback version. Its bundled assets
+  match the prepared runtime. This is local build evidence, not a new release.
+- Self-review checked scope, redaction, text-only rendering, job cleanup, and
+  unchanged authority. Independent review remains off; `review: on` is
+  recommended for the diagnostic error-detail boundary.
 
 Evidence under TEMP:
 
-- `deskpilot-pester6-windows-2d53969304aa45dc8c6e7c5fefc91986.log`
-- `deskpilot-pester6-linux-complete-1add7121a3b447f7a123a75b61400717.log`
-- `deskpilot-ci-34214508250-monitor.jsonl`
-- `deskpilot-ci-34214508250-{Package,Windows,macOS,Ubuntu,Deploy}.log`
+- `deskpilot-runtime-red-1772306d96f44d20b3b96a982d85cb6b.log`
+- `deskpilot-runtime-ready-b1fb8f3aac8b4f929b735a1a94bc7995.log`
+- `deskpilot-runtime-sampler-88e6653657db4f47ad8effd8890fa348.log`
+- `deskpilot-runtime-terminal-suite-5c34beeca8674caa8b052dd208cd76d2.log`
 
 ## Next action
 
-CI monitoring is complete and the heartbeat is stopped. A documentation-only
-completion record follows the tested commit with `[skip ci]` to avoid another
-publication cycle; application and build files are unchanged. No further fix
-or rerun is needed for this CI repair. No data migration is required.
-
-The published Preview is available on
-[GitHub](https://github.com/raandree/DeskPilot/releases/tag/v0.5.0-preview0021)
-and [PowerShell Gallery](https://www.powershellgallery.com/packages/DeskPilot/0.5.0-preview0021).
-Installation remains a separate user action. The existing terminal themes and
-browser evidence are unchanged; see [the theme guide](../docs/themes.md).
+Reopen DeskPilot and run Diagnostics > Terminal runtime > Check. The improved
+error detail is in the local rebuilt code, not a newly published package.
+There is no data migration. Merge, push, and publication require a new explicit
+user request. See [runtime troubleshooting](../docs/isolated-terminal.md#if-preparation-fails).
 
 ## Retained release boundaries
 
-FIND-011/FIND-012 are already closed; other findings remain in
-[the assessment log](assessment-log.md). Earlier child V3 proof is source-bound
-and does not prove this rebuilt Host Server. Child execution stays disabled;
-the live profile was not rerun. Strict V2 still lacks its verified provider
-counter, decision 0005 remains unapproved, and Terminal-only live acceptance
-and clean-install Engine availability remain separate release work. This turn
-did not change Engine worktrees, child execution, or approval authority.
+The earlier CI repair and Preview `0.5.0-preview0021` publication remain recorded
+in [progress](progress.md); no remote changed in this turn. Pester resolves from
+`latest`, currently verified as 6.1.0. Do not restore the former 5.7.1 pin.
+
+FIND-011/FIND-012 remain closed. Child execution stays disabled; no live Model
+profile was rerun. Strict V2 still lacks its verified provider counter, decision
+0005 remains unapproved, and clean-install Engine availability and complete
+Terminal-only acceptance remain separate work. Runtime readiness alone does not
+prove that the installed Engine meets its dispatch-enforcement contract.
