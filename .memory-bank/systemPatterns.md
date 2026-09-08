@@ -21,6 +21,15 @@ source: repository implementation and decision records
 - Pump requests during Turns for Stop and answers; keep slow checks outside the
   accept loop. Bundle the static UI with CopyPaths and reuse existing controls.
 
+## Display preferences
+
+- Keep Theme (`ad_color_theme`) independent of Mode (`ad_theme`) in browser
+  localStorage. Neither belongs in Host Server Settings or shapes a Turn.
+- Scope palettes and typography with `data-color-theme`; resolve Light/Dark
+  through the existing `data-theme` and CSS `color-scheme`. Preserve old values.
+- Bundle fonts and their licences with `web/`. Test real computed colours,
+  loaded fonts, and toolbar control bounds, not just page scroll width.
+
 ## Decision index
 
 | Record | Subject |

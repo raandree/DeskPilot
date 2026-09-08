@@ -168,6 +168,14 @@ export const de = {
     'settings.language.auto': 'Systemsprache verwenden',
     'settings.language.en': 'English',
     'settings.language.de': 'Deutsch',
+    'settings.theme': 'Farbschema',
+    'settings.theme.deskpilot': 'DeskPilot',
+    'settings.theme.terminal-amber': 'Terminal Bernstein',
+    'settings.theme.terminal-green': 'Terminal Grün',
+    'settings.mode': 'Modus',
+    'settings.mode.system': 'System',
+    'settings.mode.light': 'Hell',
+    'settings.mode.dark': 'Dunkel',
 
     // Sicherheitstexte. Bedeutung vor Kürze.
     'warn.schedule.live': 'Diese geplante Aufgabe läuft unbeaufsichtigt mit Ihren aktuellen Berechtigungen, einschließlich Terminalbefehlen, und niemand ist da, um sie freizugeben. Fortfahren?',

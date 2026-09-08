@@ -171,6 +171,14 @@ export const en = {
     'settings.language.auto': 'Match my system',
     'settings.language.en': 'English',
     'settings.language.de': 'Deutsch',
+    'settings.theme': 'Theme',
+    'settings.theme.deskpilot': 'DeskPilot',
+    'settings.theme.terminal-amber': 'Terminal Amber',
+    'settings.theme.terminal-green': 'Terminal Green',
+    'settings.mode': 'Mode',
+    'settings.mode.system': 'System',
+    'settings.mode.light': 'Light',
+    'settings.mode.dark': 'Dark',
 
     // Safety copy. Meaning over brevity.
     'warn.schedule.live': 'This schedule will run unattended with your current permissions, including terminal commands, and nobody will be there to approve them. Continue?',

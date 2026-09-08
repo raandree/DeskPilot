@@ -3,82 +3,67 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: FIND-011 and FIND-012 fixes, focused regressions, and final full Sampler gate
+source: terminal-theme regressions, browser screenshots, and full Sampler gate
 ---
 
 # Active context
 
 ## Current focus
 
-Close FIND-011 and FIND-012 on `ai/intercom-group-mentions`. Direct plain-text
-replies to the current pending question in its recorded group now work without
-a mention. Specification 110, the operator guide, and the Unreleased note are
-aligned. FIND-013 through FIND-016 remain outside the requested scope.
-Normal user Settings and Telegram credentials were not changed; no Merge, push,
-or publication is authorized.
+Terminal Amber and Terminal Green themes are implemented on
+`ai/terminal-themes`. The user explicitly requested no commit yet. Nothing is
+staged, committed, pushed, or published by this turn.
 
-The allow-list runs first. The reply exception requires a positive pending
-Message id and an exact nonempty chat binding. It covers answers only, not
-commands, edits, Attachments, or unrelated free text after **Something else**.
-Other group Messages still require exact Telegram mention entities; private
-Messages and Keyboard callbacks are unchanged. A direct pending answer works
-even when `getMe` has not supplied the username. No Permission is granted.
+General Settings now separates Theme (DeskPilot, Terminal Amber, Terminal Green)
+from Mode (System, Light, Dark). Theme uses browser-local `ad_color_theme`;
+Mode preserves `ad_theme`. The top-bar switch changes only Mode. Dark terminal
+variants use phosphor colours on near-black surfaces; light variants use dark
+ink on near-white surfaces. Existing preferences retain DeskPilot by default.
+
+The locally bundled 3270 font is from upstream v3.0.1, converted to WOFF2 with
+`wawoff2` 2.0.1; the licence is included. Font research, hashes, browser support,
+and return-to-default instructions are in [the theme guide](../docs/themes.md).
+No runtime font CDN, Engine change, or Host Server Settings migration was added.
 
 ## Verification
 
-- FIND-011's two new acceptance cases failed before the fix, then passed.
-  All 209 Intercom tests now pass, including actual intake-to-answer-bridge
-  delivery, same-group acknowledgement, and command/edit/Attachment guards.
-- Both changed PowerShell files parse, with zero new analyzer findings and
-  three pre-existing findings. Specification, guide, and changelog render.
-- Final full Sampler gate completed at 06:28:46 UTC: 2,551 passed, zero failed,
-  18 skipped, zero unrun; 17 tasks with zero errors or warnings.
-  Log: `TEMP/deskpilot-find11-full-ede9197c39b64fbbba234a260be1bc3d.log`.
+- All 16 new native theme tests failed before the respective implementation and
+  now pass; all 29 native JavaScript unit tests pass.
+- Real-frontend Playwright checks with local fixture responses pass at 1440px
+  and 390px for both terminal themes and both modes, System changes, reloads,
+  English/German labels, bundled font loading, and absence of Host Server writes.
+  Screenshot-discovered toolbar clipping and native-font inheritance gaps have
+  regression guards. Screenshots were reviewed. Tested text/status pairs meet
+  4.5:1 contrast; body text exceeds 10:1 in every terminal variant.
+- Full default Sampler gate completed at 08:49:07 UTC: 2,551 passed, zero failed,
+  18 skipped; 17 tasks with zero errors or warnings. All six changed bundled
+  runtime assets match source hashes; the font is a valid 63,648-byte WOFF2.
+- Changed code has no editor diagnostics. The theme guide is lint-clean;
+  existing changelog heading/spacing warnings are untouched. Markdown renders,
+  and `git diff --check` passes. Scoped self-review found no Blocker or Major;
+  independent review remains off for this presentation-only change.
 
-Prior feature evidence, before these fixes:
-
-- Intake and Settings regressions were red before implementation, then green;
-  all 195 Intercom cases pass, including real command-handler silence checks.
-- All 13 native UI tests pass, including five new checkbox/save/rollback cases.
-- Full `build.ps1` gate completed at 05:20:22 UTC: 2,537 passed, zero failures,
-  18 skipped, zero unrun; 17 tasks without errors or warnings. The skips cover
-  13 child-execution cases and five existing browser Unicode cases.
-- Six changed PowerShell files parse with no new analyzer findings; five
-  existing findings remain. SPA syntax and edited Markdown rendering pass.
-- Real built-preview HTTP/UI checks pass at 1440px and 390px: the checkbox
-  persists both values and survives reload, authority settings remain off,
-  and no page errors, overflow, or overlapping controls were found. Screenshots
-  were reviewed. No live Telegram delivery or Model Turn was exercised.
-
-Full log: `TEMP/deskpilot-group-mention-full-d12fdbfc1bb94af8b80bd7e48a5871b4.log`.
-Browser report and screenshots:
-`TEMP/deskpilot-intercom-ui-65104d9a6b0a49efb982291f79c147fd`.
+Full log: `TEMP/deskpilot-themes-full-1040a3adbe974e96a5f50a6c1e171052.log`.
+Browser screenshots: `TEMP/deskpilot-themes-Mayscv`.
 
 ## Preview and next action
 
-The earlier preview at <http://127.0.0.1:58377> was loaded before FIND-011's fix;
-it is not evidence for the repaired answer path. It uses separate temporary
-data with no Telegram token. Its private launch URL is encrypted locally;
-never print it. Restart the Host Server from the rebuilt module to use the fix.
-Do not use a Gallery update notice to replace this development build. No live
-Telegram test or preview restart was performed for these two findings.
+The built preview is running at <http://127.0.0.1:65515>, process 9196, using
+`TEMP/deskpilot-theme-preview-5f395895aaec4f7aa70a6ea525bc30dd`. Its private launch
+link was opened directly by DeskPilot, never printed. Root, current selector,
+and WOFF2 content type were verified over real HTTP. Normal data and Telegram
+Settings were not changed; no Model Turn or live Telegram delivery was tested.
+
+Try Settings > General > Theme and Mode. Wait for the user's visual feedback or
+explicit commit instruction. Do not use a Gallery update notice to replace the
+development build. Terminal palettes require a browser supporting `light-dark()`.
 
 ## Retained release boundaries
 
-Earlier child V3 proof is source-bound and does not prove this rebuilt Host
-Server. Child execution remains disabled; its live profile was not rerun.
-Strict V2 still lacks the verified provider counter, and the parallel topology
-in decision 0005 remains unapproved. Terminal-only live acceptance and
-clean-install Engine availability remain separate release work.
-
-The prior approval-truncation finding is fixed. Two Minor follow-ups remain in
-[the assessment log](assessment-log.md): unobserved child stderr drains and
-missing direct `stopTurn` active-child route coverage. This turn did not change
-the Engine worktrees, child execution, or approval authority.
-
-## Review follow-up
-
-FIND-011 and FIND-012 are closed; focused verification and the final full gate
-pass. Other findings remain in [the assessment log](assessment-log.md).
-Scoped self-review found no new Blocker or Major. Independent subagent tooling
-is unavailable; a separate human review of the intake exception is recommended.
+FIND-011/FIND-012 are already closed; other findings remain in
+[the assessment log](assessment-log.md). Earlier child V3 proof is source-bound
+and does not prove this rebuilt Host Server. Child execution stays disabled;
+the live profile was not rerun. Strict V2 still lacks its verified provider
+counter, decision 0005 remains unapproved, and Terminal-only live acceptance
+and clean-install Engine availability remain separate release work. This turn
+did not change Engine worktrees, child execution, or approval authority.

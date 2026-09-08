@@ -213,12 +213,22 @@ function convColorHex(name) {
 }
 
 // ===== Theme =====
+function themeMode() {
+    const mode = localStorage.getItem('ad_theme');
+    return ['light', 'dark'].includes(mode) ? mode : 'system';
+}
+
+function colorTheme() {
+    const theme = localStorage.getItem('ad_color_theme');
+    return ['terminal-amber', 'terminal-green'].includes(theme) ? theme : 'deskpilot';
+}
+
 function effectiveTheme() {
-    const t = localStorage.getItem('ad_theme') || 'system';
-    if (t === 'system') {
+    const mode = themeMode();
+    if (mode === 'system') {
         return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     }
-    return t;
+    return mode;
 }
 
 // Which keystroke sends a prompt. A per-machine input preference, so it lives in
@@ -281,8 +291,8 @@ function errorText(error) {
 }
 
 function applyTheme() {
-    const t = localStorage.getItem('ad_theme') || 'system';
-    document.documentElement.dataset.theme = t;
+    document.documentElement.dataset.theme = themeMode();
+    document.documentElement.dataset.colorTheme = colorTheme();
     updateThemeToggle();
 }
 
@@ -307,7 +317,7 @@ function toggleTheme() {
 // Keep the toggle icon honest when the OS theme flips while set to "system".
 if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        if ((localStorage.getItem('ad_theme') || 'system') === 'system') updateThemeToggle();
+        if (themeMode() === 'system') updateThemeToggle();
     });
 }
 
@@ -7249,9 +7259,15 @@ function openSettings() {
         <p class="hint">DeskPilot follows your system language on first run. Your agent's answers and your project files are never translated.</p>
       </div>
       <div class="field">
-        <label>Theme</label>
+                <label for="set-color-theme" data-i18n="settings.theme">${tr('settings.theme')}</label>
+                <select id="set-color-theme">
+                    ${['deskpilot', 'terminal-amber', 'terminal-green'].map((theme) => `<option value="${theme}" data-i18n="settings.theme.${theme}" ${colorTheme() === theme ? 'selected' : ''}>${tr(`settings.theme.${theme}`)}</option>`).join('')}
+                </select>
+            </div>
+            <div class="field">
+                <label for="set-theme" data-i18n="settings.mode">${tr('settings.mode')}</label>
         <select id="set-theme">
-          ${['system', 'light', 'dark'].map((t) => `<option value="${t}" ${(localStorage.getItem('ad_theme') || 'system') === t ? 'selected' : ''}>${t}</option>`).join('')}
+                    ${['system', 'light', 'dark'].map((mode) => `<option value="${mode}" data-i18n="settings.mode.${mode}" ${themeMode() === mode ? 'selected' : ''}>${tr(`settings.mode.${mode}`)}</option>`).join('')}
         </select>
       </div>
       <div class="field">
@@ -7616,6 +7632,7 @@ function openSettings() {
         e.target.value = v;
         save({ responseRetryCount: v });
     };
+    $('set-color-theme').onchange = (event) => { localStorage.setItem('ad_color_theme', event.target.value); applyTheme(); };
     $('set-theme').onchange = (e) => { localStorage.setItem('ad_theme', e.target.value); applyTheme(); };
     $('set-language').onchange = (e) => setLanguage(e.target.value);
     $('set-sendkey').onchange = (e) => { localStorage.setItem('ad_sendkey', e.target.value); applySendKeyHint(); };

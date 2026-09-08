@@ -1,4 +1,12 @@
-﻿.child-dialog {
+﻿@font-face {
+    font-family: "3270";
+    src: url("./fonts/3270-Regular.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+.child-dialog {
     width: min(1000px, calc(100vw - 24px));
     max-height: calc(100dvh - 32px);
     padding: 0;
@@ -84,6 +92,7 @@
 
 /* ===== DeskPilot — deep teal / petrol UI ===== */
 :root {
+    color-scheme: light;
     --bg: #eef3f2;
     --surface: #ffffff;
     --surface-2: #e2ebe9;
@@ -109,6 +118,7 @@
 
 @media (prefers-color-scheme: dark) {
     :root[data-theme="system"] {
+        color-scheme: dark;
         --bg: #0c1c1f;
         --surface: #11272b;
         --surface-2: #173238;
@@ -129,6 +139,7 @@
 }
 
 :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #0c1c1f;
     --surface: #11272b;
     --surface-2: #173238;
@@ -145,6 +156,103 @@
     --scrollbar-track: transparent;
     --scrollbar-thumb: #2b5159;
     --scrollbar-thumb-hover: #3f8079;
+}
+
+:root:is([data-color-theme="terminal-amber"], [data-color-theme="terminal-green"]) {
+    --bg: light-dark(#f7f8f6, #090909);
+    --surface: light-dark(#ffffff, #111111);
+    --surface-2: light-dark(#ecefe9, #1b1b1b);
+    --danger: light-dark(#9f2924, #ff968e);
+    --ok: light-dark(#266039, #8fd6a0);
+    --changed: light-dark(#785009, #ffd078);
+    --warn: var(--changed);
+    --code-bg: var(--surface-2);
+    --radius: 4px;
+    --radius-sm: 3px;
+    --shadow: none;
+    --scrollbar-track: var(--bg);
+    --scrollbar-thumb: var(--border);
+    --scrollbar-thumb-hover: var(--muted);
+    --mono: "3270", "Cascadia Code", Consolas, monospace;
+    --font: var(--mono);
+    --font-read: var(--mono);
+    --font-mono: var(--mono);
+    accent-color: var(--accent);
+    caret-color: var(--accent);
+}
+
+:root[data-color-theme="terminal-amber"] {
+    --text: light-dark(#543600, #ffd28a);
+    --muted: light-dark(#736147, #bf9c65);
+    --accent: light-dark(#795008, #ffc46b);
+    --accent-soft: light-dark(#eee2c8, #2c2211);
+    --on-accent: light-dark(#ffffff, #161004);
+    --border: light-dark(#9d8c71, #7c6240);
+}
+
+:root[data-color-theme="terminal-green"] {
+    --text: light-dark(#153f22, #9be6a3);
+    --muted: light-dark(#4f6955, #8bb895);
+    --accent: light-dark(#225b31, #94efa3);
+    --accent-soft: light-dark(#dbe9dd, #172e1c);
+    --on-accent: light-dark(#ffffff, #09180e);
+    --border: light-dark(#7f927f, #496f50);
+}
+
+:root[data-color-theme^="terminal-"] ::selection {
+    color: var(--on-accent);
+    background: var(--accent);
+}
+
+:root[data-color-theme^="terminal-"] :is(button, input, select, textarea) {
+    font-family: var(--font);
+}
+
+:root[data-color-theme^="terminal-"] :is(input, textarea)::placeholder {
+    color: var(--muted);
+    opacity: 1;
+}
+
+:root[data-color-theme^="terminal-"] .conv-title {
+    min-width: 0;
+}
+
+:root[data-color-theme^="terminal-"] .composer-row {
+    flex-wrap: wrap;
+}
+
+:root[data-color-theme^="terminal-"] .chip {
+    flex-shrink: 0;
+    max-width: 100%;
+    white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+    :root[data-color-theme^="terminal-"] .topbar {
+        height: auto;
+        min-height: 56px;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+        padding-block: 8px;
+    }
+
+    :root[data-color-theme^="terminal-"] .topbar-right {
+        flex: 1 1 100%;
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    :root[data-color-theme^="terminal-"] .model-picker {
+        flex: 1;
+        min-width: 0;
+    }
+
+    :root[data-color-theme^="terminal-"] .model-picker select {
+        min-width: 0;
+        max-width: 100%;
+        flex: 1;
+    }
 }
 
 * {
