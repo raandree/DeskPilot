@@ -63,5 +63,17 @@ clean-install Engine availability remain separate release work.
 The prior approval-truncation finding is fixed. Two Minor follow-ups remain in
 [the assessment log](assessment-log.md): unobserved child stderr drains and
 missing direct `stopTurn` active-child route coverage. This turn did not change
-the Engine worktrees, child execution, or approval authority. Independent review
-was not requested; recommend `review: on` for the changed Intercom intake boundary.
+the Engine worktrees, child execution, or approval authority.
+
+## Security review — CONDITIONAL
+
+`38e4e99` was reviewed on 2026-09-08. No Blocker, no High, and no security
+regression: the gate only admits fewer updates, runs after the allow-list, fails
+closed on an unknown username, and grants no Permission. Six findings are open in
+[the assessment log](assessment-log.md); none is a Critical.
+
+FIND-011 (Major) blocks the merge to `main`: with the option on, a Telegram reply
+to a forwarded question in an allow-listed group is dropped, so the Turn stays
+blocked until the question expires. Fix it by admitting a reply that matches the
+pending question's message id in the same chat, or accept it explicitly in the
+guide. FIND-012 (specification 110 not updated) should land with it.

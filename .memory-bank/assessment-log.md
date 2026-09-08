@@ -12,6 +12,53 @@ Episodic record of security assessments: date, scope, verdict, top findings,
 remediation status. Newest first. Retention: two years, then archive to a dated
 topic file.
 
+## 2026-09-08 — Intercom mention-only group intake (`38e4e99`)
+
+**Scope:** the opt-in `intercom.requireGroupMention` gate on
+`ai/intercom-group-mentions` — six source files, two test files, the getting-started
+guide, and the changelog.
+
+**Verdict: CONDITIONAL.** No Blocker, no High, and no security regression. The
+change is a net reduction of the untrusted-content surface: it only ever admits
+fewer Telegram updates, runs after the chat allow-list, fails closed when the bot
+username is unknown, and grants no Permission. It is blocked from `main` only by
+FIND-011 and the specification gap in FIND-012.
+
+| ID | Severity | CVSS | Finding | Status |
+| --- | --- | --- | --- | --- |
+| FIND-011 | Major | — | With the gate on, a Telegram reply to the forwarded question is dropped in an allow-listed group. The Turn stays blocked until `questionTimeoutMinutes` expires, with no reply to the sender | **open** |
+| FIND-012 | Minor | — | Specification 110's Settings table and its *Addressing a group message* row do not carry `requireGroupMention`; the spec is the Intercom contract | **open** |
+| FIND-013 | Minor | — | `tests/Unit/intercom-ui.test.mjs` runs in no automated gate: Pester discovers only `*.Tests.ps1`, and no build task or CI step invokes `node --test` | **open** |
+| FIND-014 | Minor | — | `New-DpSupportBundleRecord` reports `groupEnabled`/`groupCount` but not `requireGroupMention`, so a bundle cannot explain "Intercom ignores my group" | **open** |
+| FIND-015 | Minor | — | When `getMe` fails, the `identity-error` line still says only a mention will stay in the prompt; with the gate on the real consequence is that no group Message is accepted for the session, and there is no retry | **open** |
+| FIND-016 | Low | — | Every un-addressed group Message adds an entry to the 200-item audit ring, evicting genuine rejections and errors in exactly the busy group the option targets | **open** |
+
+### Evidence
+
+- Full Sampler gate on the reviewed tree: **2,537 passed, 0 failed, 18 skipped**
+  (13 child-execution, five existing browser Unicode), 17 tasks, zero warnings.
+- FIND-011 proven by direct execution of the reviewed parser: one identical
+  reply-to-question update returns `answer` with the option off and `ignore`
+  with it on, reason `Group Message did not mention this Intercom.`
+- A suspected null-reference in the command-target gate was **discarded as a
+  false positive**: with an empty and a `$null` `BotUsername`, `/status@Otherbot`
+  in a group returns `ignore` without throwing, because the first gate returns
+  before that expression is reached.
+- Entity-based matching was probed for bypasses: a `code`-typed entity, a longer
+  username, a foreign `bot_command`, a missing entity, and malformed or
+  overflowing offsets all fail closed. Offsets are UTF-16, matching .NET.
+- No new lethal-trifecta leg. Layer 6 screening found no LLM01/02/05/06/08
+  regression; the mention is addressing, never authorization.
+
+### Notes
+
+Remediate FIND-011 by admitting a reply that matches the pending question's
+message id in the same chat — that admits nothing the allow-list does not
+already admit — or accept it explicitly and say so in the guide. `threat-model.md`
+and `security-playbooks.md` were deliberately not created: specification 050 and
+110 already hold that content, and duplicating repository source into the Memory
+Bank is a documented red flag.
+
 ## 2026-09-07 — Staged `main` merge candidate (`64b8b16` + `MERGE_HEAD 7631b10`)
 
 **Scope:** the uncommitted 97-file merge of `ai/turn-wide-terminal-approvals`
