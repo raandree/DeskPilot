@@ -3,28 +3,39 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: Intercom regressions, full Sampler gate, and built-preview browser proof
+source: FIND-011 and FIND-012 fixes, focused regressions, and final full Sampler gate
 ---
 
 # Active context
 
 ## Current focus
 
-Complete opt-in mention-only Telegram group intake on
-`ai/intercom-group-mentions`. The **Require a bot mention in groups** checkbox
-under **Settings > Intercom** persists `intercom.requireGroupMention`, default
-`false`. Normal user Settings and Telegram credentials were not changed.
-No push or publication is authorized.
+Close FIND-011 and FIND-012 on `ai/intercom-group-mentions`. Direct plain-text
+replies to the current pending question in its recorded group now work without
+a mention. Specification 110, the operator guide, and the Unreleased note are
+aligned. FIND-013 through FIND-016 remain outside the requested scope.
+Normal user Settings and Telegram credentials were not changed; no Merge, push,
+or publication is authorized.
 
-The allow-list runs first. With the option on, group and supergroup Messages
-need an exact, case-insensitive Telegram `mention` or addressed `bot_command`
-entity for the username obtained through `getMe`. Caption entities govern
-Attachments. Unmentioned Messages cannot acknowledge edits, answer questions,
-queue work, or start downloads. Typed group answers require a mention;
-Keyboard callbacks and private Messages are unchanged. An unknown username
-admits no group Messages. This is not a Permission or a Telegram privacy change.
+The allow-list runs first. The reply exception requires a positive pending
+Message id and an exact nonempty chat binding. It covers answers only, not
+commands, edits, Attachments, or unrelated free text after **Something else**.
+Other group Messages still require exact Telegram mention entities; private
+Messages and Keyboard callbacks are unchanged. A direct pending answer works
+even when `getMe` has not supplied the username. No Permission is granted.
 
 ## Verification
+
+- FIND-011's two new acceptance cases failed before the fix, then passed.
+  All 209 Intercom tests now pass, including actual intake-to-answer-bridge
+  delivery, same-group acknowledgement, and command/edit/Attachment guards.
+- Both changed PowerShell files parse, with zero new analyzer findings and
+  three pre-existing findings. Specification, guide, and changelog render.
+- Final full Sampler gate completed at 06:28:46 UTC: 2,551 passed, zero failed,
+  18 skipped, zero unrun; 17 tasks with zero errors or warnings.
+  Log: `TEMP/deskpilot-find11-full-ede9197c39b64fbbba234a260be1bc3d.log`.
+
+Prior feature evidence, before these fixes:
 
 - Intake and Settings regressions were red before implementation, then green;
   all 195 Intercom cases pass, including real command-handler silence checks.
@@ -45,12 +56,12 @@ Browser report and screenshots:
 
 ## Preview and next action
 
-The built Host Server is running at <http://127.0.0.1:58377> with separate
-temporary data and an authorized browser window open. Intercom is off and no
-Telegram token is stored there. Its private launch URL is encrypted locally;
-never print it. Restart the normal Host Server from the rebuilt module and
-enable the checkbox to use it with the operator's existing Telegram group.
-Do not use a Gallery update notice to replace this development build.
+The earlier preview at <http://127.0.0.1:58377> was loaded before FIND-011's fix;
+it is not evidence for the repaired answer path. It uses separate temporary
+data with no Telegram token. Its private launch URL is encrypted locally;
+never print it. Restart the Host Server from the rebuilt module to use the fix.
+Do not use a Gallery update notice to replace this development build. No live
+Telegram test or preview restart was performed for these two findings.
 
 ## Retained release boundaries
 
@@ -65,15 +76,9 @@ The prior approval-truncation finding is fixed. Two Minor follow-ups remain in
 missing direct `stopTurn` active-child route coverage. This turn did not change
 the Engine worktrees, child execution, or approval authority.
 
-## Security review — CONDITIONAL
+## Review follow-up
 
-`38e4e99` was reviewed on 2026-09-08. No Blocker, no High, and no security
-regression: the gate only admits fewer updates, runs after the allow-list, fails
-closed on an unknown username, and grants no Permission. Six findings are open in
-[the assessment log](assessment-log.md); none is a Critical.
-
-FIND-011 (Major) blocks the merge to `main`: with the option on, a Telegram reply
-to a forwarded question in an allow-listed group is dropped, so the Turn stays
-blocked until the question expires. Fix it by admitting a reply that matches the
-pending question's message id in the same chat, or accept it explicitly in the
-guide. FIND-012 (specification 110 not updated) should land with it.
+FIND-011 and FIND-012 are closed; focused verification and the final full gate
+pass. Other findings remain in [the assessment log](assessment-log.md).
+Scoped self-review found no new Blocker or Major. Independent subagent tooling
+is unavailable; a separate human review of the intake exception is recommended.

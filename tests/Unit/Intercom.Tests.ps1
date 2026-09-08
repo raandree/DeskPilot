@@ -234,13 +234,79 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'ignore'
         }
 
-        It 'does not consume an unmentioned pending answer' {
+        It 'accepts a direct group answer with <Identity> username lookup' -ForEach @(
+            @{ Identity = 'successful'; Username = 'Janis1bot' }
+            @{ Identity = 'unavailable'; Username = $null }
+        ) {
+            $script:mentionParams.BotUsername = $Username
+            $script:mentionParams.PendingQuestionMessageId = 42
+            $script:mentionParams.PendingQuestionChatId = '-1004455397827'
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text 'the second one' -ReplyTo 42
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'answer'
+            $result.text | Should -Be 'the second one'
+            $result.replyToMessageId | Should -Be 42
+        }
+
+        It 'ignores an unmentioned reply with <Boundary>' -ForEach @(
+            @{ Boundary = 'a question in a different group'; PendingChat = '-555'; PendingId = 42; ReplyId = 42 }
+            @{ Boundary = 'a question in the private chat'; PendingChat = '111'; PendingId = 42; ReplyId = 42 }
+            @{ Boundary = 'a stale question id'; PendingChat = '-1004455397827'; PendingId = 42; ReplyId = 41 }
+            @{ Boundary = 'no pending question'; PendingChat = '-1004455397827'; PendingId = 0; ReplyId = 42 }
+            @{ Boundary = 'no question chat binding'; PendingChat = ''; PendingId = 42; ReplyId = 42 }
+        ) {
+            $script:mentionParams.PendingQuestionMessageId = $PendingId
+            $script:mentionParams.PendingQuestionChatId = $PendingChat
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes' -ReplyTo $ReplyId
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'ignore'
+            $result.text | Should -BeNullOrEmpty
+        }
+
+        It 'still rejects a direct answer from a group outside the allow-list' {
+            $script:mentionParams.PendingQuestionMessageId = 42
+            $script:mentionParams.PendingQuestionChatId = '-999'
+            $update = New-TestUpdate -ChatId '-999' -Text 'yes' -ReplyTo 42
+
+            (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'rejected'
+        }
+
+        It 'does not consume unmentioned free text without a direct reply' {
             $script:mentionParams.PendingQuestionMessageId = 42
             $script:mentionParams.PendingQuestionChatId = '-1004455397827'
             $script:mentionParams.PendingQuestionAwaitsFreeText = $true
-            $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes' -ReplyTo 42
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes'
 
             (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'ignore'
+        }
+
+        It 'does not use a pending-question reply to admit an unmentioned <MessageKind>' -ForEach @(
+            @{ MessageKind = 'command'; Text = ' /status' }
+            @{ MessageKind = 'foreign command'; Text = '/status@Otherbot' }
+            @{ MessageKind = 'edit'; Text = 'yes' }
+            @{ MessageKind = 'Attachment'; Text = 'inspect this' }
+        ) {
+            $script:mentionParams.PendingQuestionMessageId = 42
+            $script:mentionParams.PendingQuestionChatId = '-1004455397827'
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text $Text -ReplyTo 42
+            if ($MessageKind -eq 'edit') {
+                $update = @{ update_id = 1; edited_message = $update.message }
+            }
+            elseif ($MessageKind -eq 'Attachment') {
+                $update.message | Add-Member -NotePropertyName 'document' -NotePropertyValue @{
+                    file_id = 'file1'; file_name = 'notes.txt'; file_size = 32
+                }
+            }
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'ignore'
+            $result.text | Should -BeNullOrEmpty
+            $result.attachment | Should -BeNullOrEmpty
         }
 
         It 'checks Attachment captions before admitting a download' -ForEach @($false, $true) {
@@ -1721,7 +1787,6 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
                     awaitingFreeText = $true
                     askedUtc = [DateTime]::UtcNow
                 }
-                $message.reply_to_message = @{ message_id = 42 }
             }
             $update = @{ update_id = 13 }
             $update[$(if ($MessageKind -eq 'edit') { 'edited_message' } else { 'message' })] = $message
@@ -1743,6 +1808,74 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
             if ($MessageKind -eq 'answer') {
                 $script:DeskPilot.Intercom.PendingQuestion.id | Should -Be 'q1'
             }
+        }
+
+        It 'releases the waiting Engine on a direct group answer with free-text choice <FreeTextArmed>' -ForEach @(
+            @{ FreeTextArmed = $false }
+            @{ FreeTextArmed = $true }
+        ) {
+            $bridge = [pscustomobject]@{ Answers = [System.Collections.Generic.List[object]]::new() }
+            $bridge | Add-Member -MemberType ScriptMethod -Name 'SubmitAnswer' -Value {
+                param($ConversationId, $QuestionId, $Answer)
+                $this.Answers.Add(@{ conversationId = $ConversationId; questionId = $QuestionId; text = $Answer })
+                $true
+            }
+            $script:DeskPilot.Engine = @{ UserPromptBridge = $bridge }
+            $script:DeskPilot.TurnRunning = $true
+            $script:DeskPilot.Intercom.PendingQuestion = @{
+                id = 'q1'
+                conversationId = 'c1'
+                messageId = 42
+                chatId = '-1004455397827'
+                awaitingFreeText = $FreeTextArmed
+                askedUtc = [DateTime]::UtcNow
+                step = 0
+                structured = $false
+                questions = @(
+                    @{
+                        header = 'Q'
+                        question = 'Which option?'
+                        options = @()
+                        multiSelect = $false
+                        allowFreeformInput = $true
+                        selectedOptions = @()
+                        freeText = ''
+                    }
+                )
+            }
+            $body = @{
+                ok = $true
+                result = @(
+                    @{
+                        update_id = 13
+                        message = @{
+                            message_id = 44
+                            chat = @{ id = '-1004455397827'; type = 'supergroup' }
+                            text = 'the second one'
+                            reply_to_message = @{ message_id = 42 }
+                        }
+                    }
+                )
+            } | ConvertTo-Json -Depth 8
+            $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+            $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+            $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+
+            Update-DpIntercomState
+
+            $bridge.Answers | Should -HaveCount 1
+            $bridge.Answers[0].conversationId | Should -Be 'c1'
+            $bridge.Answers[0].questionId | Should -Be 'q1'
+            $bridge.Answers[0].text | Should -Be 'the second one'
+            $script:DeskPilot.Intercom.PendingQuestion | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.Counters.accepted | Should -Be 1
+            $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
+            $script:DeskPilot.Intercom.LastError | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.Outbound.Count | Should -Be 1
+            $script:DeskPilot.Intercom.Outbound.Peek().kind | Should -Be 'ack'
+            $script:DeskPilot.Intercom.Outbound.Peek().chatId | Should -Be '-1004455397827'
+            Should -Invoke Invoke-DpIntercomTurn -Times 0 -Exactly
         }
     }
 

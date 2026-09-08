@@ -60,9 +60,10 @@ function ConvertFrom-DpIntercomUpdate {
         Empty leaves the text untouched.
     .PARAMETER RequireGroupMention
         Ignore group Messages unless Telegram identifies a mention of this
-        Intercom's username or a command addressed to it. Private Messages and
-        Keyboard callbacks are unaffected. An unknown username admits no group
-        Messages while this option is enabled.
+        Intercom's username or a command addressed to it, except plain-text
+        replies to the pending question in its recorded chat. Private Messages
+        and Keyboard callbacks are unaffected. The reply exception also works
+        when the username is unknown.
     .PARAMETER MaxTextLength
         The bound applied to any text carried out of this function.
     .OUTPUTS
@@ -207,10 +208,19 @@ function ConvertFrom-DpIntercomUpdate {
         $result.preview = $(if ($rawText) { $rawText } else { [string]$attachment.fileName })
     }
 
+    $replyTo = Get-DpPropertyValue -InputObject $message -Name @('reply_to_message') -Default $null
+    if ($replyTo) {
+        $result.replyToMessageId = [long](Get-DpPropertyValue -InputObject $replyTo -Name @('message_id') -Default 0)
+    }
+    $repliesToQuestion = $PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId
+
     $chatType = [string](Get-DpPropertyValue -InputObject $chat -Name @('type') -Default '')
     $isGroup = $chatType -in @('group', 'supergroup') -or $result.chatId.StartsWith('-')
     if ($RequireGroupMention -and $isGroup) {
-        $addressed = $false
+        $addressed = $repliesToQuestion -and
+            -not [string]::IsNullOrWhiteSpace($PendingQuestionChatId) -and
+            $result.chatId -eq $PendingQuestionChatId.Trim() -and
+            -not $isEdit -and -not $attachment -and -not $rawText.TrimStart().StartsWith('/')
         if (-not [string]::IsNullOrWhiteSpace($BotUsername)) {
             $mention = '@' + $BotUsername.Trim().TrimStart('@')
             $entityField = if ($attachment) { 'caption_entities' } else { 'entities' }
@@ -285,11 +295,6 @@ function ConvertFrom-DpIntercomUpdate {
         return $result
     }
 
-    $replyTo = Get-DpPropertyValue -InputObject $message -Name @('reply_to_message') -Default $null
-    if ($replyTo) {
-        $result.replyToMessageId = [long](Get-DpPropertyValue -InputObject $replyTo -Name @('message_id') -Default 0)
-    }
-
     # A file is always work to do, never a command: a caption beginning with a
     # slash is far more likely to be a filename than an instruction.
     if ($attachment) {
@@ -304,7 +309,6 @@ function ConvertFrom-DpIntercomUpdate {
         # after choosing free text, the next ordinary message in the same chat is
         # also the answer, without making the operator invoke Telegram's Reply UI.
         $sameChat = [string]::IsNullOrWhiteSpace($PendingQuestionChatId) -or $result.chatId -eq $PendingQuestionChatId.Trim()
-        $repliesToQuestion = $PendingQuestionMessageId -gt 0 -and $result.replyToMessageId -eq $PendingQuestionMessageId
         if ($sameChat -and ($repliesToQuestion -or $PendingQuestionAwaitsFreeText)) {
             $result.kind = 'answer'
         }

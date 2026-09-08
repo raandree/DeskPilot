@@ -81,8 +81,10 @@ source: repository implementation and decision records
 - Diagnostics projects allow-listed fields. Self-checks call no Model; logs are
   bounded/redacted. Unknown Engine Usage remains unknown, not zero or billing.
 - **Intercom addressing is not authority.** Allow-list first; optionally require
-  exact Telegram text/caption mention entities before effects. Unknown identity
-  fails closed; private Messages and validated Keyboard callbacks are unchanged.
+  exact Telegram text/caption mention entities before effects. Direct plain-text
+  pending answers also qualify by positive Message id and exact nonempty chat
+  binding, even with unknown identity. Commands, edits, and Attachments do not.
+  Private Messages and validated Keyboard callbacks are unchanged.
   Mentions grant no Permission. Scheduled/Intercom work reuses the Turn dispatcher.
 - Attachments, files, pages, Tool results, and recalled Memory are untrusted data.
 

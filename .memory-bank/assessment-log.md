@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: security-reviewer
-last-verified: 2026-09-07
+last-verified: 2026-09-08
 source: repository evidence
 ---
 
@@ -18,16 +18,16 @@ topic file.
 `ai/intercom-group-mentions` — six source files, two test files, the getting-started
 guide, and the changelog.
 
-**Verdict: CONDITIONAL.** No Blocker, no High, and no security regression. The
+**Original verdict: CONDITIONAL.** No Blocker, no High, and no security regression. The
 change is a net reduction of the untrusted-content surface: it only ever admits
 fewer Telegram updates, runs after the chat allow-list, fails closed when the bot
-username is unknown, and grants no Permission. It is blocked from `main` only by
+username is unknown, and grants no Permission. It was blocked from `main` only by
 FIND-011 and the specification gap in FIND-012.
 
 | ID | Severity | CVSS | Finding | Status |
 | --- | --- | --- | --- | --- |
-| FIND-011 | Major | — | With the gate on, a Telegram reply to the forwarded question is dropped in an allow-listed group. The Turn stays blocked until `questionTimeoutMinutes` expires, with no reply to the sender | **open** |
-| FIND-012 | Minor | — | Specification 110's Settings table and its *Addressing a group message* row do not carry `requireGroupMention`; the spec is the Intercom contract | **open** |
+| FIND-011 | Major | — | With the gate on, a Telegram reply to the forwarded question is dropped in an allow-listed group. The Turn stays blocked until `questionTimeoutMinutes` expires, with no reply to the sender | **closed** |
+| FIND-012 | Minor | — | Specification 110's Settings table and its *Addressing a group message* row do not carry `requireGroupMention`; the spec is the Intercom contract | **closed** |
 | FIND-013 | Minor | — | `tests/Unit/intercom-ui.test.mjs` runs in no automated gate: Pester discovers only `*.Tests.ps1`, and no build task or CI step invokes `node --test` | **open** |
 | FIND-014 | Minor | — | `New-DpSupportBundleRecord` reports `groupEnabled`/`groupCount` but not `requireGroupMention`, so a bundle cannot explain "Intercom ignores my group" | **open** |
 | FIND-015 | Minor | — | When `getMe` fails, the `identity-error` line still says only a mention will stay in the prompt; with the gate on the real consequence is that no group Message is accepted for the session, and there is no retry | **open** |
@@ -58,6 +58,32 @@ already admit — or accept it explicitly and say so in the guide. `threat-model
 and `security-playbooks.md` were deliberately not created: specification 050 and
 110 already hold that content, and duplicating repository source into the Memory
 Bank is a documented red flag.
+
+### Remediation of FIND-011 and FIND-012, 2026-09-08
+
+**Follow-up verdict: PASS for FIND-011 and FIND-012.** Both are closed.
+
+The operator requested these two fixes only. Reply metadata is now read before
+the mention gate. A plain-text answer qualifies only when its reply id matches
+the positive pending question id and its chat matches the nonempty recorded
+chat id. Commands, edits, Attachments, other chats, old question ids, and
+unrelated free text receive no exception. The allow-list still runs first.
+
+Two acceptance regressions failed before the fix, then passed. All 209 Intercom
+tests pass, including delivery to the waiting Engine bridge, clearing the
+pending question, and acknowledgement in the same group. No live Telegram or
+Model request was needed. The specification now records the default-off Setting,
+entity matching, exact-question exception, and unknown-username behavior; the
+guide and Unreleased entry agree. Markdown rendering and PowerShell parsing
+pass with no new analyzer findings. The final full gate completed at 06:28:46
+UTC: 2,551 passed, zero failed, 18 skipped, zero unrun; 17 tasks without errors
+or warnings. Evidence:
+`TEMP/deskpilot-find11-full-ede9197c39b64fbbba234a260be1bc3d.log`.
+
+FIND-013 through FIND-016 remain unchanged. Scoped self-review found no new
+Blocker or Major; independent subagent tooling was unavailable. The earlier
+CONDITIONAL verdict describes the original feature, not a fresh full-system
+security assessment of these fixes.
 
 ## 2026-09-07 — Staged `main` merge candidate (`64b8b16` + `MERGE_HEAD 7631b10`)
 

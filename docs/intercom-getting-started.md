@@ -152,12 +152,16 @@ group workflows stay unchanged; the persisted Setting is
   `@yourbot /status`. A bare `/status` or a command for another bot is ignored.
 - Mention the bot in an Attachment's caption to have it downloaded and used.
   An uncaptioned Attachment is ignored when this option is on.
+- Use Telegram's **Reply** on the question currently waiting in that group to
+  answer in plain text without a mention. Replies to other Messages or an old
+  question do not qualify. Commands, edits, and Attachments still need a mention.
 
-Unmentioned group Messages, including edits and typed replies, receive no
-acknowledgement and start no Turn or download. Private Messages and Keyboard
-taps are unchanged. A leading `@yourbot` followed by a space is removed before
+Other unmentioned group Messages receive no acknowledgement and start no Turn
+or download. Private Messages and Keyboard taps are unchanged. A leading
+`@yourbot` followed by a space is removed before
 the instruction reaches the Engine. If Intercom cannot obtain its own username
-from Telegram, group Messages are ignored while this option is on.
+from Telegram, new group work is ignored while this option is on; direct
+plain-text replies to the pending question and Keyboard taps still work.
 
 This Setting filters updates at the Host Server; it does not change Telegram's
 Group Privacy or stop Telegram delivering updates. It also grants no Permission:
@@ -168,8 +172,9 @@ allowed group retains the same authority when they address Intercom.
 message itself, or tap one of its buttons. A new message in the group is normally
 a new instruction, not an answer. After you tap **Something else**, however,
 your next message in that group is the answer. With **Require a bot mention in
-groups** on, include `@yourbot` in every typed answer, including after
-**Something else**. Keyboard taps need no mention.
+groups** on, reply to the current question or include `@yourbot` in a typed
+answer, including after **Something else**. A direct plain-text reply and
+Keyboard taps need no mention.
 
 **Answering a set of questions.** The agent usually needs several things at once.
 DeskPilot asks them **one at a time**: tap an answer and the next question

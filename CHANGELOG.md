@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add **Require a bot mention in groups** to Intercom Settings so unaddressed group Messages start no work and receive no reply; private chats stay unchanged. See [group setup](docs/intercom-getting-started.md#require-a-mention-in-groups).
+- Add **Require a bot mention in groups** to Intercom Settings so unaddressed group Messages start no work and receive no reply; direct plain-text answers to the pending question in the same group need no mention, and private chats stay unchanged. See [group setup](docs/intercom-getting-started.md#require-a-mention-in-groups).
 
 - **Allow Terminal commands for the current Turn.** Choose **Allow once** or
   **Allow for this Turn** in an ordinary Terminal approval. Reuse is limited to

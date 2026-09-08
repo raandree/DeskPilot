@@ -37,7 +37,7 @@ is a Skill.**
 | Sender authentication | A hard **allow-list on `chat_id`**. The operator's own chat is always the primary one; **shared group chats** can be added alongside it, and are refused unless *both* `allowGroupChat` is on and `groupChatIds` holds at least one id. Up to ten, so the allow-list stays bounded. An update from any other chat is counted, logged as a rejection, and dropped before its text is parsed. Two gates rather than one list, because allow-listing a group is not the same kind of act as allow-listing a phone - see *Accepted risks*. |
 | Where a reply goes | **Answer where you were asked.** Every queued message carries the chat the interaction it belongs to came from, so work requested in the group is acknowledged, questioned and reported in the group rather than surfacing privately. That target is **re-validated against the live allow-list at the moment of sending**, and falls back to the operator's chat when it no longer passes: the target is stamped before a message is classified and outlives a single tick in three separate carriers, so *"never answer a caller you just rejected"* has to be a property of the addressing layer rather than of one early `return`. It also makes stale routing state harmless instead of requiring every clearing path to be enumerated correctly - failing to enumerate one *is* the bug. A Turn started from the window, and every message DeskPilot sends on its own initiative, goes to the operator's chat. The live status message is the deliberate exception: there is exactly one of it, edited in place against a single `message_id`, and it belongs to the operator. |
 | Answering across two chats | Telegram message ids are **per-chat sequences**, so with two chats allow-listed an unrelated reply in one can carry the same id as the question pending in the other. The pending question therefore records the chat it was sent to. A reply is an answer only when it replies to that message *in that chat*. After **Something else** explicitly arms free text, the next ordinary message is an answer only in that same chat; anywhere else it is an ordinary prompt. |
-| Addressing a group message | Under Telegram's group privacy a plain instruction only reaches the bot if it **@mentions** it, so that mention is *addressing, not content* - the same reason `/command@BotName` already loses its suffix. A leading mention of the bot's own name is stripped before the text becomes a prompt, on a word boundary so `@bot2` is not read as `@bot`. Left in, it reached the agent as the first words of the work and became the Conversation title, which is derived from them. The name comes from one non-blocking `getMe` started on the enable transition; if it fails, nothing is stripped and the only cost is the noise. |
+| Addressing a group Message | The optional `requireGroupMention` Setting requires an exact Telegram mention of Intercom's username or a command addressed to it, except for plain-text replies to the pending question in its recorded chat. It defaults off and grants no Permission. A leading mention followed by whitespace is removed before the prompt and Conversation title are derived. The username comes from a non-blocking `getMe` on enable; while the Setting is on, an unknown username permits only the pending-answer exception and validated Keyboard callbacks in groups. See [Group addressing](#group-addressing). |
 | Pairing | The allow-list creates a chicken-and-egg that would otherwise make setup impossible: Intercom will not listen until it knows the operator's chat, so the bot cannot answer *anything* - including `/start` - and there is no way to learn the id from it. **Link my phone** opens a five-minute window in which the poller runs with an empty allow-list. Every update therefore still parses as `rejected` and executes nothing; only the sender is kept as a candidate. Adoption is an explicit click at the machine, never automatic - auto-trusting the first chat to message the bot would hand control to anyone who guessed its username. Confirming a chat closes the window, discards the backlog, and restarts Intercom live. |
 | Credential storage | The bot token lives in **`intercom.secret` in the data directory**, DPAPI-protected on Windows (`CurrentUser` scope) and mode-restricted elsewhere. It is never in `settings.json` (so a Settings backup cannot leak it), never returned by any route, and redacted from every log line and error message — the token is in the request URL, so an unredacted transport error would print it. |
 | Archived and deleted Conversations | A remote Turn is refused when the bound Conversation is archived or gone, through the same `Test-DpConversationWritable` the window's own routes use. Intercom used to fall back to "the most recent Conversation" when its binding had gone, which meant the work quietly happened somewhere the operator never chose. |
@@ -57,6 +57,30 @@ is a Skill.**
 | Rate limiting | A rolling one-hour window caps outbound messages (`maxMessagesPerHour`, default 60). Over the cap, messages are dropped and counted, not queued forever. |
 | Audit | Every accepted message, every rejected message, and every outbound message is recorded in a bounded in-memory log with a UTC timestamp, **the chat it came from and the sender's Telegram display name**. A rejection is a possible attack and is recorded as loudly as an acceptance. Once more than one chat can reach DeskPilot, *what happened* is only half an audit trail: after a bad `/undo` the log has to answer *who*. The name is untrusted - Telegram reports whatever it was told - so it is a label beside the chat id, not an identity. Exposed by `GET /api/intercom`. |
 | Disable | One Settings toggle. Turning it off drops the in-flight poll, clears the pending question, and sends a final "Intercom off" message. |
+
+### Group addressing
+
+With `settings.intercom.requireGroupMention` enabled, the chat allow-list still
+runs first. In groups and supergroups, Telegram `mention` and `bot_command`
+entities in the Message text or Attachment caption must match the username
+exactly, ignoring case. The Host Server validates entity offsets and lengths
+in UTF-16 code units before reading their text.
+
+A plain-text reply to the current pending question also counts as addressed.
+Its `reply_to_message.message_id` must match the pending question's positive
+Message id, and its chat must match the question's nonempty recorded chat id.
+Another chat's equal Message id, an old question id, or an unbound question
+does not qualify. This exception does not depend on the username lookup.
+It applies only to answers: commands, edits, and Attachments still require a
+mention, even when replying to the pending question. Commands explicitly
+addressed to another Telegram username remain ignored.
+
+After **Something else** arms free text, a reply to that question needs no
+mention; an ordinary Message without reply metadata still needs one. Other
+unmentioned group Messages are ignored without an acknowledgement, Turn, or
+download. Private Messages and validated Keyboard callbacks are unchanged.
+The Setting filters Host Server intake, not Telegram delivery, and does not
+change Group Privacy, the allow-list, or Project Permissions.
 
 ## Failure detection (resolves F2)
 
@@ -354,6 +378,7 @@ Stored under `settings.intercom`; the bot token is **not** among them.
 | `chatId` | `null` | The operator's own allow-listed Telegram chat |
 | `allowGroupChat` | `false` | Whether shared group chats are allow-listed as well |
 | `groupChatIds` | `[]` | Their chat ids, always negative, at most ten, and inert while `allowGroupChat` is off. A `groupChatId` string written by an earlier version migrates into this list on load |
+| `requireGroupMention` | `false` | Require an exact Telegram mention or addressed command in groups, except plain-text replies to the current pending question in its recorded chat. Private Messages and Keyboard callbacks are unchanged. |
 | `heartbeatMinutes` | `5` | How often the status message is refreshed |
 | `stallMinutes` | `5` | Silence inside a running Turn before the stall warning |
 | `questionTimeoutMinutes` | `60` | How long a forwarded question stays answerable |
