@@ -241,6 +241,7 @@ function Update-DpIntercomState {
                                 PendingQuestionChatId         = $pendingChatId
                                 PendingQuestionAwaitsFreeText = $pendingAwaitsFreeText
                                 BotUsername                   = [string](Get-DpPropertyValue -InputObject $intercom -Name @('BotUsername') -Default '')
+                                RequireGroupMention           = [bool](Get-DpPropertyValue -InputObject $settings -Name @('requireGroupMention') -Default $false)
                             }
                             $command = ConvertFrom-DpIntercomUpdate @commandParams
                             # While pairing, chatId is empty, so every command comes

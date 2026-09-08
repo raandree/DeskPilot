@@ -2,8 +2,8 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-07
-source: final full gates, built-runtime live proof, and independent review closure
+last-verified: 2026-09-08
+source: full Sampler gates, Intercom regressions, and built-preview browser proof
 ---
 
 # Progress
@@ -28,6 +28,7 @@ parallel topology remains proposed; no parallel scheduling is enabled.
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-08 | Add opt-in **Require a bot mention in groups** to Intercom. Exact Telegram mention entities gate group prompts, commands, typed answers, edits, and Attachment intake before effects; private Messages and Keyboard taps remain unchanged. Red/green regressions, 195 Intercom cases, and 13 native UI cases pass. The full Sampler gate passed 2,537 tests with 18 child/browser skips, zero failures, and 17 tasks without errors or warnings. Built-preview persistence and desktop/mobile checks passed. Normal Telegram Settings are untouched; no live Telegram test, child-profile proof, push, or publication. |
 | 2026-09-07 | Merge the Turn-grant and single-child V3 chain into local `main` as `e109c55` after an independent security review, then close its one High finding test-first. An approval card no longer shortens a command, URL or form value while dispatching the whole string, and no longer fingerprints the shortened copy — two values sharing a 500-character prefix previously produced the same card and the same answer. Content above the card's ceiling is refused instead of shown in part, and Local Terminal gained the 2,000-character guard Isolated and child Terminal already had. Nine tests written first failed for the right reasons, then passed; the merged and fixed tree passed 2,514 tests with zero failures, five existing skips, and 16 tasks without errors or warnings. Two Minor findings stay open: unobserved child stderr drains and a missing `stopTurn` route test. No push, no publication, and child execution remains disabled pending a fresh built-runtime proof. |
 | 2026-09-07 | Store a standalone Desktop roadmap and user-testing guide covering verified repository state, safe temporary-data launch, Turn-wide/once/Stop/Isolated acceptance checks, pass/fail recording, post-acceptance Merge gates, and remaining File/MCP, Parallel Agents, and Microsoft Graph work. Render and secret-pattern checks passed; repository records remain authoritative. |
 | 2026-09-07 | Independent security/quality review approved Turn-wide Terminal grants with zero Blockers/Majors and one Minor test gap. Added the complete Terminal execution-policy revocation matrix; 117 approval contracts passed against merged ShellPilot. ShellPilot child-provider support merged into `main` as `4ab9eed`, passed 1,937 tests with three existing Unix-only skips and 89.04% coverage, then was pushed to `origin/main`. No package publication. |

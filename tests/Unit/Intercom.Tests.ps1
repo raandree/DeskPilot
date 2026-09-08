@@ -21,12 +21,14 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
                 [string]$ChatId = '111',
                 [string]$Text = 'hello',
                 [long]$MessageId = 5,
-                [long]$ReplyTo = 0
+                [long]$ReplyTo = 0,
+                [object[]]$Entities = @()
             )
             $message = [pscustomobject]@{
                 message_id = $MessageId
                 chat       = [pscustomobject]@{ id = $ChatId }
                 text       = $Text
+                entities   = $Entities
             }
             if ($ReplyTo -gt 0) {
                 $message | Add-Member -MemberType NoteProperty -Name 'reply_to_message' -Value ([pscustomobject]@{ message_id = $ReplyTo })
@@ -125,6 +127,159 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
 
         $result.kind | Should -Be 'ignore'
         $result.text | Should -BeNullOrEmpty
+    }
+
+    Context 'group mention requirement' {
+        BeforeEach {
+            $script:mentionParams = @{
+                AllowedChatId      = '111'
+                AllowedGroupChatId = '-1004455397827'
+                BotUsername        = 'Janis1bot'
+                RequireGroupMention = $true
+            }
+        }
+
+        It 'accepts <Label>' -ForEach @(
+            @{ Label = 'a leading mention'; Text = '@Janis1bot build it'; Offset = 0; Length = 10; Type = 'mention'; Kind = 'prompt'; Content = 'build it' }
+            @{ Label = 'a case-insensitive mention'; Text = '@JANIS1BOT build it'; Offset = 0; Length = 10; Type = 'mention'; Kind = 'prompt'; Content = 'build it' }
+            @{ Label = 'a mention within a Message'; Text = 'hello @Janis1bot'; Offset = 6; Length = 10; Type = 'mention'; Kind = 'prompt'; Content = 'hello @Janis1bot' }
+            @{ Label = 'an addressed command'; Text = '/status@Janis1bot'; Offset = 0; Length = 17; Type = 'bot_command'; Kind = 'status'; Content = '' }
+            @{ Label = 'a command after a mention'; Text = '@Janis1bot /status'; Offset = 0; Length = 10; Type = 'mention'; Kind = 'status'; Content = '' }
+        ) {
+            $entity = @{ type = $Type; offset = $Offset; length = $Length }
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text $Text -Entities @($entity)
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be $Kind
+            $result.text | Should -Be $Content
+        }
+
+        It 'ignores <Label>' -ForEach @(
+            @{ Label = 'ordinary group chatter'; Text = 'hello'; Entities = @() }
+            @{ Label = 'a bare command'; Text = '/status'; Entities = @(@{ type = 'bot_command'; offset = 0; length = 7 }) }
+            @{ Label = 'another username'; Text = '@Otherbot hello'; Entities = @(@{ type = 'mention'; offset = 0; length = 9 }) }
+            @{ Label = 'a longer username'; Text = '@Janis1bot2 hello'; Entities = @(@{ type = 'mention'; offset = 0; length = 11 }) }
+            @{ Label = 'a command for another username'; Text = '/status@Otherbot'; Entities = @(@{ type = 'bot_command'; offset = 0; length = 16 }) }
+            @{ Label = 'a username inside code'; Text = '@Janis1bot'; Entities = @(@{ type = 'code'; offset = 0; length = 10 }) }
+            @{ Label = 'a username without a mention entity'; Text = '@Janis1bot hello'; Entities = @() }
+            @{ Label = 'a negative entity offset'; Text = '@Janis1bot hello'; Entities = @(@{ type = 'mention'; offset = -1; length = 10 }) }
+            @{ Label = 'an out-of-bounds entity'; Text = '@Janis1bot hello'; Entities = @(@{ type = 'mention'; offset = 8; length = 10 }) }
+            @{ Label = 'a malformed entity offset'; Text = '@Janis1bot hello'; Entities = @(@{ type = 'mention'; offset = 'invalid'; length = 10 }) }
+            @{ Label = 'an overflowing entity length'; Text = '@Janis1bot hello'; Entities = @(@{ type = 'mention'; offset = 0; length = 4294967296 }) }
+        ) {
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text $Text -Entities $Entities
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'ignore'
+            $result.text | Should -BeNullOrEmpty
+            $result.preview | Should -BeNullOrEmpty
+            $result.attachment | Should -BeNullOrEmpty
+        }
+
+        It 'uses Telegram UTF-16 offsets after a supplementary character' {
+            $text = [char]::ConvertFromUtf32(0x1F600) + ' @Janis1bot hello'
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text $text -Entities @(@{ type = 'mention'; offset = 3; length = 10 })
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'prompt'
+            $result.text | Should -Be $text
+        }
+
+        It 'ignores a command addressed elsewhere even when DP is mentioned too' {
+            $entities = @(
+                @{ type = 'bot_command'; offset = 0; length = 16 }
+                @{ type = 'mention'; offset = 17; length = 10 }
+            )
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text '/status@Otherbot @Janis1bot' -Entities $entities
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'ignore'
+            $result.text | Should -BeNullOrEmpty
+        }
+
+        It 'leaves private Messages unchanged' {
+            $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -Text '/status') @script:mentionParams
+
+            $result.kind | Should -Be 'status'
+        }
+
+        It 'preserves unmentioned group prompts when the option is off' {
+            $script:mentionParams.RequireGroupMention = $false
+            $result = ConvertFrom-DpIntercomUpdate -Update (New-TestUpdate -ChatId '-1004455397827') @script:mentionParams
+
+            $result.kind | Should -Be 'prompt'
+        }
+
+        It 'admits no group Message while the Telegram username is unknown' {
+            $script:mentionParams.BotUsername = ''
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text '@Janis1bot hello' -Entities @(@{ type = 'mention'; offset = 0; length = 10 })
+
+            (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'ignore'
+        }
+
+        It 'still rejects a mentioned Message from a chat outside the allow-list' {
+            $update = New-TestUpdate -ChatId '-999' -Text '@Janis1bot hello' -Entities @(@{ type = 'mention'; offset = 0; length = 10 })
+
+            (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'rejected'
+        }
+
+        It 'ignores an unmentioned edit without acknowledging it' {
+            $message = (New-TestUpdate -ChatId '-1004455397827' -Text 'edited chatter').message
+            $update = @{ update_id = 1; edited_message = $message }
+
+            (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'ignore'
+        }
+
+        It 'does not consume an unmentioned pending answer' {
+            $script:mentionParams.PendingQuestionMessageId = 42
+            $script:mentionParams.PendingQuestionChatId = '-1004455397827'
+            $script:mentionParams.PendingQuestionAwaitsFreeText = $true
+            $update = New-TestUpdate -ChatId '-1004455397827' -Text 'yes' -ReplyTo 42
+
+            (ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams).kind | Should -Be 'ignore'
+        }
+
+        It 'checks Attachment captions before admitting a download' -ForEach @($false, $true) {
+            $message = @{
+                message_id = 5
+                chat = @{ id = '-1004455397827'; type = 'supergroup' }
+                document = @{ file_id = 'file1'; file_name = 'notes.txt'; file_size = 32 }
+                caption = if ($_) { '@Janis1bot inspect this' } else { 'inspect this' }
+                caption_entities = if ($_) { @(@{ type = 'mention'; offset = 0; length = 10 }) } else { @() }
+            }
+
+            $result = ConvertFrom-DpIntercomUpdate -Update @{ update_id = 1; message = $message } @script:mentionParams
+
+            if ($_) {
+                $result.kind | Should -Be 'prompt'
+                $result.text | Should -Be 'inspect this'
+                $result.attachment.fileId | Should -Be 'file1'
+            }
+            else {
+                $result.kind | Should -Be 'ignore'
+                $result.attachment | Should -BeNullOrEmpty
+            }
+        }
+
+        It 'keeps intentional Keyboard taps available in allowed groups' {
+            $update = @{
+                update_id = 1
+                callback_query = @{
+                    id = 'cb1'
+                    data = 'q|abcd1234|0'
+                    message = @{ message_id = 42; chat = @{ id = '-1004455397827' } }
+                }
+            }
+
+            $result = ConvertFrom-DpIntercomUpdate -Update $update @script:mentionParams
+
+            $result.kind | Should -Be 'callback'
+            $result.callbackId | Should -Be 'cb1'
+        }
     }
 
     It 'does not let a reply in the group answer a question pending in the private chat' {
@@ -1120,6 +1275,22 @@ Describe 'Intercom Settings validation' -Tag 'Unit' {
         @($script:current.intercom.groupChatIds) | Should -BeNullOrEmpty
     }
 
+    It 'defaults the group mention requirement to off for compatibility' {
+        $script:current.intercom.ContainsKey('requireGroupMention') | Should -BeTrue
+        $script:current.intercom.requireGroupMention | Should -BeFalse
+    }
+
+    It 'can enable and disable the group mention requirement independently' {
+        $enabled = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ requireGroupMention = $true } }
+        $enabled.intercom.requireGroupMention | Should -BeTrue
+        $enabled.intercom.allowGroupChat | Should -BeFalse
+        $enabled.intercom.groupApproval | Should -BeFalse
+
+        $disabled = Merge-DpSettings -Current $enabled -Patch @{ intercom = @{ requireGroupMention = $false } }
+        $disabled.intercom.requireGroupMention | Should -BeFalse
+        $enabled.intercom.requireGroupMention | Should -BeTrue
+    }
+
     It 'accepts a group chat id, which is always negative' {
         $merged = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ allowGroupChat = $true; groupChatIds = @('-1004455397827') } }
 
@@ -1358,6 +1529,15 @@ Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
         $payload.tokenConfigured | Should -BeTrue
     }
 
+    It 'reports the group mention requirement for the Intercom controls' {
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+
+        $payload = Get-DpIntercomPayload
+
+        $payload.ContainsKey('requireGroupMention') | Should -BeTrue
+        $payload.requireGroupMention | Should -BeTrue
+    }
+
     It 'reports the rejection count so a probe is visible' {
         (Get-DpIntercomPayload).counters.rejected | Should -Be 1
     }
@@ -1495,6 +1675,75 @@ Describe 'Update-DpIntercomState' -Tag 'Unit' {
 
         Should -Invoke Invoke-DpIntercomTurn -Times 0
         $script:DeskPilot.Intercom.QueuedPrompt | Should -Be 'do the thing'
+    }
+
+    Context 'group Messages without a mention' {
+        BeforeEach {
+            Mock Invoke-DpTelegramRequest {
+                ([System.Threading.Tasks.TaskCompletionSource[System.Net.Http.HttpResponseMessage]]::new()).Task
+            }
+            Mock Invoke-DpIntercomTurn { throw 'An unmentioned group Message must not start a Turn.' }
+            $script:DeskPilot.Settings.intercom.enabled = $true
+            $script:DeskPilot.Settings.intercom.chatId = '111'
+            $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+            $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
+            $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+            $script:DeskPilot.Intercom.TokenConfigured = $true
+            $script:DeskPilot.Intercom.Token = 'fixture-token'
+            $script:DeskPilot.Intercom.Running = $true
+            $script:DeskPilot.Intercom.Priming = $false
+            $script:DeskPilot.Intercom.BotUsername = 'Janis1bot'
+            $script:DeskPilot.Intercom.LastHeartbeatUtc = [DateTime]::UtcNow
+        }
+
+        It 'queues no reply or work for an unmentioned <MessageKind>' -ForEach @(
+            @{ MessageKind = 'prompt' }
+            @{ MessageKind = 'command' }
+            @{ MessageKind = 'edit' }
+            @{ MessageKind = 'Attachment' }
+            @{ MessageKind = 'answer' }
+        ) {
+            $message = @{
+                message_id = 44
+                chat = @{ id = '-1004455397827'; type = 'group' }
+                text = if ($MessageKind -eq 'command') { '/status' } else { 'ordinary group chatter' }
+            }
+            if ($MessageKind -eq 'Attachment') {
+                $message.Remove('text')
+                $message.document = @{ file_id = 'file1'; file_name = 'notes.txt'; file_size = 32 }
+            }
+            if ($MessageKind -eq 'answer') {
+                $script:DeskPilot.Intercom.PendingQuestion = @{
+                    id = 'q1'
+                    conversationId = 'c1'
+                    messageId = 42
+                    chatId = '-1004455397827'
+                    awaitingFreeText = $true
+                    askedUtc = [DateTime]::UtcNow
+                }
+                $message.reply_to_message = @{ message_id = 42 }
+            }
+            $update = @{ update_id = 13 }
+            $update[$(if ($MessageKind -eq 'edit') { 'edited_message' } else { 'message' })] = $message
+            $body = @{ ok = $true; result = @($update) } | ConvertTo-Json -Depth 8
+            $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+            $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+            $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+
+            Update-DpIntercomState -AllowTurn
+
+            Should -Invoke Invoke-DpIntercomTurn -Times 0 -Exactly
+            $script:DeskPilot.Intercom.Outbound.Count | Should -Be 0
+            $script:DeskPilot.Intercom.QueuedPrompt | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.Download.stage | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.Counters.accepted | Should -Be 0
+            $script:DeskPilot.Intercom.LastError | Should -BeNullOrEmpty
+            $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
+            $script:DeskPilot.Intercom.Offset | Should -Be 14
+            if ($MessageKind -eq 'answer') {
+                $script:DeskPilot.Intercom.PendingQuestion.id | Should -Be 'q1'
+            }
+        }
     }
 
     Context 'the stall watchdog' {
@@ -1741,6 +1990,36 @@ Describe 'Intercom update batching' -Tag 'Unit' {
         $entry.detail | Should -Match 'Update 11'
         $entry.accepted | Should -BeFalse
         $script:DeskPilot.Intercom.Counters.errors | Should -Be 1
+    }
+
+    It 'ignores unmentioned group Messages when a mention is required' {
+        $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+        $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+        $script:DeskPilot.Intercom.BotUsername = 'Janis1bot'
+        $body = @{
+            ok = $true
+            result = @(
+                @{
+                    update_id = 13
+                    message = @{
+                        message_id = 44
+                        chat = @{ id = '-1004455397827'; type = 'supergroup' }
+                        text = 'ordinary group chatter'
+                    }
+                }
+            )
+        } | ConvertTo-Json -Depth 6
+        $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+        $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+        $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+
+        Update-DpIntercomState
+
+        $script:handledKinds | Should -Be @('ignore')
+        $script:handled | Should -Be @('')
+        $script:DeskPilot.Intercom.Offset | Should -Be 14
+        $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
     }
 
     It 'treats ordinary text as the pending answer after Something else is tapped' {

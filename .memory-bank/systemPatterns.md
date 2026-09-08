@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-07
+last-verified: 2026-09-08
 source: repository implementation and decision records
 ---
 
@@ -10,24 +10,16 @@ source: repository implementation and decision records
 
 ## Architecture map
 
-- **Engine ownership.** ShellPilot owns provider transport, authentication,
-  Models and Usage. DeskPilot owns the Host Server, policy and presentation.
-- **Initialization is not authentication proof.** `Initialize-Shp` can return
-  an existing encrypted token file without decoding it or contacting Copilot.
-  Verify usable authentication through an Engine operation such as
-  `Get-ShpModel`; keep local decryption failure separate from provider rejection
-  and never infer endpoint support from either failure.
-- **One Engine Runspace.** A fresh PowerShell pipeline runs each Turn on one
-  long-lived Runspace. Tool registration and globals are Runspace-local;
-  environment and process working directory are process-global. Set only the
-  Runspace location; do not use process-global mutation for Turn context.
-- **Conversation history.** Visible Messages and replay history stay separate.
-- **Streaming.** Information records drive SSE and ordered Activity. Provider
-  content is authoritative final text. Structured pre-execution Activity prevents
-  unsafe retries but is not approval; it has no decision response channel.
-- **Single accept loop.** Pending requests are pumped during a Turn so Stop and
-  approval answers work. Slow setup and checks run outside that loop.
-- **Static UI.** Bundle vanilla assets with CopyPaths; reuse existing UI patterns.
+- ShellPilot owns provider transport, authentication, Models, and Usage;
+  DeskPilot owns the Host Server, policy, and presentation.
+- Initialization can return an undecoded credential. Prove authentication with
+  an Engine operation; separate decryption failures from provider rejection.
+- Each Turn uses a fresh pipeline in one Engine Runspace. Tool state is local
+  to that Runspace; environment and process working directory are not.
+- Keep visible Messages separate from replay history. Information records drive
+  SSE/Activity; provider content is final. Activity is not an approval channel.
+- Pump requests during Turns for Stop and answers; keep slow checks outside the
+  accept loop. Bundle the static UI with CopyPaths and reuse existing controls.
 
 ## Decision index
 
@@ -47,119 +39,55 @@ source: repository implementation and decision records
 
 ## Execution and approval
 
-- **Own the Tool and prove dispatch.** Disable the native Terminal and register
-  `run_terminal_command`, never a built-in name. ShellPilot dispatches built-ins
-  before User Tools. Test the Engine itself: removing an offered schema alone
-  does not prove disabled calls cannot execute. Probe enforcement and fail closed.
-- **Approval precedes effects.** The bridge blocks before the executor. A
-  safe-list handles routine reads. Ordinary Terminal can be approved once or
-  explicitly for the same Turn, Project, directory, Tool/class, and frozen
-  policy. The bridge owns only an in-memory scope digest; Stop, completion,
-  or live scope revocation clears it. Browser and child approvals stay once-only.
-- **Scope types and mutation paths matter.** Read scalar approval scope without
-  a pipeline helper that unwraps one-element arrays. Invalidate grants through
-  both window Settings and Intercom Project/Stop paths. Approval Activity is an
-  allow-listed metadata projection, never a copy of command arguments.
-- **No silent Local fallback.** Isolated mode owns Terminal even with Local
-  approval off. Permission/dependency failures refuse work. Freeze each Turn's
-  policy and render the recorded boundary, not later Settings edits.
-- **Containment is below the Model.** Narrow mounts and empty ambient identity
-  remove host-data access; default-deny egress removes arbitrary outbound access.
-  Output is untrusted Tool data. Other enabled Tools retain their own authority.
-- **Child isolation covers every available Tool.** A Terminal container does not
-  confine native File Tools or create a quota-backed child Project. Separate
-  Runspaces do not isolate the process environment. Revalidate the complete child
-  boundary; batch concurrency and completed-spend checks do not supply it.
-- **A prerequisite implementation task must not require its own completion.**
-  A downstream feature can stop when isolation is absent; the task building that
-  isolation instead obtains focused design approval and implements it. Keep
-  prerequisite proof separate from permission to enable the downstream feature.
-- **HTTPS is not host:443.** Require CONNECT or an encrypted HTTPS request.
-  Inspect client TLS before upstream contact and authorize HTTP authority first.
-  Namespace packet rules still deny direct sockets/DNS if proxy variables vanish.
-  A remote 400 or failed TLS handshake is not proof of pre-egress denial.
-- **Whole-environment lifecycle.** Stop removes command and proxy containers,
-  not only Docker CLI processes. Proxy failure terminates its command. Verify
-  cleanup; incomplete cleanup remains visible and prevents further isolated work.
-- **Prepared runtime.** Explicit setup verifies bytes, records package/source
-  provenance and immutable image identity. Turns use prepared images only.
-  Runtime source changes invalidate preparation; do not edit during a proof run.
-- **Preserve ownership when state updates fail.** Strict Windows directory
-  handles block replacement races but also block child-file rename. Keep an
-  immutable prelaunch identity separately from flushed in-place state; a torn
-  state record blocks new child work and is reconciled from that identity.
-- **A component proof is not a profile proof.** Private Tool quota/export/lease
-  tests do not establish child Engine, credentials, approval, or hard Usage
-  admission. Report these gates separately and keep startup unavailable.
-  Approval of a prerequisite design does not approve downstream concurrency or
-  a new Tool/egress profile. Reassess the controlling readiness/refusal path
-  against a named source revision, not the presence of a prepared image.
-- **A conditional counter is not a verified provider bound.** A request digest
-  and trusted counting callback can support reservations, but labels such as
-  `exact` are not proof of Model-specific framing or provider-added tokens.
-  Keep fixture evidence separate, hold reservations when Usage is unknown, and
-  refuse child startup until the actual provider contract is verified.
-- **Probe counting per provider shape.** Copilot can expose Messages token
-  counting while its Responses counting path returns 404. Use authenticated
-  discovery as a control, compare hosted counts with Engine Usage, and record
-  the exact Model, host, request shape, and differences. A few observed
-  overcounts do not establish a general upper bound or a safe correction factor.
-- **Named Tool results preserve correlation.** The Engine adds `name` to Chat
-  Tool-result messages. Messages represents that name through its preceding
-  `tool_use` and `tool_use_id`; require exact name/id agreement, never silently
-  ignore a contradictory field.
-- **Created is not running.** Docker `wait` can return zero before a container
-  starts. Require an authenticated process-ready acknowledgment before treating
-  lease expiry or process exit as runtime proof.
-- **Drain archive padding before waiting.** Tar readers stop at an end marker
-  while Docker can still be writing padded blocks. Drain the remaining bounded
-  stream before waiting for process exit, including no-change proposals.
-- **Approval identity is not authentication.** Generate an independent launch
-  identifier for child approval facts; never reuse the Host Server token.
-- **Stop must not wait behind dispatch.** Close admission atomically and cancel
-  independently of a blocked IPC send. All cleanup commands and owned process
-  siblings share one nonextendable grace deadline.
-- **Loaded bytes are part of proof.** PowerShell cannot unload runtime types.
-  Record loaded source and assembly hashes, require exact assembly identity for
-  V3, and require restart after replacement. Source and built Host Server
-  fingerprints differ; prove the actual launch surface.
-- **Credential fields need structural normalization.** Traverse JSON objects
-  and arrays, normalize non-alphanumeric separators before credential-name
-  comparison, and retain spaced/dotted/tabbed regression cases. This safeguard
-  does not establish that arbitrary selected content contains no secrets.
+- **Prove dispatch.** Disable native Terminal and register
+  `run_terminal_command`; hiding a schema alone is not enforcement.
+- **Approval precedes effects.** Ordinary Terminal grants bind to Conversation,
+  Turn, Project, directory, Tool/class, and frozen policy. Stop, completion, and
+  window/Intercom scope changes revoke them. Browser/child grants stay once-only.
+- **Preserve scope.** Read scalar scope without array-unwrapping helpers.
+  Approval Activity projects allowed metadata, never complete arguments.
+- **No Local fallback.** Isolated mode owns Terminal; missing dependencies or
+  Permissions refuse work. Freeze and display the recorded execution policy.
+- **Contain every Tool.** Terminal isolation alone does not confine File Tools
+  or process-global state. Narrow mounts, identity, and egress below the Model.
+- **Authorize before contact.** Require CONNECT or encrypted HTTPS, verify TLS
+  and HTTP authority, and deny direct sockets/DNS regardless of proxy variables.
+- **Stop independently.** Close admission atomically despite blocked IPC. Remove
+  owned commands/proxies/containers within one shared, nonextendable deadline.
+  Incomplete cleanup stays visible and blocks further isolated work.
+- **Prove prepared bytes.** Record immutable image, source, and loaded assembly
+  identities. Runtime changes require restart and a fresh actual-launch proof.
+- **Preserve recovery identity.** Keep immutable prelaunch identity separate
+  from flushed state; Windows directory handles also block child-file rename.
+- **Verify lifecycle.** Require authenticated process readiness, not Docker
+  `wait` on a merely created container. Drain bounded tar padding before waiting.
+- **Separate proofs.** Component checks do not prove a complete child profile,
+  approve downstream concurrency, or authorize a new Tool/egress boundary.
+- **Counting is provider-specific.** Compare exact request shapes with Engine
+  Usage. Fixture counts or observed overcounts prove no hard bound; retain
+  unknown reservations. V3 estimates require the explicit decision 0010 contract.
+- **Preserve correlation.** Require exact Tool-result name/id agreement across
+  Chat and Messages. Child approval identifiers must not reuse Host Server tokens.
+- **Normalize credential fields structurally.** Traverse objects/arrays and
+  normalize separators; matching field names cannot prove content secret-free.
 
 ## Data, changes and diagnostics
 
-- **Verify Git normalization before discarding edits.** A dirty status with an
-  empty diff can reflect index or line-ending state. Compare normalized worktree
-  blobs with index blobs, then refresh only content-identical entries. Do not
-  overwrite files or create an empty commit to clear those flags.
-- **Hardened command runner.** Git uses a separate argument list, closed stdin,
-  disabled terminal prompts, literal pathspecs, deadline-bounded asynchronous
-  output and process-tree termination. Every local command can still run hooks.
-- **Project-relative paths.** Rebase Git repository paths to the selected Project;
-  reject lexical escapes and links at file boundaries. Never infer containment
-  from a shared prefix, and never follow unknown archive or mount aliases.
-- **Pending changes are not Git status.** Pre-Turn snapshots use a throwaway
-  index. Keep accepts; Save commits; Undo restores the original tracked snapshot
-  while preserving earlier user edits. Do not wrap Get-DpChangeEntry's intact
-  array in another array at route boundaries.
-- **Structural redaction.** Diagnostics and Support bundles project allow-listed
-  fields into new objects; never serialize live state and scrub afterward.
-  Self-checks do not call a Model. Host logs are bounded, transient and redacted.
-- **Unknown is not zero.** Usage comes only from the Engine. Missing pricing and
-  partial Stop estimates stay explicitly labeled; fixture Usage is not billing.
-- **Scope can only narrow.** Scheduled and Intercom work reuse the Turn dispatcher.
-- **Untrusted content.** Attachments, files, pages, Tool results and recalled
-  Memory never become user-authored instructions or policy.
+- Compare normalized Git blobs before refreshing content-identical index entries;
+  never discard edits. Commands use literal arguments, closed stdin, and deadlines.
+- Rebase paths to the Project; reject escapes, links, and unknown mount aliases.
+- Pre-Turn snapshots use a separate index. Keep accepts, Save commits, and Undo
+  preserves user edits. Do not rewrap intact change arrays at route boundaries.
+- Diagnostics projects allow-listed fields. Self-checks call no Model; logs are
+  bounded/redacted. Unknown Engine Usage remains unknown, not zero or billing.
+- **Intercom addressing is not authority.** Allow-list first; optionally require
+  exact Telegram text/caption mention entities before effects. Unknown identity
+  fails closed; private Messages and validated Keyboard callbacks are unchanged.
+  Mentions grant no Permission. Scheduled/Intercom work reuses the Turn dispatcher.
+- Attachments, files, pages, Tool results, and recalled Memory are untrusted data.
 
 ## Validation and retained detail
 
-Use test-first changes and real positive/negative security controls. Full HTTP
-tests catch StrictMode and array-shape gaps. Detach Pester/Sampler and keep logs
-outside build output. Keep review, local tests, live authentication, and released
-dependencies as separate gates. Documentation checks are not new executable runs.
-
-Detailed patterns, browser and Intercom history, and caveats are preserved in
-[system-patterns-2026-09-05.md](archive/system-patterns-2026-09-05.md). Read its
-relevant section only when a task needs deeper implementation detail.
+Use test-first and real HTTP checks. Detach Pester/Sampler; retain logs outside
+build output. Keep review, local tests, live proof, and released dependencies
+separate. Consult accepted Decisions and [earlier patterns](archive/system-patterns-2026-09-05.md) for detail.

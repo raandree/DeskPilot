@@ -139,6 +139,7 @@ function Get-DpDefaultSettings {
             chatId                 = $null
             allowGroupChat         = $false
             groupChatIds           = @()
+            requireGroupMention    = $false
             # Whether a group may approve a Terminal command. A third switch, not a
             # consequence of the second: letting a group instruct DeskPilot and
             # letting a group authorise a command it has been warned about are

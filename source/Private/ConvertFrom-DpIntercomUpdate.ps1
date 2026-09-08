@@ -58,6 +58,11 @@ function ConvertFrom-DpIntercomUpdate {
         an @mention is the only way to reach the bot at all, so it is addressing
         rather than content and must not reach the agent as part of the prompt.
         Empty leaves the text untouched.
+    .PARAMETER RequireGroupMention
+        Ignore group Messages unless Telegram identifies a mention of this
+        Intercom's username or a command addressed to it. Private Messages and
+        Keyboard callbacks are unaffected. An unknown username admits no group
+        Messages while this option is enabled.
     .PARAMETER MaxTextLength
         The bound applied to any text carried out of this function.
     .OUTPUTS
@@ -86,6 +91,8 @@ function ConvertFrom-DpIntercomUpdate {
 
         [AllowNull()]
         [string]$BotUsername,
+
+        [bool]$RequireGroupMention = $false,
 
         [ValidateRange(16, 100000)]
         [int]$MaxTextLength = 4000
@@ -200,6 +207,38 @@ function ConvertFrom-DpIntercomUpdate {
         $result.preview = $(if ($rawText) { $rawText } else { [string]$attachment.fileName })
     }
 
+    $chatType = [string](Get-DpPropertyValue -InputObject $chat -Name @('type') -Default '')
+    $isGroup = $chatType -in @('group', 'supergroup') -or $result.chatId.StartsWith('-')
+    if ($RequireGroupMention -and $isGroup) {
+        $addressed = $false
+        if (-not [string]::IsNullOrWhiteSpace($BotUsername)) {
+            $mention = '@' + $BotUsername.Trim().TrimStart('@')
+            $entityField = if ($attachment) { 'caption_entities' } else { 'entities' }
+            $entities = @(Get-DpPropertyValue -InputObject $message -Name @($entityField) -Default @())
+            foreach ($entity in $entities) {
+                $entityType = [string](Get-DpPropertyValue -InputObject $entity -Name @('type') -Default '')
+                if ($entityType -notin @('mention', 'bot_command')) { continue }
+                $offset = 0
+                $length = 0
+                if (-not [int]::TryParse([string](Get-DpPropertyValue -InputObject $entity -Name @('offset') -Default -1), [ref]$offset) -or
+                    -not [int]::TryParse([string](Get-DpPropertyValue -InputObject $entity -Name @('length') -Default 0), [ref]$length) -or
+                    $offset -lt 0 -or $length -le 0 -or $offset -gt ($rawText.Length - $length)) { continue }
+
+                $entityText = $rawText.Substring($offset, $length)
+                if (($entityType -eq 'mention' -and $entityText -eq $mention) -or
+                    ($entityType -eq 'bot_command' -and $entityText -match ('^/[a-zA-Z0-9_]+' + [regex]::Escape($mention) + '$'))) {
+                    $addressed = $true
+                    break
+                }
+            }
+        }
+        if (-not $addressed) {
+            $result.preview = ''
+            $result.reason = 'Group Message did not mention this Intercom.'
+            return $result
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace($rawText) -and -not $attachment) {
         $result.reason = 'Message carried no text.'
         return $result
@@ -278,7 +317,14 @@ function ConvertFrom-DpIntercomUpdate {
 
     # /command@BotName is what Telegram sends in groups; strip the mention.
     $split = $text.Substring(1) -split '\s+', 2
-    $verb = ($split[0] -split '@', 2)[0].ToLowerInvariant()
+    $commandName = $split[0] -split '@', 2
+    if ($RequireGroupMention -and $isGroup -and $commandName.Count -gt 1 -and
+        $commandName[1] -ne $BotUsername.Trim().TrimStart('@')) {
+        $result.preview = ''
+        $result.reason = 'Group command addresses a different Telegram username.'
+        return $result
+    }
+    $verb = $commandName[0].ToLowerInvariant()
     $argument = if ($split.Count -gt 1) { $split[1].Trim() } else { '' }
 
     switch ($verb) {

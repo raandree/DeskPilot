@@ -248,6 +248,7 @@ function Merge-DpSettings {
                         'notifyOnDone' { $merged.intercom.notifyOnDone = [bool]$intercomValue }
                         'sendFinalAnswer' { $merged.intercom.sendFinalAnswer = [bool]$intercomValue }
                         'allowGroupChat' { $merged.intercom.allowGroupChat = [bool]$intercomValue }
+                        'requireGroupMention' { $merged.intercom.requireGroupMention = [bool]$intercomValue }
                         'groupApproval' { $merged.intercom.groupApproval = [bool]$intercomValue }
                         'chatId' {
                             $chat = if ($null -eq $intercomValue) { '' } else { ([string]$intercomValue).Trim() }

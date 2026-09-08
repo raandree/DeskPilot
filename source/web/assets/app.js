@@ -7445,6 +7445,7 @@ function openSettings() {
       <div class="field">
         <label><input type="checkbox" id="set-ic-group" ${ic.allowGroupChat ? 'checked' : ''} /> Also accept messages from a Telegram group</label>
         <input type="text" id="set-ic-group-chat" spellcheck="false" placeholder="e.g. -1001234567890, -1009876543210" value="${escapeHtml(asArray(ic.groupChatIds).join(', '))}" ${ic.allowGroupChat ? '' : 'disabled'} />
+                <label><input type="checkbox" id="set-ic-mention" ${ic.requireGroupMention ? 'checked' : ''} /> Require a bot mention in groups</label>
         <p class="hint"><strong>Everyone in those groups can control this machine</strong> — send instructions, answer the agent’s questions, and run work in a project you have opted in, including <code>git push</code>. Telegram decides who is in a group, not DeskPilot, so anyone added later gets the same control. Nothing from a group is accepted unless you tick this box <em>and</em> fill in at least one id.</p>
         <p class="hint">Separate several groups with commas — up to ten. To find an id: add your bot to the group, send any message there, then read it from the rejection line in the <strong>Status</strong> box above — it looks like <code>-1001234567890</code>.</p>
         <p class="hint">Telegram also hides ordinary group messages from bots. In <strong>@BotFather</strong> pick your bot → <em>Bot Settings</em> → <em>Group Privacy</em> → <strong>Turn off</strong>, then remove the bot from the group and add it back. Until you do, only <code>/commands</code>, replies to the bot, and messages that @mention it ever reach DeskPilot.</p>
@@ -7642,7 +7643,8 @@ function openSettings() {
             state.intercom = await api('PUT', '/api/intercom', patch);
             updateIntercomChip();
             renderIntercomPanel();
-        } catch (e) { toast((e && e.message) || 'Could not save Intercom settings.'); refreshIntercom(); }
+            return true;
+        } catch (e) { toast((e && e.message) || 'Could not save Intercom settings.'); refreshIntercom(); return false; }
     };
     const icNumber = (id, key, fallback, min, max) => {
         $(id).onchange = (e) => {
@@ -7656,6 +7658,15 @@ function openSettings() {
     $('set-ic-enabled').onchange = (e) => saveIntercom({ enabled: e.target.checked });
     $('set-ic-done').onchange = (e) => saveIntercom({ notifyOnDone: e.target.checked });
     $('set-ic-answer').onchange = (e) => saveIntercom({ sendFinalAnswer: e.target.checked });
+    $('set-ic-mention').onchange = async (event) => {
+        const input = event.target;
+        const required = input.checked;
+        input.disabled = true;
+        try {
+            const saved = await saveIntercom({ requireGroupMention: required });
+            input.checked = saved ? !!state.intercom.requireGroupMention : !required;
+        } finally { input.disabled = false; }
+    };
     $('set-ic-chat').onchange = (e) => saveIntercom({ chatId: e.target.value.trim() });
     $('set-ic-group').onchange = async (e) => {
         const on = e.target.checked;

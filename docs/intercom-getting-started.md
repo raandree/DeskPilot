@@ -99,12 +99,15 @@ and stays off until you turn on **two** separate switches.
 > never learns it happened. There is no way to allow only *some* members.
 
 1. Add your bot to the group the normal Telegram way.
-2. **Turn Group Privacy off.** By default Telegram hides ordinary group messages
-   from bots, so your bot would only ever see `/commands`, replies to itself, and
-   messages that @mention it. In **@BotFather**: `/mybots` → your bot →
-   **Bot Settings** → **Group Privacy** → **Turn off**. Then remove the bot from
-   the group and add it back — the change only applies from the moment it rejoins.
-3. Send any message in the group. DeskPilot rejects it and writes the group's id
+2. Choose Telegram's **Group Privacy** setting. Keep it on to limit which group
+  Messages Telegram delivers. To receive ordinary group Messages, use
+  **@BotFather**, `/mybots`, your bot, **Bot Settings**, **Group Privacy**, then
+  **Turn off**. Remove the bot from the group and add it back for that change
+  to take effect. Bots with group administrator rights receive all Messages
+  regardless of Group Privacy; see
+  [Telegram's privacy documentation](https://core.telegram.org/bots/features#privacy-mode).
+3. Send `/status@yourbot` in the group, using your bot's actual username.
+  DeskPilot rejects it and writes the group's id
    into the **Status** box, on a line like
    `Message from chat '-1001234567890' is not allow-listed.`
 4. On the **Intercom** tab, tick **Also accept messages from a Telegram group**
@@ -135,15 +138,38 @@ line it logs, so an accepted instruction or a rejected one can be traced back to
 a person after the fact. The name is whatever Telegram reports; DeskPilot does
 not verify it.
 
-**Addressing the bot in a group.** If you left Group Privacy on, start the message
-with `@yourbot` — that mention is how it reaches the bot at all. DeskPilot removes
-it before the agent sees the work, so the instruction and the conversation title
-read as if you had typed them in your own chat.
+### Require a mention in groups
+
+In **Settings > Intercom**, enable **Require a bot mention in groups** to keep
+ordinary group chatter out of the Engine. It saves immediately and applies to
+all allowed groups, including supergroups. It is off by default so existing
+group workflows stay unchanged; the persisted Setting is
+`intercom.requireGroupMention`.
+
+- Send `@yourbot build the report` or `could you check this, @yourbot?` using
+  your bot's actual username. Matching is case-insensitive and exact.
+- Address commands explicitly, for example `/status@yourbot` or
+  `@yourbot /status`. A bare `/status` or a command for another bot is ignored.
+- Mention the bot in an Attachment's caption to have it downloaded and used.
+  An uncaptioned Attachment is ignored when this option is on.
+
+Unmentioned group Messages, including edits and typed replies, receive no
+acknowledgement and start no Turn or download. Private Messages and Keyboard
+taps are unchanged. A leading `@yourbot` followed by a space is removed before
+the instruction reaches the Engine. If Intercom cannot obtain its own username
+from Telegram, group Messages are ignored while this option is on.
+
+This Setting filters updates at the Host Server; it does not change Telegram's
+Group Privacy or stop Telegram delivering updates. It also grants no Permission:
+the group allow-list and Project Permissions still apply, and everyone in an
+allowed group retains the same authority when they address Intercom.
 
 **Answering a question in a group.** Use Telegram's **reply** on the question
 message itself, or tap one of its buttons. A new message in the group is normally
 a new instruction, not an answer. After you tap **Something else**, however,
-your next message in that group is the answer.
+your next message in that group is the answer. With **Require a bot mention in
+groups** on, include `@yourbot` in every typed answer, including after
+**Something else**. Keyboard taps need no mention.
 
 **Answering a set of questions.** The agent usually needs several things at once.
 DeskPilot asks them **one at a time**: tap an answer and the next question
