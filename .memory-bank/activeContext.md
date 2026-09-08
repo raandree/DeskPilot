@@ -3,7 +3,7 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: CI run 34209511633, artifact-based reproductions, and focused regressions
+source: user-requested Pester 6 migration and artifact-based CI reproductions
 ---
 
 # Active context
@@ -16,8 +16,26 @@ packaged successfully but failed all three test jobs. Repairs are on local
 `ai/ci-test-repair`; no repair push, remote workflow dispatch, or publication
 is authorized. The earlier theme preview and watcher have stopped.
 
-The repair pins Pester 5.7.1, passes QA/Unit paths through Sampler's supported
-`Pester.Configuration.Run.Path`, and keeps Integration tests opt-in. Existing
+The user rejected the Pester 5.7.1 pin and requested Pester 6. RequiredModules
+now restores `latest`; the README and repository guidance target Pester 6.
+Both clean full gates passed with Pester 6.1.0: Windows 2,492 passed, zero
+failed, 13 skipped; Linux 2,448 passed, zero failed, 57 skipped. Each completed
+17 tasks without errors or warnings and returned exit zero. Windows also ran
+dependency resolution. No test rewrites or assertion changes were needed after
+the earlier CI fixes. Counts and skips match the Pester 5 baseline; the earlier
+5.7.1 results below are historical evidence only.
+
+The first Pester 6 Linux attempt lacked Node.js in the local container, causing
+22 failures and 199 skips. Correcting that validation harness required no
+repository code changes. Do not report that attempt as a Pester incompatibility.
+
+Pester 6 logs under TEMP:
+
+- `deskpilot-pester6-windows-2d53969304aa45dc8c6e7c5fefc91986.log`
+- `deskpilot-pester6-linux-complete-1add7121a3b447f7a123a75b61400717.log`
+
+The repair passes QA/Unit paths through Sampler's supported
+`Pester.Configuration.Run.Path` and keeps Integration tests opt-in. Existing
 Windows-only child capture/readiness contracts now have platform-aware tests
 and explicit unsupported-host refusal checks. IPC tests compile both channel
 types together. The blocked-send test uses dedicated threads rather than

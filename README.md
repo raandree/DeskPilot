@@ -154,7 +154,7 @@ DeskPilot/
   specs/               Product + technical specifications
   source/              Host Server PowerShell module (Public/Private/manifest/web; built by Sampler)
   source/web/          Static single-page UI (no build step), bundled into the module
-  tests/               Pester 5 tests: tests/QA (module quality) + tests/Unit
+  tests/               Pester 6 tests: tests/QA (module quality) + tests/Unit
   output/              Build output, gitignored (built module + test results)
   build.ps1            Sampler build bootstrap
   build.yaml           Sampler build configuration
@@ -202,7 +202,10 @@ for states, retention, archive limits, and the complete exclusion list.
 ## Building and testing
 
 DeskPilot uses the [Sampler](https://github.com/gaelcolas/Sampler) build
-framework (ModuleBuilder, InvokeBuild, Pester 5, PSScriptAnalyzer, GitVersion).
+framework (ModuleBuilder, InvokeBuild, Pester 6, PSScriptAnalyzer, GitVersion).
+
+Pester resolves from `latest` in `RequiredModules.psd1`, not a pinned older
+version. Use `-ResolveDependency` when refreshing an existing dependency cache.
 
 ```powershell
 # Resolve build dependencies and build the module (first time)

@@ -429,6 +429,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Use Pester 6 for QA and unit tests, resolving `latest` instead of pinning
+  Pester 5. Refresh existing build dependencies with `-ResolveDependency`.
+
 - Add a dedicated [child Agent isolation brief](.github/prompts/implement-child-agent-isolation.prompt.md)
   for building the single-child execution boundary and quota-bounded work areas
   before parallel delegation. Keep design approval, implementation proof, and

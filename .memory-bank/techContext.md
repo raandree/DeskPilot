@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-08-05
+last-verified: 2026-09-08
 source: repository evidence
 ---
 
@@ -17,7 +17,7 @@ source: repository evidence
 | Transport to UI | **HTTP REST + SSE** (Server-Sent Events) | REST for state (models, settings, conversations); SSE for live token streaming of a Turn. Simpler and more robust than WebSockets for one-directional streaming. |
 | Frontend | **Static SPA** — vanilla HTML/CSS/JS, no build step | Zero toolchain for end users; the Host Server serves the files directly. A calm, deep-teal, dependency-free UI. |
 | Launcher | `Start-DeskPilot.ps1` + a double-click `.cmd` | One action to start the server and open the browser. |
-| Tests | **Pester 5** | Matches workspace conventions; unit-tests Host Server helpers and routing. |
+| Tests | **Pester 6** | Resolve `latest` per repository policy; test Host Server helpers and routing through Sampler's QA/Unit paths. |
 | Build | **Sampler** (ModuleBuilder, InvokeBuild, GitVersion, PSScriptAnalyzer) | Mirrors ShellPilot. Source in `source/`, built to `output/module/DeskPilot/<version>/`; version from GitVersion. `./build.ps1` runs build/test/pack/publish workflows. |
 
 ## Prerequisites (end user)
@@ -117,7 +117,7 @@ DeskPilot/
   specs/             # product + technical specifications
   source/            # Host Server PowerShell module (Public/Private/manifest; built by Sampler)
     web/             # static SPA (index.html, css, js, assets); bundled into the built module via CopyPaths
-  tests/             # Pester 5: tests/QA (module quality) + tests/Unit
+  tests/             # Pester 6: tests/QA (module quality) + tests/Unit
   output/            # build output, gitignored (built module + test results)
   build.ps1          # Sampler build bootstrap
   build.yaml         # Sampler build configuration

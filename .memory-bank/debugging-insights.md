@@ -11,7 +11,9 @@ developer dependency cache had not represented this combination.
 - `Pester.Script` alone did not constrain this Sampler version. It fell back
   to recursive `tests/`, including child storage Integration tests. Keep the
   declared QA/Unit list and pass it to `Pester.Configuration.Run.Path` using a
-  YAML alias. Pin supported Pester 5.7.1 instead of accepting a major upgrade.
+  YAML alias. The initial repair pinned 5.7.1, but that is not repository policy:
+  the user requested Pester 6 and restored `latest`. Fix compatibility rather
+  than retaining an older pin; current validation is recorded in activeContext.
 - Selected Project capture and child readiness intentionally refuse non-Windows
   hosts. Keep Windows success checks and test early refusal/no Docker contact
   separately on unsupported hosts; do not widen production support to fix CI.
@@ -26,7 +28,11 @@ developer dependency cache had not represented this combination.
   succeeds during the blocked send. Dedicated LongRunning probe tasks pass all
   nine authority tests under that constraint, retaining the 500 ms assertion.
 
-Final full-gate evidence and hosted recheck status are in activeContext.
+Pester 6.1.0 subsequently passed both full gates with the same Windows and Linux
+test counts, without test rewrites. The earlier failures were not evidence that
+Pester 6 required a downgrade. Reproduce with all prerequisites: omitting Node.js
+in the local Linux container caused 22 failures and 142 extra skips, resolved
+by restoring Node. Final evidence and hosted recheck status are in activeContext.
 
 ## 779 phantom test failures from one reused terminal (2026-09-03)
 

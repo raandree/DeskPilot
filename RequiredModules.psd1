@@ -1,7 +1,7 @@
 @{
     InvokeBuild           = 'latest'
     PSScriptAnalyzer      = 'latest'
-    Pester                = '5.7.1'
+    Pester                = 'latest'
     ModuleBuilder         = 'latest'
     Configuration         = 'latest'
     Metadata              = 'latest'

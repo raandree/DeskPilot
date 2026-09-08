@@ -104,8 +104,9 @@ build output. Keep review, local tests, live proof, and released dependencies
 separate. Consult accepted Decisions and [earlier patterns](archive/system-patterns-2026-09-05.md) for detail.
 
 - Reproduce CI with its exact commit and artifact dependencies, not a populated
-  developer cache. Pin the supported Pester major/version and verify Sampler's
-  resolved test paths in the log; intended configuration alone is not proof.
+  developer cache. Resolve Pester from `latest` per user policy and validate
+  against Pester 6. Verify the loaded version and Sampler's resolved test paths
+  in the log; intended configuration alone is not proof.
 - Compile dependent Add-Type test sources as one guarded set. Use dedicated
   threads for deliberately blocking concurrency probes, preserving deadlines.
 - Use `Get-Item -Force` for hidden temporary-file metadata on Unix. Never relax
