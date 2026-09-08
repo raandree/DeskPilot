@@ -92,6 +92,9 @@ source: repository implementation and decision records
 - Preserve preparation-job errors through the existing diagnostics redaction
   and length bound before reaping the job. Generic recovery advice complements
   the cause; it must not replace it or imply an unverified failure diagnosis.
+- Identify missing prerequisites by stable error identifiers across jobs, not
+  message matching. Report installation guidance instead of build-repair advice.
+  Runtime readiness evidence applies only to the machine that was checked.
 - **Intercom addressing is not authority.** Allow-list first; optionally require
   exact Telegram text/caption mention entities before effects. Direct plain-text
   pending answers also qualify by positive Message id and exact nonempty chat

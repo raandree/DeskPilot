@@ -18,7 +18,18 @@ function Invoke-DpDockerControl {
 
     if (-not $IsWindows) { throw 'Isolated Terminal requires Docker Desktop on Windows.' }
     $docker = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Docker' 'Docker' 'resources' 'bin' 'docker.exe'
-    if (-not (Test-Path -LiteralPath $docker -PathType Leaf)) { throw 'Docker Desktop is not installed.' }
+    if (-not (Test-Path -LiteralPath $docker -PathType Leaf)) {
+        $message = 'Docker Desktop is not installed. Install Docker Desktop for Windows with the WSL 2 backend, ' +
+            'start it in Linux containers mode, then select Prepare runtime. ' +
+            'DeskPilot does not install Docker Desktop automatically.'
+        $errorRecord = [Management.Automation.ErrorRecord]::new(
+            [InvalidOperationException]::new($message),
+            'DockerDesktopNotInstalled',
+            [Management.Automation.ErrorCategory]::ResourceUnavailable,
+            $null
+        )
+        $PSCmdlet.ThrowTerminatingError($errorRecord)
+    }
     $start = [Diagnostics.ProcessStartInfo]::new($docker)
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true

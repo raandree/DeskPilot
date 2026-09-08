@@ -168,6 +168,52 @@ Describe 'Isolated Turn preflight' -Tag 'Unit' {
 }
 
 Describe 'Terminal runtime preparation' -Tag 'Unit' {
+    It 'explains how to install the missing Docker Desktop prerequisite' -Skip:(-not $IsWindows) {
+        Mock Test-Path { $false } -ParameterFilter { $LiteralPath -like '*docker.exe' }
+
+        $failure = { Invoke-DpDockerControl -Argument @('version') } | Should -Throw -PassThru
+
+        $failure.FullyQualifiedErrorId | Should -BeLike 'DockerDesktopNotInstalled*'
+        $failure.Exception.Message | Should -Match 'Docker Desktop is not installed'
+        $failure.Exception.Message | Should -Match 'Install Docker Desktop for Windows'
+        $failure.Exception.Message | Should -Match 'WSL 2'
+        $failure.Exception.Message | Should -Match 'Linux containers'
+        $failure.Exception.Message | Should -Match 'Prepare runtime'
+        $failure.Exception.Message | Should -Match 'does not install Docker Desktop automatically'
+    }
+
+    It 'reports a missing prerequisite as unavailable with only its redacted installation guidance' {
+        $previous = $script:DeskPilot
+        $job = Start-Job -ScriptBlock {
+            Write-Error -ErrorId 'DockerDesktopNotInstalled' -Category ResourceUnavailable -ErrorAction Stop -Message (
+                'Docker Desktop is not installed. Install Docker Desktop for Windows. Bearer prerequisite-secret-fixture'
+            )
+        }
+        $script:DeskPilot = @{
+            DataDir = $TestDrive; TurnRunning = $false; TerminalSetupJob = $job
+            TerminalRuntime = $null
+        }
+        try {
+            $null = $job | Wait-Job -Timeout 15
+            $job.State | Should -BeExactly 'Failed'
+
+            $status = & { Set-StrictMode -Version Latest; Get-DpTerminalStatus }
+
+            $status.ready | Should -BeFalse
+            $status.state | Should -BeExactly 'unavailable'
+            $status.preparing | Should -BeFalse
+            $status.issues | Should -HaveCount 1
+            $status.issues[0] | Should -Match '^Docker Desktop is not installed\. Install Docker Desktop for Windows'
+            $status.issues[0] | Should -Match '<redacted>'
+            ($status.issues -join ' ') | Should -Not -Match 'disk space|download sources|prerequisite-secret-fixture'
+            $script:DeskPilot.TerminalSetupJob | Should -BeNullOrEmpty
+        }
+        finally {
+            if (Get-Job -Id $job.Id -ErrorAction SilentlyContinue) { $job | Remove-Job -Force }
+            $script:DeskPilot = $previous
+        }
+    }
+
     It 'retains the cause of a failed preparation job in the runtime status' {
         $previous = $script:DeskPilot
         $job = Start-Job -ScriptBlock {

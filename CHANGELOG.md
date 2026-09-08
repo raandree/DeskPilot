@@ -155,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Show redacted error details when Terminal runtime preparation fails instead of only generic Docker advice. See [runtime troubleshooting](docs/isolated-terminal.md#if-preparation-fails).
+- Show redacted error details when Terminal runtime preparation fails; report missing Docker Desktop as unavailable with installation guidance instead of generic disk-space and download advice. See [runtime troubleshooting](docs/isolated-terminal.md#if-preparation-fails).
 
 - Fix Support bundle exports on Linux and macOS by including the hidden temporary archive when checking its size; destination protections and byte limits remain unchanged.
 

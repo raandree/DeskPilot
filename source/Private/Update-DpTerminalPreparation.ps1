@@ -19,10 +19,19 @@ function Update-DpTerminalPreparation {
     }
     catch {
         $preparationError = $_
-        $failure = Protect-DpDiagnosticText -Text "Runtime preparation failed: $($preparationError.Exception.Message)" -MaxLength 400
+        $missingDocker = ($preparationError.FullyQualifiedErrorId -split ',', 2)[0] -eq 'DockerDesktopNotInstalled'
+        $issues = if ($missingDocker) {
+            Protect-DpDiagnosticText -Text $preparationError.Exception.Message -MaxLength 400
+        }
+        else {
+            Protect-DpDiagnosticText -Text "Runtime preparation failed: $($preparationError.Exception.Message)" -MaxLength 400
+            'Check Docker Desktop, available disk space and access to the verified runtime download sources, then retry.'
+        }
         $state.TerminalRuntime = @{
-            ready = $false; state = 'degraded'; orphanCount = 0
-            issues = @($failure, 'Check Docker Desktop, available disk space and access to the verified runtime download sources, then retry.')
+            ready = $false
+            state = if ($missingDocker) { 'unavailable' } else { 'degraded' }
+            orphanCount = 0
+            issues = @($issues)
         }
     }
     finally {

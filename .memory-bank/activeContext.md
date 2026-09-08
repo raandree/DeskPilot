@@ -3,65 +3,63 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: runtime preparation probes, red-green regressions, and full Windows Sampler gate
+source: user-confirmed missing Docker Desktop and red-green prerequisite regressions
 ---
 
 # Active context
 
 ## Current focus
 
-The user reported a generic Terminal runtime preparation failure. The pinned
-Docker build and complete preparation job both succeeded when reproduced from
-current source. No active Host Server was available to inspect; its old job
-error had already been discarded. Do not attribute that original failure to
-Docker availability, disk space, a download, or a checksum without new evidence.
+The user confirmed that the separate machine used for testing has no Docker
+Desktop installation. That missing prerequisite prevents Terminal runtime
+preparation. The earlier successful runtime checks applied only to this
+development machine; they did not verify the user's test machine.
 
-The confirmed diagnostic defect is fixed on the local Branch
-`ai/terminal-runtime-diagnostics`: the completion handler retains the exception
-through `Protect-DpDiagnosticText`, bounded to 400 characters, alongside recovery
-guidance. The UI already uses `textContent`. Tests cover failed-job detail,
-credential redaction and length, and successful retry replacing stale failure.
+The focused fix is on `ai/terminal-docker-prerequisite`. The existing trusted
+Docker executable check now raises `DockerDesktopNotInstalled` with explicit
+Windows, WSL 2, Linux containers, and Prepare runtime instructions. DeskPilot
+does not install Docker Desktop automatically.
 
-The normal `$LOCALAPPDATA/DeskPilot` data directory had no runtime record.
-Preparation there completed at 15:47:24 UTC. The rebuilt module independently
-verified it at 15:56:52 UTC: healthy, PowerShell 7.6.5, Docker 29.7.2, no issues,
-and zero remaining Terminal containers. The prepared image is:
+The preparation handler recognizes the error identifier after job serialization,
+reports `unavailable`, and displays only its redacted installation guidance.
+Unknown failures remain `degraded` with the earlier bounded, redacted error and
+generic recovery advice. The UI's existing text-only rendering is unchanged.
 
-`sha256:4a73b0f90a203f5bb3cc90c787e15c61950b49a469a0dd12e11f1eac558ce06b`
-
-Terminal Permissions, execution mode, Engine authentication, and child execution
-were not changed. The temporary reproduction tag and data directory were removed;
-the usable runtime and shared Docker build cache remain.
+No Docker installation, runtime preparation, Settings change, or action on the
+test machine was performed in this turn. Docker launch settings, trusted paths,
+timeouts, Permissions, and execution boundaries are unchanged.
 
 ## Verification
 
-- The failed-job regression first failed on the generic message, then passed
-  after the fix. All three new preparation cases passed on Pester 6.1.0.
-- `build.ps1 -Tasks build,test`: 2,500 passed, zero failures, eight skips, no
-  unrun tests; 16 tasks, zero build errors or warnings. Completed 15:54:07 UTC.
-- A final explicit `$using:` test-capture cleanup passed the complete Terminal
-  isolation file: 41 passed, no failures or skips. No production change followed
-  the full gate.
-- ScriptAnalyzer: no test diagnostics or new handler diagnostics. The existing
-  handler `ShouldProcess` warning is identical in the baseline. Historical
-  changelog heading/list lint warnings remain; the new guide section renders.
-- The local Sampler artifact uses its 0.0.1 fallback version. Its bundled assets
-  match the prepared runtime. This is local build evidence, not a new release.
-- Self-review checked scope, redaction, text-only rendering, job cleanup, and
-  unchanged authority. Independent review remains off; `review: on` is
-  recommended for the diagnostic error-detail boundary.
+- Both new regressions first failed: missing structured prerequisite identity
+  and `degraded` instead of `unavailable`. All five preparation tests then
+  passed on Pester 6.1.0, including generic failure, redaction, and retry guards.
+- Missing installation is simulated through the real executable check; no
+  system dependency is removed. A failed job proves error-identifier transport,
+  redaction, job cleanup, and omission of irrelevant disk/download advice.
+- Full Windows `build.ps1 -Tasks build,test` completed at 17:44:31 UTC:
+  2,502 passed, zero failures, eight skips, and no unrun tests. All 16 tasks
+  completed with zero build errors or warnings. No production change followed.
+- ScriptAnalyzer reports zero diagnostics in the Docker helper and tests, and
+  no new diagnostics in the handler. Its existing `ShouldProcess` warning and
+  historical changelog heading/list warnings are unchanged. Markdown renders.
+- Self-review covered correctness, scope, naming, redaction, job handling, and
+  unchanged authority. Independent review remains off. No Model or live test
+  machine acceptance was performed.
 
 Evidence under TEMP:
 
-- `deskpilot-runtime-red-1772306d96f44d20b3b96a982d85cb6b.log`
-- `deskpilot-runtime-ready-b1fb8f3aac8b4f929b735a1a94bc7995.log`
-- `deskpilot-runtime-sampler-88e6653657db4f47ad8effd8890fa348.log`
-- `deskpilot-runtime-terminal-suite-5c34beeca8674caa8b052dd208cd76d2.log`
+- `deskpilot-docker-prerequisite-red-da34c43ac8b843659f0149d54f9efc48.log`
+- `deskpilot-docker-prerequisite-green-e818141cd1c343bb82739b3490016045.log`
+- `deskpilot-docker-prerequisite-full-639a2e0bfa36478bbfdfd5222ce9e58a.log`
 
 ## Next action
 
-Reopen DeskPilot and run Diagnostics > Terminal runtime > Check. The improved
-error detail is in the local rebuilt code, not a newly published package.
+The code and documentation are ready for local commit. On the user's test
+machine, install Docker Desktop for Windows, enable its WSL 2 backend and Linux
+containers, and start it before selecting Prepare runtime. The rebuilt code
+improves the message; it does not satisfy that machine's missing prerequisite.
+
 There is no data migration. Merge, push, and publication require a new explicit
 user request. See [runtime troubleshooting](../docs/isolated-terminal.md#if-preparation-fails).
 
