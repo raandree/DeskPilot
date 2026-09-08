@@ -1,7 +1,6 @@
 BeforeAll {
     $root = Join-Path $PSScriptRoot '../../source/child'
-    $sources = @((Join-Path $root 'AuthenticatedChannel.cs'))
-    if (Test-Path (Join-Path $root 'MessageChannel.cs')) { $sources += Join-Path $root 'MessageChannel.cs' }
+    $sources = @((Join-Path $root 'AuthenticatedChannel.cs'), (Join-Path $root 'MessageChannel.cs'))
     if (-not ('DeskPilot.Child.MessageChannel' -as [type])) { Add-Type -Path $sources -ErrorAction Stop }
 }
 

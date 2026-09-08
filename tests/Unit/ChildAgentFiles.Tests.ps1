@@ -5,7 +5,7 @@ BeforeAll {
     if (Test-Path -LiteralPath $sourcePath) { Add-Type -Path $sourcePath -ErrorAction Stop }
 }
 
-Describe 'Child Agent selected Project baseline' -Tag 'Unit' {
+Describe 'Child Agent selected Project baseline' -Tag 'Unit', 'WindowsOnly' -Skip:(-not $IsWindows) {
     BeforeEach {
         $project = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $null = New-Item -ItemType Directory -Path $project
@@ -166,5 +166,25 @@ Describe 'Child Agent selected Project baseline' -Tag 'Unit' {
             [Text.Encoding]::UTF8.GetString($baseline.Entries[0].GetBytes()) | Should -BeExactly $content
         }
         finally { $baseline.Dispose() }
+    }
+}
+
+Describe 'Child Agent unsupported Project capture' -Tag 'Unit' -Skip:$IsWindows {
+    It 'refuses selected-file capture before accessing an unsupported Project' {
+        $project = Join-Path $TestDrive 'not-created'
+
+        { [DeskPilot.Child.ProjectBaseline]::Open($project, @('selected.txt'), 1024, 10) } |
+            Should -Throw -ExpectedMessage '*requires Windows*'
+
+        Test-Path -LiteralPath $project | Should -BeFalse
+    }
+
+    It 'refuses control-directory creation before creating unsupported storage' {
+        $directory = Join-Path $TestDrive 'not-created'
+
+        { [DeskPilot.Child.ProjectBaseline]::CreateControlDirectory($directory) } |
+            Should -Throw -ExpectedMessage '*requires a local Windows path*'
+
+        Test-Path -LiteralPath $directory | Should -BeFalse
     }
 }

@@ -11,9 +11,11 @@ public sealed class ChildAuthorityBackpressureProbe : IDisposable
 {
     public ManualResetEventSlim Entered { get; } = new ManualResetEventSlim(false);
     public ManualResetEventSlim Release { get; } = new ManualResetEventSlim(false);
-    public Task Dispatch(object authority) => Task.Run(() => authority.GetType().GetMethod("Commit", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(authority,
-        new object[] { "provider", new Action(() => { Entered.Set(); Release.Wait(); }) }));
-    public Task Stop(object authority) => Task.Run(() => authority.GetType().GetMethod("Close").Invoke(authority, new object[] { "stopped" }));
+    public Task Dispatch(object authority) => Task.Factory.StartNew(() => authority.GetType().GetMethod("Commit", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(authority,
+        new object[] { "provider", new Action(() => { Entered.Set(); Release.Wait(); }) }),
+        CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    public Task Stop(object authority) => Task.Factory.StartNew(() => authority.GetType().GetMethod("Close").Invoke(authority, new object[] { "stopped" }),
+        CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
     public void Dispose() { Release.Set(); }
 }
 '@ -ErrorAction Stop

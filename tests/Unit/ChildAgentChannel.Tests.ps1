@@ -1,8 +1,9 @@
 #requires -Version 7.4
 
 BeforeAll {
-    $sourcePath = Join-Path $PSScriptRoot '../../source/child/AuthenticatedChannel.cs'
-    if (Test-Path -LiteralPath $sourcePath) { Add-Type -Path $sourcePath -ErrorAction Stop }
+    $root = Join-Path $PSScriptRoot '../../source/child'
+    $sources = @((Join-Path $root 'AuthenticatedChannel.cs'), (Join-Path $root 'MessageChannel.cs'))
+    if (-not ('DeskPilot.Child.AuthenticatedChannel' -as [type])) { Add-Type -Path $sources -ErrorAction Stop }
 
     function New-DpChannelFrame {
         param([string]$Message = '{"type":"ready"}', [byte[]]$Key = [byte[]](1..32))

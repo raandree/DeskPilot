@@ -182,7 +182,7 @@ function New-DpSupportBundle {
         $fileStream.Dispose()
         $fileStream = $null
 
-        $archiveBytes = (Get-Item -LiteralPath $tempPath -ErrorAction Stop).Length
+        $archiveBytes = (Get-Item -LiteralPath $tempPath -Force -ErrorAction Stop).Length
         if ($archiveBytes -gt $MaxArchiveBytes) {
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
             $tempPath = $null

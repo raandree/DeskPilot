@@ -57,9 +57,12 @@ BuildWorkflow:
 Pester:
   OutputFormat: NUnitXML
   ExcludeFromCodeCoverage:
-  Script:
+  Script: &unit-test-paths
     - tests/QA/module.tests.ps1
     - tests/Unit
+  Configuration:
+    Run:
+      Path: *unit-test-paths
   ExcludeTag:
   Tag:
   CodeCoverageThreshold: 0

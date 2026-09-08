@@ -2,6 +2,32 @@
 
 Recurring issues and how they were resolved.
 
+## Cross-platform CI drift after a green local gate (2026-09-08)
+
+Run `34209511633` built `912b158` with Sampler 0.120.1, Pester 6.1.0,
+ShellPilot 0.3.1, and PowerShell 7.6.5. All three test jobs failed. A populated
+developer dependency cache had not represented this combination.
+
+- `Pester.Script` alone did not constrain this Sampler version. It fell back
+  to recursive `tests/`, including child storage Integration tests. Keep the
+  declared QA/Unit list and pass it to `Pester.Configuration.Run.Path` using a
+  YAML alias. Pin supported Pester 5.7.1 instead of accepting a major upgrade.
+- Selected Project capture and child readiness intentionally refuse non-Windows
+  hosts. Keep Windows success checks and test early refusal/no Docker contact
+  separately on unsupported hosts; do not widen production support to fix CI.
+- `.support-*.tmp` exists on Unix but `Get-Item` without `-Force` cannot read
+  its metadata. Three existing archive tests reproduce the bug. Adding `-Force`
+  restores export while retaining all destination and byte-limit checks.
+- Compiling AuthenticatedChannel alone and later with MessageChannel creates
+  duplicate Add-Type definitions. Both test files now use the same guarded
+  two-source compilation; the combined 12-test Linux run passes.
+- A blocked `Task.Run` dispatch can starve the Stop task before it starts.
+  With one pool worker the old Stop stays `WaitingToRun`, while direct Close
+  succeeds during the blocked send. Dedicated LongRunning probe tasks pass all
+  nine authority tests under that constraint, retaining the 500 ms assertion.
+
+Final full-gate evidence and hosted recheck status are in activeContext.
+
 ## 779 phantom test failures from one reused terminal (2026-09-03)
 
 **Symptom:** after the ShellPilot dispatch fix, `./build.ps1 -Tasks test` in

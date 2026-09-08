@@ -155,6 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix Support bundle exports on Linux and macOS by including the hidden temporary archive when checking its size; destination protections and byte limits remain unchanged.
+
 - **An approval card can no longer authorise text it never showed you.** A long
   command, web address or form value was shortened for the card with a
   "...[truncated]" marker while the whole string was still handed to the

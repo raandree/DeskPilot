@@ -3,60 +3,66 @@ schema-version: 1
 status: accepted
 owner: shared
 last-verified: 2026-09-08
-source: terminal-theme regressions, browser screenshots, and full Sampler gate
+source: CI run 34209511633, artifact-based reproductions, and focused regressions
 ---
 
 # Active context
 
 ## Current focus
 
-Terminal Amber and Terminal Green themes are implemented on
-`ai/terminal-themes`. The user explicitly requested no commit yet. Nothing is
-staged, committed, pushed, or published by this turn.
+The user committed and pushed the terminal themes as `912b158` on `main`, then
+requested CI monitoring and repair. [CI run 34209511633](https://github.com/raandree/DeskPilot/actions/runs/34209511633)
+packaged successfully but failed all three test jobs. Repairs are on local
+`ai/ci-test-repair`; no repair push, remote workflow dispatch, or publication
+is authorized. The earlier theme preview and watcher have stopped.
 
-General Settings now separates Theme (DeskPilot, Terminal Amber, Terminal Green)
-from Mode (System, Light, Dark). Theme uses browser-local `ad_color_theme`;
-Mode preserves `ad_theme`. The top-bar switch changes only Mode. Dark terminal
-variants use phosphor colours on near-black surfaces; light variants use dark
-ink on near-white surfaces. Existing preferences retain DeskPilot by default.
+The repair pins Pester 5.7.1, passes QA/Unit paths through Sampler's supported
+`Pester.Configuration.Run.Path`, and keeps Integration tests opt-in. Existing
+Windows-only child capture/readiness contracts now have platform-aware tests
+and explicit unsupported-host refusal checks. IPC tests compile both channel
+types together. The blocked-send test uses dedicated threads rather than
+depending on thread-pool availability; its 500 ms Stop assertion is unchanged.
 
-The locally bundled 3270 font is from upstream v3.0.1, converted to WOFF2 with
-`wawoff2` 2.0.1; the licence is included. Font research, hashes, browser support,
-and return-to-default instructions are in [the theme guide](../docs/themes.md).
-No runtime font CDN, Engine change, or Host Server Settings migration was added.
+Support bundle creation includes the hidden temporary archive when reading its
+size on Unix. Destination protections, no-overwrite behavior, redaction, and
+byte ceilings are unchanged. No production child authority code was changed.
 
 ## Verification
 
-- All 16 new native theme tests failed before the respective implementation and
-  now pass; all 29 native JavaScript unit tests pass.
-- Real-frontend Playwright checks with local fixture responses pass at 1440px
-  and 390px for both terminal themes and both modes, System changes, reloads,
-  English/German labels, bundled font loading, and absence of Host Server writes.
-  Screenshot-discovered toolbar clipping and native-font inheritance gaps have
-  regression guards. Screenshots were reviewed. Tested text/status pairs meet
-  4.5:1 contrast; body text exceeds 10:1 in every terminal variant.
-- Full default Sampler gate completed at 08:49:07 UTC: 2,551 passed, zero failed,
-  18 skipped; 17 tasks with zero errors or warnings. All six changed bundled
-  runtime assets match source hashes; the font is a valid 63,648-byte WOFF2.
-- Changed code has no editor diagnostics. The theme guide is lint-clean;
-  existing changelog heading/spacing warnings are untouched. Markdown renders,
-  and `git diff --check` passes. Scoped self-review found no Blocker or Major;
-  independent review remains off for this presentation-only change.
+- Reproductions use clean copies of `912b158` and the downloaded CI artifact:
+  Sampler 0.120.1, ShellPilot 0.3.1, PowerShell 7.6.5. Pester 6.1.0 from the
+  original artifact is replaced by the verified 5.7.1 pin.
+- Focused Linux baseline: 57 passed, 31 failed. After the initial fixes:
+  53 passed, zero failed, 38 platform skips. Existing Support bundle tests
+  failed before the hidden-file fix and pass afterward.
+- Initial repaired Windows full gate: 2,492 passed, zero failed, 13 skipped.
+  Full Linux exposed duplicate channel compilation and a queued Stop probe.
+  All 12 IPC tests now pass together; all nine authority tests pass with only
+  one thread-pool worker, which deterministically starved the original probe.
+- Final Linux default build: 2,448 passed, zero failed, 57 platform skips;
+  17 tasks without errors/warnings. Final Windows test workflow: 2,492 passed,
+  zero failed, 13 skips; nine tasks without errors/warnings. All 29 JavaScript
+  tests pass on each platform. Both detached result markers are zero.
+- Hosted/macOS verification remains pending a user-authorized push. Static
+  parsing passes; the production helper has no analyzer warnings/errors.
+  Existing IPC test variable warnings are unrelated to the changed setup.
+  Self-review found no Blocker/Major. Independent review is off; recommend
+  `review: on` for the Support bundle filesystem change and concurrency probe.
 
-Full log: `TEMP/deskpilot-themes-full-1040a3adbe974e96a5f50a6c1e171052.log`.
-Browser screenshots: `TEMP/deskpilot-themes-Mayscv`.
+Final logs under TEMP:
 
-## Preview and next action
+- `deskpilot-ci-linux-final-93d5817952e24611b4ce9b5f06c88b51.log`
+- `deskpilot-ci-windows-final-3056cf47e11642f290ad0e5ca67f4ce6.log`
 
-The built preview is running at <http://127.0.0.1:65515>, process 9196, using
-`TEMP/deskpilot-theme-preview-5f395895aaec4f7aa70a6ea525bc30dd`. Its private launch
-link was opened directly by DeskPilot, never printed. Root, current selector,
-and WOFF2 content type were verified over real HTTP. Normal data and Telegram
-Settings were not changed; no Model Turn or live Telegram delivery was tested.
+## Next action
 
-Try Settings > General > Theme and Mode. Wait for the user's visual feedback or
-explicit commit instruction. Do not use a Gallery update notice to replace the
-development build. Terminal palettes require a browser supporting `light-dark()`.
+The local repair is verified and ready for user-controlled integration and a
+hosted recheck. Retain the failed remote run as historical evidence. No data
+migration is needed; reverting the repair commit restores the previous code
+and build configuration. A push to `main` can trigger publication
+when repository secrets are configured; do not infer permission to push from
+the request to monitor CI. The existing terminal themes and their earlier
+browser evidence remain unchanged; see [the theme guide](../docs/themes.md).
 
 ## Retained release boundaries
 
