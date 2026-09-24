@@ -2404,7 +2404,7 @@ function approvalRow(labelKey, value, mono) {
     if (!value) return null;
     const row = el('approval-row');
     const label = el('approval-row-label');
-    label.textContent = t(labelKey);
+    label.textContent = tr(labelKey);
     const body = el(mono ? 'approval-command' : 'approval-row-value', mono ? 'code' : 'div');
     body.textContent = String(value);
     row.append(label, body);
@@ -2445,7 +2445,7 @@ function approvalDetail(request) {
         if (fields.length) {
             const wrap = el('approval-row');
             const label = el('approval-row-label');
-            label.textContent = t('approval.values');
+            label.textContent = tr('approval.values');
             const list = el('approval-fields');
             for (const field of fields) {
                 const item = el('approval-field');
@@ -2453,7 +2453,7 @@ function approvalDetail(request) {
                 name.textContent = String(field.name || '');
                 const value = el('approval-field-value', 'code');
                 const text = String(field.value ?? '');
-                value.textContent = text === '' ? t('approval.empty') : text;
+                value.textContent = text === '' ? tr('approval.empty') : text;
                 if (text === '') value.classList.add('approval-field-empty');
                 item.append(name, value);
                 list.appendChild(item);
@@ -2484,13 +2484,13 @@ function renderApproval(node, request, conversationId) {
     const card = el('user-prompt-card approval-card');
     card.dataset.approvalId = requestId;
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', t('approval.title'));
+    card.setAttribute('aria-label', tr('approval.title'));
 
     const head = el('approval-head');
-    head.textContent = t(APPROVAL_TITLES[`${kind}:${action}`] || APPROVAL_TITLES[kind] || 'approval.title');
+    head.textContent = tr(APPROVAL_TITLES[`${kind}:${action}`] || APPROVAL_TITLES[kind] || 'approval.title');
 
     const risk = el('approval-risk');
-    risk.textContent = String(request.risk || t('approval.risk'));
+    risk.textContent = String(request.risk || tr('approval.risk'));
 
     const detail = el('approval-detail');
     const rows = approvalDetail(request);
@@ -2499,7 +2499,7 @@ function renderApproval(node, request, conversationId) {
     // reader that approving is a formality. Say so instead of rendering blank.
     if (!rows.length) {
         const empty = el('approval-row-value approval-unknown');
-        empty.textContent = t('approval.noDetail');
+        empty.textContent = tr('approval.noDetail');
         detail.appendChild(empty);
     }
 
@@ -2507,17 +2507,17 @@ function renderApproval(node, request, conversationId) {
     const note = el('approval-note', 'input');
     note.type = 'text';
     note.maxLength = 500;
-    note.placeholder = t('approval.notePlaceholder');
+    note.placeholder = tr('approval.notePlaceholder');
     noteWrap.appendChild(note);
 
     const status = el('approval-status');
     const actions = el('approval-actions');
     const approve = el('btn primary approval-approve', 'button');
     approve.type = 'button';
-    approve.textContent = t(kind === 'Terminal' ? 'approval.approve' : 'approval.allow');
+    approve.textContent = tr(kind === 'Terminal' ? 'approval.approve' : 'approval.allow');
     const deny = el('btn approval-deny', 'button');
     deny.type = 'button';
-    deny.textContent = t('approval.deny');
+    deny.textContent = tr('approval.deny');
     actions.append(deny, approve);
 
     const turnAllowed = request.class === 'Terminal' && Array.isArray(request.allowedScopes) && request.allowedScopes.includes('turn');
@@ -2525,11 +2525,11 @@ function renderApproval(node, request, conversationId) {
     card.append(head, risk, detail);
     if (turnAllowed) {
         const turnRisk = el('approval-risk approval-turn-risk');
-        turnRisk.textContent = t('approval.turnRisk');
+        turnRisk.textContent = tr('approval.turnRisk');
         turnRisk.id = `approval-turn-risk-${requestId}`;
         approveTurn = el('btn approval-turn', 'button');
         approveTurn.type = 'button';
-        approveTurn.textContent = t('approval.allowTurn');
+        approveTurn.textContent = tr('approval.allowTurn');
         approveTurn.setAttribute('aria-describedby', turnRisk.id);
         actions.append(approveTurn);
         card.append(turnRisk);
@@ -2541,7 +2541,7 @@ function renderApproval(node, request, conversationId) {
 
     const decide = async (decision, scope = 'once') => {
         card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
-        status.textContent = t('approval.sending');
+        status.textContent = tr('approval.sending');
         status.classList.remove('error-text');
         try {
             await api('POST', `/api/conversations/${encodeURIComponent(conversationId)}/approval`, {
@@ -2552,8 +2552,8 @@ function renderApproval(node, request, conversationId) {
             });
             card.classList.add('answered');
             status.textContent = decision === 'approve'
-                ? t(scope === 'turn' ? 'approval.approvedTurn' : 'approval.approved')
-                : t('approval.denied');
+                ? tr(scope === 'turn' ? 'approval.approvedTurn' : 'approval.approved')
+                : tr('approval.denied');
         } catch (error) {
             card.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
             status.textContent = errorText(error);
@@ -3356,18 +3356,18 @@ function renderTerminalSettings(container, runtimeOnly = false) {
     approvalLabel.append(approval, document.createTextNode('Approve non-routine Local commands'));
     const coverage = document.createElement('select'); coverage.id = 'approval-coverage';
     for (const [value, key] of [['terminal', 'approval.coverage.terminal'], ['mutating-tools', 'approval.coverage.mutating']]) {
-        const option = document.createElement('option'); option.value = value; option.textContent = t(key);
+        const option = document.createElement('option'); option.value = value; option.textContent = tr(key);
         option.disabled = value === 'mutating-tools'; coverage.appendChild(option);
     }
     coverage.value = state.settings.approvalCoverage || 'terminal';
-    const coverageField = field(t('approval.coverage'), 'approval-coverage', coverage);
-    const coverageHint = el('hint'); coverageHint.textContent = t('approval.coverage.checking');
+    const coverageField = field(tr('approval.coverage'), 'approval-coverage', coverage);
+    const coverageHint = el('hint'); coverageHint.textContent = tr('approval.coverage.checking');
     api('GET', '/api/health').then((health) => {
         coverage.options[1].disabled = !health.toolCallApproverAdvertised;
-        coverageHint.textContent = t(health.toolCallApproverAdvertised ? 'approval.coverage.hint' : 'approval.coverage.unavailable');
+        coverageHint.textContent = tr(health.toolCallApproverAdvertised ? 'approval.coverage.hint' : 'approval.coverage.unavailable');
     }).catch(() => {
         coverage.options[1].disabled = true;
-        coverageHint.textContent = t('approval.coverage.unavailable');
+        coverageHint.textContent = tr('approval.coverage.unavailable');
     });
     const requiredApproval = el('hint'); requiredApproval.textContent = 'Non-routine command approval: required';
     const message = el('hint'); message.setAttribute('role', 'status');
@@ -6911,7 +6911,8 @@ function renderCustConformance(item) {
 // ===== end Skill conformance display =====
 
 async function openCustEditor(item) {
-    cust.editor = { category: item.category, path: item.path, name: item.name, dirty: false, mode: 'edit', readonly: false };
+    const editor = { category: item.category, path: item.path, name: item.name, dirty: false, mode: 'edit', readonly: true };
+    cust.editor = editor;
     $('cust-editor-name').textContent = item.name;
     $('cust-editor-file').textContent = item.path;
     $('cust-editor-file').title = item.path;
@@ -6919,14 +6920,20 @@ async function openCustEditor(item) {
     renderCustConformance(item);
     const ta = $('cust-editor');
     ta.value = '';
-    ta.readOnly = false;
+    ta.readOnly = true;
     setCustViewMode('edit');
     showCustEditor();
     $('cust-save').disabled = true;
     let data;
     try {
         data = await api('GET', '/api/customizations/content?category=' + encodeURIComponent(item.category) + '&path=' + encodeURIComponent(item.path));
-    } catch (e) { $('cust-editor-meta').textContent = '⚠ ' + e.message; ta.readOnly = true; return; }
+    } catch (e) {
+        if (cust.editor !== editor) return;
+        $('cust-editor-meta').textContent = '⚠ ' + e.message;
+        ta.readOnly = true;
+        return;
+    }
+    if (cust.editor !== editor) return;
     if (data.error) { $('cust-editor-meta').textContent = '⚠ ' + data.error; ta.readOnly = true; return; }
     if (data.binary) { $('cust-editor-meta').textContent = 'This file can’t be edited as text.'; ta.readOnly = true; return; }
     ta.value = data.text || '';

@@ -17,7 +17,7 @@ function definition(name, optional = false) {
     throw new Error(`Unbalanced ${name}`);
 }
 const context = vm.createContext({
-    t: (value) => value,
+    tr: (value) => value,
     el: (className, tag = 'div') => ({ className, tag, textContent: '', children: [], append(...items) { this.children.push(...items); } }),
     escapeHtml: (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
     activityKind: () => ({ ico: '#', label: 'Ran', noun: 'commands' }),
@@ -65,4 +65,10 @@ test('File approvals show the full destination and action without file content',
 test('MCP approvals show the server and Tool identity', () => {
     const text = context.approvalDetail({ class: 'Mcp', summary: { action: 'fixture / send' } }).map(flatten).join(' ');
     assert.ok(text.includes('fixture / send'));
+});
+
+test('Terminal Settings uses the actual application translator, not a test-only global', () => {
+    const settings = definition('renderTerminalSettings');
+    assert.ok(!/\bt\(/.test(settings), 'renderTerminalSettings must use the existing tr translator');
+    assert.ok(/\btr\(/.test(settings));
 });
