@@ -54,3 +54,15 @@ test('command Activity renders its recorded mode, not current Settings', () => {
     assert.ok(html.includes('Isolated'));
     assert.ok(html.includes('read-only'));
 });
+
+test('File approvals show the full destination and action without file content', () => {
+    const rows = context.approvalDetail({ class: 'FileWrite', summary: { action: 'write_file', filePath: '/project/result.txt', content: 'PRIVATE-CONTENT' } });
+    const text = rows.map(flatten).join(' ');
+    assert.ok(text.includes('/project/result.txt'));
+    assert.ok(text.includes('write_file'));
+    assert.ok(!text.includes('PRIVATE-CONTENT'));
+});
+test('MCP approvals show the server and Tool identity', () => {
+    const text = context.approvalDetail({ class: 'Mcp', summary: { action: 'fixture / send' } }).map(flatten).join(' ');
+    assert.ok(text.includes('fixture / send'));
+});

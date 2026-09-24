@@ -57,6 +57,7 @@
                 status           = 'ok'
                 version          = $state.Version
                 engineImported   = $state.Engine.Imported
+                toolCallApproverAdvertised = [bool](Get-DpPropertyValue -InputObject $state.Engine -Name 'ToolCallApproverAdvertised' -Default $false)
                 engineError      = $state.Engine.ImportError
                 authenticated    = (Test-Path -LiteralPath $state.Engine.TokenPath)
                 model            = $state.Settings.model
@@ -371,6 +372,16 @@
                     $previous.perCallApproval -ne $merged.perCallApproval -or
                     ($previous.permissions.terminal -and -not $merged.permissions.terminal) -or
                     ($previous.permissions.userTools -and -not $merged.permissions.userTools)
+                $previousCoverage = [string](Get-DpPropertyValue -InputObject $previous -Name 'approvalCoverage' -Default 'terminal')
+                $nextCoverage = [string](Get-DpPropertyValue -InputObject $merged -Name 'approvalCoverage' -Default 'terminal')
+                if ($previousCoverage -cne $nextCoverage) { $scopeChanged = $true }
+                if ($previousCoverage -ceq 'mutating-tools' -or $nextCoverage -ceq 'mutating-tools') {
+                    foreach ($permissionName in @('file', 'mcp', 'askUser')) {
+                        if ([bool]$previous.permissions[$permissionName] -and -not [bool]$merged.permissions[$permissionName]) {
+                            $scopeChanged = $true
+                        }
+                    }
+                }
                 foreach ($key in $merged.terminalExecution.Keys) {
                     if (($previous.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress) -cne
                         ($merged.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress)) { $scopeChanged = $true }

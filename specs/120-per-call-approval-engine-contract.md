@@ -1,10 +1,29 @@
 # Per-call approval Engine contract
 
-This design record documents why DeskPilot cannot yet implement trustworthy
-per-call approval and defines the smallest upstream ShellPilot contract needed
-to unblock it. No approval is simulated after a Tool has run.
+This record defines the upstream ShellPilot contract and DeskPilot's conditional
+Host Server adapter for broader per-call approval. No approval is simulated
+after a Tool has run.
 
 ## Status
+
+**Host adapter implemented, 2026-09-24.** `approvalCoverage` defaults to
+`terminal`. Explicit `mutating-tools` coverage extends active approvals to File
+changes, every MCP call and other User Tools. Existing owned read/question Tools
+retain their category Permissions; the owned Terminal Tool retains its own gate.
+File/MCP/User Tool grants are once-only and bind complete argument bytes, Engine
+call identity, Conversation, Turn and Project. MCP annotations grant no authority.
+
+The adapter requires an advertised `Invoke-Shp -ToolCallApprover <scriptblock>`
+parameter and refuses the Turn before Tool setup or Model calls when it is
+missing. Advertising an interface is not a live enforcement proof. The installed
+Engine inspected for this change did not provide the contract; no supported
+release or live provider acceptance is claimed. The UI reports this prerequisite
+and leaves broader coverage unavailable on that Engine. Terminal-only behavior
+is preserved. Changing coverage or withdrawing a relevant Permission revokes the
+active approval bridge. Reverting the coverage to `terminal` is the rollback.
+
+See [Engine compatibility](../docs/engine-compatibility.md) for the boundary and
+remaining acceptance checks.
 
 **Terminal locally implemented, 2026-09-03.** DeskPilot owns
 `run_terminal_command`, disables native `run_command`, and requires tested
@@ -91,7 +110,7 @@ Call the callback with one immutable object containing:
 | `McpServer` | The attached server name for an MCP Tool; otherwise null. |
 | `McpTool` | The server-local MCP Tool name; otherwise null. |
 | `McpAnnotations` | Validated MCP annotations plus a flag stating whether the server supplied a well-formed annotation object. |
-| `Policy` | The Engine policy result (`allowed` or `denied`) and its reason. |
+| `Policy` | An object with boolean `Allowed` and an optional bounded `Reason`; a missing value, a string boolean or `Allowed = false` refuses dispatch. |
 
 The Engine must preserve the distinction between absent, malformed, and valid
 MCP annotations. A valid boolean `readOnlyHint: true` declares a read-only

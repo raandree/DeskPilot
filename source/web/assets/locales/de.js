@@ -11,6 +11,15 @@
 //     ist keine Warnung.
 
 export const de = {
+    'approval.title.file': 'Der Agent möchte eine Datei ändern',
+    'approval.title.tool': 'Der Agent möchte ein Tool aufrufen',
+    'approval.operation': 'Aktion',
+    'approval.coverage': 'Umfang der Freigaben',
+    'approval.coverage.terminal': 'Nur Terminal',
+    'approval.coverage.mutating': 'Terminal, Dateiänderungen, MCP und eigene Tools',
+    'approval.coverage.checking': 'Freigabeschnittstelle der Engine wird geprüft...',
+    'approval.coverage.hint': 'Dateiänderungen, MCP und andere eigene Tools benötigen eine Freigabe pro Aktion. Das ist weder Isolation noch ein Nachweis der Engine im Livebetrieb.',
+    'approval.coverage.unavailable': 'Die geladene Engine bietet den benötigten ToolCallApprover-Vertrag nicht an. Erweiterte Freigaben sind nicht verfügbar; eine Auswahl über die API verweigert den Turn vor der Ausführung.',
     'composer.child': 'Privater untergeordneter Agent',
     'composer.child.title': 'Privaten untergeordneten Agent starten oder anzeigen',
     'composer.child.view': 'Privaten untergeordneten Agent anzeigen',

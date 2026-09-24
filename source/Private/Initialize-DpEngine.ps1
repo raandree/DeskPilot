@@ -156,5 +156,6 @@ if ($m) {
         BrowserState     = $null
         TerminalSession  = $null
         McpSupported     = $mcpSupported
+        ToolCallApproverAdvertised = $imported -and (Test-DpToolCallApprovalSupport -Runspace $runspace)
     }
 }

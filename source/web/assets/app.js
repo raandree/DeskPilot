@@ -11,7 +11,7 @@ import {
     statusGlyph,
     statusLabel,
 } from './diff.js';
-import { diagnosticStateMeta, mergeDiagnosticEntries } from './diagnostics.js';
+import { diagnosticStateMeta, formatDiagnosticContext, mergeDiagnosticEntries } from './diagnostics.js';
 import {
     CATALOGS,
     applyTranslations,
@@ -2384,6 +2384,9 @@ function renderUserPrompt(node, request, conversationId) {
 // nothing at all trains the reader to click through. The model's own account of
 // why it wants this is never shown, because the model is the thing being checked.
 const APPROVAL_TITLES = {
+    FileWrite: 'approval.title.file',
+    Mcp: 'approval.title.tool',
+    UserTool: 'approval.title.tool',
     BrowserNavigation: 'approval.title.navigation',
     // A browser action this build does not recognise must not fall back to the
     // terminal title, which would describe it as something it is not.
@@ -2418,6 +2421,11 @@ function approvalDetail(request) {
         rows.push(approvalRow('Project', summary.project, false));
     }
 
+    if (['FileWrite', 'Mcp', 'UserTool'].includes(kind)) {
+        rows.push(approvalRow('approval.operation', summary.action, false));
+        rows.push(approvalRow('approval.file', summary.filePath, true));
+        rows.push(approvalRow('Project', summary.project, false));
+    }
     if (kind === 'BrowserNavigation' || kind === 'BrowserAction') {
         // The host first and on its own line: a long address can bury the one
         // part that says whose site this is, which is the part being judged.
@@ -3336,12 +3344,28 @@ function renderTerminalSettings(container, runtimeOnly = false) {
     const approvalLabel = document.createElement('label'); const approval = document.createElement('input');
     approval.type = 'checkbox'; approval.checked = !!(state.settings && state.settings.perCallApproval);
     approvalLabel.append(approval, document.createTextNode('Approve non-routine Local commands'));
+    const coverage = document.createElement('select'); coverage.id = 'approval-coverage';
+    for (const [value, key] of [['terminal', 'approval.coverage.terminal'], ['mutating-tools', 'approval.coverage.mutating']]) {
+        const option = document.createElement('option'); option.value = value; option.textContent = t(key);
+        option.disabled = value === 'mutating-tools'; coverage.appendChild(option);
+    }
+    coverage.value = state.settings.approvalCoverage || 'terminal';
+    const coverageField = field(t('approval.coverage'), 'approval-coverage', coverage);
+    const coverageHint = el('hint'); coverageHint.textContent = t('approval.coverage.checking');
+    api('GET', '/api/health').then((health) => {
+        coverage.options[1].disabled = !health.toolCallApproverAdvertised;
+        coverageHint.textContent = t(health.toolCallApproverAdvertised ? 'approval.coverage.hint' : 'approval.coverage.unavailable');
+    }).catch(() => {
+        coverage.options[1].disabled = true;
+        coverageHint.textContent = t('approval.coverage.unavailable');
+    });
     const requiredApproval = el('hint'); requiredApproval.textContent = 'Non-routine command approval: required';
     const message = el('hint'); message.setAttribute('role', 'status');
     const save = el('btn btn-small', 'button'); save.type = 'submit'; save.id = 'terminal-save'; save.textContent = 'Save execution policy';
     const showDetails = () => {
         const isolated = form.querySelector('#terminal-mode-isolated').checked;
         details.hidden = !isolated; approval.disabled = isolated; approvalLabel.hidden = isolated; requiredApproval.hidden = !isolated;
+        coverage.disabled = !isolated && !approval.checked;
         hostsField.hidden = network.value !== 'allow-list'; hosts.required = isolated && network.value === 'allow-list';
     };
     form.onchange = showDetails;
@@ -3357,13 +3381,13 @@ function renderTerminalSettings(container, runtimeOnly = false) {
         for (const [key, input] of limitFields) next[key] = Number(input.value);
         save.disabled = true;
         try {
-            state.settings = await api('PUT', '/api/settings', { terminalExecution: next, perCallApproval: approval.checked });
+            state.settings = await api('PUT', '/api/settings', { terminalExecution: next, perCallApproval: approval.checked, approvalCoverage: coverage.value });
             updatePermDot(); if ($('set-perms')) buildPermList($('set-perms'));
             message.textContent = `Saved for the next Turn: ${terminalExecutionLabel(state.settings.terminalExecution)}`;
         } catch (error) { message.textContent = error.message; toast(error.message); }
         finally { save.disabled = false; }
     };
-    form.append(heading, modeGroup, details, approvalLabel, requiredApproval, save, message);
+    form.append(heading, modeGroup, details, approvalLabel, requiredApproval, coverageField, coverageHint, save, message);
     if (!runtimeOnly) container.append(form);
     showDetails();
 
@@ -7912,6 +7936,12 @@ function renderDiagnostics() {
             source.textContent = `${entry.component || 'host'} / ${entry.eventId || 'event'}`;
             const text = el('diagnostics-log-summary');
             text.textContent = entry.summary || '';
+            const correlation = formatDiagnosticContext(entry.context);
+            if (correlation) {
+                const contextText = el('muted tiny', 'code');
+                contextText.textContent = correlation;
+                text.append(document.createElement('br'), contextText);
+            }
             row.append(time, source, text);
             log.appendChild(row);
         }

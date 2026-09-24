@@ -70,6 +70,10 @@ function Invoke-DpTurn {
     $isolatedTerminal = $null
     $terminalPolicy = ConvertTo-DpTerminalExecution -InputObject $settings.terminalExecution
     $terminalBoundary = if ($terminalPolicy.mode -eq 'isolated') { $terminalPolicy } else { @{ mode = 'local' } }
+    $extendedApproval = ([bool]$settings.perCallApproval -or $terminalPolicy.mode -eq 'isolated') -and
+        [string](Get-DpPropertyValue -InputObject $settings -Name 'approvalCoverage' -Default 'terminal') -ceq 'mutating-tools'
+    $toolCallApprover = $null
+    $toolApprovalContext = $null
 
     # What the Engine is sent is not what the user typed: an Attachment is named
     # in a note in front of the prompt, while the Message keeps the user's own
@@ -101,6 +105,47 @@ function Invoke-DpTurn {
         transcriptSeq      = 0
         transcriptDropped  = 0
         iteration          = 0
+        diagnosticSequence = 0
+        diagnosticOutcome  = 'failed'
+        diagnosticUsage    = $null
+        diagnosticClock    = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+
+    $recordDiagnostic = {
+        param([string]$EventId, [string]$Outcome, [string]$Action, [object]$Usage)
+        $diagnostics = Get-DpPropertyValue -InputObject $script:DeskPilot -Name 'Diagnostics'
+        $log = Get-DpPropertyValue -InputObject $diagnostics -Name 'Log'
+        if ($null -eq $log) { return }
+        $context = @{
+            outcome = $Outcome
+            toolSequence = [long]$turnState.diagnosticSequence
+            durationMs = [long]$turnState.diagnosticClock.ElapsedMilliseconds
+        }
+        if ([string]$Conversation.id -cmatch '^c_[0-9a-f]{10,32}$') { $context.conversationId = [string]$Conversation.id }
+        if ($assistantId -cmatch '^m_[0-9a-f]{10,32}$') { $context.turnId = $assistantId }
+        if ($Action) { $context.action = $Action }
+        if ($null -ne $Usage) {
+            $unknown = [bool](Get-DpPropertyValue -InputObject $Usage -Name 'unknown' -Default $false)
+            $inputOnly = [string](Get-DpPropertyValue -InputObject $Usage -Name 'estimateScope' -Default '') -ceq 'input-only'
+            foreach ($key in @('promptTokens', 'completionTokens', 'totalTokens', 'costUSD', 'estimated', 'partial')) {
+                $value = Get-DpPropertyValue -InputObject $Usage -Name $key -Default $null
+                if (($unknown -and $key -in @('promptTokens', 'completionTokens', 'totalTokens', 'costUSD')) -or
+                    ($inputOnly -and $key -in @('completionTokens', 'totalTokens')) -or
+                    ($key -eq 'costUSD' -and -not [bool](Get-DpPropertyValue -InputObject $Usage -Name 'priced' -Default $true))) {
+                    $value = $null
+                }
+                $context[$key] = $value
+            }
+        }
+        $severity = if ($Outcome -eq 'failed') { 'error' } elseif ($Outcome -eq 'budget-exhausted') { 'warning' } else { 'information' }
+        $summary = if ($EventId -eq 'tool.observed') { 'Tool call observed; this is not an execution approval.' }
+            elseif ($EventId -eq 'turn.retry') { 'Retrying an unanswered Engine request.' }
+            elseif ($EventId.StartsWith('approval.')) { "Tool approval $Outcome." }
+            else { "Turn $Outcome." }
+        try {
+            Add-DpDiagnosticLog -Log $log -Severity $severity -Component 'turn' -EventId $EventId -Summary $summary -Context $context
+        }
+        catch { Write-Warning "Could not record structured Turn Diagnostics for '$EventId'." }
     }
 
     # The ordered Activity is persisted on the Message, so it is capped: a runaway
@@ -330,10 +375,13 @@ function Invoke-DpTurn {
         # and seal it as one narration block. Checked here rather than on the frame
         # decision because Get-DpStreamFrame consumes most tool-call records silently.
         $recordTags = Get-DpPropertyValue -InputObject $Record -Name @('Tags') -Default @()
+        $isToolCall = $false
         if (@($recordTags) -contains 'ShpProgress') {
             $recordPayload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
             $recordKind = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Kind') -Default '')
             if ($recordKind -eq 'ToolCall') {
+                $isToolCall = $true
+                $turnState.diagnosticSequence = [long]$turnState.diagnosticSequence + 1
                 & $flush
                 & $sealNarration
                 # Every tool call reaches the transcript, including the ones
@@ -350,6 +398,17 @@ function Invoke-DpTurn {
             }
         }
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
+        if ($isToolCall) {
+            $actionKind = if ($decision -and $decision.event -eq 'activity') { [string]$decision.Action.kind } else { 'other' }
+            & $recordDiagnostic 'tool.observed' 'observed' $actionKind
+        }
+        if (@($recordTags) -contains 'DeskPilotApproval') {
+            $approvalPayload = Get-DpPropertyValue -InputObject $Record -Name 'MessageData'
+            $approvalStatus = [string](Get-DpPropertyValue -InputObject $approvalPayload -Name 'Status' -Default '')
+            if ($approvalStatus -cin @('requested', 'approved', 'denied')) {
+                & $recordDiagnostic "approval.$approvalStatus" $approvalStatus 'approval'
+            }
+        }
         if ($null -eq $decision) { return }
         # Count frames produced this Turn (buffered or written) so the retry below
         # knows whether anything has streamed yet (retrying is only safe before the
@@ -383,6 +442,26 @@ function Invoke-DpTurn {
     }
 
     try {
+        & $recordDiagnostic 'turn.started' 'started'
+        if ($extendedApproval) {
+            if ($settings.permissions.terminal -and -not $settings.permissions.userTools) {
+                throw 'Broader Tool approval requires User Tools for the owned Terminal gate; no native Terminal fallback was selected.'
+            }
+            $toolApprovalContext = @{
+                conversationId = [string]$Conversation.id; turnId = [string]$assistantId
+                project = [string]$settings.workspaceFolder
+                workingDirectory = [string](Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
+                permissions = @{}; workspaceToolsOwned = $false; terminalApprovalActive = $false
+            }
+            foreach ($key in @('file', 'mcp', 'terminal', 'userTools', 'askUser')) {
+                $toolApprovalContext.permissions[$key] = [bool](Get-DpPropertyValue -InputObject $settings.permissions -Name $key -Default $false)
+            }
+            $callbackParameters = @{
+                Runspace = $script:DeskPilot.Engine.Runspace; Context = $toolApprovalContext
+                Bridge = $script:DeskPilot.Engine.ApprovalBridge; TimeoutSeconds = ([int]$settings.approvalTimeoutMinutes * 60)
+            }
+            $toolCallApprover = Initialize-DpToolCallApproval @callbackParameters
+        }
         if ($terminalPolicy.mode -eq 'isolated') {
             if ($settings.permissions.terminal) {
                 if (-not $settings.permissions.userTools) { throw 'Isolated Terminal requires User Tools Permission; Local execution was not selected.' }
@@ -422,7 +501,8 @@ function Invoke-DpTurn {
             Enabled  = [bool]$settings.permissions.file
             Root     = [string]$settings.workspaceFolder
         }
-        $null = Set-DpWorkspaceTool @workspaceToolParams
+        $workspaceToolsOwned = [bool](Set-DpWorkspaceTool @workspaceToolParams)
+        if ($toolApprovalContext) { $toolApprovalContext.workspaceToolsOwned = $workspaceToolsOwned }
 
         # DeskPilot's approval-gated run_command, paired with the -DisableTerminal
         # that New-DpTurnParameter adds for the same condition. Re-registered every
@@ -430,6 +510,7 @@ function Invoke-DpTurn {
         # scoped to a Conversation and a Turn, which is what stops an answer being
         # replayed against a later command.
         $approvalActive = Test-DpApprovalActive -Settings $settings
+        if ($toolApprovalContext) { $toolApprovalContext.terminalApprovalActive = $approvalActive }
         $terminalToolParams = @{
             Runspace       = $script:DeskPilot.Engine.Runspace
             Enabled        = $approvalActive
@@ -448,7 +529,7 @@ function Invoke-DpTurn {
             }
         }
         $null = Set-DpTerminalTool @terminalToolParams
-        if ($approvalActive -and $script:DeskPilot.Engine.ApprovalBridge) {
+        if (($approvalActive -or $extendedApproval) -and $script:DeskPilot.Engine.ApprovalBridge) {
             $script:DeskPilot.Engine.ApprovalBridge.BeginTurn([string]$Conversation.id)
         }
 
@@ -616,6 +697,7 @@ function Invoke-DpTurn {
 
         $params = New-DpTurnParameter -Prompt $enginePrompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported) -McpContext $mcpContext
         if ($settings.showThinking) { $params.ShowThinking = $true }
+        if ($extendedApproval) { $params.ToolCallApprover = $toolCallApprover }
 
         # A hard pipeline stop can interrupt the Engine before its normal result
         # and Usage-log append. Capture a pre-Turn Usage summary and an input-cost
@@ -677,6 +759,7 @@ function Invoke-DpTurn {
         $result = $null
         while ($true) {
             $attempt++
+            if ($attempt -gt 1) { & $recordDiagnostic 'turn.retry' 'retry' }
             $shell = [powershell]::Create()
             $shell.Runspace = $script:DeskPilot.Engine.Runspace
             $null = $shell.AddCommand('Invoke-Shp')
@@ -825,6 +908,8 @@ function Invoke-DpTurn {
                     Save-DpConversationStore @saveParams
                 }
                 $writer.Write((ConvertTo-DpSseFrame -EventName 'stopped' -Data $stoppedMessage))
+                $turnState.diagnosticOutcome = 'stopped'
+                $turnState.diagnosticUsage = $stoppedUsage
                 return
             }
 
@@ -857,6 +942,15 @@ function Invoke-DpTurn {
         }
 
         $mapped = ConvertFrom-DpEngineResult -Result $result
+        $reportedUsage = Get-DpPropertyValue -InputObject $result -Name 'Usage'
+        $turnState.diagnosticUsage = @{
+            promptTokens = Get-DpPropertyValue -InputObject $reportedUsage -Name @('PromptTokens', 'prompt_tokens', 'Prompt', 'InputTokens')
+            completionTokens = Get-DpPropertyValue -InputObject $reportedUsage -Name @('CompletionTokens', 'completion_tokens', 'Completion', 'OutputTokens')
+            totalTokens = Get-DpPropertyValue -InputObject $reportedUsage -Name @('TotalTokens', 'total_tokens', 'Total')
+            costUSD = Get-DpPropertyValue -InputObject $result -Name @('CostUSD', 'Cost')
+            estimated = $false
+            partial = $attempt -gt 1 -or $null -eq $reportedUsage
+        }
         if ($attempt -gt 1) {
             try {
                 $usageCommandParams = @{
@@ -959,8 +1053,10 @@ function Invoke-DpTurn {
         }
 
         $writer.Write((ConvertTo-DpSseFrame -EventName 'done' -Data $assistantMessage))
+        $turnState.diagnosticOutcome = 'completed'
     }
     catch {
+        $turnState.diagnosticOutcome = 'failed'
         $message = "$_"
         # Running out of the tool-iteration budget is not a failure of the Turn, it
         # is the Turn being cut off mid-task - and the Engine throws it away whole.
@@ -995,6 +1091,7 @@ function Invoke-DpTurn {
                     Save-DpConversationStore -Store $script:DeskPilot.Conversations -Directory $script:DeskPilot.DataDir
                 }
                 $writer.Write((ConvertTo-DpSseFrame -EventName 'stopped' -Data $exhaustedMessage))
+                $turnState.diagnosticOutcome = 'budget-exhausted'
                 return
             }
             catch {
@@ -1007,6 +1104,8 @@ function Invoke-DpTurn {
         & $writeTranscript 'failed'
     }
     finally {
+        & $recordDiagnostic ('turn.' + $turnState.diagnosticOutcome) $turnState.diagnosticOutcome '' $turnState.diagnosticUsage
+        $turnState.diagnosticClock.Stop()
         if ($isolatedTerminal) {
             $isolatedTerminal.Cancel()
             $terminalFiles = @($isolatedTerminal.FilesWritten)
