@@ -6784,11 +6784,131 @@ function renderCustItems() {
             row.querySelector('.cust-item-name').textContent = it.name;
             row.querySelector('.cust-item-desc').textContent = it.description || it.path;
             row.title = it.path;
+            const flag = custSkillFlagText(it);
+            if (flag) {
+                const mark = el('cust-item-flag');
+                mark.textContent = flag;
+                row.appendChild(mark);
+            }
             row.onclick = () => openCustEditor(it);
             wrap.appendChild(row);
         }
     }
 }
+
+// ===== Skill conformance display =====
+// What a Skill declares and what is wrong with it both travel in the catalog the
+// Customizations view already loaded, so this panel costs no extra request and
+// never pulls in a SKILL.md body, a reference file or a script. Every string is
+// written with textContent: a Skill is someone else's file, and its metadata is
+// text, never markup.
+const SKILL_META_FIELDS = ['license', 'compatibility', 'version', 'origin', 'allowedTools'];
+
+function custSkillMetaLines(item) {
+    const meta = (item && item.metadata) || {};
+    const lines = [];
+    for (const field of SKILL_META_FIELDS) {
+        const value = meta[field];
+        if (value === undefined || value === null || value === '') continue;
+        const line = { field, label: tr(`skill.meta.${field}`), value: String(value) };
+        // The one field that could be mistaken for an authority says what it is.
+        if (field === 'allowedTools') line.note = tr('skill.meta.allowedTools.note');
+        lines.push(line);
+    }
+    const entries = (meta && meta.entries) || {};
+    const covered = new Set(['version', 'origin', 'author', 'source']);
+    for (const key of Object.keys(entries).sort()) {
+        if (covered.has(key)) continue;
+        lines.push({ field: 'entry', label: key, value: String(entries[key]) });
+    }
+    return lines;
+}
+
+function custSkillDiagnosticLines(item) {
+    const found = (item && item.warnings) || [];
+    return found.map((d) => {
+        const code = (d && d.code) || 'unknown';
+        const key = `skill.warn.${code}`;
+        const text = tr(key, { message: (d && d.message) || '' });
+        return {
+            code,
+            severity: (d && d.severity) || 'warning',
+            text: text === key ? ((d && d.message) || code) : text,
+        };
+    });
+}
+
+function custSkillPrecedenceLine(item) {
+    if (!item || item.category !== 'skill') return null;
+    const root = item.root || '';
+    return item.precedence === 'shadowed'
+        ? tr('skill.precedence.shadowed', { root })
+        : tr('skill.precedence.primary', { root });
+}
+
+function custSkillSummary(item) {
+    // Advice is not a problem: only errors and warnings are counted, so a Skill
+    // that merely has a terse description still reads as conformant. A Skill the
+    // server could not certify never reads as conformant either, even when its
+    // findings did not fit the display budget.
+    const problems = custSkillDiagnosticLines(item).filter((d) => d.severity !== 'info').length;
+    if (problems) return { tone: 'warn', text: tr('skill.conformance.problems', { count: problems }) };
+    if (item && item.conformant === false) return { tone: 'warn', text: tr('skill.conformance.unverified') };
+    return { tone: 'ok', text: tr('skill.conformance.ok') };
+}
+
+function custSkillFlagText(item) {
+    if (!item || item.category !== 'skill') return '';
+    const parts = [];
+    const summary = custSkillSummary(item);
+    if (summary.tone !== 'ok') parts.push(summary.text);
+    if (item.precedence === 'shadowed') parts.push(tr('skill.precedence.shadowedShort'));
+    return parts.join(' · ');
+}
+
+function renderCustConformance(item) {
+    const host = $('cust-editor-conformance');
+    if (!host) return;
+    host.textContent = '';
+    if (!item || item.category !== 'skill') { host.hidden = true; return; }
+    host.hidden = false;
+
+    const summary = custSkillSummary(item);
+    const head = el('cust-conformance-summary ' + summary.tone);
+    head.textContent = summary.text;
+    host.appendChild(head);
+
+    const source = custSkillPrecedenceLine(item);
+    if (source) {
+        const line = el('cust-conformance-source muted tiny');
+        line.textContent = source;
+        host.appendChild(line);
+    }
+
+    for (const meta of custSkillMetaLines(item)) {
+        const row = el('cust-conformance-meta');
+        const label = el('cust-conformance-label', 'span');
+        label.textContent = meta.label;
+        const value = el('cust-conformance-value', 'span');
+        value.textContent = meta.value;
+        row.appendChild(label);
+        row.appendChild(value);
+        if (meta.note) {
+            const note = el('cust-conformance-note muted tiny', 'span');
+            note.textContent = meta.note;
+            row.appendChild(note);
+        }
+        host.appendChild(row);
+    }
+
+    for (const problem of custSkillDiagnosticLines(item)) {
+        const row = el('cust-conformance-problem ' + problem.severity);
+        row.textContent = problem.text;
+        row.title = problem.code;
+        host.appendChild(row);
+    }
+}
+// ===== end Skill conformance display =====
 
 async function openCustEditor(item) {
     cust.editor = { category: item.category, path: item.path, name: item.name, dirty: false, mode: 'edit', readonly: false };
@@ -6796,6 +6916,7 @@ async function openCustEditor(item) {
     $('cust-editor-file').textContent = item.path;
     $('cust-editor-file').title = item.path;
     $('cust-editor-meta').textContent = '';
+    renderCustConformance(item);
     const ta = $('cust-editor');
     ta.value = '';
     ta.readOnly = false;
@@ -6903,7 +7024,11 @@ async function newCustomization() {
         const created = await api('POST', '/api/customizations', { category: cat.id, name });
         await loadCustomizations();
         if (cat.id === 'agent') loadAgents();
-        openCustEditor({ category: created.category, path: created.path, name: created.name });
+        // Prefer the catalog entry just reloaded: it carries the conformance a
+        // new Skill was scanned with, rather than an optimistic stand-in.
+        const reloaded = currentCustCategory();
+        const listed = ((reloaded && reloaded.items) || []).find((it) => it.path === created.path);
+        openCustEditor(listed || { category: created.category, path: created.path, name: created.name });
         toast(`Created ${noun} “${created.name}”.`);
     } catch (e) { toast(e.message); }
 }

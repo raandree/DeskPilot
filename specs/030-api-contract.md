@@ -438,6 +438,43 @@ Lists every Customization grouped by category, in catalog order.
 skill, the folder that holds its `SKILL.md`). `scope` is `User` for files under
 `~/.copilot`, otherwise `Workspace`.
 
+A **skill** item carries additional conformance fields, measured against the open
+Agent Skills specification while the catalog is built. They are additive: every
+field above keeps its meaning, and the other three categories are unchanged.
+
+```json
+{ "id": "C:/skills/pdf-processing/SKILL.md", "category": "skill",
+  "name": "pdf-processing", "description": "Extract PDF text…",
+  "path": "C:/skills/pdf-processing/SKILL.md", "root": "C:/skills", "scope": "Workspace",
+  "directory": "pdf-processing",
+  "metadata": { "license": "Apache-2.0", "compatibility": "Requires Python 3.14+",
+                "version": "1.0", "origin": "example-org",
+                "allowedTools": "Bash(git:*) Read", "allowedToolsAuthoritative": false,
+                "entries": { "author": "example-org", "version": "1.0" } },
+  "resources": { "scripts": true, "references": true, "assets": false },
+  "warnings": [ { "code": "name-directory-mismatch", "severity": "warning", "message": "…" } ],
+  "conformant": true,
+  "precedence": "primary" }
+```
+
+`metadata` holds only what the `SKILL.md` declares; an undeclared field is
+absent, not null, and a value the limited reader cannot take as a plain string
+is dropped rather than shown. `allowedTools` is descriptive metadata and grants
+no Permission — `allowedToolsAuthoritative` is always `false`. `warnings`
+carries a stable `code`, a `severity` of `error`, `warning` or `info`, and an
+English `message` the client may replace with a localized string keyed on the
+code. `conformant` is `false` whenever a violation was **found** or the file
+could not be interpreted in full — including findings that were deduplicated or
+fell past the diagnostic budget; informational advice never sets it. A Skill
+refused for a path outside the root, or for a link anywhere below it, returns
+the diagnostic with no metadata, no description and no resource probe, because
+nothing was read. `precedence` is `primary`, or `shadowed` when an earlier
+configured root holds a Skill of the same name; it describes DeskPilot's listing
+order, not Engine discovery, and does not affect `conformant`. The Markdown body
+is never part of this response. See
+[`docs/skill-compatibility.md`](../docs/skill-compatibility.md) for the codes and
+the limits.
+
 ### `GET /api/customizations/content?category=<id>&path=<file>`
 
 Returns the file's UTF-8 text for the editor. A missing `category`/`path` is a
