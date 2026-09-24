@@ -173,6 +173,25 @@ export const de = {
     'diagnostics.clearLog': 'Protokoll leeren',
 
     // Einstellungen
+    // Agent Memory: "Notiz" ist eine dauerhafte Tatsache. Herkunft und Prüfstand
+    // sind das, was DeskPilot selbst festgehalten hat - unbestätigt bleibt
+    // unbestätigt und darf nicht beschönigt werden.
+    'memory.scope.label': 'Diese Notizen gelten für',
+    'memory.scope.global': 'Alle Projekte',
+    'memory.scope.project': 'Das Projekt {name}',
+    'memory.scope.projectGone': 'Ein Projekt, das nicht mehr registriert ist',
+    'memory.origin.user': 'Von Ihnen geschrieben',
+    'memory.origin.learned': 'Von DeskPilot gelernt',
+    'memory.origin.legacy': 'Aus einer früheren Version übernommen',
+    'memory.trust.verified': 'von Ihnen bestätigt',
+    'memory.trust.unverified': 'nicht bestätigt',
+    'memory.updated.unknown': 'Datum unbekannt',
+    'memory.forget': 'Vergessen',
+    'memory.forget.title': 'Diese Notiz vergessen, damit sie in künftigen Turns nicht mehr verwendet wird',
+    'memory.forgotten': 'Vergessen.',
+    'memory.notes.empty': 'Noch nichts gemerkt.',
+    'memory.learningPaused': 'Das automatische Lernen pausiert, bis Sie den Inhalt prüfen und speichern – so wird nichts über Notizen geschrieben, die DeskPilot nicht lesen konnte. Die vorherige Datei bleibt als Sicherung daneben erhalten.',
+    'memory.editHint': 'Eine Tatsache pro Zeile. Dieses Feld ändert nur die Notizen des oben gewählten Bereichs; alles andere bleibt unverändert. Notizen sind Hintergrundwissen für den Agenten – sie erteilen keine Berechtigungen.',
     'settings.language': 'Sprache',
     'settings.language.auto': 'Systemsprache verwenden',
     'settings.language.en': 'English',

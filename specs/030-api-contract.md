@@ -1180,12 +1180,19 @@ clamped 2–100), so the same knob drives the manual action and the automatic on
 visible transcript (`messages`) is left untouched — nothing the user sees is lost;
 only what is replayed to the Engine shrinks. Body: `{}`.
 
+The briefing is asked for in five labelled sections — Goals, Constraints,
+Decisions, Unresolved, References (`New-DpCompactionPrompt`) — and what survived
+is then measured (`Measure-DpCompactionPreservation`): which sections are present,
+and how many of the file and path references the summarised Turns named still
+appear. The measurement is **reported, not enforced**; refusing a weak summary
+would strand a Conversation that has run out of context window.
+
 - `404` if the Conversation is missing; `409` if a Turn is running (the compaction
   Turn shares the single Engine Runspace); `400 too_short` when there is too little
   history to be worth summarising; `502 compaction_failed` if the summary comes
   back empty.
 - On success, replaces `history`, sets `compactedUtc`, persists, and returns
-  `{ "ok": true, "summarised": <n>, "kept": <n>, "before": <n>, "after": <n>, "estimatedFreed": <tokens>, "compactedUtc": "…" }`. Like the organisational flags,
+  `{ "ok": true, "summarised": <n>, "kept": <n>, "before": <n>, "after": <n>, "estimatedFreed": <tokens>, "compactedUtc": "…", "preservation": { "complete": <bool>, "coverage": <0–1>, "missingSections": [], "missing": [], "preserved": <n>, "anchors": <n> } }`. Like the organisational flags,
   `compactedUtc` does not bump `updatedUtc` (it changes only the replayed context,
   not the visible thread).
 - **Auto-compaction** (FR-C19) reuses this exact route: after a Turn, when the
@@ -1473,42 +1480,95 @@ restarting. A new window will open; you can close this tab." }`.
 
 Persistent, cross-Conversation memory injected into every Turn's system prompt.
 Two stores: the **User Profile** (the manual `preferences` Setting) and the
-**Agent Memory** (an agent-curated store persisted to `agent-memory.json`). Both
-are bounded (`Get-DpMemoryLimits`: User Profile 8,000 chars, Agent Memory 12,000
-chars) and fenced in the system prompt as reference-not-instructions
-(`New-DpTurnParameter`).
+**Agent Memory** (an agent-curated store of attributed notes persisted to
+`agent-memory.json`). Both are bounded (`Get-DpMemoryLimits`: User Profile 8,000
+chars, Agent Memory 12,000 chars recalled per Turn, 1,000 chars per note, 200
+notes, 50 learned notes per scope) and fenced in the system prompt as
+reference-not-instructions (`New-DpTurnParameter`).
+
+An Agent Memory note carries `{ id, text, source, scope, projectId,
+conversationId, createdUtc, updatedUtc, verified }`. `source` is one of `user`,
+`learned` or `legacy`, and `verified` is derived by the Host — a Model cannot set
+either, and a legacy note (migrated from the version-1 text blob) keeps no
+invented origin or date. Recall is scoped: a Turn sees the global notes plus the
+notes of the Project it runs in (`Get-DpMemoryRecall`), fenced in the system
+prompt as unverified reference that grants nothing.
+
+Every Message carries the Project its own Turn ran in, stamped by the Host as the
+Message is written (`Set-DpMessageProject`) and persisted with the Conversation.
+Learning reads that stamp rather than anything on the Conversation, which can
+move between Projects. An absent stamp and a null stamp mean different things:
+never stamped (an older DeskPilot, or a surface that does not stamp) versus
+stamped as belonging to no Project. See
+[docs/agent-memory.md](../docs/agent-memory.md).
 
 ### `GET /api/memory`
 
 Returns both stores with their character counts and caps, plus whether autonomous
-learning is on:
+learning is on. `agentMemory.text` is the **global** notes as plain text — the
+version-1 view an existing client shows and writes back — while
+`agentMemory.notes` carries the structure:
 
 ```json
 {
   "userProfile": { "text": "...", "chars": 42, "cap": 8000 },
-  "agentMemory": { "text": "...", "chars": 310, "cap": 12000, "updatedUtc": "2026-07-07T20:00:00Z" },
+  "agentMemory": {
+    "text": "...", "chars": 310, "cap": 12000, "updatedUtc": "2026-07-07T20:00:00Z",
+    "notes": [
+      { "id": "n_ab12cd34ef", "text": "Builds run with build.ps1.", "source": "learned",
+        "scope": "project", "projectId": "p_1", "projectName": "Atelier",
+        "conversationId": "c_1", "createdUtc": "2026-07-07T20:00:00Z",
+        "updatedUtc": "2026-07-07T20:00:00Z", "verified": false }
+    ],
+    "noteCount": 1, "noteCap": 1000, "maxNotes": 200, "loadError": null,
+    "project": { "id": "p_1", "name": "Atelier" }
+  },
   "learning": true
 }
 ```
 
+`loadError` is non-null when the persisted store could not be read in full. The
+file is then copied to `agent-memory.<sha256>.bak` before anything replaces it
+(never clobbering an existing file), and automatic learning refuses to run until
+the user repairs the store here — a `PUT` is that repair.
+
 ### `PUT /api/memory`
 
-Body: `{ "userProfile"?: string|null, "agentMemory"?: string|null }` — either or
-both. The User Profile is validated and persisted through `Merge-DpSettings` (the
-`preferences` Setting); the Agent Memory is trimmed and written to
-`agent-memory.json`. `400 too_long` if a store exceeds its cap. Returns the same
-shape as `GET /api/memory`.
+Body: `{ "userProfile"?: string|null, "agentMemory"?: string|null, "scope"?: { "kind": "global"|"project", "projectId"?: string }, "forget"?: [noteId] }`.
+The User Profile is validated and persisted through `Merge-DpSettings` (the
+`preferences` Setting). An `agentMemory` edit replaces the notes of the declared
+scope and **only** that scope, as user-authored, verified notes, one per line; a
+body with no `scope` means the global notes, which is what an existing client
+sends. `forget` removes named notes so they are no longer recalled. Everything is
+validated before anything is written, so a rejected request changes nothing.
+Errors: `400 too_long` (a store over its cap), `400 note_too_long` (one line over
+the note cap), `400 bad_scope` (unknown kind, or a Project that is not
+registered), `400 unknown_note`, `400 empty_body`. Returns the same shape as
+`GET /api/memory`.
 
 ### `POST /api/memory/learn`
 
-Body: `{ "conversationId": string }`. Runs a **pure-reasoning Turn** with all Tools
-disabled (like auto-title / compaction) that folds durable facts from the
-Conversation's recent messages into the Agent Memory via `New-DpMemoryPrompt` +
-`ConvertFrom-DpMemoryResult`, capped to the Agent Memory limit. Best-effort: a
-failed extraction leaves the memory unchanged. Errors:
-`400 missing_conversation`, `404 not_found`, `409 busy` (a Turn is running),
-`400 too_short` (too few messages). Returns the `GET /api/memory` shape plus
-`"changed": <bool>`.
+Body: `{ "conversationId": string, "messageId": string }`. Runs a **pure-reasoning
+Turn** with all Tools disabled (like auto-title / compaction) that folds durable
+facts from one Turn into the Agent Memory via `New-DpMemoryPrompt` +
+`ConvertFrom-DpMemoryResult`, capped to the Agent Memory limit.
+
+`messageId` names the **assistant Message of the Turn being learned from** and is
+required. Everything else is derived from that Message's immutable Host stamp
+(`Get-DpLearningSource`): the notes are filed against the Project that Turn ran
+in, and the extraction reads only Messages with the same Project stamp, up to and
+including that Message. A Conversation used in one Project and then another
+therefore cannot learn the first Project's content into the second, and a delayed
+request for an earlier Turn is still filed against that Turn. Notes replace only
+what was previously learned in the same scope; the user's own notes and other
+Projects' notes are untouched. Best-effort: a failed extraction leaves the memory
+unchanged. Errors: `400 missing_conversation`, `404 not_found`, `409 busy`,
+`409 memory_unreadable` (the store could not be read in full, so learning will
+not write over it until the user repairs it in Settings),
+`400 missing_provenance` (no `messageId`), `400 stale_provenance` (the Turn no
+longer resolves, is not an assistant Message, or was never stamped by this Host),
+`400 too_short`, `409 project_unavailable` (that Turn's Project is no longer
+registered). Returns the `GET /api/memory` shape plus `"changed": <bool>`.
 
 The SPA also calls this route automatically (throttled by assistant-turn count)
 after a Turn when the `memoryLearning` Setting is on, mirroring auto-titling.

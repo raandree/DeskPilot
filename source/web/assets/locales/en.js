@@ -176,6 +176,25 @@ export const en = {
     'diagnostics.clearLog': 'Clear log',
 
     // Settings
+    // Agent Memory. "Note" is one durable fact; the origin and verification words
+    // are what DeskPilot itself recorded, so they must stay factual rather than
+    // reassuring - an unverified note is unverified, not "almost certain".
+    'memory.scope.label': 'These notes apply to',
+    'memory.scope.global': 'All projects',
+    'memory.scope.project': 'The project {name}',
+    'memory.scope.projectGone': 'A project that is no longer registered',
+    'memory.origin.user': 'You wrote this',
+    'memory.origin.learned': 'DeskPilot learned this',
+    'memory.origin.legacy': 'Carried over from an earlier version',
+    'memory.trust.verified': 'confirmed by you',
+    'memory.trust.unverified': 'not verified',
+    'memory.updated.unknown': 'date unknown',
+    'memory.forget': 'Forget',
+    'memory.forget.title': 'Forget this note so it is no longer used in future turns',
+    'memory.forgotten': 'Forgotten.',
+    'memory.notes.empty': 'Nothing remembered yet.',
+    'memory.learningPaused': 'Automatic learning is paused until you check what is here and save it, so nothing is written over notes DeskPilot could not read. The previous file is kept as a backup beside it.',
+    'memory.editHint': 'One fact per line. Editing this box changes only the notes in the scope selected above; everything else stays as it is. Notes are background reference for the agent — they grant no permissions.',
     'settings.language': 'Language',
     'settings.language.auto': 'Match my system',
     'settings.language.en': 'English',

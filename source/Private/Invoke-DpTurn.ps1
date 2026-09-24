@@ -584,6 +584,11 @@ function Invoke-DpTurn {
             text       = $Prompt
             createdUtc = [DateTime]::UtcNow.ToString('o')
         }
+        # Which Project this Turn runs in, stamped onto the Message as it is
+        # written. A Message never changes afterwards, so learning started for this
+        # Turn stays bound to this Project however many Turns in other Projects
+        # follow it in the same Conversation (see Set-DpMessageProject).
+        Set-DpMessageProject -Message $userMessage -Settings $settings
         if (@($Attachment).Count -gt 0) { $userMessage.attachments = @($Attachment) }
         $Conversation.messages.Add($userMessage)
         $Conversation.updatedUtc = $userMessage.createdUtc
@@ -631,7 +636,13 @@ function Invoke-DpTurn {
 
         # The agent's persistent Memory (durable notes about the user + environment),
         # injected into every Turn's system prompt so past learning carries forward.
-        $agentMemory = if ($script:DeskPilot.Memory) { [string]$script:DeskPilot.Memory.text } else { '' }
+        # Scoped: the global notes plus this Project's, never another Project's.
+        $projectName = ''
+        if ($settings.selectedProjectId) {
+            $selectedProject = @(@($settings.projects) | Where-Object { [string](Get-DpPropertyValue -InputObject $_ -Name @('id') -Default '') -eq [string]$settings.selectedProjectId }) | Select-Object -First 1
+            if ($selectedProject) { $projectName = [string](Get-DpPropertyValue -InputObject $selectedProject -Name @('name') -Default '') }
+        }
+        $agentMemory = (Get-DpMemoryRecall -Store $script:DeskPilot.Memory -ProjectId ([string]$settings.selectedProjectId) -ProjectName $projectName).text
 
         # Instruction files that apply to everything. The Engine only catalogues them
         # and waits for a load_instruction call the model often never makes, so a
@@ -896,6 +907,7 @@ function Invoke-DpTurn {
                     durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
                     createdUtc = [DateTime]::UtcNow.ToString('o')
                 }
+                Set-DpMessageProject -Message $stoppedMessage -Settings $settings
                 $Conversation.messages.Add($stoppedMessage)
                 $Conversation.updatedUtc = $stoppedMessage.createdUtc
                 Update-DpUsage -Usage $stoppedUsage -Model $usedModel
@@ -1016,6 +1028,7 @@ function Invoke-DpTurn {
             durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
             createdUtc = [DateTime]::UtcNow.ToString('o')
         }
+        Set-DpMessageProject -Message $assistantMessage -Settings $settings
         $Conversation.messages.Add($assistantMessage)
         $Conversation.updatedUtc = $assistantMessage.createdUtc
 
@@ -1083,6 +1096,7 @@ function Invoke-DpTurn {
                     durationMs = [int]([DateTime]::UtcNow - $startTime).TotalMilliseconds
                     createdUtc = [DateTime]::UtcNow.ToString('o')
                 }
+                Set-DpMessageProject -Message $exhaustedMessage -Settings $settings
                 $Conversation.messages.Add($exhaustedMessage)
                 $Conversation.updatedUtc = $exhaustedMessage.createdUtc
                 & $addRecord @{ Kind = 'error'; Text = $message }

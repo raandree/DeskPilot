@@ -22,6 +22,7 @@ import {
     resolveLocale,
 } from './i18n.js';
 import { markdownToSpeech, renderMarkdown } from './markdown.js';
+import { memoryForgetRequest, memoryLearnRequest, memoryNoteLabel, memoryScopeRequest, memoryScopeText } from './memory.js';
 import {
     createQuestionnaireState,
     getQuestionnaireOptionFocusIndex,
@@ -2946,7 +2947,10 @@ async function _runTurn({ prompt, displayText, dispatch, images = [], attachment
             // Stop must not trigger fresh Model calls or additional credit spend.
             await maybeAutoTitle();
             await maybeAutoCompact();
-            await maybeLearnMemory();
+            // Name the Turn that just finished, so what it teaches is filed
+            // against the Project it ran in even if the user switches Project
+            // while the learning request is in flight.
+            await maybeLearnMemory(wrap.dataset.id);
         }
         // Everything above can make the thread taller than it was when `done` last
         // followed it — checkpoint dividers arrive with refreshCurrentConversation,
@@ -3043,7 +3047,7 @@ async function maybeAutoCompact() {
 // something actually changed. Mirrors maybeAutoTitle / maybeAutoCompact. The manual
 // "Update from this conversation" button in Settings covers the off / short-chat
 // cases.
-async function maybeLearnMemory() {
+async function maybeLearnMemory(turnMessageId) {
     const s = state.settings || {};
     if (!s.memoryLearning) return;
     if (!state.current || state.learningMemory) return;
@@ -3051,14 +3055,20 @@ async function maybeLearnMemory() {
     const EVERY = 5;
     // Nothing to learn from a very short chat; then only every EVERY-th turn.
     if (assistantTurns < EVERY || assistantTurns % EVERY !== 0) return;
-    const id = state.current.id;
+    // The turn that just finished, named explicitly: this request may complete
+    // long after the user has moved the conversation to another project, and the
+    // server files what it learns against the project THIS turn ran in.
+    let request;
+    try { request = memoryLearnRequest(state.current, turnMessageId); } catch { return; }
     state.learningMemory = true;
     try {
-        const r = await api('POST', '/api/memory/learn', { conversationId: id });
+        const r = await api('POST', '/api/memory/learn', request);
         if (r && r.changed) toast('Updated what I remember about you.');
     } catch (e) {
-        // Best-effort: a busy Turn (409) or a short conversation (400) is a silent
-        // no-op; learning must never interrupt the user's flow.
+        // Best-effort: a busy Turn (409), an unreadable memory store (409) or a
+        // turn too short to learn from (400) is a silent no-op here; learning must
+        // never interrupt the user's flow. Settings > Memory reports a store that
+        // needs repairing, and the manual button there says why it refused.
         void e;
     } finally {
         state.learningMemory = false;
@@ -7198,6 +7208,40 @@ function wireMcpPanel() {
     loadMcp();
 }
 
+// Every Agent Memory note, as text, with the provenance DeskPilot recorded and a
+// way to forget it. Built through DOM APIs on purpose: a note's text comes from
+// a Model or from another conversation, so it is rendered as text and never as
+// markup, and the provenance beside it is written by this function rather than
+// taken from the note's own words.
+function renderMemoryNotes(container, payload, onForget) {
+    if (!container) return;
+    container.textContent = '';
+    const notes = (payload && payload.agentMemory && payload.agentMemory.notes) || [];
+    if (!notes.length) {
+        const empty = el('muted tiny');
+        empty.textContent = tr('memory.notes.empty');
+        container.appendChild(empty);
+        return;
+    }
+    for (const note of notes) {
+        const row = el('mem-note');
+        const text = el('mem-note-text');
+        text.textContent = note.text || '';
+        const meta = el('mem-note-meta muted tiny');
+        const when = note.updatedUtc
+            ? formatDateTime(locale, note.updatedUtc, { dateStyle: 'medium' })
+            : tr('memory.updated.unknown');
+        meta.textContent = `${memoryNoteLabel(note, tr)} · ${when}`;
+        const forget = el('btn btn-small mem-note-forget', 'button');
+        forget.type = 'button';
+        forget.textContent = tr('memory.forget');
+        forget.title = tr('memory.forget.title');
+        forget.onclick = () => onForget(note);
+        row.append(text, meta, forget);
+        container.appendChild(row);
+    }
+}
+
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
@@ -7396,12 +7440,18 @@ function openSettings() {
       </div>
       <div class="field">
         <label>Agent memory — what DeskPilot has learned <span id="mem-updated" class="muted tiny"></span></label>
+        <div class="mem-row">
+          <label class="muted tiny" for="mem-scope">${escapeHtml(tr('memory.scope.label'))}</label>
+          <select id="mem-scope"><option value="global">${escapeHtml(tr('memory.scope.global'))}</option></select>
+        </div>
         <textarea id="set-agent-memory" rows="8" placeholder="DeskPilot fills this in as it learns durable facts about you and your projects. You can edit or clear it."></textarea>
         <div class="mem-row">
           <span id="mem-count" class="muted tiny"></span>
           <button class="btn btn-small mem-learn-btn" id="set-memory-learn" type="button">Update from this conversation</button>
         </div>
-        <p class="hint">Durable notes the agent keeps about you and your environment across conversations, injected into every turn as background reference.</p>
+        <p class="hint">${escapeHtml(tr('memory.editHint'))}</p>
+        <p class="hint mem-load-error hidden" id="mem-load-error"></p>
+        <div id="mem-notes" class="mem-notes"></div>
       </div>
       <div class="field">
         <label><input type="checkbox" id="set-memory-learning" ${s.memoryLearning !== false ? 'checked' : ''} /> Let DeskPilot learn about you automatically</label>
@@ -7599,34 +7649,83 @@ function openSettings() {
     // Agent memory: loaded from /api/memory, edited/cleared via PUT, and learned
     // on demand via POST /api/memory/learn. The User profile above stays the
     // preferences Setting; this is the separate, agent-curated store.
+    //
+    // The editor works on ONE scope at a time - the notes that apply everywhere,
+    // or the selected Project's - because an edit may only alter the scope it
+    // declares. The list below it shows every note with where it came from and
+    // whether anyone has verified it, and can forget one without touching the rest.
+    const memScope = () => {
+        const select = $('mem-scope');
+        const kind = (select && select.value) || 'global';
+        const memory = (state._memPayload && state._memPayload.agentMemory) || {};
+        const projectId = (memory.project && memory.project.id) || null;
+        return kind === 'project' && projectId ? { kind: 'project', projectId } : { kind: 'global' };
+    };
     const renderMemMeta = (m) => {
+        state._memPayload = m;
         const am = (m && m.agentMemory) || {};
         state._memCap = am.cap || 12000;
+        const select = $('mem-scope');
+        const project = am.project || {};
+        if (select) {
+            const existing = select.querySelector('option[value="project"]');
+            if (project.id) {
+                const option = existing || document.createElement('option');
+                option.value = 'project';
+                option.textContent = tr('memory.scope.project', { name: project.name || project.id });
+                if (!existing) select.appendChild(option);
+            } else if (existing) {
+                existing.remove();
+                select.value = 'global';
+            }
+        }
+        const scope = memScope();
         const ta = $('set-agent-memory');
-        if (ta && document.activeElement !== ta) ta.value = am.text || '';
+        if (ta && document.activeElement !== ta) ta.value = memoryScopeText(m, scope.kind);
         const cnt = $('mem-count');
         if (cnt) cnt.textContent = ((ta ? ta.value.length : am.chars || 0)).toLocaleString() + ' / ' + state._memCap.toLocaleString() + ' chars';
         const upd = $('mem-updated');
         if (upd) upd.textContent = am.updatedUtc ? '· updated ' + new Date(am.updatedUtc).toLocaleString() : '';
+        // A store that could not be read in full says so, and says what it means:
+        // automatic learning stays off until the user repairs it here, so nothing
+        // overwrites notes DeskPilot could not read.
+        const problem = $('mem-load-error');
+        if (problem) {
+            problem.textContent = am.loadError ? `${am.loadError} ${tr('memory.learningPaused')}` : '';
+            problem.classList.toggle('hidden', !am.loadError);
+        }
+        renderMemoryNotes($('mem-notes'), m, forgetMemoryNote);
+    };
+    const forgetMemoryNote = async (note) => {
+        try {
+            renderMemMeta(await api('PUT', '/api/memory', memoryForgetRequest(note)));
+            toast(tr('memory.forgotten'));
+        } catch (err) { toast(errorText(err)); }
     };
     api('GET', '/api/memory').then(renderMemMeta).catch(() => { });
+    if ($('mem-scope')) $('mem-scope').onchange = () => renderMemMeta(state._memPayload);
     $('set-agent-memory').oninput = () => {
         const cnt = $('mem-count'); const ta = $('set-agent-memory');
         if (cnt) cnt.textContent = ta.value.length.toLocaleString() + ' / ' + (state._memCap || 12000).toLocaleString() + ' chars';
     };
     $('set-agent-memory').onchange = async (e) => {
-        try { renderMemMeta(await api('PUT', '/api/memory', { agentMemory: e.target.value })); toast('Memory saved.'); }
+        try { renderMemMeta(await api('PUT', '/api/memory', memoryScopeRequest(e.target.value, memScope()))); toast('Memory saved.'); }
         catch (err) { toast((err && err.message) || 'Could not save memory.'); }
     };
     $('set-memory-learn').onclick = async () => {
         if (!state.current) { toast('Open a conversation first, then update memory from it.'); return; }
         const btn = $('set-memory-learn'); const old = btn.textContent;
+        let request;
+        // The last completed turn of the open conversation. Its project is what
+        // the notes are filed against, so a conversation with no completed turn
+        // has nothing to learn from rather than something to guess at.
+        try { request = memoryLearnRequest(state.current); } catch (e) { toast((e && e.message) || 'Nothing to learn from yet.'); return; }
         btn.disabled = true; btn.textContent = 'Updating…';
         try {
-            const r = await api('POST', '/api/memory/learn', { conversationId: state.current.id });
+            const r = await api('POST', '/api/memory/learn', request);
             renderMemMeta(r);
             toast(r && r.changed ? 'Memory updated from this conversation.' : 'Nothing new worth remembering yet.');
-        } catch (e) { toast((e && e.message) || 'Could not update memory.'); }
+        } catch (e) { toast(errorText(e)); }
         finally { btn.disabled = false; btn.textContent = old; }
     };
     $('set-memory-learning').onchange = (e) => save({ memoryLearning: e.target.checked });

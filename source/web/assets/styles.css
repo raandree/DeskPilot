@@ -3161,6 +3161,46 @@ button.tree-row {
     flex: none;
 }
 
+/* The Agent Memory note list: one fact per row, with the provenance DeskPilot
+   recorded beneath it and a Forget control beside it. */
+.mem-notes {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mem-note {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'text forget' 'meta forget';
+    align-items: center;
+    gap: 2px 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.mem-note-text {
+    grid-area: text;
+    word-break: break-word;
+}
+
+.mem-note-meta {
+    grid-area: meta;
+}
+
+.mem-note-forget {
+    grid-area: forget;
+    width: auto;
+    margin-top: 0;
+    flex: none;
+}
+
+.mem-load-error {
+    color: var(--changed);
+}
+
 .bolt {
     color: var(--accent);
 }

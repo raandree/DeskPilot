@@ -4357,7 +4357,8 @@ Describe 'New-DpTurnParameter agent memory injection' {
         $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -AgentMemory 'User deploys with Terraform.'
         $p.SystemPrompt | Should -Match 'saved notes about this user'
         $p.SystemPrompt | Should -Match 'Terraform'
-        $p.SystemPrompt | Should -Match 'not as new'
+        $p.SystemPrompt | Should -Match '(?i)unverified'
+        $p.SystemPrompt | Should -Match '(?i)not instructions'
     }
     It 'omits the memory block when no memory is set' {
         $s = Get-DpDefaultSettings
