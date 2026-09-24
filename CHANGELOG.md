@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add attributable, Project-scoped Agent Memory with source and verification
+  labels, explicit scope editing and forgetting, and preserved recovery copies
+  before a lossy store is replaced. Full stores refuse changes instead of
+  discarding other notes. See [Agent Memory](docs/agent-memory.md).
+- Add optional broader Tool approval coverage behind the Engine's pre-dispatch
+  callback contract. File changes, MCP and other User Tools require once-only
+  approval bound to complete argument bytes; unsupported Engines refuse before
+  execution. Terminal-only coverage remains the default. See
+  [Engine compatibility](docs/engine-compatibility.md).
+- Show bounded Skill compatibility, provenance and conformance diagnostics in
+  Customizations without granting Permissions from metadata. Unsafe links are
+  refused before reads; malformed Skills remain visible for repair. See
+  [Skill compatibility](docs/skill-compatibility.md).
+- Add content-free, correlated Turn lifecycle evidence to the bounded local
+  Diagnostics log. Unknown or partial Usage remains explicitly labelled.
+- Extend the existing evaluation harness with repeated isolated trials,
+  capability/reliability gates, bounded outcome grading and owned cleanup.
+  Live Models remain opt-in and are refused in CI. See the
+  [evaluation guide](tests/live/eval/README.md).
+
 - Add **Terminal Amber** and **Terminal Green** themes with a bundled 3270 font, independent Light/Dark/System modes, and a Theme selector in General Settings. See [themes and font research](docs/themes.md).
 
 - Add **Require a bot mention in groups** to Intercom Settings so unaddressed group Messages start no work and receive no reply; direct plain-text answers to the pending question in the same group need no mention, and private chats stay unchanged. See [group setup](docs/intercom-getting-started.md#require-a-mention-in-groups).
@@ -154,6 +174,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flips in a later slice.
 
 ### Fixed
+
+- Keep Settings and approval cards on the application's actual translator, and
+  prevent late Customization responses from replacing a closed or newer editor.
+  The loading buffer stays read-only until its content arrives.
 
 - Show redacted error details when Terminal runtime preparation fails; report missing Docker Desktop as unavailable with installation guidance instead of generic disk-space and download advice. See [runtime troubleshooting](docs/isolated-terminal.md#if-preparation-fails).
 
@@ -430,6 +454,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and saying plainly that it cannot be undone.
 
 ### Changed
+
+- **API change:** Memory learning now requires the originating assistant
+  `messageId`; unstamped historical or child Messages cannot be guessed into a
+  Project. The bundled UI sends the identifier. Keep a private copy of the
+  version-2 Memory file before downgrading; do not promote confidential Project
+  notes into global recall as a workaround.
+- Request structured compaction sections and report reference/section coverage
+  without claiming that these heuristics prove a Model's summary is correct.
 
 - Use Pester 6 for QA and unit tests, resolving `latest` instead of pinning
   Pester 5. Refresh existing build dependencies with `-ResolveDependency`.

@@ -72,6 +72,16 @@ work without driving the tool stack themselves.
   contents, Tool arguments, credentials, and environment values.
 - **Your house rules.** Point it at folders of Skills and Instructions — the
   same files VS Code Copilot uses — and the agent discovers them.
+  [Skill diagnostics](docs/skill-compatibility.md) show malformed metadata,
+  compatibility and declared provenance without granting extra Permissions.
+- **Memory with a source and scope.** Review and forget attributed notes, keep
+  Project learning separate, and preserve unreadable data before replacing it.
+  See [Agent Memory and migration](docs/agent-memory.md).
+- **Measured agent behavior.** Contributors can repeat isolated cases using the
+  [evaluation harness](tests/live/eval/README.md), with no live Model calls in CI.
+- **Explicit Engine boundaries.** Broader approval coverage is available only
+  through a compatible Engine contract; the supported SDK was evaluated without
+  changing the default backend. See [compatibility and remaining proof](docs/engine-compatibility.md).
 - **Calm, build-free UI.** A static single-page app served locally. No npm, no
   bundler, nothing for you to install beyond PowerShell 7.
 

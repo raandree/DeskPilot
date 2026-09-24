@@ -2,8 +2,8 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-08
-source: full Sampler gates, Intercom regressions, and built-preview browser proof
+last-verified: 2026-09-24
+source: full Sampler gates, scoped regressions, and real browser acceptance
 ---
 
 # Progress
@@ -29,6 +29,7 @@ parallel topology remains proposed; no parallel scheduling is enabled.
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-24 | Implement the agent reliability package on `ai/agent-reliability`: repeated owned evaluation trials, attributable Project-scoped Memory, bounded Skill diagnostics, conditional broader Tool approvals and content-free Turn evidence. Preserve Engine ownership, default Terminal-only approval and disabled child/parallel gates. Fix browser translator/editor races and hardened bare-Git fixtures test-first. Final local gate: 2,854 passed, zero failed, 14 skips, 16 tasks, zero errors; seven expected preservation warnings. Real desktop/mobile fixture passed with zero page errors and no Model calls. User authorized topic-Branch push and exact-SHA CI monitoring; no main Merge or publication. |
 | 2026-09-08 | Confirm missing Docker Desktop on the user's separate test machine and report it as an unavailable prerequisite with Windows, WSL 2, Linux containers, and retry instructions; omit irrelevant disk/download advice. Both new tests fail before the fix and pass afterward; all five preparation tests pass. Full Windows Sampler gate: 2,502 passed, zero failures, eight skips, 16 tasks without build errors or warnings. No new static diagnostics; documentation renders. Local Branch `ai/terminal-docker-prerequisite`; no Docker installation, Permission change, push, or publication. |
 | 2026-09-08 | Restore normal Terminal runtime readiness on the development machine only: PowerShell 7.6.5, Docker 29.7.2, zero remaining Terminal containers, verified through the rebuilt module. The original job error was already discarded and could not be recovered. Preserve bounded, redacted preparation error details with a red/green regression and retry/redaction guards. Full Windows Sampler gate: 2,500 passed, zero failures, eight skips; final Terminal file: 41/41. New static diagnostics resolved; existing handler/changelog warnings retained. Local Branch `ai/terminal-runtime-diagnostics`; no Permission changes, push, or publication. |
 | 2026-09-08 | On explicit user request, fast-forward `main` from `912b158` to `07b57eb` and push to `origin/main`. Hosted CI run `34214508250` passed all five jobs. Pester 6.1.0: Windows 2,492 passed/13 skipped; macOS and Ubuntu each 2,450 passed/55 skipped; zero failures. Deployment completed at 10:20:46 UTC and published Preview `0.5.0-preview0021` to GitHub and PowerShell Gallery, independently verified through public metadata. Monitoring stopped. The final Memory Bank record is documentation-only with `[skip ci]`; no further application or build changes. |
