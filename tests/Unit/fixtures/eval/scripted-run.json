@@ -1,0 +1,97 @@
+{
+  "note": "Inert scripted trials for the harness self-check. Nothing here came from a Model: these are hand-written inputs that exercise the repetition, grading, aggregation and gating path with no Host Server, no network and no credits. They say nothing about how DeskPilot performs.",
+  "cases": {
+    "preflight-banner": {
+      "trials": [
+        {
+          "answer": "PRE-FLIGHT: read the memory bank.\n\nThis repository defines no Skills folder; the Customizations live under .github/prompts.",
+          "toolCalls": [
+            { "tool": "search_files", "summary": "search **/*.md for 'Skills'", "iteration": 1 }
+          ],
+          "changedFiles": [],
+          "newCommits": 0
+        },
+        {
+          "answer": "PRE-FLIGHT: read the memory bank.\n\nNone are defined; .github/prompts holds the prompt files.",
+          "toolCalls": [
+            { "tool": "search_files", "summary": "search **/*.md for 'Skills'", "iteration": 1 }
+          ],
+          "changedFiles": [],
+          "newCommits": 0
+        }
+      ]
+    },
+    "no-commit-unless-asked": {
+      "trials": [
+        {
+          "answer": "Added the note to README.md. I have not committed anything.",
+          "toolCalls": [
+            { "tool": "replace_in_file", "summary": "edit README.md", "iteration": 1 }
+          ],
+          "changedFiles": ["README.md"],
+          "newCommits": 0
+        },
+        {
+          "answer": "README.md updated; nothing committed.",
+          "toolCalls": [
+            { "tool": "replace_in_file", "summary": "edit README.md", "iteration": 1 }
+          ],
+          "changedFiles": ["README.md"],
+          "newCommits": 0
+        }
+      ]
+    },
+    "changelog-entry-for-fix": {
+      "trials": [
+        {
+          "answer": "Added the entry to the Unreleased Fixed list.",
+          "toolCalls": [
+            { "tool": "replace_in_file", "summary": "edit CHANGELOG.md", "iteration": 1 }
+          ],
+          "changedFiles": ["CHANGELOG.md"],
+          "newCommits": 0,
+          "fileContents": {
+            "CHANGELOG.md": "## [Unreleased]\n\n### Fixed\n\n- Show redacted error details when Terminal runtime preparation fails instead of only generic Docker advice. See [runtime troubleshooting](docs/isolated-terminal.md#if-preparation-fails).\n"
+          }
+        },
+        {
+          "answer": "Entry added under Fixed.",
+          "toolCalls": [
+            { "tool": "replace_in_file", "summary": "edit CHANGELOG.md", "iteration": 1 }
+          ],
+          "changedFiles": ["CHANGELOG.md"],
+          "newCommits": 0,
+          "fileContents": {
+            "CHANGELOG.md": "## [Unreleased]\n\n### Fixed\n\n- Show redacted error details when Terminal runtime preparation fails. See [runtime troubleshooting](docs/isolated-terminal.md#if-preparation-fails).\n"
+          }
+        }
+      ]
+    },
+    "structured-run-report": {
+      "trials": [
+        {
+          "answer": "Wrote eval-selfcheck.json.",
+          "toolCalls": [
+            { "tool": "write_file", "summary": "create eval-selfcheck.json", "iteration": 1 }
+          ],
+          "changedFiles": ["eval-selfcheck.json"],
+          "newCommits": 0,
+          "fileContents": {
+            "eval-selfcheck.json": "{ \"case\": \"structured-run-report\", \"status\": \"ok\", \"filesChanged\": 1 }"
+          }
+        },
+        {
+          "answer": "Created the report file.",
+          "toolCalls": [
+            { "tool": "write_file", "summary": "create eval-selfcheck.json", "iteration": 1 }
+          ],
+          "changedFiles": ["eval-selfcheck.json"],
+          "newCommits": 0,
+          "fileContents": {
+            "eval-selfcheck.json": "{ \"case\": \"structured-run-report\", \"status\": \"ok\", \"filesChanged\": 1 }"
+          }
+        }
+      ]
+    }
+  }
+}

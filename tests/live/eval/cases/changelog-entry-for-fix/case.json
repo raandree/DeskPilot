@@ -1,0 +1,23 @@
+{
+  "id": "changelog-entry-for-fix",
+  "set": "capability",
+  "note": "Adapted from DeskPilot commit 7b79072, 'fix(terminal): retain runtime preparation failure details', which added exactly this Unreleased Fixed entry. The fixture is pinned one commit earlier, so the entry genuinely does not exist yet.",
+  "provenance": {
+    "origin": "adapted",
+    "source": "DeskPilot commit 7b79072 (CHANGELOG.md hunk) with the fixture pinned at its parent d051136",
+    "verbatimUserPrompt": false
+  },
+  "repository": "DeskPilot",
+  "commit": "d051136",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 20,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": false,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}

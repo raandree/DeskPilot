@@ -1,73 +1,113 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Runs the DeskPilot parity eval corpus against a live Copilot model.
+    Runs the DeskPilot parity eval corpus, k independent trials per case.
 .DESCRIPTION
     Every prompt in the parity series claims to close a gap; this is the thing
     that decides whether any of them did. It executes a corpus of cases drawn
-    from tasks somebody actually ran, grades the prompt-08 transcript and the
-    resulting repository state with deterministic graders, and records efficiency
-    beside correctness without ever grading it - a cheaper run that is wrong is
-    not better.
+    from tasks somebody actually ran, grades the prompt-08 transcript, the
+    resulting repository state and the artifacts the work produced with
+    deterministic graders, and records efficiency beside correctness without
+    ever grading it - a cheaper run that is wrong is not better.
 
-    THIS SENDS REAL PROMPTS AND SPENDS REAL CREDITS. It is deliberately outside
-    the Pester suite: build.yaml runs only tests/QA and tests/Unit, so nothing
-    here is reached by ./build.ps1 -Tasks test.
+    An agent is not deterministic, so one trial is an anecdote. Each case is run
+    -Repeat times, each trial in its own throwaway sandbox with its own data
+    directory and therefore its own Conversation, and the result is reported
+    three ways: the first trial, at least one of k (pass@k) and all of k
+    (pass^k). Nothing is rounded into a single headline number.
+
+    THE LIVE MODE SENDS REAL PROMPTS AND SPENDS REAL CREDITS. It is deliberately
+    outside the Pester suite: build.yaml runs only tests/QA and tests/Unit, so
+    nothing here is reached by ./build.ps1 -Tasks test, and a live run is
+    refused outright when a CI environment variable is set. -Offline replays a
+    committed scripted file through the same code with no Host Server, no
+    network and no Model call; that is the mode a test may use, and the numbers
+    it produces are about the harness, never about a Model.
 
     Fixture discipline, without which the numbers are noise:
 
     - The target repository is **cloned** to a throwaway folder and checked out
-      at its pinned SHA before every case. The source repository is never
+      at its pinned SHA before every trial. The source repository is never
       touched, never checked out and never cleaned - a harness that mutates a
       developer's working tree to make its numbers reproducible has traded one
       kind of wrong for a worse one.
-    - Model, agent, permissions and iteration cap are fixed per case.
-    - Each case gets a fresh Host Server process, and therefore a fresh Engine
-      Runspace. Prompt 07 established that the runspace inherits the launcher's
-      environment, so that inheritance is recorded as a caveat on every result.
+    - Model, agent, permissions and iteration cap are fixed per case, and the
+      fingerprint of all of it is recorded as the case identity, so trials of
+      two different configurations can never be averaged together.
+    - Each trial gets a fresh Host Server process and a fresh data directory,
+      and therefore a fresh Engine Runspace and a fresh Conversation. No real
+      Project and no real Conversation is ever opened. Prompt 07 established
+      that the runspace inherits the launcher's environment, so that inheritance
+      is recorded as a caveat on every result.
     - The DeskPilot commit under test is recorded with every run.
 
     Output files carry no token, no absolute user path and no prompt text.
 .PARAMETER RepositoryRoot
-    The folder holding the fixture repositories named by the cases. Required, and
-    never defaulted, so no machine-specific path is committed.
+    The folder holding the fixture repositories named by the cases. Required for
+    a live run, and never defaulted, so no machine-specific path is committed.
 .PARAMETER CaseId
     Run only these case ids. Default: every case in the corpus.
 .PARAMETER CasePath
     The corpus folder. Defaults to ./cases beside this script.
 .PARAMETER OutputPath
     Where to write the run result and summary. Defaults to output/parity-eval.
+.PARAMETER Repeat
+    Independent trials per case, 1 to 25. Defaults to 1, because repetition is
+    what spends the credits and must be asked for.
 .PARAMETER Baseline
     A previous run result to compare against. A regression exits non-zero.
 .PARAMETER CompareOnly
-    Compare -Baseline against -Current and exit; run nothing.
-.PARAMETER Current
-    The run result to compare against -Baseline in -CompareOnly mode.
+    Compare -BaselinePath against -CurrentPath and exit; run nothing.
+.PARAMETER BaselinePath
+    The baseline run result in -CompareOnly mode.
+.PARAMETER CurrentPath
+    The current run result in -CompareOnly mode.
 .PARAMETER EngineModulePath
     Optional explicit ShellPilot path passed through to the Host Server.
+.PARAMETER Offline
+    Replay a scripted run instead of calling anything. No Host Server, no
+    network, no Model, no credits.
+.PARAMETER ScriptedRunPath
+    The scripted trials to replay in -Offline mode.
 .EXAMPLE
-    pwsh -File ./tests/live/eval/Invoke-DpParityEval.ps1 -RepositoryRoot V:\Git
+    pwsh -File ./tests/live/eval/Invoke-DpParityEval.ps1 -RepositoryRoot V:\Git -Repeat 3
 
-    Runs the whole corpus and writes output/parity-eval/run-<id>.{json,md}.
+    Runs the whole corpus three times per case and writes
+    output/parity-eval/run-<id>.{json,md}. Spends real credits.
 .EXAMPLE
-    pwsh -File ./tests/live/eval/Invoke-DpParityEval.ps1 -CompareOnly -Baseline a.json -Current b.json
+    pwsh -File ./tests/live/eval/Invoke-DpParityEval.ps1 -Offline -ScriptedRunPath ./tests/Unit/fixtures/eval/scripted-run.json -Repeat 2
+
+    Exercises the whole repetition, grading, aggregation and gating path against
+    committed scripted trials. Spends nothing and proves nothing about a Model.
+.EXAMPLE
+    pwsh -File ./tests/live/eval/Invoke-DpParityEval.ps1 -CompareOnly -BaselinePath a.json -CurrentPath b.json
 
     Diffs two runs and exits non-zero if anything regressed.
+.LINK
+    https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 #>
 [CmdletBinding(DefaultParameterSetName = 'Run')]
 [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'A standalone live runner; host output is the intended interface.')]
+[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'RepositoryRoot and EngineModulePath are consumed inside the live executor scriptblock, which the analyzer does not follow.')]
 param(
     [Parameter(Mandatory, ParameterSetName = 'Run')]
     [string]$RepositoryRoot,
 
     [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Offline')]
     [string[]]$CaseId,
 
     [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Offline')]
     [string]$CasePath,
 
     [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Offline')]
     [string]$OutputPath,
+
+    [Parameter(ParameterSetName = 'Run')]
+    [Parameter(ParameterSetName = 'Offline')]
+    [object]$Repeat = 1,
 
     [Parameter(ParameterSetName = 'Run')]
     [string]$Baseline,
@@ -82,13 +122,19 @@ param(
     [string]$CurrentPath,
 
     [Parameter(ParameterSetName = 'Run')]
-    [string]$EngineModulePath
+    [string]$EngineModulePath,
+
+    [Parameter(Mandatory, ParameterSetName = 'Offline')]
+    [switch]$Offline,
+
+    [Parameter(Mandatory, ParameterSetName = 'Offline')]
+    [string]$ScriptedRunPath
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-. (Join-Path $PSScriptRoot 'DpEvalGrader.ps1')
+. (Join-Path $PSScriptRoot 'DpEvalTrial.ps1')
 
 $repoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
 
@@ -116,20 +162,67 @@ if ($CompareOnly) {
     exit 0
 }
 
+# Validate before anything is created, cloned or spent.
+$repeatCheck = Test-DpEvalRepeat -Repeat $Repeat
+if (-not $repeatCheck.valid) { throw $repeatCheck.error }
+$repeatCount = $repeatCheck.repeat
+
+if (-not $Offline) {
+    $liveDecision = Test-DpEvalLiveRunAllowed
+    if (-not $liveDecision.allowed) { throw $liveDecision.reason }
+}
+
 if (-not $CasePath) { $CasePath = Join-Path $PSScriptRoot 'cases' }
 if (-not $OutputPath) { $OutputPath = Join-Path $repoRoot 'output' 'parity-eval' }
-New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
 
-$deskPilotSha = 'unknown'
-try { $deskPilotSha = (git -C $repoRoot rev-parse --short HEAD 2>$null).Trim() } catch { $deskPilotSha = 'unknown' }
+$scripted = $null
+if ($Offline) {
+    $scripted = Get-Content -LiteralPath $ScriptedRunPath -Raw | ConvertFrom-Json
+    if (-not $scripted.cases) { throw "'$ScriptedRunPath' declares no cases." }
+}
 
 $caseFolders = @(Get-ChildItem -LiteralPath $CasePath -Directory | Sort-Object Name)
+if ($Offline) {
+    $scriptedIds = @($scripted.cases.PSObject.Properties.Name)
+    $missingFolders = @($scriptedIds | Where-Object { $_ -notin @($caseFolders.Name) })
+    if ($missingFolders.Count) { throw "The scripted run names cases that are not in the corpus: $($missingFolders -join ', ')." }
+    $caseFolders = @($caseFolders | Where-Object { $scriptedIds -contains $_.Name })
+}
 if ($CaseId) { $caseFolders = @($caseFolders | Where-Object { $CaseId -contains $_.Name }) }
 if ($caseFolders.Count -eq 0) { throw "No cases found in '$CasePath'." }
 
 $runId = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
 $startedUtc = [DateTime]::UtcNow.ToString('o')
-$results = [System.Collections.Generic.List[hashtable]]::new()
+$mode = if ($Offline) { 'offline-scripted' } else { 'live' }
+
+$deskPilotSha = 'unknown'
+try { $deskPilotSha = (git -C $repoRoot rev-parse --short HEAD 2>$null).Trim() } catch { $deskPilotSha = 'unknown' }
+
+# Read and validate every manifest up front. A malformed manifest stops the run
+# rather than quietly shrinking the corpus a pass rate is quoted over.
+$corpus = [System.Collections.Generic.List[hashtable]]::new()
+$manifestErrors = [System.Collections.Generic.List[string]]::new()
+foreach ($folder in $caseFolders) {
+    $case = Get-Content -LiteralPath (Join-Path $folder.FullName 'case.json') -Raw | ConvertFrom-Json
+    $expect = Get-Content -LiteralPath (Join-Path $folder.FullName 'expect.json') -Raw | ConvertFrom-Json
+    $prompt = Get-Content -LiteralPath (Join-Path $folder.FullName 'prompt.md') -Raw
+    $manifest = Test-DpEvalManifest -Case $case -Expect $expect -Prompt $prompt -FolderName $folder.Name
+    if (-not $manifest.valid) {
+        foreach ($problem in @($manifest.errors)) { $manifestErrors.Add("$($folder.Name): $problem") }
+        continue
+    }
+    $corpus.Add(@{ folder = $folder; case = $case; expect = $expect; prompt = $prompt })
+}
+if ($manifestErrors.Count) {
+    throw "The corpus is malformed and nothing was executed:`n  $($manifestErrors -join "`n  ")"
+}
+
+New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
+$runOwnerId = [guid]::NewGuid().ToString('N')
+$sandboxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-run-' + $runId + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+# Freshly allocated and receipted. Cleanup deletes recursively, so it must be
+# able to prove this folder is this run's and not something already there.
+New-DpEvalOwnedDirectory -Path $sandboxRoot -OwnerId $runOwnerId | Out-Null
 
 function Get-DpFreePort {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
@@ -139,28 +232,20 @@ function Get-DpFreePort {
     $port
 }
 
-function Invoke-DpEvalCase {
-    param(
-        [System.IO.DirectoryInfo]$Folder,
-        [string]$FixtureRoot,
-        [string]$EnginePath
-    )
+# The execution seam. A live trial drives a Host Server; a scripted trial reads
+# a committed file. Everything above this line is identical either way, which is
+# what makes the harness testable without spending anything.
+$liveExecutor = {
+    param($Context)
 
-    $case = Get-Content -LiteralPath (Join-Path $Folder.FullName 'case.json') -Raw | ConvertFrom-Json
-    $expect = Get-Content -LiteralPath (Join-Path $Folder.FullName 'expect.json') -Raw | ConvertFrom-Json
-    $prompt = Get-Content -LiteralPath (Join-Path $Folder.FullName 'prompt.md') -Raw
-
-    $sandbox = Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-' + [guid]::NewGuid().ToString('N'))
-    $fixture = Join-Path $sandbox 'fixture'
-    $dataDir = Join-Path $sandbox 'data'
-    New-Item -ItemType Directory -Path $sandbox, $dataDir -Force | Out-Null
-
-    $source = Join-Path $FixtureRoot ([string]$case.repository)
-    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Fixture repository '$($case.repository)' not found under '$FixtureRoot'." }
+    $case = $Context.case
+    $source = Join-Path $RepositoryRoot ([string]$case.repository)
+    if (-not (Test-Path -LiteralPath $source -PathType Container)) { throw "Fixture repository '$($case.repository)' not found under '$RepositoryRoot'." }
 
     # Cloned, never checked out in place: restoring the developer's own working
     # tree to a pinned SHA would make the numbers reproducible by destroying
     # whatever they were working on.
+    $fixture = $Context.fixture
     git clone --quiet --no-hardlinks --local "$source" "$fixture" 2>&1 | Out-Null
     git -C $fixture checkout --quiet --force ([string]$case.commit) 2>&1 | Out-Null
     git -C $fixture clean -qfdx 2>&1 | Out-Null
@@ -169,8 +254,9 @@ function Invoke-DpEvalCase {
     if ($pinned -ne $expectedSha) { throw "Fixture for '$($case.id)' is at $pinned, not the pinned $expectedSha." }
 
     $port = Get-DpFreePort
-    $serverLog = Join-Path $sandbox 'server.log'
-    $engineArgument = if ($EnginePath) { " -EngineModulePath '$EnginePath'" } else { '' }
+    $serverLog = $Context.serverLog
+    $dataDir = $Context.dataDir
+    $engineArgument = if ($EngineModulePath) { " -EngineModulePath '$EngineModulePath'" } else { '' }
     $serverScript = @"
 Set-Location -LiteralPath '$repoRoot'
 Import-Module '$repoRoot\output\module\DeskPilot' -Force
@@ -179,15 +265,15 @@ Start-DeskPilot -NoBrowser -Port $port -DataDir '$dataDir'$engineArgument
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($serverScript))
     $server = Start-Process -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-EncodedCommand', $encoded) -PassThru -RedirectStandardOutput $serverLog -WindowStyle Hidden
 
-    $token = $null
     try {
+        $token = $null
         for ($i = 0; $i -lt 240; $i++) {
             Start-Sleep -Milliseconds 500
             if (-not (Test-Path -LiteralPath $serverLog)) { continue }
             $log = Get-Content -LiteralPath $serverLog -Raw
             if ($log -match "http://127\.0\.0\.1:$port/\?t=([0-9a-f]{32})") { $token = $Matches[1]; break }
         }
-        if (-not $token) { throw "Host Server for '$($case.id)' never reported a URL." }
+        if (-not $token) { throw "Host Server for '$($case.id)' trial $($Context.trial) never reported a URL." }
 
         $base = "http://127.0.0.1:$port"
         $headers = @{ 'X-DeskPilot-Token' = $token }
@@ -209,11 +295,13 @@ Start-DeskPilot -NoBrowser -Port $port -DataDir '$dataDir'$engineArgument
         if ($case.PSObject.Properties['agent'] -and $case.agent) { $settings.selectedAgent = [string]$case.agent }
         Invoke-RestMethod -Uri "$base/api/settings" -Method Put -Headers $headers -Body ($settings | ConvertTo-Json -Depth 5) -ContentType 'application/json' | Out-Null
 
+        # A fresh Conversation in a fresh data directory: trial two can inherit
+        # nothing from trial one, and no Conversation of the user's is touched.
         $conversation = Invoke-RestMethod -Uri "$base/api/conversations" -Method Post -Headers $headers -Body '{}' -ContentType 'application/json'
         $timeout = if ($case.PSObject.Properties['timeoutSeconds'] -and $case.timeoutSeconds) { [int]$case.timeoutSeconds } else { 900 }
 
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
-        $stream = Invoke-WebRequest -Uri "$base/api/conversations/$($conversation.id)/messages" -Method Post -Headers $headers -Body (@{ prompt = $prompt } | ConvertTo-Json -Depth 3) -ContentType 'application/json' -TimeoutSec $timeout
+        $stream = Invoke-WebRequest -Uri "$base/api/conversations/$($conversation.id)/messages" -Method Post -Headers $headers -Body (@{ prompt = $Context.prompt } | ConvertTo-Json -Depth 3) -ContentType 'application/json' -TimeoutSec $timeout
         $clock.Stop()
         $messageId = if ($stream.Content -match '"messageId"\s*:\s*"([^"]+)"') { $Matches[1] } else { '' }
 
@@ -234,70 +322,121 @@ Start-DeskPilot -NoBrowser -Port $port -DataDir '$dataDir'$engineArgument
         $changed = @((git -C $fixture status --porcelain --untracked-files=all) | ForEach-Object { ($_ -replace '^..\s+', '').Trim() } | Where-Object { $_ })
         $newCommits = [int]((git -C $fixture rev-list --count "$expectedSha..HEAD") | Select-Object -First 1)
 
-        $usage = @($records | Where-Object { $_.kind -eq 'meta' -and $_.event -eq 'usage' } | Select-Object -First 1)
-        $metrics = @{
-            toolCalls        = @($records | Where-Object { $_.kind -eq 'tool_call' }).Count
-            iterations       = [int](@($records | Measure-Object -Property iteration -Maximum).Maximum)
-            promptTokens     = [int]($usage.promptTokens | Select-Object -First 1)
-            completionTokens = [int]($usage.completionTokens | Select-Object -First 1)
-            costUSD          = [double]($usage.costUSD | Select-Object -First 1)
-            credits          = [double]($usage.credits | Select-Object -First 1)
-            wallSeconds      = [Math]::Round($clock.Elapsed.TotalSeconds, 1)
-            transcriptRecords = @($records).Count
-        }
+        # Only the paths the case's graders declared, read through the one
+        # confined path: no link anywhere in the chain, and a byte bound. A
+        # refused artifact is reported, never truncated into a pass.
+        $artifacts = Get-DpEvalArtifactSet -Root $fixture -Path @($Context.requiredFiles) -Sandbox $Context.sandbox
 
-        $run = ConvertTo-DpEvalRun -Record $records -Answer $answer -ChangedFile $changed -NewCommit $newCommits -Metric $metrics
-        $graded = Test-DpEvalCase -Expect $expect -Run $run
+        $usage = @($records | Where-Object { $_.kind -eq 'meta' -and $_.event -eq 'usage' } | Select-Object -First 1)[0]
 
-        return @{
-            id      = [string]$case.id
-            set     = [string]$case.set
-            repository = [string]$case.repository
-            commit  = [string]$case.commit
-            model   = [string]$case.model
-            agent   = [string]$case.agent
-            passed  = $graded.passed
-            failed  = @($graded.failed)
-            graders = @($graded.graders)
-            metrics = $metrics
-            changedFiles = @($run.changedFiles)
-            newCommits = $newCommits
+        @{
+            answer           = $answer
+            records          = $records
+            changedFiles     = $changed
+            newCommits       = $newCommits
+            fileContents     = $artifacts.contents
+            artifactProblems = @($artifacts.problems)
+            usage            = $usage
+            durationSeconds  = [Math]::Round($clock.Elapsed.TotalSeconds, 1)
         }
     }
     finally {
         try { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         Start-Sleep -Milliseconds 300
-        try { Remove-Item -LiteralPath $sandbox -Recurse -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        # Not swallowed: state still on disk is state the next trial can read,
+        # so a cleanup failure makes this trial incomplete rather than clean.
+        Remove-DpEvalSandbox -Path $Context.sandbox -OwnerId $Context.ownerId
     }
 }
 
+$offlineExecutor = {
+    param($Context)
+
+    $entry = $scripted.cases.($Context.caseId)
+    if (-not $entry) { throw "The scripted run has no entry for '$($Context.caseId)'." }
+    $trials = @($entry.trials)
+    if ($Context.trial -gt $trials.Count) {
+        # A sample that was never scripted is a missing sample, and the
+        # aggregate must see it as incomplete rather than invent one.
+        throw "The scripted run provides $($trials.Count) trial(s) for '$($Context.caseId)'; trial $($Context.trial) was requested."
+    }
+    $trial = $trials[$Context.trial - 1]
+
+    try {
+        @{
+            answer          = [string]$trial.answer
+            toolCalls       = @($trial.toolCalls)
+            changedFiles    = @($trial.changedFiles)
+            newCommits      = [int]$trial.newCommits
+            fileContents    = $trial.fileContents
+            usage           = $trial.usage
+            durationSeconds = [double]$trial.durationSeconds
+        }
+    }
+    finally {
+        Remove-DpEvalSandbox -Path $Context.sandbox -OwnerId $Context.ownerId
+    }
+}
+
+$executor = if ($Offline) { $offlineExecutor } else { $liveExecutor }
+
 Write-Host ''
-Write-Host "DeskPilot parity eval - run $runId (DeskPilot $deskPilotSha)" -ForegroundColor Cyan
-Write-Host "Cases: $(@($caseFolders).Count)" -ForegroundColor DarkGray
-Write-Host 'This sends real prompts and spends real credits.' -ForegroundColor Yellow
+Write-Host "DeskPilot parity eval - run $runId (DeskPilot $deskPilotSha, mode $mode)" -ForegroundColor Cyan
+Write-Host "Cases: $(@($corpus).Count), trials per case (k): $repeatCount" -ForegroundColor DarkGray
+if ($Offline) {
+    Write-Host 'Offline: scripted trials replayed through the same graders. No Model call, no credits, and no claim about model performance.' -ForegroundColor DarkGray
+}
+else {
+    Write-Host 'This sends real prompts and spends real credits.' -ForegroundColor Yellow
+}
 Write-Host ''
 
-foreach ($folder in $caseFolders) {
-    Write-Host "-> $($folder.Name)" -ForegroundColor White
-    try {
-        $result = Invoke-DpEvalCase -Folder $folder -FixtureRoot $RepositoryRoot -EnginePath $EngineModulePath
-        $status = if ($result.passed) { 'pass' } else { "FAIL ($((@($result.failed)) -join ', '))" }
-        $colour = if ($result.passed) { 'Green' } else { 'Red' }
-        Write-Host "   $status  [$($result.metrics.toolCalls) tools, $($result.metrics.wallSeconds)s, `$$($result.metrics.costUSD)]" -ForegroundColor $colour
-        $results.Add($result)
+$outcomes = [System.Collections.Generic.List[hashtable]]::new()
+$cleanupFailure = ''
+try {
+    foreach ($entry in $corpus) {
+        $case = $entry.case
+        Write-Host "-> $($entry.folder.Name)" -ForegroundColor White
+        $identity = Get-DpEvalCaseIdentity -Case $case -Prompt $entry.prompt
+
+        $trials = Invoke-DpEvalTrialSet -Case $case -Expect $entry.expect -Prompt $entry.prompt `
+            -Repeat $repeatCount -Executor $executor -Root $sandboxRoot -OwnerId $runOwnerId -FolderName $entry.folder.Name
+
+        $outcome = Measure-DpEvalCaseOutcome -CaseId ([string]$case.id) -Set ([string]$case.set) `
+            -Identity $identity -Repeat $repeatCount -Trial $trials
+
+        # Kept for Compare-DpEvalRun and for a baseline written before repeated
+        # trials existed: the same verdict the gate reaches for this case.
+        $outcome.passed = [bool]$outcome.gatePassed
+        $outcome.repository = [string]$case.repository
+        $outcome.commit = [string]$case.commit
+        $outcome.model = [string]$case.model
+        $outcome.agent = [string]$case.agent
+        $outcomes.Add($outcome)
+
+        $colour = if ($outcome.passed) { 'Green' } elseif ($outcome.status -ne 'complete') { 'Yellow' } else { 'Red' }
+        $status = "$($outcome.status): $($outcome.passedTrialCount)/$($outcome.completedSamples) of $($outcome.samples) trials passed"
+        if (@($outcome.failed).Count) { $status += " [failed: $((@($outcome.failed)) -join ', ')]" }
+        if ([bool]$outcome.safetyViolated) { $status += " [SAFETY: $((@($outcome.safetyFailed)) -join ', ')]" }
+        Write-Host "   $status" -ForegroundColor $colour
+        foreach ($problem in @($outcome.errors)) { Write-Host "   trial error: $problem" -ForegroundColor DarkYellow }
+        foreach ($problem in @($outcome.artifactProblems)) { Write-Host "   artifact refused: $problem" -ForegroundColor DarkYellow }
     }
-    catch {
-        $caseError = $_
-        Write-Host "   ERROR $caseError" -ForegroundColor Red
-        $results.Add(@{
-                id      = $folder.Name
-                passed  = $false
-                failed  = @('harness-error')
-                graders = @()
-                metrics = @{ toolCalls = 0; iterations = 0; promptTokens = 0; completionTokens = 0; costUSD = 0.0; credits = 0.0; wallSeconds = 0; transcriptRecords = 0 }
-                error   = "$caseError"
-            })
-    }
+}
+finally {
+    # Recorded, never swallowed. A run that could not remove its own state has
+    # not cleanly finished, and the gate below says so.
+    try { Remove-DpEvalSandbox -Path $sandboxRoot -OwnerId $runOwnerId }
+    catch { $cleanupFailure = "$_" }
+}
+
+$aggregate = Measure-DpEvalRunOutcome -Case @($outcomes)
+$gate = Test-DpEvalGate -Case @($outcomes)
+
+if ($cleanupFailure) {
+    $gate.reasons = @(@($gate.reasons) + "run state could not be cleaned up: $cleanupFailure")
+    $gate.ok = $false
+    $gate.exitCode = 1
 }
 
 $result = [ordered]@{
@@ -305,26 +444,46 @@ $result = [ordered]@{
     startedUtc   = $startedUtc
     finishedUtc  = [DateTime]::UtcNow.ToString('o')
     deskPilotSha = $deskPilotSha
-    caveats      = @(
-        'The Engine Runspace inherits the launcher process environment (parity prompt 07 is diagnosed and unfixed), so PSModulePath differences between machines can change a case outcome.'
-    )
-    cases        = @($results)
+    mode         = $mode
+    repeat       = $repeatCount
+    # The leaf name only. A temp path on Windows carries the operator's
+    # username, and a run file may be committed as a baseline.
+    sandboxRootName = Split-Path $sandboxRoot -Leaf
+    caveats      = @(@(
+            'The Engine Runspace inherits the launcher process environment (parity prompt 07 is diagnosed and unfixed), so PSModulePath differences between machines can change a case outcome.'
+            'pass@k is best-of-k and pass^k is all-of-k; neither is a benchmark score, and an incomplete case is reported, never averaged away.'
+            if ($Offline) { 'This run replayed committed scripted trials. It exercises the harness and says nothing about how any Model performs.' }
+        ) | Where-Object { $_ })
+    aggregate    = $aggregate
+    gate         = $gate
+    cases        = @($outcomes)
 }
 
 $jsonPath = Join-Path $OutputPath "run-$runId.json"
 $mdPath = Join-Path $OutputPath "run-$runId.md"
-$result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $jsonPath -Encoding utf8NoBOM
-Format-DpEvalSummary -Result ($result | ConvertTo-Json -Depth 8 | ConvertFrom-Json) | Set-Content -LiteralPath $mdPath -Encoding utf8NoBOM
+$result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $jsonPath -Encoding utf8NoBOM
+Format-DpEvalTrialSummary -Result ($result | ConvertTo-Json -Depth 12 | ConvertFrom-Json) | Set-Content -LiteralPath $mdPath -Encoding utf8NoBOM
 
-$passedCount = @($results | Where-Object { $_.passed }).Count
 Write-Host ''
-Write-Host "Pass rate: $passedCount / $(@($results).Count)" -ForegroundColor Cyan
+Write-Host "First trial : $($aggregate.firstTrialPassed) / $($aggregate.firstTrialMeasured) measured ($($aggregate.firstTrialUnknown) unknown)" -ForegroundColor Cyan
+Write-Host "pass@k      : $($aggregate.passedAnyTrial) / $($aggregate.caseCount)" -ForegroundColor Cyan
+Write-Host "pass^k      : $($aggregate.passedAllTrials) / $($aggregate.caseCount)" -ForegroundColor Cyan
+if (@($aggregate.incompleteCases).Count -or @($aggregate.unavailableCases).Count) {
+    Write-Host "Incomplete  : $((@($aggregate.incompleteCases)) -join ', ')  Unavailable: $((@($aggregate.unavailableCases)) -join ', ')" -ForegroundColor Yellow
+    Write-Host 'This run is incomplete; the rates above are not a corpus pass rate.' -ForegroundColor Yellow
+}
+if (-not [bool]$aggregate.usage.reported) {
+    Write-Host 'Usage       : unknown - no trial reported a priced Usage. Unknown is not zero.' -ForegroundColor DarkGray
+}
+else {
+    Write-Host "Usage       : $($aggregate.usage.promptTokens) prompt + $($aggregate.usage.completionTokens) completion tokens over $($aggregate.usage.reportedTrials)/$($aggregate.usage.totalTrials) trials" -ForegroundColor DarkGray
+}
 Write-Host "Result:  $jsonPath" -ForegroundColor DarkGray
 Write-Host "Summary: $mdPath" -ForegroundColor DarkGray
 
 if ($Baseline) {
     $baselineRun = Get-Content -LiteralPath $Baseline -Raw | ConvertFrom-Json
-    $diff = Compare-DpEvalRun -Baseline $baselineRun -Current ($result | ConvertTo-Json -Depth 8 | ConvertFrom-Json)
+    $diff = Compare-DpEvalRun -Baseline $baselineRun -Current ($result | ConvertTo-Json -Depth 12 | ConvertFrom-Json)
     Write-Host ''
     Write-Host "vs baseline $($baselineRun.runId) ($($baselineRun.deskPilotSha)): fixed $(@($diff.fixes).Count), regressed $(@($diff.regressions).Count)"
     foreach ($regression in @($diff.regressions)) {
@@ -333,4 +492,13 @@ if ($Baseline) {
     if (-not $diff.ok) { exit 1 }
 }
 
-exit 0
+Write-Host ''
+if ($gate.ok) {
+    Write-Host 'Gate: pass.' -ForegroundColor Green
+}
+else {
+    Write-Host 'Gate: FAIL' -ForegroundColor Red
+    foreach ($reason in @($gate.reasons)) { Write-Host "  $reason" -ForegroundColor Red }
+}
+
+exit $gate.exitCode
