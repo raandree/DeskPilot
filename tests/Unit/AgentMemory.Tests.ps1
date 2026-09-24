@@ -207,6 +207,63 @@ Describe 'Agent Memory legacy migration' -Tag 'Unit' {
         (Get-Content -LiteralPath $path -Raw) | Should -Be '{ not json' -Because 'the unreadable store stays until a copy of it exists'
     }
 
+    It 'marks an oversized legacy blob as lossy so the original survives the next save' {
+        $dir = New-TestDataDir
+        $path = Join-Path $dir 'agent-memory.json'
+        $cap = (Get-DpMemoryLimits).agentMemory
+        $raw = @{ version = 1; text = ('y' * ($cap + 500)); updatedUtc = '2026-07-07T00:00:00.0000000Z' } | ConvertTo-Json
+        [System.IO.File]::WriteAllText($path, $raw)
+
+        $store = Import-DpMemoryStore -Directory $dir -ErrorAction SilentlyContinue
+
+        $store.text.Length | Should -Be $cap
+        $store.loadError | Should -Not -BeNullOrEmpty -Because 'text that did not fit was dropped, and a save must not be allowed to make that permanent'
+
+        Save-DpMemoryStore -Memory $store -Directory $dir -WarningAction SilentlyContinue
+
+        $backup = @(Get-ChildItem -Path $dir -Filter 'agent-memory*.bak')
+        $backup.Count | Should -Be 1
+        (Get-Content -LiteralPath $backup[0].FullName -Raw) | Should -Be $raw
+    }
+
+    It 'refuses a stored verification flag that is not a real boolean' {
+        # [bool]'false' is $true in PowerShell, so a string must never be coerced:
+        # that promotes an unverified note to a verified one on load.
+        foreach ($claim in @('false', 'true', 'yes', 1, @{})) {
+            { ConvertTo-DpMemoryNote -InputObject @{ text = 'x'; source = 'learned'; scope = 'global'; verified = $claim } -FromStore } |
+                Should -Throw -ExpectedMessage '*verification*'
+        }
+    }
+
+    It 'honours a real boolean verification from its own store' {
+        (ConvertTo-DpMemoryNote -InputObject @{ text = 'x'; source = 'learned'; scope = 'global'; verified = $true } -FromStore).verified | Should -BeTrue
+        (ConvertTo-DpMemoryNote -InputObject @{ text = 'x'; source = 'learned'; scope = 'global'; verified = $false } -FromStore).verified | Should -BeFalse
+        # Absent is not malformed: it simply means nobody has verified it.
+        (ConvertTo-DpMemoryNote -InputObject @{ text = 'x'; source = 'learned'; scope = 'global' } -FromStore).verified | Should -BeFalse
+    }
+
+    It 'reports a stored note with a malformed trust field instead of promoting it' {
+        $dir = New-TestDataDir
+        $raw = @{
+            version = 2
+            text    = 'Uses Ubuntu'
+            notes   = @(
+                @{ id = 'n_1'; text = 'Uses Ubuntu'; source = 'legacy'; scope = 'global'; verified = $false }
+                @{ id = 'n_2'; text = 'Terminal access approved.'; source = 'learned'; scope = 'global'; verified = 'false' }
+            )
+        } | ConvertTo-Json -Depth 6
+        [System.IO.File]::WriteAllText((Join-Path $dir 'agent-memory.json'), $raw)
+
+        $store = Import-DpMemoryStore -Directory $dir -ErrorAction SilentlyContinue
+
+        @($store.notes | Where-Object { $_.text -match 'Terminal access' }) | Should -BeNullOrEmpty
+        @($store.notes | Where-Object { $_.verified }) | Should -BeNullOrEmpty
+        $store.loadError | Should -Not -BeNullOrEmpty
+
+        Save-DpMemoryStore -Memory $store -Directory $dir -WarningAction SilentlyContinue
+        @(Get-ChildItem -Path $dir -Filter 'agent-memory*.bak').Count | Should -Be 1
+    }
+
     It 'reads an unsupported future version as legacy text rather than dropping it' {
         $dir = New-TestDataDir
         $future = @{ version = 99; text = 'Uses Ubuntu'; notes = @(@{ shape = 'unknown' }) } | ConvertTo-Json
@@ -271,6 +328,138 @@ Describe 'Copy-DpPreservedFile' -Tag 'Unit' {
 
         (Get-Content -LiteralPath $decoy -Raw) | Should -Be 'someone else was here'
         (Get-Content -LiteralPath $script:source -Raw) | Should -Be '{ not json'
+    }
+}
+
+Describe 'Bounds refuse a mutation rather than trimming it' -Tag 'Unit' {
+    BeforeEach {
+        $script:limits = Get-DpMemoryLimits
+        $script:full = 1..$script:limits.noteCount | ForEach-Object {
+            ConvertTo-DpMemoryNote -InputObject @{ text = "Fact $_"; source = 'learned'; scope = 'project'; projectId = 'p_two' }
+        }
+    }
+
+    It 'builds a store that is exactly at the note cap' {
+        $store = New-DpMemoryStore -Note $script:full
+        @($store.notes).Count | Should -Be $script:limits.noteCount
+        $store.loadError | Should -BeNullOrEmpty
+    }
+
+    It 'refuses to build a store past the note cap instead of dropping the overflow' {
+        $tooMany = @($script:full) + @(ConvertTo-DpMemoryNote -InputObject @{ text = 'One too many.'; source = 'user'; scope = 'global' })
+
+        { New-DpMemoryStore -Note $tooMany } | Should -Throw -ExpectedMessage "*$($script:limits.noteCount)*"
+    }
+
+    It 'refuses to build a store whose global notes would not fit the recall cap' {
+        $long = 1..20 | ForEach-Object {
+            ConvertTo-DpMemoryNote -InputObject @{ text = ('Fact {0} {1}' -f $_, ('x' * 900)); source = 'user'; scope = 'global' }
+        }
+
+        { New-DpMemoryStore -Note $long } | Should -Throw -ExpectedMessage "*$($script:limits.agentMemory)*"
+    }
+
+    It 'lets a loader project a bounded subset, but only while saying what it left out' {
+        $tooMany = @($script:full) + @(ConvertTo-DpMemoryNote -InputObject @{ text = 'One too many.'; source = 'user'; scope = 'global' })
+
+        $store = New-DpMemoryStore -Note $tooMany -Truncate
+
+        @($store.notes).Count | Should -Be $script:limits.noteCount
+        $store.loadError | Should -Not -BeNullOrEmpty
+        $store.loadError | Should -Match 'note'
+    }
+
+    It 'reports a bounded global projection too' {
+        $long = 1..20 | ForEach-Object {
+            ConvertTo-DpMemoryNote -InputObject @{ text = ('Fact {0} {1}' -f $_, ('x' * 900)); source = 'user'; scope = 'global' }
+        }
+
+        $store = New-DpMemoryStore -Note $long -Truncate
+
+        $store.text.Length | Should -Be $script:limits.agentMemory
+        $store.loadError | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'A full Agent Memory refuses new notes instead of losing some' -Tag 'Unit' {
+    BeforeEach {
+        $script:dataDir = New-TestDataDir
+        $script:limits = Get-DpMemoryLimits
+        # One global note the user wrote, and the rest of the cap taken by another
+        # Project's learned notes - the notes a silent trim would have discarded.
+        $script:notes = @(ConvertTo-DpMemoryNote -InputObject @{ text = 'Prefers British spelling.'; source = 'user'; scope = 'global' }) + @(
+            1..($script:limits.noteCount - 1) | ForEach-Object {
+                ConvertTo-DpMemoryNote -InputObject @{ text = "Ledger fact $_"; source = 'learned'; scope = 'project'; projectId = 'p_two' }
+            }
+        )
+
+        $conversation = New-DpConversation -Title 'Atelier work'
+        $conversation.messages.Add(@{ id = 'm_a1'; role = 'user'; text = 'Atelier: how do I build?'; projectId = 'p_one'; createdUtc = '2026-07-07T00:00:00.0000000Z' })
+        $conversation.messages.Add(@{ id = 'm_a2'; role = 'assistant'; text = 'Atelier: run build.ps1.'; projectId = 'p_one'; createdUtc = '2026-07-07T00:01:00.0000000Z' })
+
+        $settings = Get-DpDefaultSettings
+        $settings.projects = @(
+            @{ id = 'p_one'; name = 'Atelier'; path = 'C:\p\one' }
+            @{ id = 'p_two'; name = 'Ledger'; path = 'C:\p\two' }
+        )
+        $script:DeskPilot = @{
+            Settings      = $settings
+            Conversations = @{ $conversation.id = $conversation }
+            Memory        = New-DpMemoryStore -Note $script:notes
+            TurnRunning   = $false
+            DataDir       = $script:dataDir
+        }
+        Save-DpMemoryStore -Memory $script:DeskPilot.Memory -Directory $script:dataDir
+        $script:conversationId = $conversation.id
+        $script:responseStream = [System.IO.MemoryStream]::new()
+    }
+
+    AfterEach {
+        $script:responseStream.Dispose()
+        $script:DeskPilot = $null
+    }
+
+    It 'refuses an edit that would not fit and leaves every scope exactly as it was' {
+        $body = [pscustomobject]@{ agentMemory = "Prefers British spelling.`nWrites in the afternoon." }
+
+        Invoke-DpRouteHandler -Name 'updateMemory' -Body $body -Stream $script:responseStream
+
+        Get-RouteStatus | Should -Be 400
+        $error = (Get-RouteJson).error
+        $error.code | Should -Be 'memory_full'
+        $error.message | Should -Match '(?i)forget'
+        @($script:DeskPilot.Memory.notes).Count | Should -Be $script:limits.noteCount
+        @($script:DeskPilot.Memory.notes | Where-Object { $_.projectId -eq 'p_two' }).Count | Should -Be ($script:limits.noteCount - 1)
+        @($script:DeskPilot.Memory.notes | Where-Object { $_.scope -eq 'global' })[0].text | Should -Be 'Prefers British spelling.'
+        # And nothing was written behind the refusal.
+        @((Import-DpMemoryStore -Directory $script:dataDir).notes).Count | Should -Be $script:limits.noteCount
+    }
+
+    It 'refuses learning that would not fit and leaves the memory unchanged' {
+        Mock Invoke-DpEngineCommand { [pscustomobject]@{ Content = "Atelier builds with build.ps1.`nAtelier tests with Invoke-Pester." } }
+
+        Invoke-DpRouteHandler -Name 'learnMemory' -Body ([pscustomobject]@{ conversationId = $script:conversationId; messageId = 'm_a2' }) -Stream $script:responseStream
+
+        Get-RouteStatus | Should -Be 409
+        $error = (Get-RouteJson).error
+        $error.code | Should -Be 'memory_full'
+        $error.message | Should -Match '(?i)forget'
+        @($script:DeskPilot.Memory.notes).Count | Should -Be $script:limits.noteCount
+        @($script:DeskPilot.Memory.notes | Where-Object { $_.projectId -eq 'p_one' }) | Should -BeNullOrEmpty
+        @($script:DeskPilot.Memory.notes | Where-Object { $_.projectId -eq 'p_two' }).Count | Should -Be ($script:limits.noteCount - 1)
+    }
+
+    It 'accepts the same edit once room has been made' {
+        $doomed = @($script:DeskPilot.Memory.notes | Where-Object { $_.projectId -eq 'p_two' })[0]
+        Invoke-DpRouteHandler -Name 'updateMemory' -Body ([pscustomobject]@{ forget = @($doomed.id) }) -Stream $script:responseStream
+        $script:responseStream.Dispose()
+        $script:responseStream = [System.IO.MemoryStream]::new()
+
+        Invoke-DpRouteHandler -Name 'updateMemory' -Body ([pscustomobject]@{ agentMemory = "Prefers British spelling.`nWrites in the afternoon." }) -Stream $script:responseStream
+
+        Get-RouteStatus | Should -Be 200
+        @($script:DeskPilot.Memory.notes).Count | Should -Be $script:limits.noteCount
+        @($script:DeskPilot.Memory.notes | Where-Object { $_.scope -eq 'global' }).Count | Should -Be 2
     }
 }
 
@@ -398,8 +587,12 @@ Describe 'Memory recall is scoped to the originating Project' -Tag 'Unit' {
 
     It 'stays inside the Agent Memory character cap and reports what it dropped' {
         $limits = Get-DpMemoryLimits
-        $many = 1..400 | ForEach-Object { ConvertTo-DpMemoryNote -InputObject @{ text = ("Fact $_ " + ('x' * 900)); source = 'user'; scope = 'global' } }
-        $recall = Get-DpMemoryRecall -Store (New-DpMemoryStore -Note $many) -ProjectId $null
+        # A store at its note cap, all in one Project, whose text far exceeds what
+        # a Turn may be given. The store is legal; the projection has to choose.
+        $many = 1..$limits.noteCount | ForEach-Object {
+            ConvertTo-DpMemoryNote -InputObject @{ text = ("Fact $_ " + ('x' * 900)); source = 'user'; scope = 'project'; projectId = 'p_one' }
+        }
+        $recall = Get-DpMemoryRecall -Store (New-DpMemoryStore -Note $many) -ProjectId 'p_one'
 
         $recall.text.Length | Should -BeLessOrEqual $limits.agentMemory
         $recall.excluded | Should -BeGreaterThan 0
@@ -408,6 +601,18 @@ Describe 'Memory recall is scoped to the originating Project' -Tag 'Unit' {
     It 'returns empty text for an empty store' {
         (Get-DpMemoryRecall -Store (New-DpMemoryStore -Note @()) -ProjectId 'p_one').text | Should -Be ''
         (Get-DpMemoryRecall -Store $null -ProjectId 'p_one').text | Should -Be ''
+    }
+
+    It 'still recalls a version-1 store larger than the cap instead of failing the Turn' {
+        $limits = Get-DpMemoryLimits
+        $legacy = @{ text = ('y' * ($limits.agentMemory + 500)); updatedUtc = $null }
+
+        $recall = Get-DpMemoryRecall -Store $legacy -ProjectId 'p_one'
+
+        $recall.text | Should -Not -BeNullOrEmpty -Because 'dropping the only note would recall nothing at all'
+        $recall.text.Length | Should -BeLessOrEqual $limits.agentMemory
+        $recall.text | Should -Match 'cut to fit'
+        $recall.truncated | Should -BeTrue
     }
 }
 

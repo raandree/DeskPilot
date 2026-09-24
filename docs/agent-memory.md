@@ -26,7 +26,7 @@ only the provenance DeskPilot actually recorded:
 | `scope` | `global`, or `project` with the `projectId` it belongs to. |
 | `conversationId` | The Conversation it was learned in, when that is known. |
 | `createdUtc` / `updatedUtc` | When it was written. **Null when unknown** — a migrated note is not stamped with today's date. |
-| `verified` | Whether a human confirmed it. |
+| `verified` | Whether a human confirmed it. Only a real boolean is accepted from the store; a malformed value is refused and reported rather than coerced. |
 
 **The trust fields are the Host's.** `source` is validated against that closed
 set, and `verified` is derived, never read from whatever produced the note: your
@@ -112,10 +112,20 @@ Limits (`Get-DpMemoryLimits`): 1,000 characters per note, 200 notes in the store
 50 learned notes per scope, and the 12,000-character Agent Memory cap on what is
 recalled into any one Turn.
 
+**A bound is a refusal, not a trim.** A change that would not fit — one note too
+many, or global notes larger than the recall cap — is rejected before anything is
+written (`400 memory_full` for an edit, `409 memory_full` for learning), with a
+message that says to forget some notes first. Nothing is dropped to make room,
+so a full store can never lose another Project's notes behind a response that
+said the change was saved. Only the loader may project a bounded subset of a file
+that is already too big, and then it says so on `loadError` — which is what makes
+the next save keep the original bytes.
+
 ## When the store cannot be read
 
-A corrupt file, a hand-edit gone wrong, notes this version refuses, or a file
-from a newer DeskPilot never disappear quietly:
+A corrupt file, a hand-edit gone wrong, notes this version refuses, a version-1
+blob longer than the cap, or a file from a newer DeskPilot never disappear
+quietly:
 
 - The Host starts with whatever could be read rather than failing, and the reason
   travels on `agentMemory.loadError` so Settings can say so instead of showing a
@@ -143,7 +153,9 @@ Automatic, on load, with no loss and nothing invented:
    `source: legacy`, `scope: global`, `verified: false`, no Project, no
    Conversation and **no creation date**. It keeps its line breaks: it is migrated
    as it stands rather than split into facts nobody wrote and tagged with
-   provenance nobody recorded.
+   provenance nobody recorded. A blob longer than the 12,000-character cap keeps
+   what fits and is marked lossy, so the original file is preserved before
+   anything replaces it.
 2. It is still recalled into every Turn, as it always was, and still appears in
    `agentMemory.text` — labelled in the UI as carried over and unverified.
 3. The file is rewritten as version 2 only when memory next changes.

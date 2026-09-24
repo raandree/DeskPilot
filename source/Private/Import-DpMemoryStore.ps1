@@ -49,11 +49,19 @@ function Import-DpMemoryStore {
 
         if ($version -gt 2) {
             $message = "Agent memory was written by a newer version of DeskPilot (file version $version); only its plain-text notes were read, and the file is kept as a backup before anything replaces it."
-            Write-Error $message
-            return (New-DpMemoryStore -Text $text -UpdatedUtc $updated -LoadError $message)
+            $store = New-DpMemoryStore -Text $text -UpdatedUtc $updated -LoadError $message -Truncate
+            Write-Error $store.loadError
+            return $store
         }
 
-        if ($version -lt 2) { return (New-DpMemoryStore -Text $text -UpdatedUtc $updated) }
+        if ($version -lt 2) {
+            # A version-1 blob longer than this version's cap loses its tail, and
+            # New-DpMemoryStore says so: that is what stops the next save from
+            # making the loss permanent.
+            $store = New-DpMemoryStore -Text $text -UpdatedUtc $updated -Truncate
+            if ($store.loadError) { Write-Error $store.loadError }
+            return $store
+        }
 
         $notes = [System.Collections.Generic.List[object]]::new()
         $dropped = 0
@@ -65,16 +73,17 @@ function Import-DpMemoryStore {
                 $dropped++
             }
         }
-        $limits = Get-DpMemoryLimits
-        if ($notes.Count -gt $limits.noteCount) { $dropped += ($notes.Count - $limits.noteCount) }
 
         $loadError = $null
         if ($dropped -gt 0) {
             $loadError = "$dropped saved memory note(s) could not be read and were left out; the previous file is kept as a backup before memory is next saved."
-            Write-Error $loadError
         }
 
-        return (New-DpMemoryStore -Note @($notes) -UpdatedUtc $updated -LoadError $loadError)
+        # -Truncate, because a file already over the limits still has to open;
+        # anything it cannot hold is reported rather than dropped in silence.
+        $store = New-DpMemoryStore -Note @($notes) -UpdatedUtc $updated -LoadError $loadError -Truncate
+        if ($store.loadError) { Write-Error $store.loadError }
+        return $store
     }
     catch {
         $message = "Failed to load agent memory (starting empty and keeping the file): $_"

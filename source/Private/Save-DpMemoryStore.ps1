@@ -49,10 +49,16 @@ function Save-DpMemoryStore {
 
         $storeUpdatedUtc = Get-DpPropertyValue -InputObject $Memory -Name @('updatedUtc') -Default $null
         $store = if ($Memory.ContainsKey('notes')) {
+            # Strict: a note set that does not fit is a caller bug, and trimming it
+            # here would lose notes behind a successful-looking save. The memory
+            # routes refuse an over-cap change before it ever reaches this point.
             New-DpMemoryStore -Note @($Memory.notes) -UpdatedUtc $storeUpdatedUtc -LoadError ([string](Get-DpPropertyValue -InputObject $Memory -Name @('loadError') -Default ''))
         }
         else {
-            New-DpMemoryStore -Text ([string](Get-DpPropertyValue -InputObject $Memory -Name @('text') -Default '')) -UpdatedUtc $storeUpdatedUtc
+            # The version-1 compatibility shim, whose documented behaviour has
+            # always been to cap on save. The capping is reported on the store, and
+            # whatever is on disk is preserved by the lossy check below.
+            New-DpMemoryStore -Text ([string](Get-DpPropertyValue -InputObject $Memory -Name @('text') -Default '')) -UpdatedUtc $storeUpdatedUtc -Truncate
         }
 
         $target = Join-Path $Directory 'agent-memory.json'

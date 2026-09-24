@@ -62,7 +62,9 @@ function Get-DpMemoryRecall {
         # fixture) is recalled as what it is rather than as nothing at all.
         $blob = [string](Get-DpPropertyValue -InputObject $Store -Name @('text', 'Text') -Default '')
         if ([string]::IsNullOrWhiteSpace($blob)) { return $empty }
-        $all = @((New-DpMemoryStore -Text $blob).notes)
+        # A projection, not a mutation: bound whatever is there rather than
+        # refusing to run the Turn.
+        $all = @((New-DpMemoryStore -Text $blob -Truncate).notes)
     }
     if ($all.Count -eq 0) { return $empty }
 
@@ -81,6 +83,7 @@ function Get-DpMemoryRecall {
     $kept = [System.Collections.Generic.List[object]]::new()
     $length = 0
     $excluded = 0
+    $partial = 0
 
     foreach ($note in $ordered) {
         $block = if ($note.source -eq 'legacy') {
@@ -99,7 +102,23 @@ function Get-DpMemoryRecall {
         }
 
         $cost = $block.Length + $(if ($lines.Count -gt 0) { 1 } else { 0 })
-        if (($length + $cost) -gt $MaxChars) { $excluded++; continue }
+        if (($length + $cost) -gt $MaxChars) {
+            # A block that does not fit is left out - unless leaving it out would
+            # mean recalling nothing at all, which is what a single cap-sized
+            # legacy blob would do. Then as much as fits is carried, and the cut
+            # is stated rather than hidden.
+            $marker = "`n  … (cut to fit)"
+            $room = $MaxChars - $length - $(if ($lines.Count -gt 0) { 1 } else { 0 }) - $marker.Length
+            if ($kept.Count -eq 0 -and $room -gt 200) {
+                $lines.Add($block.Substring(0, $room).TrimEnd() + $marker)
+                $kept.Add($note)
+                $length = $MaxChars
+                $partial++
+                continue
+            }
+            $excluded++
+            continue
+        }
         $lines.Add($block)
         $kept.Add($note)
         $length += $cost
@@ -110,6 +129,6 @@ function Get-DpMemoryRecall {
         notes     = @($kept)
         included  = $kept.Count
         excluded  = $excluded
-        truncated = ($excluded -gt 0)
+        truncated = (($excluded -gt 0) -or ($partial -gt 0))
     }
 }

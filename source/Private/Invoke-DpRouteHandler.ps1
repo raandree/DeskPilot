@@ -1366,7 +1366,18 @@
                     $kept = @($kept) + @($authored)
                 }
 
-                $state.Memory = New-DpMemoryStore -Note @($kept) -UpdatedUtc ([DateTime]::UtcNow.ToString('o'))
+                # The store is bounded, and a change that does not fit is refused
+                # rather than trimmed: trimming would drop whichever notes happened
+                # to be last - the new ones, or another Project's - behind a
+                # response that said the edit had been saved. Nothing is assigned
+                # until this succeeds, so a refusal leaves every scope as it was.
+                try { $updatedStore = New-DpMemoryStore -Note @($kept) -UpdatedUtc ([DateTime]::UtcNow.ToString('o')) }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'memory_full'; message = "$_" } }
+                    return
+                }
+
+                $state.Memory = $updatedStore
                 if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpMemoryPayload)
@@ -1444,6 +1455,7 @@
             $current = (@($scopeNotes | ForEach-Object { $_.text }) -join "`n")
 
             $changed = $false
+            $memoryFull = $null
             $engineParams = @{
                 Prompt             = New-DpMemoryPrompt -CurrentMemory $current -Messages $recent -MaxChars $limits.agentMemory -MaxNotes $limits.learnedPerScope -NoteChars $limits.note -ScopeLabel $scopeLabel
                 DisableBrowsing    = $true
@@ -1465,9 +1477,17 @@
                     # binding. Nothing the Model wrote can set it.
                     $learned = @(New-DpMemoryNoteSet -Text $extracted -Source 'learned' -Scope $scopeKind -ProjectId $frozenProjectId -ConversationId $conversationId -MaxNotes $limits.learnedPerScope)
                     $kept = @($notes | Where-Object { -not (& $inScope $_) })
-                    $state.Memory = New-DpMemoryStore -Note (@($kept) + @($learned)) -UpdatedUtc ([DateTime]::UtcNow.ToString('o'))
-                    if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
-                    $changed = $true
+                    # A full store refuses the new notes rather than silently
+                    # dropping some of them - or some of another Project's - on the
+                    # way in. Nothing is assigned unless the whole set fits.
+                    $candidate = $null
+                    try { $candidate = New-DpMemoryStore -Note (@($kept) + @($learned)) -UpdatedUtc ([DateTime]::UtcNow.ToString('o')) }
+                    catch { $memoryFull = "$_" }
+                    if ($candidate) {
+                        $state.Memory = $candidate
+                        if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
+                        $changed = $true
+                    }
                 }
             }
             catch {
@@ -1476,6 +1496,12 @@
             }
             finally {
                 $state.TurnRunning = $false
+            }
+            if ($memoryFull) {
+                # The user did not ask for this pass, so the refusal is about the
+                # store's state rather than their request - and it names what to do.
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'memory_full'; message = $memoryFull } }
+                return
             }
             $payload = Get-DpMemoryPayload
             $payload.changed = $changed

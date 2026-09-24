@@ -97,7 +97,17 @@ function ConvertTo-DpMemoryNote {
 
     $verified = ($source -eq 'user') -or $Confirmed.IsPresent
     if (-not $verified -and $FromStore) {
-        $verified = [bool](Get-DpPropertyValue -InputObject $InputObject -Name @('verified', 'Verified') -Default $false)
+        # Only a real boolean counts. [bool]'false' is $true in PowerShell, so
+        # coercing a stored string would promote an unverified note to a verified
+        # one - the one direction this field must never move on its own. A
+        # malformed value is refused so the loader can report it and keep the file.
+        $claim = Get-DpPropertyValue -InputObject $InputObject -Name @('verified', 'Verified') -Default $null
+        if ($null -ne $claim) {
+            if ($claim -isnot [bool]) {
+                throw "A memory note's verification must be true or false, not '$claim'."
+            }
+            $verified = [bool]$claim
+        }
     }
 
     @{

@@ -1579,9 +1579,10 @@ body with no `scope` means the global notes, which is what an existing client
 sends. `forget` removes named notes so they are no longer recalled. Everything is
 validated before anything is written, so a rejected request changes nothing.
 Errors: `400 too_long` (a store over its cap), `400 note_too_long` (one line over
-the note cap), `400 bad_scope` (unknown kind, or a Project that is not
-registered), `400 unknown_note`, `400 empty_body`. Returns the same shape as
-`GET /api/memory`.
+the note cap), `400 memory_full` (the change would not fit the 200-note store or
+the recalled-notes cap — nothing is trimmed to make room), `400 bad_scope`
+(unknown kind, or a Project that is not registered), `400 unknown_note`,
+`400 empty_body`. Returns the same shape as `GET /api/memory`.
 
 ### `POST /api/memory/learn`
 
@@ -1605,7 +1606,9 @@ not write over it until the user repairs it in Settings),
 `400 missing_provenance` (no `messageId`), `400 stale_provenance` (the Turn no
 longer resolves, is not an assistant Message, or was never stamped by this Host),
 `400 too_short`, `409 project_unavailable` (that Turn's Project is no longer
-registered). Returns the `GET /api/memory` shape plus `"changed": <bool>`.
+registered), `409 memory_full` (the notes would not fit the bounded store, which
+is refused rather than trimmed; the memory is left unchanged). Returns the
+`GET /api/memory` shape plus `"changed": <bool>`.
 
 The SPA also calls this route automatically (throttled by assistant-turn count)
 after a Turn when the `memoryLearning` Setting is on, mirroring auto-titling.
