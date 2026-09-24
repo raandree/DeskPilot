@@ -39,6 +39,7 @@ BeforeDiscovery {
 }
 
 BeforeAll {
+    $script:directoryLinkType = if ($IsWindows) { 'Junction' } else { 'SymbolicLink' }
     $privateRoot = Join-Path $PSScriptRoot '..' '..' 'source' 'Private'
     Get-ChildItem -Path $privateRoot -Filter '*.ps1' | ForEach-Object { . $_.FullName }
 
@@ -498,8 +499,7 @@ LEAKED-BODY-SENTINEL
 
         It 'refuses a Skill reached through a linked sub-folder without reading it' {
             $root = New-DpSkillRoot
-            try { New-Item -ItemType Junction -Path (Join-Path $root 'linked') -Target (Split-Path -Parent $script:outsidePath) -ErrorAction Stop | Out-Null }
-            catch { Set-ItResult -Skipped -Because 'this platform cannot create a junction' }
+            New-Item -ItemType $script:directoryLinkType -Path (Join-Path $root 'linked') -Target (Split-Path -Parent $script:outsidePath) -ErrorAction Stop | Out-Null
 
             # Reached through a junction the leaf is an ordinary file with a real
             # size, so this is where an early read would actually happen. Holding
@@ -526,8 +526,7 @@ LEAKED-BODY-SENTINEL
             # junction leading out. Judging the target by how it reads would let
             # this through; refusing the link outright does not.
             $root = New-DpSkillRoot
-            try { New-Item -ItemType Junction -Path (Join-Path $root 'relay') -Target (Split-Path -Parent $script:outsidePath) -ErrorAction Stop | Out-Null }
-            catch { Set-ItResult -Skipped -Because 'this platform cannot create a junction' }
+            New-Item -ItemType $script:directoryLinkType -Path (Join-Path $root 'relay') -Target (Split-Path -Parent $script:outsidePath) -ErrorAction Stop | Out-Null
             $linkDir = Join-Path $root 'linked'
             New-Item -ItemType Directory -Path $linkDir -Force | Out-Null
             New-Item -ItemType SymbolicLink -Path (Join-Path $linkDir 'SKILL.md') -Target (Join-Path $root 'relay/SKILL.md') -ErrorAction Stop | Out-Null
@@ -601,12 +600,11 @@ LEAKED-BODY-SENTINEL
             $codes | Should -Not -Contain 'path-outside-root'
         }
 
-        It 'accepts a configured root that is itself a junction' {
+        It 'accepts a configured root that is itself a directory link' {
             $real = New-DpSkillRoot 'junctioned-real'
             New-DpTestSkill -Root $real -Folder 'pdf-processing' -Content "---`nname: pdf-processing`ndescription: Extract PDF text. Use when handling PDFs.`n---`nBody." | Out-Null
             $configured = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
-            try { New-Item -ItemType Junction -Path $configured -Target $real -ErrorAction Stop | Out-Null }
-            catch { Set-ItResult -Skipped -Because 'this platform cannot create a junction' }
+            New-Item -ItemType $script:directoryLinkType -Path $configured -Target $real -ErrorAction Stop | Out-Null
             $r = Get-DpSkillConformance -Path (Join-Path $configured 'pdf-processing/SKILL.md') -Root $configured
             Get-DpCode $r | Should -Not -Contain 'link-below-root' -Because 'the user configured this root; DeskPilot does not second-guess it'
             $r.description | Should -Be 'Extract PDF text. Use when handling PDFs.'
@@ -810,8 +808,7 @@ Describe 'Get-DpCustomizationList with Skill conformance' -Tag 'Unit' {
         $root = New-DpSkillRoot
         $outside = New-DpSkillRoot 'junction-target'
         New-DpTestSkill -Root $outside -Folder 'smuggled' -Content "---`nname: smuggled`ndescription: Outside the root.`n---`nBody." | Out-Null
-        try { New-Item -ItemType Junction -Path (Join-Path $root 'link') -Target $outside -ErrorAction Stop | Out-Null }
-        catch { Set-ItResult -Skipped -Because 'this platform cannot create a junction' }
+        New-Item -ItemType $script:directoryLinkType -Path (Join-Path $root 'link') -Target $outside -ErrorAction Stop | Out-Null
         $list = Get-DpCustomizationList -Settings @{ agentsRoot = $null; skillRoots = @($root); instructionRoots = @(); promptRoots = @() } -HomeDirectory $TestDrive
         @(($list.categories | Where-Object id -EQ 'skill').items | Where-Object { $_.name -eq 'smuggled' }) | Should -BeNullOrEmpty
     }

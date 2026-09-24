@@ -313,7 +313,9 @@ Describe 'New-DpEvalTrialContext' {
         $context = New-DpEvalTrialContext -CaseId 'sample-case' -Trial 1 -Root $script:root
         $context.dataDir | Should -BeLike (Join-Path $context.sandbox '*')
         $context.fixture | Should -BeLike (Join-Path $context.sandbox '*')
-        $context.sandbox | Should -BeLike (Join-Path $script:root '*')
+        $physicalRoot = Resolve-DpEvalPhysicalPath -Path $script:root
+        $context.sandbox | Should -BeLike (Join-Path $physicalRoot '*')
+        Test-Path -LiteralPath (Join-Path $script:root (Split-Path -Leaf $context.sandbox)) -PathType Container | Should -BeTrue
     }
 
     It 'allocates the sandbox fresh and records who owns it' {
@@ -352,10 +354,15 @@ Describe 'New-DpEvalTrialContext' {
                 New-DirectoryLink -Path $decoy -Target $realOutside
                 { New-DpEvalTrialContext -CaseId 'x' -Trial 1 -Root $decoy } | Should -Throw -ExpectedMessage '*throwaway*'
             }
-            finally { Remove-Item -LiteralPath $realOutside -Recurse -Force -ErrorAction SilentlyContinue }
+            finally {
+                if (Test-Path -LiteralPath $decoy) {
+                    if ($IsWindows) { [System.IO.Directory]::Delete($decoy, $false) }
+                    else { [System.IO.File]::Delete($decoy) }
+                }
+                Remove-Item -LiteralPath $realOutside -Recurse -Force -ErrorAction Stop
+            }
         }
         finally {
-            if (Test-Path -LiteralPath $decoy) { [System.IO.Directory]::Delete($decoy, $false) }
             Remove-Item -LiteralPath $outside -Recurse -Force -ErrorAction SilentlyContinue
         }
     }

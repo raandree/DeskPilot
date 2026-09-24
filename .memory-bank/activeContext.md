@@ -51,6 +51,11 @@ Work is on `ai/agent-reliability`, based on `3d74541`.
 - The seven baseline Git fixture failures came from `safe.bareRepository=explicit`,
   not line endings. Explicit `--git-dir` setup restored all 41 workbench cases;
   no global Git policy or production Git behavior changed.
+- Hosted run `36058468404` passed packaging and Windows but exposed Unix fixture
+  assumptions: macOS temporary-path aliases, Windows-only junction creation,
+  cleanup after deleting a link target, and a sentinel matching `/private`.
+  The exact fixtures were repaired without skipping or weakening their safety
+  assertions; all 270 focused local cases pass (one NTFS case-sensitivity skip).
 - Native static analysis has no errors. The optional DSC style rules conflict
   with the repository's established formatting; their warnings were not hidden
   or presented as a clean configured lint result.

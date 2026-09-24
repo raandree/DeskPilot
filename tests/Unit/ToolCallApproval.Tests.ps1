@@ -170,7 +170,7 @@ function global:Invoke-Shp {
     param([scriptblock]$ToolCallApprover)
     $decision = & $ToolCallApprover @{
         Name = 'write_file'; Class = 'FileWrite'; CallId = 'fixture-call'
-        ArgumentsJson = '{"path":"result.txt","content":"PRIVATE"}'
+        ArgumentsJson = '{"path":"result.txt","content":"SENSITIVE-APPROVAL-BODY-SENTINEL"}'
         Fingerprint = ('a' * 64); Policy = @{ Allowed = $true }
     }
     if ($decision.Allowed) { $global:FixtureBridge.Order.Add('effect'); 'performed' } else { 'denied' }
@@ -187,6 +187,6 @@ function global:Invoke-Shp {
             $invoke.HadErrors | Should -BeFalse
         } finally { $invoke.Dispose() }
         @($bridge.Order) | Should -Be @('approval', 'effect')
-        $bridge.Captured | Should -Not -Match 'PRIVATE'
+        $bridge.Captured | Should -Not -Match 'SENSITIVE-APPROVAL-BODY-SENTINEL'
     }
 }
