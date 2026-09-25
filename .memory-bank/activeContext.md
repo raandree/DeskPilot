@@ -3,21 +3,21 @@ schema-version: 1
 status: accepted
 owner: software-engineer
 last-verified: 2026-09-25
-source: user-authorized review fixes and executable local validation
+source: independent review, exact-SHA hosted CI, and local regression evidence
 ---
 
 # Active context
 
-## Current request
+## Current focus
 
-Fix all four adjudicated review findings, run independent re-review, then push
-`ai/agent-reliability` and repair exact-commit CI until green. The user authorized
-that sequence on 2026-09-25 at 08:01 UTC. No main Merge, package publication or
-default Engine replacement is requested.
+The requested fix, independent re-review, push and CI repair are complete for
+code/test commit `ee0d2c9` on `ai/agent-reliability`. All four original findings
+and three follow-up observations are closed. No main Merge, package publication
+or default Engine replacement occurred; those remain user-controlled.
 
-The fix baseline is `11490f7`; the offered Engine is pinned to
-`08a4a22e07cb5887996bc4262c638b360f5de74e`. The original reviewed product was
-`a7a729e`; its prior green CI is not evidence for these later fixes.
+The fix baseline is `11490f7`; the compatibility Engine is pinned to
+`08a4a22e07cb5887996bc4262c638b360f5de74e`. Final record-only changes are checked
+by the same CI workflow without changing executable files.
 
 ## Completed local fixes
 
@@ -65,7 +65,7 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 - Workflow YAML/embedded PowerShell parsing and directly related Markdown
   rendering passed. Native test results and browser screenshots are retained.
 
-## Pending work
+## Review and hosted CI
 
 Independent re-review approved the original four closures at `17f6333`, then
 approved `84a6012` and closed all three follow-up observations: exact Tool names,
@@ -75,13 +75,23 @@ Production analyzer has no Warning/Error findings; three pre-existing Pester
 cross-phase warnings remain unchanged. The reviewer independently confirmed
 the real Engine and behavioral boundary cases ran, not skipped.
 
-CI run `36121088703` at pushed `5864cdb` passed Package Module, Windows and
-Ubuntu. macOS exposed one fixture-only mismatch: a child reports `/private/var`
-while the temporary root used `/var`. Canonicalize that fixture root with the
-existing helper; preserve every byte-transport and non-execution assertion.
-All 173 focused eval tests pass locally with no skips. Repush the repair and
-recheck the complete OS matrix; macOS is not yet reverified. No production
-behavior, main Merge, publication or default Engine installation changed.
+The first hosted run exposed only a macOS fixture alias mismatch (`/var` versus
+`/private/var`). Canonicalize the fixture root before child launch; no transport
+or non-execution assertion was relaxed. All 173 focused eval tests pass locally.
+The previously failing assertion then passed on the hosted macOS runner.
+
+[CI run 36122275951](https://github.com/raandree/DeskPilot/actions/runs/36122275951)
+is verified green at `ee0d2c9dfce152ff73e86951fb2291f5acc0ee29`:
+
+| Gate | Result |
+| --- | --- |
+| Package Module | Passed, including the pinned Engine build |
+| Windows | 2,966 passed, zero failures, nine skips |
+| Ubuntu | 2,920 passed, zero failures, 55 skips |
+| macOS | 2,919 passed, zero failures, 56 skips |
+| Deploy | Skipped as intended for the topic Branch |
+
+The native Engine cases ran on every OS. No live Model acceptance is claimed.
 
 ## Retained boundaries
 
@@ -92,6 +102,7 @@ Memory provenance and per-Project scope remain Host-controlled. Keep a private
 copy of version-2 Memory before downgrade; never promote confidential notes to
 global scope merely to retain them in an older build.
 
-The separate ShellPilot source checkout is untouched. The task-owned pinned
-Engine build and eval worktree are outside the repository; logs and immutable
-review evidence are in session storage. Local approval is complete; CI repair is active.
+The separate ShellPilot source checkout is untouched. All four task-owned
+worktrees and browser dependencies were removed after verification. Review
+reports, immutable diffs, test results, CI logs and browser evidence are retained
+in session storage. No further implementation is planned for this request.
