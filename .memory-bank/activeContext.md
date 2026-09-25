@@ -47,7 +47,7 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 
 ## Local validation
 
-- Full combined `build.ps1 -Tasks build,test` at `17f6333`: 2,958 passed, zero
+- Full combined `build.ps1 -Tasks build,test` at `84a6012`: 2,966 passed, zero
   failures, nine skips, no unrun tests; 16 tasks, zero errors, seven expected
   negative-path Memory preservation warnings. All 59 native Node UI tests pass.
 - All 95 Terminal/Turn-grant cases ran with the real pinned Engine, including
@@ -67,18 +67,17 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 
 ## Pending work
 
-Independent re-review approved `11490f7..17f6333` and closed all four original
-findings. Three nonblocking follow-ups are now fixed: absolute Tool-name anchors,
-explicit setup failure for an incompatible MCP catalog, and PowerShell build
-errors plus an exact manifest gate instead of stale native exit status.
-Four control cases and one workflow case failed first; all 56 focused tests
-then passed, including actual and legacy Engine integration. Final fixture
-scope checks pass 34/34. Production analyzer has no Warning/Error findings;
-three pre-existing Pester cross-phase warnings remain unchanged.
+Independent re-review approved the original four closures at `17f6333`, then
+approved `84a6012` and closed all three follow-up observations: exact Tool names,
+early MCP catalog compatibility errors, and direct CI artifact/error checks.
+No new findings remain. The final full local gate passed after those repairs.
+Production analyzer has no Warning/Error findings; three pre-existing Pester
+cross-phase warnings remain unchanged. The reviewer independently confirmed
+the real Engine and behavioral boundary cases ran, not skipped.
 
-Next: complete full revalidation and the same reviewer's narrow follow-up check,
-then push and verify Package Module plus all three OS jobs at the exact SHA.
-No current-fix-turn push has occurred; prior green CI is not current evidence.
+Next: push the approved topic Branch, dispatch CI and verify Package Module
+plus all three OS jobs against the exact pushed SHA. Repair any failure before
+reporting completion. No main Merge or publication is authorized.
 
 ## Retained boundaries
 
@@ -91,5 +90,4 @@ global scope merely to retain them in an older build.
 
 The separate ShellPilot source checkout is untouched. The task-owned pinned
 Engine build and eval worktree are outside the repository; logs and immutable
-review evidence are in session storage. No remote mutation has occurred yet in
-this fix turn.
+review evidence are in session storage. Local approval is complete; CI is next.
