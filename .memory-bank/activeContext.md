@@ -75,9 +75,13 @@ Production analyzer has no Warning/Error findings; three pre-existing Pester
 cross-phase warnings remain unchanged. The reviewer independently confirmed
 the real Engine and behavioral boundary cases ran, not skipped.
 
-Next: push the approved topic Branch, dispatch CI and verify Package Module
-plus all three OS jobs against the exact pushed SHA. Repair any failure before
-reporting completion. No main Merge or publication is authorized.
+CI run `36121088703` at pushed `5864cdb` passed Package Module, Windows and
+Ubuntu. macOS exposed one fixture-only mismatch: a child reports `/private/var`
+while the temporary root used `/var`. Canonicalize that fixture root with the
+existing helper; preserve every byte-transport and non-execution assertion.
+All 173 focused eval tests pass locally with no skips. Repush the repair and
+recheck the complete OS matrix; macOS is not yet reverified. No production
+behavior, main Merge, publication or default Engine installation changed.
 
 ## Retained boundaries
 
@@ -90,4 +94,4 @@ global scope merely to retain them in an older build.
 
 The separate ShellPilot source checkout is untouched. The task-owned pinned
 Engine build and eval worktree are outside the repository; logs and immutable
-review evidence are in session storage. Local approval is complete; CI is next.
+review evidence are in session storage. Local approval is complete; CI repair is active.

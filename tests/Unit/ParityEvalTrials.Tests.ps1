@@ -1771,6 +1771,8 @@ Describe 'the Host Server launch plan' {
 Describe 'the Host Server child process' {
     BeforeAll {
         $script:procRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-proc-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+        # macOS child processes report the physical /private/var spelling.
+        $script:procRoot = Resolve-DpEvalPhysicalPath -Path $script:procRoot
         $script:procSentinel = Join-Path $script:procRoot 'pwned-child.txt'
         $script:hostileValue = "it's a dir `$(New-Item -ItemType File -Path '$script:procSentinel' -Force); Set-Content -LiteralPath '$script:procSentinel' -Value pwned; #"
 
