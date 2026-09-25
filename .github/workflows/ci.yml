@@ -46,6 +46,7 @@ permissions:
 env:
   buildArtifactName: output
   defaultBranch: main
+  engineCompatibilityRevision: 08a4a22e07cb5887996bc4262c638b360f5de74e
 
 jobs:
   build:
@@ -87,6 +88,27 @@ jobs:
           ModuleVersion: ${{ steps.gitversion.outputs.NuGetVersionV2 }}
         run: ./build.ps1 -ResolveDependency -Tasks pack
 
+      - name: Checkout compatibility Engine
+        uses: actions/checkout@v7
+        with:
+          repository: raandree/ShellPilot
+          ref: ${{ env.engineCompatibilityRevision }}
+          path: .compatibility-engine
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Build compatibility Engine
+        shell: pwsh
+        env:
+          ModuleVersion: 0.0.1
+        run: |
+          $revision = (git -C .compatibility-engine rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $revision -cne $env:engineCompatibilityRevision) { throw 'Unexpected compatibility Engine revision.' }
+          $dependencies = Join-Path $PWD 'output' 'RequiredModules'
+          $destination = Join-Path $PWD 'output' 'engine-compatibility'
+          & ./.compatibility-engine/build.ps1 -ResolveDependency -Tasks build -RequiredModulesDirectory $dependencies -OutputDirectory $destination
+          if ($LASTEXITCODE -ne 0) { throw 'Compatibility Engine build failed.' }
+
       - name: Publish Build Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -120,7 +142,12 @@ jobs:
 
       - name: Run Tests
         shell: pwsh
-        run: ./build.ps1 -Tasks test
+        run: |
+          $engineRoot = Join-Path 'output' 'engine-compatibility' 'module' 'ShellPilot'
+          $manifest = @(Get-ChildItem -LiteralPath $engineRoot -Recurse -Filter ShellPilot.psd1 -ErrorAction Stop)
+          if ($manifest.Count -ne 1) { throw 'The pinned compatibility Engine artifact is missing or ambiguous.' }
+          $env:DESKPILOT_TEST_ENGINE_PATH = $manifest[0].FullName
+          ./build.ps1 -Tasks test
 
       - name: Publish Test Results
         if: always()

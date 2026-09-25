@@ -1,170 +1,111 @@
 # Per-call approval Engine contract
 
-This record defines the upstream ShellPilot contract and DeskPilot's conditional
-Host Server adapter for broader per-call approval. No approval is simulated
-after a Tool has run.
+DeskPilot owns approval policy and its user interface. ShellPilot owns the
+pre-dispatch decision point. An Activity event is observation, never authority.
 
-## Status
+## Current supported interfaces
 
-**Host adapter implemented, 2026-09-24.** `approvalCoverage` defaults to
-`terminal`. Explicit `mutating-tools` coverage extends active approvals to File
-changes, every MCP call and other User Tools. Existing owned read/question Tools
-retain their category Permissions; the owned Terminal Tool retains its own gate.
-File/MCP/User Tool grants are once-only and bind complete argument bytes, Engine
-call identity, Conversation, Turn and Project. MCP annotations grant no authority.
+The primary interface is ShellPilot `ToolCallControl` schema 1, verified against
+`ai/agent-modernization` at `08a4a22e07cb5887996bc4262c638b360f5de74e`.
+The earlier `ToolCallApprover` proposal remains a supported legacy adapter; it is
+not a request for upstream to duplicate its now-existing control interface.
 
-The adapter requires an advertised `Invoke-Shp -ToolCallApprover <scriptblock>`
-parameter and refuses the Turn before Tool setup or Model calls when it is
-missing. Advertising an interface is not a live enforcement proof. The installed
-Engine inspected for this change did not provide the contract; no supported
-release or live provider acceptance is claimed. The UI reports this prerequisite
-and leaves broader coverage unavailable on that Engine. Terminal-only behavior
-is preserved. Changing coverage or withdrawing a relevant Permission revokes the
-active approval bridge. Reverting the coverage to `terminal` is the rollback.
+`approvalCoverage` defaults to `terminal`. Explicit `mutating-tools` coverage is
+active with Local per-call approval or Isolated Terminal. It does not enable a
+Permission, change isolation, enable a child, or replace the default Engine.
+Neither recognized interface means the Turn is refused before Tool setup or any
+provider request. The recognized parameter type must match its contract.
 
-See [Engine compatibility](../docs/engine-compatibility.md) for the boundary and
-remaining acceptance checks.
+## Modern pre-call control
 
-**Terminal locally implemented, 2026-09-03.** DeskPilot owns
-`run_terminal_command`, disables native `run_command`, and requires tested
-disabled-built-in dispatch refusal; see
-`specs/050` for the security properties and `.memory-bank/decisions/0008` for the
-design decisions. The Engine contract below is still required for **MCP calls**
-and for gating the Engine's built-in File Tools in place. It is **not** required
-for Terminal.
+DeskPilot binds `ToolCallControl` with `SchemaVersion = 1`, a Runspace-owned
+`PreToolCall`, a Host policy identifier and explicit `FailPosture = 'Closed'`.
+No post-call hook or argument modification is used. The hook is called only
+after ShellPilot policy has allowed the Tool; it may narrow that decision only.
 
-The original version of this record concluded that per-call approval as a whole
-was blocked on ShellPilot. That conclusion was too broad, and the correction
-matters because it has been shaping the roadmap:
-
-- `Invoke-Shp` exposes **`-DisableTerminal`** separately from
-  `-DisableUserTools`. Earlier 0.4.0 builds withheld the offered schema without
-  refusing dispatch. The locally tested enforcing build is staged 0.4.1;
-  executable dispatch tests, not version strings, establish the boundary.
-- DeskPilot already registers its own Tools into the Engine Runspace
-  (`ask_questions`, `search_files`, `search_text`, `replace_in_file`), and
-  `ask_questions` **already blocks a Turn mid-flight and resumes it**:
-  `Invoke-DpQuestionnaireTool` calls `$bridge.RequestAnswer()`, which parks
-  inside the Runspace until the browser answers through the pending-request
-  pump. That is per-call approval's mechanism, in production, today.
-
-So for Terminal the host does not need the Engine to offer a callback: it can
-**own the Tool and therefore own the gate**. Disabling the built-in is what makes
-it a boundary rather than a preference - with no built-in to fall back to, the
-Model cannot route around the owned Tool.
-
-What still needs the contract below:
-
-- **MCP.** The Engine dispatches MCP calls itself and `-DisableMcp` is
-  all-or-nothing; annotations never reach the host, so a mutating call cannot be
-  distinguished or intercepted.
-- **Built-in File Tools in place.** `-DisableFileAccess` removes `read_file`,
-  `list_directory`, `write_file` and `create_directory` together. Gating writes
-  without the Engine therefore means DeskPilot owning the read side too - the
-  same pattern, a larger surface, and a separate decision.
-
-## Verified behavior
-
-The Engine emits its structured `tool.call` event before dispatch. It then
-parses and policy-checks the arguments and enters the Tool dispatch switch.
-Mutating built-in Tools, MCP Tools, and User Tools call
-`$PSCmdlet.ShouldProcess(...)` immediately before execution.
-
-That is a real pre-execution boundary, but it is an interactive console
-boundary rather than a host integration contract:
-
-- `Invoke-Shp` exposes no approver callback or decision channel.
-- `ShouldProcess` gives the PowerShell host an action and display target, but no
-  Tool-call id, Tool class, MCP server identity, or action fingerprint.
-- The MCP display target contains the raw argument JSON. Routing that text into
-  DeskPilot would violate the requirement to build summaries from known fields
-  and never expose secret-bearing arguments.
-- MCP annotations are not carried to the confirmation boundary, so DeskPilot
-  cannot distinguish a trustworthy read-only declaration from missing or
-  malformed mutation metadata.
-- A declined `ShouldProcess` call already becomes a recoverable Tool result,
-  but DeskPilot cannot correlate that choice with a Conversation, Turn, and
-  exact action before the prompt is answered.
-
-The existing `ShpProgress` and `tool.call` records are observational. They do
-not accept a response and therefore cannot be used as an approval gate.
-Stopping the Engine pipeline after receiving one would cancel the whole Turn
-and can race the dispatch it is intended to prevent.
-
-## Required upstream contract
-
-Add an optional `Invoke-Shp -ToolCallApprover <scriptblock>` parameter. Invoke
-the callback synchronously after argument parsing and Tool policy evaluation,
-but before `ShouldProcess` and before every Tool implementation or MCP request.
-When omitted, preserve current behavior exactly.
-
-Call the callback with one immutable object containing:
-
-| Field | Contract |
+| Engine field | Host interpretation |
 | --- | --- |
-| `CallId` | The provider Tool-call id for this iteration. |
-| `Name` | The exact Tool name offered to the Model. |
-| `Class` | One narrow class: `Terminal`, `FileWrite`, `Mcp`, or `UserTool`. |
-| `ArgumentsJson` | The original argument JSON for host-side allow-list summarization; never logged by the Engine. |
-| `Fingerprint` | A lowercase SHA-256 digest over the Tool name, call id, and exact argument bytes. |
-| `McpServer` | The attached server name for an MCP Tool; otherwise null. |
-| `McpTool` | The server-local MCP Tool name; otherwise null. |
-| `McpAnnotations` | Validated MCP annotations plus a flag stating whether the server supplied a well-formed annotation object. |
-| `Policy` | An object with boolean `Allowed` and an optional bounded `Reason`; a missing value, a string boolean or `Allowed = false` refuses dispatch. |
+| `SchemaVersion`, `Phase` | Require numeric 1 and `Pre`; unknown shapes deny. |
+| `Tool`, `Origin`, `Trust` | Verify origin/provenance, then classify File changes, native Terminal, User Tools and MCP. Unknown built-ins deny. |
+| `ToolCallId`, `RunId`, `TurnId`, `RequestId` | Bind the approval to this exact Engine request and Host Conversation/Turn. |
+| `EffectiveArguments` | Validate bounded JSON object bytes and bind these bytes, never earlier `OriginalArguments`. |
+| `Server` | Require the exact MCP alias captured from current registrations. |
 
-The Engine must preserve the distinction between absent, malformed, and valid
-MCP annotations. A valid boolean `readOnlyHint: true` declares a read-only
-call. `false`, absent, malformed, or ambiguous metadata must be treated as
-potentially mutating by the host. Other hints can inform the risk description,
-but must not turn a potentially mutating call into a read-only call.
+The adapter translates a positive Host decision to `Decision = 'allow'` and
+all other results to `Decision = 'deny'` with a bounded reason. Exceptions or
+invalid responses remain closed at the Engine. It never returns `modify` and
+never executes a Tool itself. The separate Engine `ExecutionContract` is an
+execution/containment seam, not a substitute approval callback.
 
-The callback returns one object:
+The Host computes its action fingerprint from effective arguments, exact Tool
+identity and correlated scope. It does not expect request hashes that the Engine
+only places on its later decision receipt. `Policy.Allowed = true` in the
+internal legacy-shaped adapter is derived from the documented Pre-hook ordering,
+not accepted from Model content.
 
-```text
-@{
-    Allowed = $true | $false
-    Code    = 'approved' | 'user_denied' | 'stale' | 'cancelled'
-    Message = '<bounded, non-secret Tool result message>'
-}
-```
+## MCP identities and conservative approvals
 
-The Engine owns these invariants:
+Every MCP call is approved once. Read-only annotations do not bypass a prompt;
+missing annotations therefore do not block this conservative integration.
 
-1. It never dispatches the Tool before the callback returns `Allowed = $true`.
-2. A callback exception fails closed and becomes a recoverable denied Tool
-   result; it does not execute the Tool or terminate the Turn.
-3. `Allowed = $false` appends a structured Tool result to the conversation and
-   lets the Model recover or choose another action.
-4. The callback runs for every Terminal command, file write or directory
-   creation, MCP call, and User Tool before the existing `ShouldProcess` gate.
-5. Engine Tool policy remains authoritative. The callback cannot override a
-   policy denial or make a disabled Tool available.
-6. Pipeline cancellation interrupts a blocked callback and no Tool dispatch
-   occurs afterwards.
-7. Raw arguments and callback objects are not written to verbose output,
-   progress events, Usage records, or exception messages.
+Namespaced names can replace punctuation and truncate with a digest. DeskPilot
+never reverses them to guess a server-local name. At Turn setup it captures the
+Engine's registration mapping (`Name`, server alias, `OriginalName`) for Ready
+servers, bounded to 4,096 Tools. Duplicate, malformed or unavailable identities
+fail closed. The request alias must match the frozen record before the original
+Tool identity appears on the approval card. This adapter depends on the pinned
+Engine registration shape; compatibility tests must accompany Engine updates.
 
-DeskPilot, not the Engine, will decide whether a call needs approval, maintain
-Turn-scoped approval for one Tool class, build redacted action summaries,
-correlate the request with the Conversation and Turn, and deliver the request
-through the existing pending-request pump. This keeps product policy out of
-ShellPilot while giving the Host Server a synchronous pre-dispatch boundary.
+MCP schemas, annotations and results remain untrusted data. Approval does not
+sandbox a server process or confine what it can do with its own credentials.
 
-## DeskPilot implementation gate
+## Legacy callback
 
-This gate applies to **MCP approval and to gating the Engine's built-in Tools in
-place**. It does not apply to Terminal, which DeskPilot can own outright (see
-Status).
+A legacy Engine can expose `Invoke-Shp -ToolCallApprover <scriptblock>`. It must
+call after policy validation and before execution, passing `Name`, `Class`,
+`CallId`, `ArgumentsJson`, a request `Fingerprint` and boolean `Policy.Allowed`.
+MCP additionally needs `McpServer` and server-local `McpTool`. DeskPilot returns
+`Allowed`, `Code` and `Message`. Missing or string-typed policy booleans deny.
+The legacy path retains the same once-only, revocation and scope guarantees.
 
-Do not add an MCP approval surface, approval routes, Activity records, or
-approval state until an imported Engine exposes `ToolCallApprover` and a focused
-integration test proves all of the following:
+## Permissions, scope and cancellation
 
-- the callback is entered before a Terminal side effect;
-- denial prevents the side effect and reaches the Model as a Tool result;
-- cancellation releases a blocked callback without dispatch;
-- MCP annotation validity and provenance reach the callback unchanged; and
-- a policy-denied or category-disabled Tool cannot be approved by the callback.
+- File changes require File Permission; an owned User Tool that edits also
+  requires User Tools Permission. Native Terminal is disabled when owned approval
+  is active; the model cannot bypass the owned gate by naming the native Tool.
+- Known read-only built-ins and DeskPilot-owned read/question Tools retain
+  category policy. Other User Tools and every MCP call require approval once.
+- File/MCP/User Tool cards show known destination/operation fields, never file
+  bodies or arbitrary arguments. Full bytes are still fingerprint-bound.
+- Ordinary Terminal keeps explicit once/Turn grants under decision 0011.
+  Other classes cannot inherit these grants.
+- Stop, completion and relevant Permission/Project/coverage changes revoke the
+  bridge. Revocation does not undo an effect already admitted.
 
-Once that gate passes, implement the DeskPilot behavior test-first using the
-same bridge and pending-request pump as Ask-User.
+## Disabled-Terminal behavioral proof
+
+Local registration and Isolated readiness use the same bounded proof, not a
+source identifier or version comparison. A separate Runspace imports the Engine
+and exercises two scripted Turns: a disabled native call must be denied with
+zero executor calls; an enabled positive control must reach the inert executor
+once. No Model or real command runs, and the active Engine Runspace is untouched.
+
+Modern Engines use `RequestTransport` and `ExecutionContract`. Supported older
+Engines use the retained synthetic transport/executor seams in the isolated
+probe, with HTTP paths refused. Results are cached by module path, file bytes
+and loaded command digest; changed bytes invalidate the cache. A failed or
+unavailable proof refuses Terminal setup rather than guessing enforcement.
+
+## Validation and rollback
+
+Tests cover both control vocabularies, effective-action fingerprints, MCP
+punctuation-preserving identities, denial, cancellation, category revocation,
+unknown shapes and non-enforcing negative controls containing the old marker.
+CI builds the pinned compatibility Engine and uses it on Windows, macOS and
+Ubuntu, rather than allowing dispatch tests to skip based on source text.
+
+Fixtures prove dispatch and Host integration, not live provider behavior or
+kernel isolation. See [Engine compatibility](../docs/engine-compatibility.md).
+Return coverage to `terminal` for the earlier profile; restart the Host Server
+after an Engine update. Source-bound child proofs remain invalidated by changes
+and no parallel topology is enabled.

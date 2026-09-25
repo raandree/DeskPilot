@@ -10,8 +10,8 @@ Terminal execution Settings offer two coverage choices:
 
 - **Terminal only** preserves the previous behavior and remains the default.
 - **Terminal, File changes, MCP and User Tools** requires the Engine's
-  pre-dispatch `ToolCallApprover` contract. The option is unavailable when the
-  imported Engine does not advertise it. Selecting it through the API on an
+  typed `ToolCallControl` contract or legacy `ToolCallApprover`. The option is
+  unavailable when neither is recognized. Selecting it through the API on an
   unsupported Engine refuses the Turn before Tool setup or provider activity.
 
 Coverage takes effect when Local approval is enabled or Isolated Terminal
@@ -19,9 +19,10 @@ requires approval. It does not enable a Permission, install an Engine, change
 the Terminal execution boundary, or enable a child Agent. Terminal additionally
 needs User Tools for DeskPilot's owned gate; there is no native fallback.
 
-Broader callbacks require a positive, boolean Engine policy decision and the
-corresponding Host Permission. Native File changes, MCP calls and other User
-Tools receive once-only approvals. Known DeskPilot-owned read/question Tools
+Modern controls run only after the Engine has permitted the Tool. Legacy
+callbacks must report a positive boolean policy decision. Both require the
+corresponding Host Permission. Native File changes, every MCP call and other
+User Tools receive once-only approvals. Known DeskPilot-owned read/question Tools
 retain their existing category controls; the owned Terminal Tool retains its
 separate once/Turn grant semantics. Unknown or malformed metadata fails closed.
 
@@ -35,12 +36,33 @@ Stop, Turn completion and relevant scope/Permission changes revoke the bridge.
 Revocation does not undo an effect that already started. Returning coverage to
 `terminal` restores the earlier profile without a data migration.
 
-The inspected installed ShellPilot 0.4.0 does not expose the required callback.
-Tests use an inert compatible producer to prove callback binding and the order
-approval-before-effect, and an incompatible producer to prove refusal. A public
-Engine implementing [specification 120](../specs/120-per-call-approval-engine-contract.md)
-still needs real dispatch, cancellation and provider acceptance before operators
-should rely on its implementation of that contract.
+ShellPilot `ai/agent-modernization` at
+`08a4a22e07cb5887996bc4262c638b360f5de74e` provides `ToolCallControl`. DeskPilot now
+translates its schema-1 Pre request and allow/deny response vocabulary, binds
+effective argument bytes, and explicitly selects closed failure posture. This
+is not a parameter alias. The older installed 0.4.0 remains unsupported for
+broader approval; no default installation is changed automatically.
+
+For MCP, the original Tool identity is captured from the Engine registration
+record rather than guessed from the namespaced name. Every call prompts, so
+annotations are not required to waive prompts: none are waived. Missing or
+ambiguous identities deny. See the exact
+[adapter contract](../specs/120-per-call-approval-engine-contract.md).
+
+Local and Isolated Terminal checks now execute a bounded behavioral proof in a
+separate Runspace. It requires both disabled-call refusal and a positive inert
+executor control, without a provider or real command. The result is cached by
+module bytes and loaded command identity; an internal variable rename cannot
+disable the feature or skip its tests. Unsupported or failed probes remain
+fail-closed and never change the active Engine's Tool state.
+
+CI builds this immutable compatibility Engine and runs the same tests on each
+OS alongside the ordinary dependency tests. To exercise it locally, set
+`DESKPILOT_TEST_ENGINE_PATH` to the built ShellPilot manifest before the normal
+test command. Without that explicit fixture, the separately labelled modern
+integration tests are unavailable, not evidence of provider compatibility.
+These tests exercise actual Engine dispatch with scripted provider responses,
+not paid live Model requests. They do not prove kernel isolation or billing.
 
 ## Copilot SDK feasibility result
 

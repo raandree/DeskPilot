@@ -39,6 +39,19 @@ BeforeAll {
         @('Get-DpPropertyValue', 'New-DpApprovalRequest', 'Test-DpCommandSafe', 'Invoke-DpTerminalApprovalTool') |
             ForEach-Object { "function global:$_ {`n$((Get-Command $_).Definition)`n}" }
     }
+
+    function script:Test-EngineEnforcesDisabledTool {
+        param($Module)
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $shell = [powershell]::Create(); $shell.Runspace = $runspace
+        try {
+            $null = $shell.AddCommand('Import-Module').AddParameter('Name', $Module.Path).AddParameter('ErrorAction', 'Stop')
+            $shell.Invoke() | Out-Null
+            if ($shell.HadErrors) { return $false }
+            Test-DpTerminalDispatch -Runspace $runspace
+        } finally { $shell.Dispose(); $runspace.Dispose() }
+    }
 }
 
 Describe 'New-DpApprovalRequest' -Tag 'Unit' {
@@ -468,18 +481,15 @@ Describe 'Terminal tool registration' -Tag 'Unit' {
     # Against a real Engine, because the thing being proved is what the Engine
     # does with the registration - not what DeskPilot asked for.
     BeforeAll {
-        function script:Test-EngineEnforcesDisabledTool {
-            param($Module)
-            $rootModule = Join-Path $Module.ModuleBase 'ShellPilot.psm1'
-            (Test-Path -LiteralPath $rootModule) -and
-                ((Get-Content -LiteralPath $rootModule -Raw) -match 'offeredBuiltInTool')
-        }
-
         # The gated Tool needs an Engine that refuses to dispatch a built-in the
         # Turn disabled, so the newest Engine is not automatically the right one.
         # Skipping when none is installed states the dependency instead of hiding
         # it behind a green run against an Engine that cannot honour the gate.
-        $script:engineModule = Get-Module -ListAvailable ShellPilot |
+        $candidates = @(Get-Module -ListAvailable ShellPilot)
+        if ($env:DESKPILOT_TEST_ENGINE_PATH) {
+            $candidates = @(Get-Module -ListAvailable -Name $env:DESKPILOT_TEST_ENGINE_PATH) + $candidates
+        }
+        $script:engineModule = $candidates |
             Where-Object { Test-EngineEnforcesDisabledTool -Module $_ } |
             Sort-Object Version -Descending |
             Select-Object -First 1
@@ -685,11 +695,7 @@ Describe 'Terminal tool Engine capability probe' -Tag 'Unit' {
     # is installed, because a probe nobody has seen reject anything is decoration.
     It 'refuses to register against an Engine that still dispatches disabled built-ins' {
         $legacy = Get-Module -ListAvailable ShellPilot |
-            Where-Object {
-                $rootModule = Join-Path $_.ModuleBase 'ShellPilot.psm1'
-                (Test-Path -LiteralPath $rootModule) -and
-                    ((Get-Content -LiteralPath $rootModule -Raw) -notmatch 'offeredBuiltInTool')
-            } |
+            Where-Object { -not (Test-EngineEnforcesDisabledTool -Module $_) } |
             Sort-Object Version -Descending |
             Select-Object -First 1
 
@@ -711,7 +717,7 @@ Describe 'Terminal tool Engine capability probe' -Tag 'Unit' {
             { Initialize-DpTerminalTool -Runspace $runspace `
                     -Context @{ conversationId = 'c-1'; turnId = 't-1'; project = 'Alpha'; workingDirectory = $TestDrive } `
                     -SafeCommand @() -TimeoutMinutes 1 -Bridge $bridge } |
-                Should -Throw -ExpectedMessage '*dispatches disabled built-in tools*'
+                Should -Throw -ExpectedMessage '*disabled-Terminal dispatch proof*'
 
             $probeShell = [powershell]::Create()
             $probeShell.Runspace = $runspace

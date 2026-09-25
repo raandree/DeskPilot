@@ -178,15 +178,47 @@ function global:Invoke-Shp {
 '@)
         $setup.Invoke() | Out-Null; $setup.Dispose()
         $runspace.SessionStateProxy.SetVariable('FixtureBridge', $bridge)
-        $callback = Initialize-DpToolCallApproval -Runspace $runspace -Context $context -Bridge $bridge
-        $callback | Should -BeOfType ([scriptblock])
+        $binding = Initialize-DpToolCallApproval -Runspace $runspace -Context $context -Bridge $bridge
+        $binding | Should -BeOfType ([hashtable])
+        $binding.ToolCallApprover | Should -BeOfType ([scriptblock])
         $invoke = [powershell]::Create(); $invoke.Runspace = $runspace
         try {
-            $null = $invoke.AddCommand('Invoke-Shp').AddParameter('ToolCallApprover', $callback)
+            $null = $invoke.AddCommand('Invoke-Shp').AddParameter('ToolCallApprover', $binding.ToolCallApprover)
             @($invoke.Invoke()) | Should -Be @('performed')
             $invoke.HadErrors | Should -BeFalse
         } finally { $invoke.Dispose() }
         @($bridge.Order) | Should -Be @('approval', 'effect')
         $bridge.Captured | Should -Not -Match 'SENSITIVE-APPROVAL-BODY-SENTINEL'
+    }
+
+    It 'binds the modern pre-call hook with explicit closed failure posture' {
+        $setup = [powershell]::Create(); $setup.Runspace = $runspace
+        $null = $setup.AddScript(@'
+function global:Invoke-Shp {
+    param([hashtable]$ToolCallControl)
+    $decision = & $ToolCallControl.PreToolCall @{
+        SchemaVersion = 1; Phase = 'Pre'; Tool = 'write_file'; Origin = 'BuiltIn'; Trust = 'ModuleAuthored'
+        ToolCallId = 'fixture-call'; RunId = 'fixture-run'; TurnId = 'fixture-turn'; RequestId = 'fixture-request'
+        EffectiveArguments = '{"path":"result.txt","content":"CONTROL-BODY-SENTINEL"}'
+    }
+    if ($decision.Decision -ceq 'allow') { $global:FixtureBridge.Order.Add('effect'); 'performed' } else { 'denied' }
+}
+'@)
+        $setup.Invoke() | Out-Null; $setup.Dispose()
+        $runspace.SessionStateProxy.SetVariable('FixtureBridge', $bridge)
+        $binding = Initialize-DpToolCallApproval -Runspace $runspace -Context $context -Bridge $bridge
+        $binding | Should -BeOfType ([hashtable])
+        @($binding.Keys) | Should -Be @('ToolCallControl')
+        $binding.ToolCallControl.SchemaVersion | Should -Be 1
+        $binding.ToolCallControl.FailPosture | Should -BeExactly 'Closed'
+        $binding.ToolCallControl.PreToolCall | Should -BeOfType ([scriptblock])
+        $invoke = [powershell]::Create(); $invoke.Runspace = $runspace
+        try {
+            $null = $invoke.AddCommand('Invoke-Shp').AddParameter('ToolCallControl', $binding.ToolCallControl)
+            @($invoke.Invoke()) | Should -Be @('performed')
+            $invoke.HadErrors | Should -BeFalse
+        } finally { $invoke.Dispose() }
+        @($bridge.Order) | Should -Be @('approval', 'effect')
+        $bridge.Captured | Should -Not -Match 'CONTROL-BODY-SENTINEL'
     }
 }

@@ -72,7 +72,7 @@ function Invoke-DpTurn {
     $terminalBoundary = if ($terminalPolicy.mode -eq 'isolated') { $terminalPolicy } else { @{ mode = 'local' } }
     $extendedApproval = ([bool]$settings.perCallApproval -or $terminalPolicy.mode -eq 'isolated') -and
         [string](Get-DpPropertyValue -InputObject $settings -Name 'approvalCoverage' -Default 'terminal') -ceq 'mutating-tools'
-    $toolCallApprover = $null
+    $toolCallApprovalParameters = @{}
     $toolApprovalContext = $null
 
     # What the Engine is sent is not what the user typed: an Attachment is named
@@ -453,14 +453,14 @@ function Invoke-DpTurn {
                 workingDirectory = [string](Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
                 permissions = @{}; workspaceToolsOwned = $false; terminalApprovalActive = $false
             }
-            foreach ($key in @('file', 'mcp', 'terminal', 'userTools', 'askUser')) {
+            foreach ($key in @('file', 'mcp', 'terminal', 'userTools', 'askUser', 'browsing')) {
                 $toolApprovalContext.permissions[$key] = [bool](Get-DpPropertyValue -InputObject $settings.permissions -Name $key -Default $false)
             }
             $callbackParameters = @{
                 Runspace = $script:DeskPilot.Engine.Runspace; Context = $toolApprovalContext
                 Bridge = $script:DeskPilot.Engine.ApprovalBridge; TimeoutSeconds = ([int]$settings.approvalTimeoutMinutes * 60)
             }
-            $toolCallApprover = Initialize-DpToolCallApproval @callbackParameters
+            $toolCallApprovalParameters = Initialize-DpToolCallApproval @callbackParameters
         }
         if ($terminalPolicy.mode -eq 'isolated') {
             if ($settings.permissions.terminal) {
@@ -708,7 +708,9 @@ function Invoke-DpTurn {
 
         $params = New-DpTurnParameter -Prompt $enginePrompt -Image $Image -History @($Conversation.history) -Settings $settings -Model $effectiveModelId -AgentSystemPrompt $agentPrompt -AgentMemory $agentMemory -AlwaysOnInstruction $alwaysOnInstruction -WorkspaceContext $workspaceContext -ModelReasoningEfforts $modelEfforts -McpSupported:([bool]$script:DeskPilot.Engine.McpSupported) -McpContext $mcpContext
         if ($settings.showThinking) { $params.ShowThinking = $true }
-        if ($extendedApproval) { $params.ToolCallApprover = $toolCallApprover }
+        foreach ($key in $toolCallApprovalParameters.Keys) {
+            $params[$key] = $toolCallApprovalParameters[$key]
+        }
 
         # A hard pipeline stop can interrupt the Engine before its normal result
         # and Usage-log append. Capture a pre-Turn Usage summary and an input-cost

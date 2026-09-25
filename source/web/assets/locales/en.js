@@ -22,7 +22,7 @@ export const en = {
     'approval.coverage.mutating': 'Terminal, File changes, MCP and User Tools',
     'approval.coverage.checking': 'Checking the Engine approval interface...',
     'approval.coverage.hint': 'File changes, MCP and other User Tools require approval once per action. This is not containment or a live Engine acceptance proof.',
-    'approval.coverage.unavailable': 'The loaded Engine does not advertise the required ToolCallApprover contract. Broader approval coverage is unavailable; choosing it through the API refuses the Turn before execution.',
+    'approval.coverage.unavailable': 'The loaded Engine provides neither the supported ToolCallControl interface nor legacy ToolCallApprover. Broader approval coverage is unavailable; choosing it through the API refuses the Turn before execution.',
     'composer.child': 'Private child',
     'composer.child.title': 'Start or inspect a private child',
     'composer.child.view': 'View private child',
