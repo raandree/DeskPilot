@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-24
+last-verified: 2026-09-25
 source: repository implementation, regression evidence, and decision records
 ---
 
@@ -88,7 +88,8 @@ source: repository implementation, regression evidence, and decision records
   and released dependencies distinct. Missing evidence must remain unavailable.
 - Repeat isolated evaluation cases; distinguish capability from all-trials
   reliability and retain safety failures. Own temporary state before deleting it,
-  reject link escapes, and surface cleanup failure rather than reporting success.
+  reject link escapes, and surface cleanup failures. Treat case ids and paths as
+  data: validate their syntax and never interpolate them into executable scripts.
 - Resolve Pester from latest and validate Pester 6. Detach Sampler/Pester with
   instrumented TEMP logs. Use `--git-dir` for bare Git fixtures, not weaker policy.
 - Bind CI evidence to the pushed SHA and artifact; inspect the whole OS matrix
