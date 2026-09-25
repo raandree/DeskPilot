@@ -135,6 +135,70 @@ BeforeAll {
         param([string]$Path, [string]$Target)
         New-Item -ItemType SymbolicLink -Path $Path -Value $Target -ErrorAction Stop | Out-Null
     }
+
+    # A stand-in for the child process. The failures that matter - a tree that
+    # will not stop, an exit code that cannot be read, a capture that faults, a
+    # log that will not close - cannot be provoked reliably against a real
+    # process, and stopping a real one by a made-up id is exactly what this
+    # harness must never do.
+    function script:New-FakeProcess {
+        param(
+            [switch]$KillThrows,
+            [switch]$ExitOnKill,
+            [switch]$ExitCodeThrows,
+            [string]$KillMessage = 'access is denied',
+            [bool]$WaitResult = $true
+        )
+        $process = [pscustomobject]@{
+            Id          = 4242424
+            HasExited   = $false
+            killThrows  = [bool]$KillThrows
+            exitOnKill  = [bool]$ExitOnKill
+            killMessage = $KillMessage
+            waitResult  = $WaitResult
+            killedTree  = @()
+            disposed    = $false
+        }
+        if ($ExitCodeThrows) {
+            $process | Add-Member -MemberType ScriptProperty -Name ExitCode -Value { throw 'the exit code is not available' }
+        }
+        else {
+            $process | Add-Member -MemberType NoteProperty -Name ExitCode -Value 0
+        }
+        $process | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+            param($EntireTree)
+            $this.killedTree = @($this.killedTree + [bool]$EntireTree)
+            if ($this.exitOnKill) { $this.HasExited = $true }
+            if ($this.killThrows) { throw $this.killMessage }
+        }
+        $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+            param($Milliseconds)
+            # The bound is part of the shape being stood in for; this fake
+            # answers immediately either way.
+            $null = $Milliseconds
+            [bool]$this.waitResult
+        }
+        $process | Add-Member -MemberType ScriptMethod -Name Dispose -Value { $this.disposed = $true }
+        $process
+    }
+
+    function script:New-FakeSession {
+        param(
+            [Parameter(Mandatory)]
+            [string]$Root,
+
+            [object]$Process,
+            [object[]]$Copies = @(),
+            [object[]]$Streams = @()
+        )
+        @{
+            process      = $Process
+            logPath      = Join-Path $Root ('out-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.log')
+            errorLogPath = Join-Path $Root ('err-' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.log')
+            streams      = @($Streams)
+            copies       = @($Copies)
+        }
+    }
 }
 
 Describe 'Test-DpEvalRepeat' {
@@ -154,6 +218,99 @@ Describe 'Test-DpEvalRepeat' {
         $huge = Test-DpEvalRepeat -Repeat 1000
         $huge.valid | Should -BeFalse
         $huge.error | Should -Match 'at most'
+    }
+}
+
+Describe 'Test-DpEvalCaseId' {
+    It 'accepts every id the committed corpus already uses' {
+        # The allow-list is bounded, so the first thing it must not do is break
+        # the corpus it exists to protect.
+        $ids = @((Get-ChildItem -LiteralPath (Join-Path $script:evalRoot 'cases') -Directory).Name)
+        @($ids).Count | Should -BeGreaterThan 0
+        foreach ($id in $ids) {
+            $decision = Test-DpEvalCaseId -CaseId $id
+            $decision.ok | Should -BeTrue -Because "'$id' is a committed case: $($decision.reason)"
+        }
+    }
+
+    It 'refuses an id carrying a quote, a subexpression or a separator' {
+        # The finding: a crafted id reached the sandbox leaf and from there a
+        # generated command line. The id is the first place to stop it.
+        $crafted = @(
+            "ok'; Write-Host pwned; '"
+            'ok$(Write-Host pwned)'
+            'ok`e'
+            'ok"e'
+            'ok|e'
+            'ok;e'
+            'ok&e'
+            'ok e'
+            'ok%e'
+            'ok>e'
+            '-ok'
+        )
+        foreach ($id in $crafted) {
+            (Test-DpEvalCaseId -CaseId $id).ok | Should -BeFalse -Because "'$id' must never reach a path or an argument"
+        }
+    }
+
+    It 'refuses a newline, which would forge a line in a log or a manifest' {
+        # A trailing newline is the one a '$' anchor quietly accepts, so the
+        # allow-list anchors on the whole string instead.
+        foreach ($id in @("ok`nnext", "ok`r`nnext", "ok`tnext", "ok`0next", "ok`n", "ok`r")) {
+            (Test-DpEvalCaseId -CaseId $id).ok | Should -BeFalse
+        }
+    }
+
+    It 'refuses traversal and every path separator' {
+        foreach ($id in @('..', '.', '../escape', '..\escape', 'a/b', 'a\b', '~', '~/x', 'C:\x', '/etc/passwd')) {
+            (Test-DpEvalCaseId -CaseId $id).ok | Should -BeFalse -Because "'$id' must never become a sandbox leaf"
+        }
+    }
+
+    It 'refuses an empty or overlong id rather than trimming it into a valid one' {
+        (Test-DpEvalCaseId -CaseId '').ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId '   ').ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId ' ok').ok | Should -BeFalse -Because 'an id is never trimmed into a different id'
+        (Test-DpEvalCaseId -CaseId ('a' * 64)).ok | Should -BeTrue -Because '64 characters is the bound itself'
+        (Test-DpEvalCaseId -CaseId ('a' * 65)).ok | Should -BeFalse -Because 'an overlong id is refused, never truncated'
+    }
+
+    It 'refuses anything outside the ASCII allow-list' {
+        # Written as code points so this file stays ASCII: a test that asserts
+        # an encoding rule must not depend on its own file's encoding.
+        $accented = 'caf' + [char]0x00E9
+        $tick = 'ok' + [char]0x2713
+        $rightToLeft = [string][char]0x202E + 'abc'
+        foreach ($id in @($accented, $tick, $rightToLeft, 'Ok-Case')) {
+            $decision = Test-DpEvalCaseId -CaseId $id
+            $decision.ok | Should -BeFalse -Because "'$id' is outside the allow-list"
+        }
+    }
+
+    It 'never normalises an id into a different one' {
+        # Accepting 'Sample-Case' as 'sample-case' would let two manifests share
+        # one sandbox leaf and one reported id.
+        $decision = Test-DpEvalCaseId -CaseId 'Sample-Case'
+        $decision.ok | Should -BeFalse
+        $decision.reason | Should -Match 'a-z0-9'
+    }
+
+    It 'refuses an id that is not a string rather than stringifying it' {
+        # A manifest is JSON: an id can arrive as a number, an array or an
+        # object, and [string] would quietly turn any of them into a path.
+        (Test-DpEvalCaseId -CaseId $null).ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId 42).ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId $true).ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId @('a', 'b')).ok | Should -BeFalse
+        (Test-DpEvalCaseId -CaseId ([pscustomobject]@{ id = 'a' })).ok | Should -BeFalse
+    }
+
+    It 'names the id it refused without repeating a control character' {
+        $decision = Test-DpEvalCaseId -CaseId "ok`nnext"
+        $decision.ok | Should -BeFalse
+        $decision.reason | Should -Not -Match "`n"
+        $decision.reason | Should -Match 'case id'
     }
 }
 
@@ -250,6 +407,32 @@ Describe 'Test-DpEvalManifest' {
         $bad.valid | Should -BeFalse
         ($bad.errors -join '; ') | Should -Match 'provenance'
     }
+
+    It 'refuses a case id that carries a quote and a subexpression' {
+        # The review finding: this id was accepted and became a sandbox leaf.
+        $crafted = "sample-case'; `$(Write-Host pwned); '"
+        $result = Test-DpEvalManifest -Case (New-Case @{ id = $crafted }) -Expect (New-Expect) -Prompt 'x' -FolderName $crafted
+        $result.valid | Should -BeFalse
+        ($result.errors -join '; ') | Should -Match 'case id'
+    }
+
+    It 'refuses a traversing case id even when its folder agrees with it' {
+        foreach ($id in @('../escape', '..\escape', 'a/b', '..')) {
+            $result = Test-DpEvalManifest -Case (New-Case @{ id = $id }) -Expect (New-Expect) -Prompt 'x' -FolderName $id
+            $result.valid | Should -BeFalse -Because "'$id' must never become a path"
+            ($result.errors -join '; ') | Should -Match 'case id'
+        }
+    }
+
+    It 'refuses a case id that is not a string instead of stringifying it' {
+        $number = Test-DpEvalManifest -Case (New-Case @{ id = 42 }) -Expect (New-Expect) -Prompt 'x' -FolderName '42'
+        $number.valid | Should -BeFalse
+        ($number.errors -join '; ') | Should -Match 'case id'
+
+        $array = Test-DpEvalManifest -Case (New-Case @{ id = @('a', 'b') }) -Expect (New-Expect) -Prompt 'x' -FolderName 'a b'
+        $array.valid | Should -BeFalse
+        ($array.errors -join '; ') | Should -Match 'case id'
+    }
 }
 
 Describe 'Get-DpEvalCaseIdentity' {
@@ -340,8 +523,8 @@ Describe 'New-DpEvalTrialContext' {
         { New-DpEvalTrialContext -CaseId 'x' -Trial 1 -Root $repoRoot } | Should -Throw -ExpectedMessage '*throwaway*'
     }
 
-    It 'refuses a run root that only looks like it is under temp' {        # Spelling is not confinement: a name under TEMP can be a link to
-        # anywhere, and everything the run writes - and deletes - would follow it.
+    It 'refuses a run root that only looks like it is under temp' {
+        # Spelling is not confinement: a name under TEMP can be a link to        # anywhere, and everything the run writes - and deletes - would follow it.
         $outside = Join-Path $script:root 'pretend-not-temp'
         New-Item -ItemType Directory -Path $outside -Force | Out-Null
         $decoy = Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-decoy-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -365,6 +548,31 @@ Describe 'New-DpEvalTrialContext' {
         finally {
             Remove-Item -LiteralPath $outside -Recurse -Force -ErrorAction SilentlyContinue
         }
+    }
+
+    It 'refuses a crafted case id before it allocates anything' {
+        # The finding: this id was accepted and interpolated into the sandbox
+        # leaf, which the live launcher then wrote into a generated script.
+        $crafted = "case'; `$(New-Item -ItemType File -Path 'pwned.txt'); '"
+        $before = @(Get-ChildItem -LiteralPath $script:root -Force -ErrorAction SilentlyContinue).Count
+        { New-DpEvalTrialContext -CaseId $crafted -Trial 1 -Root $script:root } | Should -Throw -ExpectedMessage '*case id*'
+        @(Get-ChildItem -LiteralPath $script:root -Force -ErrorAction SilentlyContinue).Count |
+            Should -Be $before -Because 'an invalid id is refused before any directory is allocated'
+    }
+
+    It 'refuses a traversing case id rather than allocating outside the run root' {
+        foreach ($id in @('..', '../escape', 'a/b', 'a\b', '-ok', ('a' * 65))) {
+            { New-DpEvalTrialContext -CaseId $id -Trial 1 -Root $script:root } |
+                Should -Throw -ExpectedMessage '*case id*' -Because "'$id' must never become a sandbox leaf"
+        }
+    }
+
+    It 'gives the trial a log path for the child it will start' {
+        $context = New-DpEvalTrialContext -CaseId 'sample-case' -Trial 1 -Root $script:root
+        $context.serverLog | Should -BeLike (Join-Path $context.sandbox '*')
+        $context.serverErrorLog | Should -BeLike (Join-Path $context.sandbox '*')
+        $context.serverErrorLog | Should -Not -Be $context.serverLog
+        $context.launchConfig | Should -BeLike (Join-Path $context.sandbox '*') -Because 'the launch configuration is trial state, not shared state'
     }
 }
 
@@ -1400,6 +1608,25 @@ Describe 'the offline runner seam' {
         $markdown | Should -Match 'first trial'
         $markdown | Should -Match 'offline-scripted'
     }
+
+    It 'still refuses a live run from CI, whatever the launcher does' {
+        # The live mode spends real credits and now starts a child process from
+        # a committed launcher. Neither is a reason for CI to be able to reach a
+        # Model: the refusal comes before anything is created or started.
+        $output = Join-Path $script:outDir 'ci-refusal'
+        $previous = $env:CI
+        try {
+            $env:CI = 'true'
+            & pwsh -NoProfile -File $script:runner -RepositoryRoot $script:outDir -OutputPath $output 2>&1 | Out-String |
+                Set-Variable -Name ciLog -Scope Script
+        }
+        finally {
+            if ($null -eq $previous) { Remove-Item Env:\CI -ErrorAction SilentlyContinue } else { $env:CI = $previous }
+        }
+        $LASTEXITCODE | Should -Not -Be 0
+        $script:ciLog | Should -Match 'CI'
+        Test-Path -LiteralPath $output | Should -BeFalse -Because 'a refused run creates nothing'
+    }
 }
 
 Describe 'Format-DpEvalTrialSummary' {
@@ -1475,5 +1702,686 @@ Describe 'Format-DpEvalTrialSummary' {
         $markdown = Format-DpEvalTrialSummary -Result $result
         $markdown | Should -Match '2026-09-24T18:39:39'
         $markdown | Should -Not -Match '09/24/2026'
+    }
+}
+
+Describe 'the Host Server launch plan' {
+    BeforeAll {
+        $script:planRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-plan-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+        $script:planSentinel = Join-Path $script:planRoot 'pwned-plan.txt'
+        # A benign sentinel in the shape that escapes a quoted, interpolated
+        # command line: an apostrophe, a subexpression and a statement
+        # separator. It is only ever a path, and nothing may ever run it.
+        $script:hostilePath = "it's a dir `$(New-Item -ItemType File -Path '$script:planSentinel' -Force); Set-Content -LiteralPath '$script:planSentinel' -Value pwned; #"
+    }
+
+    AfterAll {
+        if ($script:planRoot -and (Test-Path -LiteralPath $script:planRoot)) {
+            Remove-Item -LiteralPath $script:planRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'invokes a fixed launcher script that is committed beside the harness' {
+        $launcher = Get-DpEvalHostLauncherPath
+        Test-Path -LiteralPath $launcher -PathType Leaf | Should -BeTrue
+        $parseErrors = $null
+        $null = [System.Management.Automation.Language.Parser]::ParseFile($launcher, [ref]$null, [ref]$parseErrors)
+        @($parseErrors) | Should -HaveCount 0 -Because 'the launcher is committed code, not generated text'
+    }
+
+    It 'passes every path as data and never as generated code' {
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:planRoot -Port 51234 `
+            -DataDirectory $script:hostilePath -EngineModulePath $script:hostilePath `
+            -ConfigPath (Join-Path $script:planRoot 'launch.json')
+
+        @($plan.argumentList) | Should -Not -Contain '-EncodedCommand'
+        @($plan.argumentList) | Should -Not -Contain '-Command'
+        @($plan.argumentList) | Should -Contain '-File'
+        @($plan.argumentList) | Should -Contain '-NoProfile'
+        $index = [Array]::IndexOf([string[]]@($plan.argumentList), '-File')
+        $plan.argumentList[$index + 1] | Should -Be (Get-DpEvalHostLauncherPath)
+
+        foreach ($argument in @($plan.argumentList)) {
+            $argument | Should -Not -Match 'Start-DeskPilot|Import-Module|New-Item' -Because 'an argument carries data, never a command'
+            $argument | Should -Not -Be $script:hostilePath -Because 'an untrusted path travels in the configuration, not on the command line'
+        }
+
+        $plan.configuration.dataDirectory | Should -BeExactly $script:hostilePath
+        $plan.configuration.engineModulePath | Should -BeExactly $script:hostilePath
+        $plan.configuration.port | Should -Be 51234
+        $plan.workingDirectory | Should -Be $script:planRoot
+    }
+
+    It 'omits the Engine path entirely when the operator supplied none' {
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:planRoot -Port 51234 `
+            -DataDirectory $script:planRoot -ConfigPath (Join-Path $script:planRoot 'launch-default.json')
+        $plan.configuration.Contains('engineModulePath') | Should -BeFalse -Because 'the default Engine path is the Host Server default, not an empty string'
+    }
+
+    It 'carries a configuration that is data and nothing else' {
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:planRoot -Port 51234 `
+            -DataDirectory $script:planRoot -ConfigPath (Join-Path $script:planRoot 'launch-data.json')
+        foreach ($key in @($plan.configuration.Keys)) {
+            $key | Should -Not -BeIn @('script', 'command', 'shell', 'run', 'exec', 'preRun', 'postRun')
+        }
+        $plan.configuration.schemaVersion | Should -Be 1
+    }
+}
+
+Describe 'the Host Server child process' {
+    BeforeAll {
+        $script:procRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-proc-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+        $script:procSentinel = Join-Path $script:procRoot 'pwned-child.txt'
+        $script:hostileValue = "it's a dir `$(New-Item -ItemType File -Path '$script:procSentinel' -Force); Set-Content -LiteralPath '$script:procSentinel' -Value pwned; #"
+
+        # A synthetic launcher: it records exactly what the child received and
+        # prints a Host-Server-shaped URL. No Host Server, no Engine, no Model.
+        $script:recorder = Join-Path $script:procRoot 'Record-DpEvalLaunch.ps1'
+        $recorderText = @(
+            'param('
+            '    [Parameter(Mandatory)]'
+            '    [string]$ConfigPath,'
+            ''
+            '    [Parameter(ValueFromRemainingArguments)]'
+            '    [string[]]$Rest'
+            ')'
+            '$config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json'
+            '$received = [ordered]@{'
+            '    configPath       = $ConfigPath'
+            '    rest             = @(@($Rest) | Where-Object { $null -ne $_ })'
+            '    workingDirectory = (Get-Location).Path'
+            '    configuration    = $config'
+            '}'
+            '$received | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath ($ConfigPath + ''.received.json'') -Encoding utf8NoBOM'
+            'Write-Host "  Open: http://127.0.0.1:$($config.port)/?t=00112233445566778899aabbccddeeff"'
+            'Start-Sleep -Seconds 120'
+        ) -join [Environment]::NewLine
+        Set-Content -LiteralPath $script:recorder -Value $recorderText -Encoding utf8NoBOM
+    }
+
+    AfterAll {
+        if ($script:procRoot -and (Test-Path -LiteralPath $script:procRoot)) {
+            Remove-Item -LiteralPath $script:procRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'hands the child its configuration as data, byte for byte' {
+        $dataDir = Join-Path $script:procRoot "it's a data dir"
+        New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51234 `
+            -DataDirectory $dataDir -EngineModulePath $script:hostileValue `
+            -ConfigPath (Join-Path $script:procRoot 'launch-1.json') -LauncherPath $script:recorder
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath (Join-Path $script:procRoot 'server-1.log')
+        try {
+            $url = Wait-DpEvalHostUrl -Server $server -Port 51234 -TimeoutSeconds 60
+            $url.ok | Should -BeTrue -Because $url.reason
+            $url.token | Should -Be '00112233445566778899aabbccddeeff'
+
+            $received = Get-Content -LiteralPath ($plan.configPath + '.received.json') -Raw | ConvertFrom-Json
+            $received.configuration.dataDirectory | Should -BeExactly $dataDir -Because 'a path with an apostrophe and spaces must arrive literally'
+            $received.configuration.engineModulePath | Should -BeExactly $script:hostileValue
+            $received.configPath | Should -BeExactly $plan.configPath
+            @($received.rest).Count | Should -Be 0 -Because 'every value is one argument, never a parsed command line'
+            $received.workingDirectory | Should -Be $script:procRoot
+        }
+        finally {
+            Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 20 | Out-Null
+        }
+        Test-Path -LiteralPath $script:procSentinel | Should -BeFalse -Because 'nothing in the configuration is ever executed'
+    }
+
+    It 'runs the committed launcher against a hostile path without executing any of it' {
+        # The real launcher, the real argument transport, no Host Server: the
+        # dry run proves what it would pass to the Host Server and nothing else.
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51234 `
+            -DataDirectory $script:hostileValue -EngineModulePath $script:hostileValue `
+            -ConfigPath (Join-Path $script:procRoot 'launch-2.json') -ValidateOnly
+        $log = Join-Path $script:procRoot 'server-2.log'
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath $log
+        $stop = Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 60 -GraceSeconds 60
+        $stop.ok | Should -BeTrue -Because $stop.reason
+        $stop.exitCode | Should -Be 0 -Because (Read-DpEvalHostLog -Path $log).text
+
+        $text = (Read-DpEvalHostLog -Path $log).text
+        $text | Should -Match 'configuration valid'
+        $text | Should -Match ([regex]::Escape("DataDir = $script:hostileValue"))
+        $text | Should -Match ([regex]::Escape("EngineModulePath = $script:hostileValue"))
+        Test-Path -LiteralPath $script:procSentinel | Should -BeFalse -Because 'a path is data, even when it is shaped like code'
+    }
+
+    It 'passes no Engine path when the operator supplied none' {
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51235 `
+            -DataDirectory (Join-Path $script:procRoot 'data-default') `
+            -ConfigPath (Join-Path $script:procRoot 'launch-3.json') -ValidateOnly
+        $log = Join-Path $script:procRoot 'server-3.log'
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath $log
+        $stop = Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 60 -GraceSeconds 60
+        $stop.ok | Should -BeTrue -Because $stop.reason
+        $stop.exitCode | Should -Be 0 -Because (Read-DpEvalHostLog -Path $log).text
+        $text = (Read-DpEvalHostLog -Path $log).text
+        $text | Should -Match 'DataDir ='
+        $text | Should -Not -Match 'EngineModulePath ='
+    }
+
+    It 'refuses a configuration that carries anything but the known launch data' {
+        # A manifest, a case or an operator must never be able to name a script
+        # for the child to run.
+        $configPath = Join-Path $script:procRoot 'launch-unknown.json'
+        [ordered]@{
+            schemaVersion  = 1
+            repositoryRoot = $script:procRoot
+            modulePath     = Join-Path $script:procRoot 'module'
+            port           = 51236
+            dataDirectory  = Join-Path $script:procRoot 'data'
+            preRun         = "New-Item -ItemType File -Path '$script:procSentinel'"
+        } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $configPath -Encoding utf8NoBOM
+
+        $output = & pwsh -NoProfile -NonInteractive -File (Get-DpEvalHostLauncherPath) -ConfigPath $configPath -ValidateOnly 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Should -Match 'preRun'
+        Test-Path -LiteralPath $script:procSentinel | Should -BeFalse
+    }
+
+    It 'refuses a configuration that is incomplete or malformed' {
+        $missing = Join-Path $script:procRoot 'launch-missing.json'
+        [ordered]@{ schemaVersion = 1; repositoryRoot = $script:procRoot; modulePath = $script:procRoot } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $missing -Encoding utf8NoBOM
+        & pwsh -NoProfile -NonInteractive -File (Get-DpEvalHostLauncherPath) -ConfigPath $missing -ValidateOnly 2>&1 | Out-Null
+        $LASTEXITCODE | Should -Not -Be 0
+
+        $badPort = Join-Path $script:procRoot 'launch-port.json'
+        [ordered]@{ schemaVersion = 1; repositoryRoot = $script:procRoot; modulePath = $script:procRoot; port = 'ninety'; dataDirectory = $script:procRoot } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $badPort -Encoding utf8NoBOM
+        & pwsh -NoProfile -NonInteractive -File (Get-DpEvalHostLauncherPath) -ConfigPath $badPort -ValidateOnly 2>&1 | Out-Null
+        $LASTEXITCODE | Should -Not -Be 0
+    }
+
+    It 'stops the child it owns and says so, twice if asked' {
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51237 `
+            -DataDirectory $script:procRoot -ConfigPath (Join-Path $script:procRoot 'launch-4.json') `
+            -LauncherPath $script:recorder
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath (Join-Path $script:procRoot 'server-4.log')
+        $processId = $server.process.Id
+        $stop = Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 30
+        $stop.stopped | Should -BeTrue -Because $stop.reason
+        $stop.ok | Should -BeTrue -Because $stop.reason
+        @(Get-Process -Id $processId -ErrorAction SilentlyContinue) | Should -HaveCount 0
+        $server.process | Should -BeNullOrEmpty -Because 'the handle is released once the stop is verified'
+
+        # Cleanup runs in a finally block, so stopping a stopped child is normal
+        # and must not turn a completed trial into an error.
+        (Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 5).ok | Should -BeTrue
+    }
+
+    It 'gives up on a URL within its deadline rather than waiting forever' {
+        $silent = Join-Path $script:procRoot 'Silent-DpEvalLaunch.ps1'
+        Set-Content -LiteralPath $silent -Encoding utf8NoBOM -Value @(
+            'param([string]$ConfigPath)'
+            'Start-Sleep -Seconds 120'
+        )
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51238 `
+            -DataDirectory $script:procRoot -ConfigPath (Join-Path $script:procRoot 'launch-5.json') `
+            -LauncherPath $silent
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath (Join-Path $script:procRoot 'server-5.log')
+        try {
+            $url = Wait-DpEvalHostUrl -Server $server -Port 51238 -TimeoutSeconds 3
+            $url.ok | Should -BeFalse
+            $url.reason | Should -Match 'never reported'
+        }
+        finally {
+            Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 20 | Out-Null
+        }
+    }
+
+    It 'reports a child that died instead of waiting out the whole deadline' {
+        $dying = Join-Path $script:procRoot 'Dying-DpEvalLaunch.ps1'
+        Set-Content -LiteralPath $dying -Encoding utf8NoBOM -Value @(
+            'param([string]$ConfigPath)'
+            'Write-Host "the module could not be imported"'
+            'exit 3'
+        )
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51239 `
+            -DataDirectory $script:procRoot -ConfigPath (Join-Path $script:procRoot 'launch-6.json') `
+            -LauncherPath $dying
+        $log = Join-Path $script:procRoot 'server-6.log'
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath $log
+        try {
+            $url = @(Wait-DpEvalHostUrl -Server $server -Port 51239 -TimeoutSeconds 60)
+            @($url).Count | Should -Be 1 -Because 'the wait returns one readiness result, never a stray boolean beside it'
+            $url[0] | Should -BeOfType [hashtable]
+            $url[0].ok | Should -BeFalse
+            $url[0].reason | Should -Match 'exited'
+            $url[0].reason | Should -Match 'could not be imported' -Because 'a preparation failure is reported with its detail, not as a timeout'
+        }
+        finally {
+            Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 20 | Out-Null
+        }
+    }
+
+    It 'launches an ordinary path that happens to contain an apostrophe' {
+        # Nothing exotic: a real operator's folder. This is the case a quoting
+        # patch breaks and a data transport does not notice.
+        $ordinary = Join-Path $script:procRoot "o'brien's trials"
+        New-Item -ItemType Directory -Path $ordinary -Force | Out-Null
+        $dataDir = Join-Path $ordinary 'data dir'
+        New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $ordinary -Port 51241 `
+            -DataDirectory $dataDir -ConfigPath (Join-Path $ordinary 'host-launch.json') -ValidateOnly
+        $log = Join-Path $ordinary 'server.log'
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath $log
+        $stop = Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 60 -GraceSeconds 60
+        $stop.ok | Should -BeTrue -Because $stop.reason
+        $stop.exitCode | Should -Be 0 -Because (Read-DpEvalHostLog -Path $log).text
+
+        $text = (Read-DpEvalHostLog -Path $log).text
+        $text | Should -Match 'configuration valid'
+        $text | Should -Match ([regex]::Escape("DataDir = $dataDir"))
+    }
+
+    It 'makes the startup line readable while the child is still running' {
+        # The capture must not sit in a buffer: the harness reads this log to
+        # find the URL of a server that has not finished starting.
+        $plan = New-DpEvalHostLaunchPlan -RepositoryRoot $script:procRoot -Port 51242 `
+            -DataDirectory $script:procRoot -ConfigPath (Join-Path $script:procRoot 'launch-7.json') `
+            -LauncherPath $script:recorder
+        $log = Join-Path $script:procRoot 'server-7.log'
+        $server = Start-DpEvalHostProcess -Plan $plan -LogPath $log
+        try {
+            $url = Wait-DpEvalHostUrl -Server $server -Port 51242 -TimeoutSeconds 20
+            $url.ok | Should -BeTrue -Because $url.reason
+            $server.process.HasExited | Should -BeFalse -Because 'the line was readable while the child was still running'
+            (Read-DpEvalHostLog -Path $log).text | Should -Not -BeNullOrEmpty
+        }
+        finally {
+            Stop-DpEvalHostProcess -Server $server -TimeoutSeconds 20 | Out-Null
+        }
+    }
+}
+
+Describe 'the live launch path generates no PowerShell' {
+    BeforeAll {
+        $script:launchFiles = @(
+            (Join-Path $script:evalRoot 'Invoke-DpParityEval.ps1')
+            (Join-Path $script:evalRoot 'DpEvalTrial.ps1')
+            (Get-DpEvalHostLauncherPath)
+        )
+    }
+
+    It 'interpolates no value into anything that will be executed' {
+        # The primitive behind the finding: a value inside an expandable string
+        # that is then run. The fix is structural, so the test is structural.
+        foreach ($file in $script:launchFiles) {
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$null, [ref]$parseErrors)
+            @($parseErrors) | Should -HaveCount 0 -Because "$file must parse"
+            $interpolated = @($ast.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -and
+                        @($node.NestedExpressions).Count -gt 0
+                    }, $true))
+            foreach ($node in $interpolated) {
+                $node.Value | Should -Not -Match 'Start-DeskPilot|Import-Module|Set-Location|New-Item|Remove-Item' `
+                    -Because "$(Split-Path $file -Leaf) must not build a command out of a value"
+            }
+        }
+    }
+
+    It 'encodes no generated script and evaluates no string' {
+        foreach ($file in $script:launchFiles) {
+            $text = Get-Content -LiteralPath $file -Raw
+            $text | Should -Not -Match 'EncodedCommand' -Because "$(Split-Path $file -Leaf) must pass arguments, not an encoded script"
+            $text | Should -Not -Match 'ToBase64String'
+            $text | Should -Not -Match 'Invoke-Expression'
+            $text | Should -Not -Match 'ScriptBlock\]::Create'
+        }
+    }
+
+    It 'starts the child through the launch plan and never through a shell' {
+        $runner = Get-Content -LiteralPath (Join-Path $script:evalRoot 'Invoke-DpParityEval.ps1') -Raw
+        $runner | Should -Match 'New-DpEvalHostLaunchPlan'
+        $runner | Should -Match 'Start-DpEvalHostProcess'
+        $runner | Should -Match 'Complete-DpEvalTrialCleanup'
+        $runner | Should -Not -Match "Start-Process -FilePath 'pwsh'"
+    }
+
+    It 'never deletes trial state directly, so the stop is always decided first' {
+        # The defect this guards: a finally block that removed the sandbox
+        # before it knew whether the child was gone, and a run root that was
+        # deleted unconditionally underneath it.
+        $runnerPath = Join-Path $script:evalRoot 'Invoke-DpParityEval.ps1'
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($runnerPath, [ref]$null, [ref]$null)
+        $assignment = $ast.Find({
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                $node.Left.Extent.Text -eq '$liveExecutor'
+            }, $true)
+        $assignment | Should -Not -BeNullOrEmpty -Because 'the live executor is where a child process is owned'
+
+        $liveText = $assignment.Right.Extent.Text
+        $liveText | Should -Not -Match 'Remove-DpEvalSandbox' -Because 'the live trial asks the cleanup helper, which decides the stop before it deletes anything'
+        $liveText | Should -Match 'Complete-DpEvalTrialCleanup'
+        $liveText | Should -Match 'Test-DpEvalLiveTrialAllowed'
+
+        $runner = Get-Content -LiteralPath $runnerPath -Raw
+        $runner | Should -Match 'Complete-DpEvalRunCleanup' -Because 'the run root is kept when a trial cleanup was blocked'
+    }
+
+    It 'stops nothing by name and depends on no newer runtime API' {
+        # The child is stopped through the handle this run owns. Nothing here
+        # may reach for a process by name, and nothing may depend on an API
+        # added after the PowerShell 7.0 floor this harness declares.
+        foreach ($file in $script:launchFiles) {
+            $text = Get-Content -LiteralPath $file -Raw
+            $text | Should -Not -Match 'Stop-Process' -Because "$(Split-Path $file -Leaf) owns a handle, not a name"
+            $text | Should -Not -Match 'ProcessPath' -Because "$(Split-Path $file -Leaf) must run on the PowerShell 7.0 floor it declares"
+        }
+    }
+}
+
+Describe 'trial and run cleanup after a stop that did not work' {
+    BeforeAll {
+        $script:cleanupRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-clean-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+    }
+
+    AfterAll {
+        if ($script:cleanupRoot -and (Test-Path -LiteralPath $script:cleanupRoot)) {
+            Remove-Item -LiteralPath $script:cleanupRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'does not delete a trial sandbox underneath a child it could not stop' {
+        # The defect: the sandbox was removed in a finally block before anyone
+        # asked whether the child was actually gone. A still-running Host
+        # Server would have had its data directory deleted under it.
+        $context = New-DpEvalTrialContext -CaseId 'sample-case' -Trial 1 -Root $script:cleanupRoot -OwnerId 'owner-blocked'
+        $session = New-FakeSession -Root $script:cleanupRoot -Process (New-FakeProcess -KillThrows)
+        $state = @{ blocked = ''; sandbox = '' }
+
+        { Complete-DpEvalTrialCleanup -Server $session -Context $context -State $state -TimeoutSeconds 1 -SettleMilliseconds 0 } |
+            Should -Throw -ExpectedMessage '*could not clean up*'
+
+        Test-Path -LiteralPath $context.sandbox -PathType Container |
+            Should -BeTrue -Because 'nothing is deleted while the child may still be running'
+        $state.blocked | Should -Not -BeNullOrEmpty
+        $state.blocked | Should -Match 'tree'
+        $state.sandbox | Should -Be $context.sandbox
+    }
+
+    It 'removes a trial sandbox once the stop and the capture are verified' {
+        $context = New-DpEvalTrialContext -CaseId 'sample-case' -Trial 2 -Root $script:cleanupRoot -OwnerId 'owner-clean'
+        $session = New-FakeSession -Root $script:cleanupRoot -Process (New-FakeProcess)
+        $state = @{ blocked = ''; sandbox = '' }
+
+        Complete-DpEvalTrialCleanup -Server $session -Context $context -State $state -TimeoutSeconds 1 -SettleMilliseconds 0
+
+        Test-Path -LiteralPath $context.sandbox | Should -BeFalse
+        $state.blocked | Should -BeNullOrEmpty
+    }
+
+    It 'starts no further live trial once a cleanup is blocked' {
+        $blocked = @{ blocked = "trial 1 of 'sample-case' could not clean up its Host Server: the process tree of 42 could not be stopped."; sandbox = 'x' }
+        $decision = Test-DpEvalLiveTrialAllowed -State $blocked
+        $decision.allowed | Should -BeFalse
+        $decision.reason | Should -Match 'could not clean up'
+        (Test-DpEvalLiveTrialAllowed -State @{ blocked = ''; sandbox = '' }).allowed | Should -BeTrue
+    }
+
+    It 'keeps the owned run root when a trial cleanup was blocked' {
+        $root = Join-Path $script:cleanupRoot ('run-kept-' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        New-DpEvalOwnedDirectory -Path $root -OwnerId 'owner-run-kept' | Out-Null
+        $state = @{ blocked = "trial 1 of 'sample-case' could not clean up its Host Server: the process tree of 42 could not be stopped."; sandbox = 'x' }
+
+        $result = Complete-DpEvalRunCleanup -Path $root -OwnerId 'owner-run-kept' -State $state
+        $result.ok | Should -BeFalse
+        $result.retained | Should -BeTrue
+        Test-Path -LiteralPath $root -PathType Container | Should -BeTrue -Because 'the run root is kept for explicit recovery'
+        $result.reason | Should -Match ([regex]::Escape((Split-Path $root -Leaf)))
+        $result.reason | Should -Not -Match '[A-Za-z]:\\{1,2}Users\\{1,2}' -Because 'a gate reason is published and must carry no user path'
+
+        Remove-DpEvalSandbox -Path $root -OwnerId 'owner-run-kept'
+    }
+
+    It 'removes the owned run root when nothing was blocked' {
+        $root = Join-Path $script:cleanupRoot ('run-gone-' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+        New-DpEvalOwnedDirectory -Path $root -OwnerId 'owner-run-gone' | Out-Null
+
+        $result = Complete-DpEvalRunCleanup -Path $root -OwnerId 'owner-run-gone' -State @{ blocked = ''; sandbox = '' }
+        $result.ok | Should -BeTrue -Because $result.reason
+        $result.retained | Should -BeFalse
+        Test-Path -LiteralPath $root | Should -BeFalse
+    }
+
+    It 'cannot reach a clean gate, or a second trial, after a blocked cleanup' {
+        # The whole caller-side chain, with the executor shaped exactly like the
+        # live one: guard, work, cleanup that decides before it deletes.
+        $state = @{ blocked = ''; sandbox = '' }
+        $root = $script:cleanupRoot
+        $executor = {
+            param($Context)
+            $allowed = Test-DpEvalLiveTrialAllowed -State $state
+            if (-not $allowed.allowed) { throw $allowed.reason }
+            $session = New-FakeSession -Root $root -Process (New-FakeProcess -KillThrows)
+            try { @{ answer = 'done'; newCommits = 0 } }
+            finally { Complete-DpEvalTrialCleanup -Server $session -Context $Context -State $state -TimeoutSeconds 1 -SettleMilliseconds 0 }
+        }
+
+        $trials = @(Invoke-DpEvalTrialSet -Case (New-Case) -Expect (New-Expect) -Prompt 'p' -Repeat 2 -Executor $executor -Root $script:cleanupRoot -OwnerId 'owner-chain')
+        $trials[0].status | Should -Be 'incomplete' -Because 'a trial that could not clean up is not evidence'
+        $trials[0].error | Should -Match 'could not clean up'
+        $trials[1].status | Should -Be 'incomplete'
+        $trials[1].error | Should -Match 'Refusing to start'
+        Test-Path -LiteralPath $state.sandbox -PathType Container | Should -BeTrue -Because 'the blocked trial state is kept for recovery'
+
+        $outcome = Measure-DpEvalCaseOutcome -CaseId 'sample-case' -Set 'regression' -Identity $trials[0].identity -Repeat 2 -Trial $trials
+        $gate = Test-DpEvalGate -Case @($outcome)
+        $gate.ok | Should -BeFalse -Because 'a run that could not clean up never reports a clean gate'
+        $gate.exitCode | Should -Not -Be 0
+    }
+}
+
+Describe 'Get-DpEvalPowerShellPath' {
+    It 'resolves the PowerShell it is running under' {
+        $path = Get-DpEvalPowerShellPath
+        $path | Should -Not -BeNullOrEmpty
+        Test-Path -LiteralPath $path -PathType Leaf | Should -BeTrue -Because 'a launch plan names an executable that exists'
+    }
+
+    It 'takes the executable beside PSHOME rather than a newer runtime API' {
+        $expected = Join-Path $PSHOME ($IsWindows ? 'pwsh.exe' : 'pwsh')
+        if (Test-Path -LiteralPath $expected -PathType Leaf) {
+            Get-DpEvalPowerShellPath | Should -Be $expected
+        }
+        else {
+            Set-ItResult -Skipped -Because 'this host has no pwsh beside $PSHOME'
+        }
+    }
+}
+
+Describe 'Read-DpEvalHostLog' {
+    BeforeAll {
+        $script:logRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-log-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+    }
+
+    AfterAll {
+        if ($script:logRoot -and (Test-Path -LiteralPath $script:logRoot)) {
+            Remove-Item -LiteralPath $script:logRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'reports an empty log only when it was never created' {
+        $result = Read-DpEvalHostLog -Path (Join-Path $script:logRoot 'never-written.log')
+        $result.ok | Should -BeTrue
+        $result.exists | Should -BeFalse
+        $result.text | Should -Be ''
+        $result.reason | Should -Be ''
+    }
+
+    It 'reads what a log actually says' {
+        $path = Join-Path $script:logRoot 'said.log'
+        Set-Content -LiteralPath $path -Value 'the Host Server is running' -Encoding utf8NoBOM
+        $result = Read-DpEvalHostLog -Path $path
+        $result.ok | Should -BeTrue
+        $result.exists | Should -BeTrue
+        $result.truncated | Should -BeFalse
+        $result.text | Should -Match 'Host Server is running'
+    }
+
+    It 'bounds a diagnostic tail instead of materialising the whole log' {
+        $path = Join-Path $script:logRoot 'large.log'
+        [System.IO.File]::WriteAllText($path, ('a' * 300000) + 'THE-LAST-LINE')
+        $tail = Read-DpEvalHostLog -Path $path -Tail 64
+        $tail.ok | Should -BeTrue
+        $tail.text.Length | Should -BeLessOrEqual 64 -Because 'a tail is bounded before it is read, not after'
+        $tail.text | Should -Match 'THE-LAST-LINE'
+        $tail.truncated | Should -BeTrue
+    }
+
+    It 'bounds a whole-log read as well, and says when it truncated' {
+        $path = Join-Path $script:logRoot 'runaway.log'
+        [System.IO.File]::WriteAllText($path, 'START-OF-LOG' + ('b' * 3000000))
+        $result = Read-DpEvalHostLog -Path $path -MaximumBytes 4096
+        $result.ok | Should -BeTrue
+        $result.text.Length | Should -BeLessOrEqual 4096
+        $result.text | Should -Match 'START-OF-LOG'
+        $result.truncated | Should -BeTrue
+    }
+
+    It 'reports a log it could not read rather than calling it empty' -Skip:(-not $canLockFile) {
+        # An unreadable log is not an empty log. Reporting it as empty would
+        # turn a broken capture into "the server never printed a URL".
+        $path = Join-Path $script:logRoot 'locked.log'
+        Set-Content -LiteralPath $path -Value 'held' -Encoding utf8NoBOM
+        $held = [System.IO.File]::Open($path, 'Open', 'ReadWrite', 'None')
+        try {
+            $result = Read-DpEvalHostLog -Path $path
+            $result.ok | Should -BeFalse
+            $result.exists | Should -BeTrue
+            $result.text | Should -Be ''
+            $result.reason | Should -Not -BeNullOrEmpty
+        }
+        finally { $held.Dispose() }
+    }
+}
+
+Describe 'the child process lifecycle reports its own failures' {
+    BeforeAll {
+        $script:lifeRoot = (Get-Item -LiteralPath (New-Item -ItemType Directory -Force -Path (Join-Path ([System.IO.Path]::GetTempPath()) ('dp-eval-life-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))).FullName
+    }
+
+    AfterAll {
+        if ($script:lifeRoot -and (Test-Path -LiteralPath $script:lifeRoot)) {
+            Remove-Item -LiteralPath $script:lifeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'does not call a failed tree stop a stopped process' {
+        # Falling back to stopping the parent alone would leave the tree running
+        # and report success. A bounded, explicit failure is the honest answer.
+        $process = New-FakeProcess -KillThrows
+        $session = New-FakeSession -Root $script:lifeRoot -Process $process
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $stop.stopped | Should -BeFalse
+        $stop.ok | Should -BeFalse
+        $stop.reason | Should -Match 'tree'
+        $stop.reason | Should -Match 'access is denied'
+        @($process.killedTree) | Should -Be @($true) -Because 'the tree is what a trial owns'
+        $session.process | Should -Not -BeNullOrEmpty -Because 'a handle is released only after a verified stop'
+        $process.disposed | Should -BeFalse
+    }
+
+    It 'treats a process that exited while it was being stopped as stopped' {
+        $process = New-FakeProcess -KillThrows -ExitOnKill
+        $session = New-FakeSession -Root $script:lifeRoot -Process $process
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $stop.ok | Should -BeTrue -Because $stop.reason
+        $stop.stopped | Should -BeTrue
+    }
+
+    It 'does not call a process that never exits stopped' {
+        $process = New-FakeProcess -WaitResult $false
+        $session = New-FakeSession -Root $script:lifeRoot -Process $process
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $stop.stopped | Should -BeFalse
+        $stop.ok | Should -BeFalse
+        $stop.reason | Should -Match 'did not exit'
+    }
+
+    It 'reports a capture that faulted instead of reporting a clean stop' {
+        $faulted = [System.Threading.Tasks.Task]::FromException([System.IO.IOException]::new('the capture pipe broke'))
+        $session = New-FakeSession -Root $script:lifeRoot -Process (New-FakeProcess) -Copies @($faulted)
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1 -CaptureTimeoutMilliseconds 500
+        $stop.captured | Should -BeFalse
+        $stop.ok | Should -BeFalse
+        $stop.stopped | Should -BeTrue -Because 'the process did stop; it is the capture that failed'
+        $stop.reason | Should -Match 'capture'
+        $stop.reason | Should -Match 'the capture pipe broke'
+    }
+
+    It 'reports a capture that did not finish within its bound' {
+        $pending = [System.Threading.Tasks.TaskCompletionSource[object]]::new()
+        try {
+            $session = New-FakeSession -Root $script:lifeRoot -Process (New-FakeProcess) -Copies @($pending.Task)
+            $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1 -CaptureTimeoutMilliseconds 200
+            $stop.captured | Should -BeFalse
+            $stop.ok | Should -BeFalse
+            $stop.reason | Should -Match 'capture'
+        }
+        finally { $pending.SetResult($null) }
+    }
+
+    It 'reports a trial log that could not be closed' {
+        $stream = [pscustomobject]@{ name = 'out' }
+        $stream | Add-Member -MemberType ScriptMethod -Name Dispose -Value { throw 'the log could not be flushed' }
+        $session = New-FakeSession -Root $script:lifeRoot -Process (New-FakeProcess) -Streams @($stream)
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $stop.captured | Should -BeFalse
+        $stop.ok | Should -BeFalse
+        $stop.reason | Should -Match 'the log could not be flushed'
+    }
+
+    It 'returns one result, and releases the handle, after a verified stop' {
+        $process = New-FakeProcess
+        $session = New-FakeSession -Root $script:lifeRoot -Process $process
+        $result = @(Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1)
+        @($result).Count | Should -Be 1 -Because 'a caller reads one result, not a pipeline of them'
+        $result[0].ok | Should -BeTrue -Because $result[0].reason
+        $process.disposed | Should -BeTrue -Because 'the handle is released after the stop is verified'
+        $session.process | Should -BeNullOrEmpty
+
+        # Cleanup runs in a finally block, so a second stop is normal.
+        $again = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $again.ok | Should -BeTrue -Because $again.reason
+        $again.exitCode | Should -Be 0 -Because 'the verified exit code is remembered after the handle is gone'
+    }
+
+    It 'reports an exit code it could not read rather than calling the stop clean' {
+        # Every problem this reports has to fail the result. A reason beside an
+        # ok of true is a trial that looks clean and is not.
+        $process = New-FakeProcess -ExitCodeThrows
+        $session = New-FakeSession -Root $script:lifeRoot -Process $process
+        $stop = Stop-DpEvalHostProcess -Server $session -TimeoutSeconds 1
+        $stop.stopped | Should -BeTrue
+        $stop.captured | Should -BeTrue
+        $stop.ok | Should -BeFalse -Because 'a reported problem always fails the result'
+        $stop.exitCode | Should -BeNullOrEmpty
+        $stop.reason | Should -Match 'exit code'
+        $process.disposed | Should -BeFalse -Because 'a handle is released only after a clean stop'
+    }
+
+    It 'surfaces a log it cannot read instead of polling to its deadline' -Skip:(-not $canLockFile) {
+        $session = New-FakeSession -Root $script:lifeRoot -Process (New-FakeProcess)
+        Set-Content -LiteralPath $session.logPath -Value 'held' -Encoding utf8NoBOM
+        $held = [System.IO.File]::Open($session.logPath, 'Open', 'ReadWrite', 'None')
+        try {
+            $clock = [System.Diagnostics.Stopwatch]::StartNew()
+            $ready = @(Wait-DpEvalHostUrl -Server $session -Port 51240 -TimeoutSeconds 30 -PollMilliseconds 100)
+            $clock.Stop()
+            @($ready).Count | Should -Be 1
+            $ready[0].ok | Should -BeFalse
+            $ready[0].reason | Should -Match 'could not be read'
+            $clock.Elapsed.TotalSeconds | Should -BeLessThan 10 -Because 'an unreadable log is a failure, not a reason to wait'
+        }
+        finally { $held.Dispose() }
     }
 }

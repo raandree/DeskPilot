@@ -663,6 +663,68 @@ function Test-DpEvalWorkspacePath {
     $true
 }
 
+function Test-DpEvalCaseId {
+    <#
+    .SYNOPSIS
+        Says whether a case id may become a path, an argument or a log line.
+    .DESCRIPTION
+        A case id is not a label. It is the leaf of the throwaway sandbox a
+        trial writes to, it appears in the launch configuration handed to a
+        child process, and it is printed into the run report. So it is checked
+        against a bounded ASCII allow-list *before* any of that happens: lower
+        case letters, digits and hyphens, starting with a letter or a digit, up
+        to 64 characters.
+
+        Everything else is refused and nothing is repaired. An id is never
+        trimmed, never lower-cased and never truncated into a valid one: two
+        manifests that differ only in case or in trailing whitespace would
+        otherwise share one sandbox and one reported id, and the run would be
+        about a corpus that does not exist.
+
+        The anchors are \A and \z rather than ^ and $ deliberately. In .NET, $
+        also matches before a trailing newline, so an id ending in one would
+        pass a check that looks strict and then forge a line in a log.
+    .PARAMETER CaseId
+        The candidate id, as it arrived. A manifest is JSON, so this may be a
+        number, an array or an object rather than a string; each is refused
+        rather than stringified into a path.
+    .OUTPUTS
+        System.Collections.Hashtable with ok and reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [object]$CaseId
+    )
+
+    $pattern = '\A[a-z0-9][a-z0-9-]{0,63}\z'
+
+    if ($null -eq $CaseId) {
+        return @{ ok = $false; reason = 'a case id is required: case.json has no id.' }
+    }
+    if ($CaseId -isnot [string]) {
+        return @{ ok = $false; reason = "a case id must be a string; got $($CaseId.GetType().Name). A manifest id is never converted into a path." }
+    }
+
+    # Control characters are shown as '?' so a refusal cannot forge a line in
+    # the console or the run report it is written to.
+    $display = ($CaseId -replace '[^\x20-\x7E]', '?')
+    if ($display.Length -gt 80) { $display = $display.Substring(0, 80) + '...' }
+
+    # -cmatch, not -match: the default comparison is case-insensitive, and an
+    # allow-list of a-z that quietly accepts A-Z is not an allow-list.
+    if ($CaseId -cnotmatch $pattern) {
+        return @{
+            ok     = $false
+            reason = "case id '$display' is not allowed: a case id is 1 to 64 characters of a-z0-9 and '-', starting with a-z0-9. It is refused, never repaired."
+        }
+    }
+
+    @{ ok = $true; reason = '' }
+}
+
 function Test-DpEvalManifest {
     <#
     .SYNOPSIS
@@ -704,8 +766,11 @@ function Test-DpEvalManifest {
 
     $errors = [System.Collections.Generic.List[string]]::new()
 
-    $id = [string]$Case.id
-    if (-not $id) { $errors.Add('case.json has no id.') }
+    # The id first, and against an allow-list: it becomes a sandbox path and a
+    # launch argument long before anybody reads this manifest again.
+    $idCheck = Test-DpEvalCaseId -CaseId $Case.id
+    $id = if ($Case.id -is [string]) { [string]$Case.id } else { '' }
+    if (-not $idCheck.ok) { $errors.Add($idCheck.reason) }
     elseif ($FolderName -and $id -ne $FolderName) { $errors.Add("case id '$id' does not match its folder '$FolderName'.") }
 
     $set = [string]$Case.set
@@ -925,24 +990,808 @@ function New-DpEvalTrialContext {
 
     if (-not $OwnerId) { $OwnerId = [guid]::NewGuid().ToString('N') }
 
+    # Before anything is allocated: the id is about to become a directory leaf
+    # and a value in the launch configuration of a child process.
+    $idCheck = Test-DpEvalCaseId -CaseId $CaseId
+    if (-not $idCheck.ok) { throw $idCheck.reason }
+
     $decision = Test-DpEvalThrowawayPath -Path $Root
     if (-not $decision.ok) { throw $decision.reason }
     $normalised = $decision.physical
 
     $sandbox = Join-Path $normalised ('{0}-trial{1}-{2}' -f $CaseId, $Trial, [guid]::NewGuid().ToString('N').Substring(0, 8))
     $context = @{
-        caseId    = $CaseId
-        trial     = $Trial
-        ownerId   = $OwnerId
-        sandbox   = $sandbox
-        fixture   = Join-Path $sandbox 'fixture'
-        dataDir   = Join-Path $sandbox 'data'
-        serverLog = Join-Path $sandbox 'server.log'
+        caseId         = $CaseId
+        trial          = $Trial
+        ownerId        = $OwnerId
+        sandbox        = $sandbox
+        fixture        = Join-Path $sandbox 'fixture'
+        dataDir        = Join-Path $sandbox 'data'
+        serverLog      = Join-Path $sandbox 'server.log'
+        serverErrorLog = Join-Path $sandbox 'server.err.log'
+        launchConfig   = Join-Path $sandbox 'host-launch.json'
     }
     # Freshly allocated and receipted, so cleanup can prove it is this run's.
     New-DpEvalOwnedDirectory -Path $context.sandbox -OwnerId $OwnerId | Out-Null
     New-Item -ItemType Directory -Path $context.dataDir -ErrorAction Stop | Out-Null
     $context
+}
+
+function Get-DpEvalHostLauncherPath {
+    <#
+    .SYNOPSIS
+        The fixed launcher script a trial's Host Server is started from.
+    .DESCRIPTION
+        One committed file, always the same one. The harness never generates a
+        script for the child process, so there is exactly one place where the
+        code a trial runs can be read and reviewed.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    Join-Path $PSScriptRoot 'Start-DpEvalHost.ps1'
+}
+
+function Get-DpEvalPowerShellPath {
+    <#
+    .SYNOPSIS
+        The PowerShell executable a trial's child process is started with.
+    .DESCRIPTION
+        The one running this harness, so a trial cannot silently land on a
+        different PowerShell than the operator is using. It is resolved from
+        $PSHOME, which every PowerShell has, rather than from an API added
+        after the 7.0 floor this harness declares; the running process is asked
+        only if $PSHOME holds no executable. A path that cannot be resolved is
+        an error, never a name for the operating system to search for.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $name = $IsWindows ? 'pwsh.exe' : 'pwsh'
+    $candidate = Join-Path $PSHOME $name
+    if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+
+    $running = (Get-Process -Id $PID -ErrorAction SilentlyContinue).Path
+    if ($running -and (Test-Path -LiteralPath $running -PathType Leaf)) { return $running }
+
+    throw "The eval harness could not resolve the PowerShell executable it is running under; '$candidate' does not exist."
+}
+
+function New-DpEvalHostLaunchPlan {
+    <#
+    .SYNOPSIS
+        Describes the child process one trial's Host Server runs in, as data.
+    .DESCRIPTION
+        The plan is the whole fix for a harness that used to build a script out
+        of paths and hand it to PowerShell to parse. Here nothing is parsed
+        twice:
+
+        - The executable and the fixed launcher are named, never composed.
+        - Each argument is one element of an argument list, handed to the
+          operating system as its own argument. Nothing is quoted, so nothing
+          can be unquoted.
+        - Everything else - the repository root, the port, the sandbox data
+          directory, an optional Engine path - is configuration written as
+          JSON and read by the launcher as data.
+
+        A path with a space, an apostrophe or a character that looks like
+        PowerShell therefore stays a path. This is a transport property, not a
+        filter: nothing here inspects a value for hostile content, because a
+        value is never in a position to be executed.
+    .PARAMETER RepositoryRoot
+        The DeskPilot checkout the child runs from.
+    .PARAMETER Port
+        The loopback port the Host Server binds.
+    .PARAMETER DataDirectory
+        The trial's throwaway data directory.
+    .PARAMETER EngineModulePath
+        An explicit Engine (ShellPilot) path. Omitted entirely when the operator
+        supplied none, so the Host Server keeps its own default.
+    .PARAMETER ConfigPath
+        Where the launch configuration is written.
+    .PARAMETER LauncherPath
+        The launcher script. Defaults to the committed one; a test supplies its
+        own to prove what a child actually received.
+    .PARAMETER ValidateOnly
+        Ask the launcher to validate its configuration and exit without
+        starting anything.
+    .OUTPUTS
+        System.Collections.Hashtable
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Describes a child process as data and changes nothing; the plan is only executed by Start-DpEvalHostProcess.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+
+        [Parameter(Mandatory)]
+        [int]$Port,
+
+        [Parameter(Mandatory)]
+        [string]$DataDirectory,
+
+        [string]$EngineModulePath,
+
+        [Parameter(Mandatory)]
+        [string]$ConfigPath,
+
+        [string]$LauncherPath,
+
+        [switch]$ValidateOnly
+    )
+
+    if (-not $LauncherPath) { $LauncherPath = Get-DpEvalHostLauncherPath }
+    if (-not (Test-Path -LiteralPath $LauncherPath -PathType Leaf)) {
+        throw "The eval launcher '$LauncherPath' does not exist; a trial starts a committed script and nothing else."
+    }
+
+    $root = [System.IO.Path]::GetFullPath($RepositoryRoot)
+    $fullConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
+
+    $configuration = [ordered]@{
+        schemaVersion  = 1
+        repositoryRoot = $root
+        modulePath     = Join-Path $root 'output' 'module' 'DeskPilot'
+        port           = $Port
+        dataDirectory  = $DataDirectory
+    }
+    if (-not [string]::IsNullOrWhiteSpace($EngineModulePath)) {
+        $configuration['engineModulePath'] = $EngineModulePath
+    }
+
+    $argumentList = [System.Collections.Generic.List[string]]::new()
+    foreach ($argument in @('-NoProfile', '-NonInteractive', '-File', $LauncherPath, '-ConfigPath', $fullConfigPath)) {
+        $argumentList.Add([string]$argument)
+    }
+    if ($ValidateOnly) { $argumentList.Add('-ValidateOnly') }
+
+    @{
+        filePath         = Get-DpEvalPowerShellPath
+        argumentList     = @($argumentList)
+        workingDirectory = $root
+        configPath       = $fullConfigPath
+        configuration    = $configuration
+    }
+}
+
+function New-DpEvalLogStream {
+    <#
+    .SYNOPSIS
+        Opens a trial log the harness can read while the child writes it.
+    .DESCRIPTION
+        Shared for reading, because the harness polls this file for the URL the
+        Host Server prints. It is also opened write-through: a FileStream
+        buffer of one byte disables the stream's own buffering, so a startup
+        line reaches the disk when it is written rather than when a buffer
+        happens to fill. That is a property of the *file*; the copy that feeds
+        it reads in ordinary sized blocks.
+    .PARAMETER Path
+        The log file to create.
+    .OUTPUTS
+        System.IO.FileStream
+    #>
+    [CmdletBinding()]
+    [OutputType([System.IO.FileStream])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates a log file inside the trial sandbox; there is no user state to confirm.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $parent = Split-Path -Parent $full
+    if ($parent -and -not (Test-Path -LiteralPath $parent -PathType Container)) {
+        New-Item -ItemType Directory -Path $parent -Force -ErrorAction Stop | Out-Null
+    }
+    [System.IO.FileStream]::new($full, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite, 1, $false)
+}
+
+function Read-DpEvalHostLog {
+    <#
+    .SYNOPSIS
+        Reads a bounded part of a trial log while the child is still writing it.
+    .DESCRIPTION
+        Three rules, and the first one is why this exists at all:
+
+        - An unreadable log is not an empty log. A read that failed is reported
+          as a failure, because reporting it as empty would turn a broken
+          capture into "the server never printed a URL". Only a log that has
+          not been created yet is legitimately empty.
+        - The read tolerates the writer. An ordinary read takes no write
+          sharing and fails against a file that is being written.
+        - The bytes are bounded before they are read, not after. A tail seeks
+          to the end and reads only the tail; a whole read stops at the
+          maximum. A runaway child must not be able to turn a diagnostic line
+          into an out-of-memory failure.
+    .PARAMETER Path
+        The log file.
+    .PARAMETER Tail
+        Read at most this many trailing bytes. 0 reads from the start.
+    .PARAMETER MaximumBytes
+        The bound on a whole-log read.
+    .OUTPUTS
+        System.Collections.Hashtable with ok, exists, text, truncated and reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [int]$Tail = 0,
+
+        [int]$MaximumBytes = 1048576
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return @{ ok = $true; exists = $false; text = ''; truncated = $false; reason = '' }
+    }
+
+    $stream = $null
+    try {
+        $stream = [System.IO.FileStream]::new($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $length = $stream.Length
+        $truncated = $false
+
+        if ($Tail -gt 0) {
+            $count = [int][Math]::Min([long]$Tail, $length)
+            $offset = $length - $count
+            if ($offset -gt 0) {
+                $null = $stream.Seek($offset, [System.IO.SeekOrigin]::Begin)
+                $truncated = $true
+            }
+        }
+        else {
+            $count = [int][Math]::Min([long]$MaximumBytes, $length)
+            if ($count -lt $length) { $truncated = $true }
+        }
+
+        $buffer = [byte[]]::new($count)
+        $read = 0
+        while ($read -lt $count) {
+            $chunk = $stream.Read($buffer, $read, $count - $read)
+            if ($chunk -le 0) { break }
+            $read += $chunk
+        }
+
+        # A byte offset can land inside a character. Drop the continuation
+        # bytes at the front rather than decoding a broken one.
+        $start = 0
+        if ($truncated -and $Tail -gt 0) {
+            while ($start -lt $read -and ($buffer[$start] -band 0xC0) -eq 0x80) { $start++ }
+        }
+
+        @{
+            ok        = $true
+            exists    = $true
+            text      = [System.Text.Encoding]::UTF8.GetString($buffer, $start, $read - $start)
+            truncated = $truncated
+            reason    = ''
+        }
+    }
+    catch {
+        @{
+            ok        = $false
+            exists    = $true
+            text      = ''
+            truncated = $false
+            reason    = "the trial log '$Path' could not be read: $($_.Exception.Message)"
+        }
+    }
+    finally { if ($stream) { $stream.Dispose() } }
+}
+
+function Start-DpEvalHostProcess {
+    <#
+    .SYNOPSIS
+        Starts one trial's Host Server child process from a launch plan.
+    .DESCRIPTION
+        Native transport throughout: the argument list goes to the process
+        start information one element at a time, the working directory is a
+        property of the process rather than a command in a script, and the
+        configuration is written as JSON for the launcher to read.
+
+        Both output streams are captured to files the harness can read while
+        the child runs, so a child that fails to start is reported with what it
+        said instead of as a silent timeout.
+    .PARAMETER Plan
+        The launch plan from New-DpEvalHostLaunchPlan.
+    .PARAMETER LogPath
+        Where the child's standard output is captured.
+    .PARAMETER ErrorLogPath
+        Where the child's standard error is captured. Defaults beside the log.
+    .OUTPUTS
+        System.Collections.Hashtable
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Starts a throwaway child process for one trial; there is no user state to confirm.')]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Plan,
+
+        [Parameter(Mandatory)]
+        [string]$LogPath,
+
+        [string]$ErrorLogPath
+    )
+
+    if (-not $ErrorLogPath) { $ErrorLogPath = "$LogPath.err" }
+
+    $json = $Plan.configuration | ConvertTo-Json -Depth 5
+    Set-Content -LiteralPath $Plan.configPath -Value $json -Encoding utf8NoBOM -ErrorAction Stop
+
+    $start = [System.Diagnostics.ProcessStartInfo]::new([string]$Plan.filePath)
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.WorkingDirectory = [string]$Plan.workingDirectory
+    foreach ($argument in @($Plan.argumentList)) { $start.ArgumentList.Add([string]$argument) }
+
+    $outStream = New-DpEvalLogStream -Path $LogPath
+    $errorStream = $null
+    $process = $null
+    try {
+        $errorStream = New-DpEvalLogStream -Path $ErrorLogPath
+        $process = [System.Diagnostics.Process]::Start($start)
+        try { $process.StandardInput.Close() } catch { $null = $_ }
+        $copies = @(
+            $process.StandardOutput.BaseStream.CopyToAsync($outStream, 4096)
+            $process.StandardError.BaseStream.CopyToAsync($errorStream, 4096)
+        )
+    }
+    catch {
+        # A child that started but could not be captured is still a child. It is
+        # stopped here rather than left behind holding the trial's sandbox.
+        if ($process -and -not $process.HasExited) {
+            try { $process.Kill($true) } catch { $null = $_ }
+        }
+        if ($outStream) { $outStream.Dispose() }
+        if ($errorStream) { $errorStream.Dispose() }
+        throw
+    }
+
+    @{
+        process      = $process
+        logPath      = [System.IO.Path]::GetFullPath($LogPath)
+        errorLogPath = [System.IO.Path]::GetFullPath($ErrorLogPath)
+        configPath   = $Plan.configPath
+        streams      = @($outStream, $errorStream)
+        copies       = @($copies)
+    }
+}
+
+function Wait-DpEvalHostUrl {
+    <#
+    .SYNOPSIS
+        Waits for the Host Server to print its loopback URL, or says why it did not.
+    .DESCRIPTION
+        Bounded on both sides: it gives up at the deadline, and it stops as soon
+        as the child exits rather than waiting out the whole deadline for a
+        process that is already gone. A child that died during preparation is
+        reported with the tail of what it wrote, because "never reported a URL"
+        is not a diagnosis.
+    .PARAMETER Server
+        The session from Start-DpEvalHostProcess.
+    .PARAMETER Port
+        The port the Host Server was told to bind.
+    .PARAMETER TimeoutSeconds
+        How long to wait in total.
+    .PARAMETER PollMilliseconds
+        How often to read the log.
+    .OUTPUTS
+        System.Collections.Hashtable with ok, url, token and reason.
+
+        Exactly one of them. Everything this function calls is consumed, so no
+        stray value is ever emitted beside the result a caller reads.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Server,
+
+        [Parameter(Mandatory)]
+        [int]$Port,
+
+        [int]$TimeoutSeconds = 120,
+
+        [int]$PollMilliseconds = 250
+    )
+
+    $pattern = "http://127\.0\.0\.1:$Port/\?t=([0-9a-f]{32})"
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    if (-not $Server.process) {
+        return @{ ok = $false; url = ''; token = ''; reason = 'the child process handle has already been released, so there is nothing to wait for.' }
+    }
+
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds $PollMilliseconds
+
+        $log = Read-DpEvalHostLog -Path $Server.logPath
+        if (-not $log.ok) {
+            # An unreadable log is a failure now, not a reason to keep polling
+            # until the deadline and then blame the server for saying nothing.
+            return @{ ok = $false; url = ''; token = ''; reason = $log.reason }
+        }
+        if ($log.text -match $pattern) {
+            $token = $Matches[1]
+            return @{ ok = $true; url = "http://127.0.0.1:$Port/?t=$token"; token = $token; reason = '' }
+        }
+
+        if ($Server.process.HasExited) {
+            # The pipes close when the child exits, so the capture finishes
+            # quickly; the wait is bounded anyway and its answer is kept.
+            $capture = Complete-DpEvalHostOutput -Server $Server -TimeoutMilliseconds 2000
+            $log = Read-DpEvalHostLog -Path $Server.logPath
+            if ($log.ok -and $log.text -match $pattern) {
+                $token = $Matches[1]
+                return @{ ok = $true; url = "http://127.0.0.1:$Port/?t=$token"; token = $token; reason = '' }
+            }
+
+            $detail = [System.Collections.Generic.List[string]]::new()
+            if (-not $capture.ok) { $detail.Add($capture.reason) }
+            foreach ($candidate in @($Server.errorLogPath, $Server.logPath)) {
+                $tail = Read-DpEvalHostLog -Path $candidate -Tail 2000
+                if (-not $tail.ok) { $detail.Add($tail.reason) }
+                elseif ($tail.text.Trim()) { $detail.Add($tail.text.Trim()) }
+            }
+            if (-not $detail.Count) { $detail.Add('it wrote nothing.') }
+
+            return @{
+                ok     = $false
+                url    = ''
+                token  = ''
+                reason = "exited with code $($Server.process.ExitCode) before reporting a URL: $($detail -join ' ')"
+            }
+        }
+    }
+
+    $tail = Read-DpEvalHostLog -Path $Server.errorLogPath -Tail 1000
+    $wrote = if (-not $tail.ok) { $tail.reason } else { $tail.text.Trim() }
+    @{
+        ok     = $false
+        url    = ''
+        token  = ''
+        reason = "never reported a URL within $TimeoutSeconds seconds.$(if ($wrote) { " It wrote: $wrote" })"
+    }
+}
+
+function Complete-DpEvalHostOutput {
+    <#
+    .SYNOPSIS
+        Waits, briefly, for the child's captured output to finish arriving.
+    .DESCRIPTION
+        The answer is a result, not a side effect. A capture that faulted or
+        that did not finish within its bound means the trial log is incomplete,
+        and an incomplete log is something the caller has to know about rather
+        than something to discover later in a missing line.
+    .PARAMETER Server
+        The session from Start-DpEvalHostProcess.
+    .PARAMETER TimeoutMilliseconds
+        The bound on the wait.
+    .OUTPUTS
+        System.Collections.Hashtable with ok and reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Server,
+
+        [int]$TimeoutMilliseconds = 2000
+    )
+
+    $copies = @($Server.copies | Where-Object { $_ })
+    if (-not $copies.Count) { return @{ ok = $true; reason = '' } }
+
+    try {
+        $completed = [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$copies, $TimeoutMilliseconds)
+    }
+    catch {
+        $faults = @($copies |
+                Where-Object { $_.IsFaulted -and $_.Exception } |
+                ForEach-Object { $_.Exception.GetBaseException().Message })
+        if (-not $faults.Count) { $faults = @($_.Exception.GetBaseException().Message) }
+        return @{ ok = $false; reason = "the child output capture failed: $($faults -join '; ')" }
+    }
+
+    if (-not $completed) {
+        return @{ ok = $false; reason = "the child output capture did not finish within $TimeoutMilliseconds ms, so the trial log is incomplete." }
+    }
+    @{ ok = $true; reason = '' }
+}
+
+function Stop-DpEvalHostProcess {
+    <#
+    .SYNOPSIS
+        Stops the child process this trial started, and says whether it worked.
+    .DESCRIPTION
+        Only the process this run started, through the handle it was given,
+        with the tree it started: a Host Server that spawned anything must not
+        outlive the trial that owns it, and nothing here is ever stopped by
+        name.
+
+        Nothing is downgraded into success. A tree that could not be stopped is
+        reported as a failed stop rather than retried as a parent-only kill
+        that would leave the tree running and read as clean. A capture that
+        faulted or timed out, and a log that could not be closed, are failures
+        of their own: the trial log is then incomplete, and the caller is told.
+
+        The process handle is released only once the stop *and* the capture are
+        verified, and the exit code is remembered on the session so a second
+        stop - the normal case, from a finally block - still answers.
+    .PARAMETER Server
+        The session from Start-DpEvalHostProcess.
+    .PARAMETER TimeoutSeconds
+        How long to wait for the process to exit after it is stopped.
+    .PARAMETER GraceSeconds
+        How long to let the process finish on its own first. 0 stops it now.
+    .PARAMETER CaptureTimeoutMilliseconds
+        The bound on waiting for the captured output to finish arriving.
+    .OUTPUTS
+        System.Collections.Hashtable with ok, stopped, captured, exitCode and
+        reason. One object, always.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Stops the throwaway child process this trial started; confirming it would strand a Host Server the cleanup must outlive.')]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Server,
+
+        [int]$TimeoutSeconds = 15,
+
+        [int]$GraceSeconds = 0,
+
+        [int]$CaptureTimeoutMilliseconds = 2000
+    )
+
+    $problems = [System.Collections.Generic.List[string]]::new()
+    $stopped = $true
+    $captured = $true
+    $released = $true
+    $exitCode = $Server['exitCode']
+    $process = $Server.process
+
+    if ($process) {
+        try {
+            if ($GraceSeconds -gt 0 -and -not $process.HasExited) {
+                $null = $process.WaitForExit($GraceSeconds * 1000)
+            }
+            if (-not $process.HasExited) {
+                try { $process.Kill($true) }
+                catch {
+                    # A process that exited between the check and the kill is
+                    # not a failure. Anything else is, and it stays one: a
+                    # parent-only stop would leave the tree running and report
+                    # a clean trial.
+                    if (-not $process.HasExited) {
+                        $stopped = $false
+                        $problems.Add("the process tree of $($process.Id) could not be stopped: $($_.Exception.Message)")
+                    }
+                }
+            }
+            if ($stopped -and -not $process.WaitForExit($TimeoutSeconds * 1000)) {
+                $stopped = $false
+                $problems.Add("process $($process.Id) did not exit within $TimeoutSeconds seconds.")
+            }
+        }
+        catch {
+            $stopped = $false
+            $problems.Add("process $($process.Id) could not be stopped: $($_.Exception.Message)")
+        }
+
+        if ($stopped) {
+            # Property access swallows a getter failure under the caller's
+            # error preference, and [int]$null is 0 - an exit code nobody could
+            # read would have been reported as a clean zero. The read is
+            # contained so the failure is a value this can report.
+            $raw = & { $ErrorActionPreference = 'Stop'; try { $process.ExitCode } catch { $null } }
+            if ($null -eq $raw) {
+                $exitCode = $null
+                $problems.Add("the exit code of process $($process.Id) could not be read.")
+            }
+            else {
+                $exitCode = [int]$raw
+            }
+        }
+    }
+
+    $capture = Complete-DpEvalHostOutput -Server $Server -TimeoutMilliseconds $CaptureTimeoutMilliseconds
+    if (-not $capture.ok) {
+        $captured = $false
+        $problems.Add($capture.reason)
+    }
+
+    foreach ($stream in @($Server.streams | Where-Object { $_ })) {
+        try { $stream.Dispose() }
+        catch {
+            $captured = $false
+            $problems.Add("a trial log could not be closed: $($_.Exception.Message)")
+        }
+    }
+
+    # Released only after the stop and the capture are both verified, and only
+    # when nothing else was reported: a handle is what a caller still has to
+    # inspect a child that would not go away.
+    if ($process -and $stopped -and $captured -and $problems.Count -eq 0) {
+        try {
+            $process.Dispose()
+            $Server['process'] = $null
+            $Server['streams'] = @()
+            $Server['copies'] = @()
+            $Server['exitCode'] = $exitCode
+        }
+        catch {
+            $released = $false
+            $problems.Add("the process handle could not be released: $($_.Exception.Message)")
+        }
+    }
+
+    @{
+        # Every problem fails the result. A reason beside an ok of true is a
+        # trial that reads clean and is not.
+        ok       = ($stopped -and $captured -and $released -and $problems.Count -eq 0)
+        stopped  = $stopped
+        captured = $captured
+        exitCode = $exitCode
+        reason   = ($problems -join ' ')
+    }
+}
+
+function Test-DpEvalLiveTrialAllowed {
+    <#
+    .SYNOPSIS
+        Says whether another live trial may start.
+    .DESCRIPTION
+        Once a trial could not clean up after itself, the run is over. A child
+        that would not stop still holds its sandbox, and the next trial would
+        allocate its own state beside it, start another Host Server and
+        eventually ask a run root that must not be deleted to be deleted. The
+        latch is set once and never cleared: the honest end of that run is an
+        incomplete report and state kept for recovery.
+    .PARAMETER State
+        The run's cleanup state, carrying 'blocked' once a cleanup failed.
+    .OUTPUTS
+        System.Collections.Hashtable with allowed and reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$State
+    )
+
+    if ($State['blocked']) {
+        return @{
+            allowed = $false
+            reason  = "Refusing to start another live trial: $($State['blocked']) The state it could not clean up is kept for recovery."
+        }
+    }
+    @{ allowed = $true; reason = '' }
+}
+
+function Complete-DpEvalTrialCleanup {
+    <#
+    .SYNOPSIS
+        Stops a trial's child process and removes its sandbox, in that order.
+    .DESCRIPTION
+        The order is the whole point. The sandbox is the data directory the
+        Host Server is writing to, so it is removed only once the stop and the
+        capture are verified. A stop that did not work leaves everything on
+        disk, latches the run so nothing further starts, and throws - which
+        makes the trial incomplete, because a trial whose state could not be
+        cleaned up is not evidence about anything.
+    .PARAMETER Server
+        The session from Start-DpEvalHostProcess.
+    .PARAMETER Context
+        The trial context that owns the sandbox.
+    .PARAMETER State
+        The run's cleanup state, latched when this cleanup is blocked.
+    .PARAMETER TimeoutSeconds
+        The bound on stopping the child.
+    .PARAMETER SettleMilliseconds
+        A short pause after a verified stop, so the operating system can
+        release the handles the removal below needs.
+    .OUTPUTS
+        None. It throws when the trial could not be cleaned up.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the throwaway sandbox this trial allocated, after the child that owns it is verified stopped.')]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Server,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Context,
+
+        [Parameter(Mandatory)]
+        [hashtable]$State,
+
+        [int]$TimeoutSeconds = 30,
+
+        [int]$SettleMilliseconds = 300
+    )
+
+    $stop = Stop-DpEvalHostProcess -Server $Server -TimeoutSeconds $TimeoutSeconds
+    if (-not $stop.ok) {
+        $problem = "trial $($Context.trial) of '$($Context.caseId)' could not clean up its Host Server: $($stop.reason)"
+        if (-not $State['blocked']) {
+            $State['blocked'] = $problem
+            $State['sandbox'] = [string]$Context.sandbox
+        }
+        throw "$problem Nothing was deleted: the trial state is kept for recovery and no further live trial is started."
+    }
+
+    if ($SettleMilliseconds -gt 0) { Start-Sleep -Milliseconds $SettleMilliseconds }
+    # Not swallowed: state still on disk is state the next trial can read, so a
+    # removal failure makes this trial incomplete rather than clean.
+    Remove-DpEvalSandbox -Path $Context.sandbox -OwnerId $Context.ownerId
+}
+
+function Complete-DpEvalRunCleanup {
+    <#
+    .SYNOPSIS
+        Removes the run root, or keeps it and says why.
+    .DESCRIPTION
+        The run root holds every trial sandbox, so deleting it unconditionally
+        would do at run level exactly what a trial must never do: remove state
+        underneath a child process that is still running. When a trial cleanup
+        was blocked, the owned run root is kept for explicit recovery and the
+        reason is handed back for the gate.
+
+        The reason names the run root by its leaf only. A temp path carries the
+        operator's username and a run result may be committed as a baseline.
+    .PARAMETER Path
+        The run root this run allocated.
+    .PARAMETER OwnerId
+        The identity that must own it.
+    .PARAMETER State
+        The run's cleanup state.
+    .OUTPUTS
+        System.Collections.Hashtable with ok, retained and reason.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Removes the run root this run allocated and receipted; keeping it is the failure path, not the confirmable one.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$OwnerId,
+
+        [Parameter(Mandatory)]
+        [hashtable]$State
+    )
+
+    $name = Split-Path $Path -Leaf
+
+    if ($State['blocked']) {
+        return @{
+            ok       = $false
+            retained = $true
+            reason   = "$($State['blocked']) The run root '$name' under the system temp directory was kept for recovery; nothing was deleted underneath a child process that may still be running. Remove it by hand once that process is gone."
+        }
+    }
+
+    try { Remove-DpEvalSandbox -Path $Path -OwnerId $OwnerId }
+    catch { return @{ ok = $false; retained = $true; reason = "$_" } }
+
+    @{ ok = $true; retained = $false; reason = '' }
 }
 
 function ConvertTo-DpEvalUsage {

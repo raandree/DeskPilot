@@ -39,6 +39,11 @@
       Project and no real Conversation is ever opened. Prompt 07 established
       that the runspace inherits the launcher's environment, so that inheritance
       is recorded as a caveat on every result.
+    - That child process is started from a committed launcher script with a
+      structured argument list and a JSON configuration it reads as data. The
+      harness generates no script, so a sandbox path, a repository root or an
+      Engine path containing a space, an apostrophe or a character that looks
+      like PowerShell stays a path.
     - The DeskPilot commit under test is recorded with every run.
 
     Output files carry no token, no absolute user path and no prompt text.
@@ -235,8 +240,17 @@ function Get-DpFreePort {
 # The execution seam. A live trial drives a Host Server; a scripted trial reads
 # a committed file. Everything above this line is identical either way, which is
 # what makes the harness testable without spending anything.
+
+# Latched once a trial could not clean up after itself. A child that would not
+# stop still holds its sandbox, so from that point nothing further is started
+# and nothing is deleted - including the run root, which is kept for recovery.
+$liveCleanup = @{ blocked = ''; sandbox = '' }
+
 $liveExecutor = {
     param($Context)
+
+    $allowed = Test-DpEvalLiveTrialAllowed -State $liveCleanup
+    if (-not $allowed.allowed) { throw $allowed.reason }
 
     $case = $Context.case
     $source = Join-Path $RepositoryRoot ([string]$case.repository)
@@ -254,26 +268,25 @@ $liveExecutor = {
     if ($pinned -ne $expectedSha) { throw "Fixture for '$($case.id)' is at $pinned, not the pinned $expectedSha." }
 
     $port = Get-DpFreePort
-    $serverLog = $Context.serverLog
-    $dataDir = $Context.dataDir
-    $engineArgument = if ($EngineModulePath) { " -EngineModulePath '$EngineModulePath'" } else { '' }
-    $serverScript = @"
-Set-Location -LiteralPath '$repoRoot'
-Import-Module '$repoRoot\output\module\DeskPilot' -Force
-Start-DeskPilot -NoBrowser -Port $port -DataDir '$dataDir'$engineArgument
-"@
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($serverScript))
-    $server = Start-Process -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-EncodedCommand', $encoded) -PassThru -RedirectStandardOutput $serverLog -WindowStyle Hidden
+
+    # The child process is described as data and started natively: a fixed
+    # launcher script, one argument per value, and a JSON configuration it
+    # reads. Nothing here builds PowerShell out of a path, so a sandbox path,
+    # a repository root or an Engine path stays a path.
+    $launch = @{
+        RepositoryRoot = $repoRoot
+        Port           = $port
+        DataDirectory  = $Context.dataDir
+        ConfigPath     = $Context.launchConfig
+    }
+    if ($EngineModulePath) { $launch['EngineModulePath'] = $EngineModulePath }
+    $plan = New-DpEvalHostLaunchPlan @launch
+    $server = Start-DpEvalHostProcess -Plan $plan -LogPath $Context.serverLog -ErrorLogPath $Context.serverErrorLog
 
     try {
-        $token = $null
-        for ($i = 0; $i -lt 240; $i++) {
-            Start-Sleep -Milliseconds 500
-            if (-not (Test-Path -LiteralPath $serverLog)) { continue }
-            $log = Get-Content -LiteralPath $serverLog -Raw
-            if ($log -match "http://127\.0\.0\.1:$port/\?t=([0-9a-f]{32})") { $token = $Matches[1]; break }
-        }
-        if (-not $token) { throw "Host Server for '$($case.id)' trial $($Context.trial) never reported a URL." }
+        $ready = Wait-DpEvalHostUrl -Server $server -Port $port -TimeoutSeconds 120
+        if (-not $ready.ok) { throw "Host Server for '$($case.id)' trial $($Context.trial) $($ready.reason)" }
+        $token = $ready.token
 
         $base = "http://127.0.0.1:$port"
         $headers = @{ 'X-DeskPilot-Token' = $token }
@@ -341,11 +354,11 @@ Start-DeskPilot -NoBrowser -Port $port -DataDir '$dataDir'$engineArgument
         }
     }
     finally {
-        try { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-        Start-Sleep -Milliseconds 300
-        # Not swallowed: state still on disk is state the next trial can read,
-        # so a cleanup failure makes this trial incomplete rather than clean.
-        Remove-DpEvalSandbox -Path $Context.sandbox -OwnerId $Context.ownerId
+        # The stop is decided before anything is deleted. A child that is still
+        # running owns the data directory below, so a stop, a capture or a log
+        # that did not close keeps every byte of this trial on disk, latches the
+        # run and makes this trial incomplete.
+        Complete-DpEvalTrialCleanup -Server $server -Context $Context -State $liveCleanup -TimeoutSeconds 30
     }
 }
 
@@ -424,10 +437,15 @@ try {
     }
 }
 finally {
-    # Recorded, never swallowed. A run that could not remove its own state has
-    # not cleanly finished, and the gate below says so.
-    try { Remove-DpEvalSandbox -Path $sandboxRoot -OwnerId $runOwnerId }
-    catch { $cleanupFailure = "$_" }
+    # Recorded, never swallowed, and never deleted underneath a child that may
+    # still be running: a blocked trial cleanup keeps the owned run root for
+    # explicit recovery, and the gate below says so.
+    $runCleanup = Complete-DpEvalRunCleanup -Path $sandboxRoot -OwnerId $runOwnerId -State $liveCleanup
+    if (-not $runCleanup.ok) { $cleanupFailure = $runCleanup.reason }
+    if ($runCleanup.retained -and (Test-Path -LiteralPath $sandboxRoot)) {
+        Write-Host ''
+        Write-Host "Run state kept for recovery: $sandboxRoot" -ForegroundColor Yellow
+    }
 }
 
 $aggregate = Measure-DpEvalRunOutcome -Case @($outcomes)

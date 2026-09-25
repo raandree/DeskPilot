@@ -165,6 +165,55 @@ Without this the numbers are noise.
   `PSModulePath`), and that is diagnosed but unfixed. A case whose outcome
   depends on module resolution can therefore differ between machines.
 
+## How a trial's Host Server is started
+
+Every trial runs its Host Server in a child process, and **nothing about that
+child is generated**. The harness builds a launch *plan* — a description — and
+starts it natively:
+
+- `Start-DpEvalHost.ps1` is the launcher. It is committed beside this file, it
+  is the only script a trial runs, and it is invoked with `-File`. The harness
+  never writes a script, never encodes one and never passes `-Command`.
+- Each argument is one element of `ProcessStartInfo.ArgumentList`, handed to
+  the operating system as its own argument. Nothing is quoted by the harness,
+  so nothing can be un-quoted by a value.
+- The repository root, the port, the trial's data directory and an optional
+  Engine path travel as **JSON the launcher reads**, and every one of them is
+  passed to `Start-DeskPilot` as a parameter *value*. The working directory is
+  a property of the process, not a command in a script.
+- The launch configuration is a closed schema. An unknown key is refused, not
+  ignored, so no manifest, corpus or operator can name a script for the child
+  to run.
+- The child's output is captured to `server.log` and `server.err.log` inside
+  the trial sandbox, and read in bounded pieces: a diagnostic tail seeks to the
+  end rather than materialising the file. An unreadable log is reported as
+  unreadable, never as an empty one — otherwise a broken capture would read as
+  "the server never printed a URL". A child that dies during preparation is
+  reported with what it wrote.
+- The process is stopped through the handle the trial owns, with its tree,
+  under bounded waits. A tree that will not stop is an explicit failure, not a
+  parent-only kill reported as success; a capture that faulted or timed out, a
+  log that would not close and an exit code that could not be read are failures
+  of their own. The handle is released only once the stop and the capture are
+  both verified. Nothing is ever stopped by name.
+- **Nothing is deleted before the stop is decided.** A trial removes its
+  sandbox only after its child is verifiably gone — the sandbox *is* the data
+  directory that child writes to. A blocked cleanup keeps every byte of that
+  trial on disk, starts no further live trial, and keeps the owned run root as
+  well, so the state stays there to be looked at. The run then reports
+  incomplete trials, a failed gate naming the retained run root by its leaf,
+  and a console line with its full path. Removing it is a deliberate act by a
+  person, once the child process is actually gone.
+
+The practical effect: a path containing a space, an apostrophe, `$( )` or a
+semicolon stays a path. That is a property of the transport, not of a filter —
+no value is inspected for hostile content, because no value is ever in a
+position to be executed.
+
+`-ValidateOnly` runs the launcher against a configuration, prints the
+parameters it would pass and starts nothing. That is how the transport is
+tested without a Host Server, an Engine or a Model.
+
 ## Case format
 
 One folder per case under `cases/`:
@@ -201,6 +250,25 @@ cases/<case-id>/
 `repository` is a **name**, resolved under `-RepositoryRoot`. `set` is
 `capability` (can it do this at all?) or `regression` (did a change break
 something that worked?).
+
+### The case id
+
+`id` is not a label. It becomes the leaf of the throwaway sandbox the trial
+writes to, it appears in the launch configuration of a child process, and it is
+printed into the run report. So it is checked against a bounded allow-list
+before any of that happens, in the manifest and again when the sandbox is
+allocated:
+
+```text
+1 to 64 characters of a-z, 0-9 and '-', starting with a-z or 0-9
+```
+
+Anything else is **refused and never repaired**. An id is not trimmed, not
+lower-cased and not truncated into a valid one: two manifests that differ only
+in case or in trailing whitespace would otherwise share one sandbox and one
+reported id, and the run would be about a corpus that does not exist. An id
+that is not a string — a JSON number, array or object — is refused rather than
+converted into a path. The id must still match its folder name.
 
 ### Provenance, and what it may not claim
 
@@ -376,6 +444,20 @@ Say these out loud rather than letting a reader assume otherwise.
   read. The byte bound and the outside-the-fixture check hold regardless.
 - **Offline mode proves plumbing, not performance.** It replays hand-written
   inputs.
+- **The launch transport is not a prompt-injection defence.** Passing paths as
+  data stops a value from becoming code *in this harness*. It says nothing
+  about what a Model does with a hostile prompt, a hostile file in a fixture or
+  a hostile tool result. Those are the agent's problem, and this corpus does
+  not claim to measure them.
+- **The id allow-list is about paths and arguments, not about taste.** It
+  refuses an id that could escape a directory or an argument. It cannot tell a
+  misleading case id from an honest one, and a valid id is not a valid case.
+- **A blocked cleanup ends the run and leaves state behind.** That is the
+  deliberate choice: a Host Server that would not stop still owns its data
+  directory, and deleting it underneath the process would destroy the evidence
+  and race the thing still writing to it. The cost is a temp folder somebody
+  has to remove by hand, and a run that reports incomplete rather than
+  finishing the remaining cases.
 - **The GHCP reference side is manual**, so it is as consistent as the person
   doing it.
 
