@@ -2536,6 +2536,7 @@ function renderApproval(node, request, conversationId) {
     }
     card.append(noteWrap, status, actions);
     node.appendChild(card);
+    node.classList.remove('hidden');
     scrollThread();
     deny.focus();
 
