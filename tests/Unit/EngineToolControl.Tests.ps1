@@ -118,6 +118,14 @@ Describe 'Modern Engine decision translation' {
         $bridge.Requests | Should -Be 0
     }
 
+    It 'rejects a trailing newline in the Tool name at the metadata boundary' {
+        $request.Tool = "write_file`n"
+        $decision = Invoke-DpToolCallControl -Request $request -Context $context -Bridge $bridge
+        $decision.Decision | Should -BeExactly 'deny'
+        $decision.Reason | Should -BeExactly 'Unsupported or incomplete Engine pre-call metadata.'
+        $bridge.Requests | Should -Be 0
+    }
+
     It 'validates <_> before allowing a read-only Tool' -ForEach @('RunId', 'TurnId', 'RequestId') {
         $request.Tool = 'read_file'
         $request[$_] = ''
@@ -133,5 +141,70 @@ Describe 'Modern Engine decision translation' {
             turn { $bridge.Reply = '{"decision":"approve","scope":"turn"}' }
         }
         (Invoke-DpToolCallControl -Request $request -Context $context -Bridge $bridge).Decision | Should -BeExactly 'deny'
+    }
+}
+
+Describe 'Modern Engine MCP catalog initialization' {
+    BeforeEach {
+        $runspace = [runspacefactory]::CreateRunspace()
+        $runspace.Open()
+        $shell = [powershell]::Create()
+        $shell.Runspace = $runspace
+        $null = $shell.AddScript(@'
+New-Module -Name ShellPilot -ScriptBlock {
+    $script:ShpMcpServers = [ordered]@{}
+    function Invoke-Shp {
+        param([hashtable]$ToolCallControl)
+        throw 'No Model or Tool may run in the catalog fixture.'
+    }
+    Export-ModuleMember -Function Invoke-Shp
+} | Import-Module -Global
+'@)
+        $shell.Invoke() | Out-Null
+        if ($shell.HadErrors) { throw $shell.Streams.Error[0] }
+        $shell.Commands.Clear()
+        $script:catalogContext = @{
+            conversationId = 'c_0123456789'; turnId = 'm_abcdef0123'
+            project = 'Fixture'; workingDirectory = [string]$TestDrive
+            permissions = @{ file = $true; mcp = $true; userTools = $true; terminal = $false }
+        }
+        $script:catalogBridge = [pscustomobject]@{ Enabled = $true; Cancelled = $false }
+    }
+
+    AfterEach { $shell.Dispose(); $runspace.Dispose() }
+
+    It 'accepts a valid empty catalog when no MCP servers are registered' {
+        $binding = Initialize-DpToolCallApproval -Runspace $runspace -Context $script:catalogContext -Bridge $script:catalogBridge
+        $binding.ToolCallControl.FailPosture | Should -BeExactly 'Closed'
+    }
+
+    It 'reports an incompatible <Shape> catalog before returning a control' -ForEach @(
+        @{ Shape = 'missing'; Value = $null }
+        @{ Shape = 'reshaped'; Value = [pscustomobject]@{ servers = @() } }
+    ) {
+        $null = $shell.AddScript(@'
+param($Catalog)
+& (Get-Module ShellPilot) { param($Value); $script:ShpMcpServers = $Value } $Catalog
+'@).AddArgument($Value)
+        $shell.Invoke() | Out-Null
+        if ($shell.HadErrors) { throw $shell.Streams.Error[0] }
+        { Initialize-DpToolCallApproval -Runspace $runspace -Context $script:catalogContext -Bridge $script:catalogBridge } |
+            Should -Throw -ExpectedMessage '*MCP registration catalog*'
+        $runspace.SessionStateProxy.GetVariable('DeskPilotToolApprovalParameters') | Should -BeNullOrEmpty
+    }
+
+    It 'rejects a registration name with a trailing newline during capture' {
+        $null = $shell.AddScript(@'
+& (Get-Module ShellPilot) {
+    $script:ShpMcpServers.fixture = @{
+        Name = 'fixture'; State = 'Ready'
+        Tools = @(@{ Name = "mcp_fixture_list`n"; OriginalName = 'list' })
+    }
+}
+'@)
+        $shell.Invoke() | Out-Null
+        if ($shell.HadErrors) { throw $shell.Streams.Error[0] }
+        { Initialize-DpToolCallApproval -Runspace $runspace -Context $script:catalogContext -Bridge $script:catalogBridge } |
+            Should -Throw
     }
 }

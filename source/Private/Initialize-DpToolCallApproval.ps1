@@ -47,19 +47,21 @@ if ($Contract -ceq 'ToolCallControl') {
     $global:DeskPilotMcpApprovalIdentity = @{}
     $engine = Get-Module -Name ShellPilot | Select-Object -First 1
     if ($engine) {
-        $identities = @(& $engine {
-            if ($script:ShpMcpServers -is [System.Collections.IDictionary]) {
-                foreach ($server in $script:ShpMcpServers.Values) {
-                    if ($server.State -cne 'Ready') { continue }
-                    foreach ($tool in $server.Tools) {
-                        @{ Name = $tool.Name; Server = $server.Name; Tool = $tool.OriginalName }
-                    }
+        $catalog = & $engine { ,$script:ShpMcpServers }
+        if ($catalog -isnot [System.Collections.IDictionary]) {
+            throw 'The Engine MCP registration catalog is unavailable or incompatible; dispatch was refused.'
+        }
+        $identities = @(
+            foreach ($server in $catalog.Values) {
+                if ($server.State -cne 'Ready') { continue }
+                foreach ($tool in $server.Tools) {
+                    @{ Name = $tool.Name; Server = $server.Name; Tool = $tool.OriginalName }
                 }
             }
-        })
+        )
         if ($identities.Count -gt 4096) { throw 'The MCP approval identity catalog exceeds its bound.' }
         foreach ($entry in $identities) {
-            if ($entry.Name -isnot [string] -or $entry.Name -cnotmatch '^[A-Za-z0-9_-]{1,128}$' -or
+            if ($entry.Name -isnot [string] -or $entry.Name -cnotmatch '\A[A-Za-z0-9_-]{1,128}\z' -or
                 $entry.Server -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.Server) -or
                 $entry.Tool -isnot [string] -or [string]::IsNullOrWhiteSpace($entry.Tool) -or
                 $global:DeskPilotMcpApprovalIdentity.ContainsKey($entry.Name)) {
@@ -87,7 +89,7 @@ if ($Contract -ceq 'ToolCallControl') {
     try {
         $null = $setup.AddScript($builder.ToString()).AddArgument($Context).AddArgument($Bridge).AddArgument($TimeoutSeconds).AddArgument($contract)
         $setup.Invoke() | Out-Null
-        if ($setup.HadErrors) { throw 'The Engine approval bridge could not be initialized; dispatch was refused.' }
+        if ($setup.HadErrors) { throw 'The Engine approval bridge could not be initialized. Verify Engine control and MCP registration catalog compatibility; dispatch was refused.' }
         $binding = $Runspace.SessionStateProxy.GetVariable('DeskPilotToolApprovalParameters')
         if ($binding -isnot [hashtable] -or $binding.Count -ne 1 -or -not $binding.ContainsKey($contract)) {
             throw 'The Engine approval parameter binding was not created; dispatch was refused.'

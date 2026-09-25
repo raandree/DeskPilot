@@ -46,7 +46,10 @@ broader approval; no default installation is changed automatically.
 For MCP, the original Tool identity is captured from the Engine registration
 record rather than guessed from the namespaced name. Every call prompts, so
 annotations are not required to waive prompts: none are waived. Missing or
-ambiguous identities deny. See the exact
+ambiguous identities deny. An unavailable or incompatible registration catalog
+refuses approval setup with an Engine compatibility error before dispatch,
+rather than silently denying every MCP call later. A valid empty catalog is
+supported when no MCP servers are registered. See the exact
 [adapter contract](../specs/120-per-call-approval-engine-contract.md).
 
 Local and Isolated Terminal checks now execute a bounded behavioral proof in a

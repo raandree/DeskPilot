@@ -39,7 +39,7 @@ function Invoke-DpToolCallControl {
     $callId = Get-DpPropertyValue -InputObject $Request -Name 'ToolCallId'
     $server = Get-DpPropertyValue -InputObject $Request -Name 'Server' -Default ''
     if (($schema -isnot [int] -and $schema -isnot [long]) -or $schema -ne 1 -or $phase -cne 'Pre' -or
-        $name -isnot [string] -or $name -cnotmatch '^[A-Za-z0-9_-]{1,128}$' -or
+        $name -isnot [string] -or $name -cnotmatch '\A[A-Za-z0-9_-]{1,128}\z' -or
         $origin -cnotin @('BuiltIn', 'User', 'Mcp') -or
         $callId -isnot [string] -or [string]::IsNullOrWhiteSpace($callId) -or $callId.Length -gt 128 -or
         $json -isnot [string] -or [Text.Encoding]::UTF8.GetByteCount($json) -gt 262144) {
