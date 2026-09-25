@@ -175,6 +175,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Support the modern ShellPilot `ToolCallControl` contract for once-only File,
+  MCP and User Tool approvals, binding effective arguments and original MCP
+  identities while retaining legacy compatibility and closed failure posture.
+- Replace refactor-sensitive Terminal source-marker checks with bounded inert
+  negative/positive dispatch proofs; CI exercises the pinned Engine on every OS.
+- Serialize Memory extraction references as JSON data so content cannot close
+  delimiter fences. Provenance and Permissions remain the authority boundary.
+
 - Keep Settings and approval cards on the application's actual translator, and
   prevent late Customization responses from replacing a closed or newer editor.
   The loading buffer stays read-only until its content arrives.

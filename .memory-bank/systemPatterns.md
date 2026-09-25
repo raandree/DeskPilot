@@ -65,8 +65,9 @@ source: repository implementation, regression evidence, and decision records
 
 - Rebase paths to the Project and reject escapes/links. Skill inspection checks
   containment before I/O, with exact comparisons off Windows; metadata is inert.
-- Agent Memory carries provenance and scope. Learn only from the frozen source
-  Message and same-scope earlier Messages, never mutable window/Conversation state.
+- Extraction serializes untrusted Memory/Message data as JSON; quoting alone is
+  not containment. Keep provenance and scope Host-owned; learn from frozen source
+  Messages and same-scope history, never mutable window/Conversation state.
 - Refuse over-cap mutations; report lossy imports. Preserve exact old bytes with
   create-new backup semantics before replacement; unknown verification is not true.
 - Compact only replay context, not visible Messages. Coverage heuristics are not
@@ -94,5 +95,4 @@ source: repository implementation, regression evidence, and decision records
   instrumented TEMP logs. Use `--git-dir` for bare Git fixtures, not weaker policy.
 - Bind CI evidence to the pushed SHA and artifact; inspect the whole OS matrix
   and deployment condition. Compile related Add-Type sources as one guarded set.
-- Earlier detail is retained in [patterns archive](archive/system-patterns-2026-09-05.md)
-  and the accepted Decisions; logs never override current source.
+- Earlier detail: [patterns archive](archive/system-patterns-2026-09-05.md) and accepted Decisions. Logs never override current source.
