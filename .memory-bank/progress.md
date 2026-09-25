@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-24
+last-verified: 2026-09-25
 source: full Sampler gates, scoped regressions, and real browser acceptance
 ---
 
@@ -29,6 +29,7 @@ parallel topology remains proposed; no parallel scheduling is enabled.
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-25 | Begin user-requested independent review of DeskPilot `a7a729e` against base `3d74541`, with ShellPilot modernization pinned to `08a4a22`. Rebuild the Engine in an isolated snapshot; 174 existing no-provider tests pass with five dispatch skips. Separate native negative/positive controls prove the new Engine's pre-call control and disabled-Terminal enforcement, while DeskPilot recognition still returns false for both interfaces. Independent decision pending; no product code, default installation, live Model, push or Merge changed. |
 | 2026-09-24 | Push the reliability topic Branch and dispatch exact-SHA CI. Run `36058468404` passed Package Module and Windows; macOS/Ubuntu exposed fixture portability defects. Normalize expected physical temporary paths, create platform-native directory links, unlink before deleting targets, and use an unambiguous approval-content sentinel. All 270 focused local tests pass with one filesystem-case skip; no production behavior or safety assertion was relaxed. Redispatch is required before completion. |
 | 2026-09-24 | Implement the agent reliability package on `ai/agent-reliability`: repeated owned evaluation trials, attributable Project-scoped Memory, bounded Skill diagnostics, conditional broader Tool approvals and content-free Turn evidence. Preserve Engine ownership, default Terminal-only approval and disabled child/parallel gates. Fix browser translator/editor races and hardened bare-Git fixtures test-first. Final local gate: 2,854 passed, zero failed, 14 skips, 16 tasks, zero errors; seven expected preservation warnings. Real desktop/mobile fixture passed with zero page errors and no Model calls. User authorized topic-Branch push and exact-SHA CI monitoring; no main Merge or publication. |
 | 2026-09-08 | Confirm missing Docker Desktop on the user's separate test machine and report it as an unavailable prerequisite with Windows, WSL 2, Linux containers, and retry instructions; omit irrelevant disk/download advice. Both new tests fail before the fix and pass afterward; all five preparation tests pass. Full Windows Sampler gate: 2,502 passed, zero failures, eight skips, 16 tasks without build errors or warnings. No new static diagnostics; documentation renders. Local Branch `ai/terminal-docker-prerequisite`; no Docker installation, Permission change, push, or publication. |

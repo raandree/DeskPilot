@@ -2,18 +2,27 @@
 schema-version: 1
 status: accepted
 owner: software-engineer
-last-verified: 2026-09-24
-source: red-green regressions, full Sampler gate, and real browser acceptance
+last-verified: 2026-09-25
+source: pinned Engine build, no-provider integration proofs, and review request
 ---
 
 # Active context
 
 ## Current focus
 
-Implement the near-term agent-engineering recommendations, push the topic Branch,
-and keep checking the exact pushed commit until CI is green. The user explicitly
-authorized push and CI monitoring, not a Merge to main or package publication.
-Work is on `ai/agent-reliability`, based on `3d74541`.
+The user requested `review: on` for `ai/agent-reliability` at `a7a729e` and
+offered ShellPilot `ai/agent-modernization`, pinned to `08a4a22`. An independent
+security/quality review is in progress against immutable source snapshots.
+No new push, Merge, release or default Engine replacement is authorized.
+
+The pinned Engine rebuilt successfully (seven tasks, no errors or warnings).
+Existing no-provider selectors passed 174 tests on Pester 6.2.0 with five
+Terminal-dispatch skips. Separate native controls proved deny-before-write,
+allow-before-write and disabled-Terminal dispatch refusal. DeskPilot's current
+readiness probes nevertheless both return false: the new Engine exposes a
+Hashtable `ToolCallControl`, not ScriptBlock `ToolCallApprover`, and its refactor
+no longer matches the Terminal source-marker probe. This is a compatibility
+observation, not proof of every integration boundary. No Model was called.
 
 ## Implemented
 
@@ -77,5 +86,6 @@ left untouched. See [compatibility](../docs/engine-compatibility.md).
 Keep a private copy of version-2 Memory before a downgrade. Do not promote
 confidential Project notes globally as a rollback workaround. Source-bound child
 proof must be renewed after these changes; child execution remains disabled and
-parallel topology unapproved. Independent review was not requested; recommend
-`review: on` before Merge because persistence and approval contracts changed.
+parallel topology unapproved. Independent review is now requested and underway;
+do not treat the previous green CI as its approval. Read the report before any
+implementation decision. Review findings remain pending at this checkpoint.

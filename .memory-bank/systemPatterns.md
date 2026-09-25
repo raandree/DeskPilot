@@ -12,7 +12,8 @@ source: repository implementation, regression evidence, and decision records
 
 - ShellPilot owns provider transport, authentication, Models and Usage;
   DeskPilot owns the Host Server, policy and presentation. Probe capabilities,
-  not version strings, and distinguish declarations from live enforcement proof.
+  not version strings or refactor-sensitive source markers. Test real contract
+  shapes and distinguish interface declarations from live enforcement proof.
 - Each Turn uses a fresh pipeline in one Engine Runspace. Tool state is scoped
   there; process environment and working directory are not isolation boundaries.
 - Keep visible Messages separate from replay history. Information records drive
