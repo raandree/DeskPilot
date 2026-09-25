@@ -88,9 +88,9 @@ source: repository implementation, regression evidence, and decision records
 - Use test-first and real HTTP/browser checks. Keep fixtures, live Model proof
   and released dependencies distinct. Missing evidence must remain unavailable.
 - Repeat isolated evaluation cases; distinguish capability from all-trials
-  reliability and retain safety failures. Own temporary state before deleting it,
-  reject link escapes, and surface cleanup failures. Treat case ids and paths as
-  data: validate their syntax and never interpolate them into executable scripts.
+  reliability and retain safety failures. Reject links; validate ids and pass
+  paths as data, never generated source. Failed child stop/capture retains owned
+  state and blocks more live trials; only verified cleanup permits deletion.
 - Resolve Pester from latest and validate Pester 6. Detach Sampler/Pester with
   instrumented TEMP logs. Use `--git-dir` for bare Git fixtures, not weaker policy.
 - Bind CI evidence to the pushed SHA and artifact; inspect the whole OS matrix

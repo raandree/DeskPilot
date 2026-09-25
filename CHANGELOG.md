@@ -175,6 +175,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security:** prevent evaluation launcher injection by validating case identifiers and passing paths as data, not executable source; retain owned files and block further live trials when child cleanup fails. See the [evaluation guide](tests/live/eval/README.md).
+- Reveal pending approval cards immediately so File, MCP and Terminal requests can be answered instead of leaving the Turn waiting invisibly ([`17f6333`](https://github.com/raandree/DeskPilot/commit/17f6333c2b67fbe9bdcc8e6a2c6d6b964dda049c)).
+
 - Support the modern ShellPilot `ToolCallControl` contract for once-only File,
   MCP and User Tool approvals, binding effective arguments and original MCP
   identities while retaining legacy compatibility and closed failure posture.

@@ -21,6 +21,10 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 
 ## Completed local fixes
 
+- `34d1e40`: DP-2026-001 validates case identifiers before allocating paths and
+  passes launch values as JSON data through a fixed `-File` launcher. Capture or
+  process-tree cleanup failure retains owned state, blocks further live trials
+  and fails the run. All 217 focused eval regressions pass.
 - `864afae`: DP-2026-002 Memory extraction scope, current notes and bounded
   Conversation text are JSON data, not interpolated fence contents. Exact text
   is preserved. Five new tests failed before the fix; 95 Memory tests passed.
@@ -37,12 +41,15 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 - CI now builds the immutable compatibility Engine and supplies its manifest to
   every OS test job. Its missing DocGenerator build dependency was reproduced,
   then resolved through the Engine's declared dependencies in the build cache.
+- `17f6333`: real-browser acceptance found approval cards were appended to a
+  hidden container. Reveal that container on a valid request, with permanent
+  renderer regressions and an uninstrumented browser rerun.
 
-## Validation so far
+## Final local validation
 
-- Full parent `build.ps1 -Tasks build,test`: 2,901 passed, zero failures,
-  nine existing skips, no unrun tests; 16 tasks, zero errors, seven expected
-  negative-path Memory preservation warnings.
+- Full combined `build.ps1 -Tasks build,test` at `17f6333`: 2,958 passed, zero
+  failures, nine skips, no unrun tests; 16 tasks, zero errors, seven expected
+  negative-path Memory preservation warnings. All 59 native Node UI tests pass.
 - All 95 Terminal/Turn-grant cases ran with the real pinned Engine, including
   the five tests previously skipped by source-marker selection.
 - Six real-Engine integration cases prove File/MCP approve and deny, native
@@ -51,22 +58,20 @@ The fix baseline is `11490f7`; the offered Engine is pinned to
 - Modern mapping and legacy compatibility tests pass, including correlated
   identity validation before read-only admission. Native analyzer is clean on
   the new control/probe helpers; one existing pure Memory-builder warning remains.
-- Existing Node UI tests, workflow YAML/embedded PowerShell parsing and directly
-  related Markdown rendering passed. No browser verification is claimed yet.
+- Actual built Host Server and pinned Engine pass browser approval journeys at
+  1440px and 390px: no pending write, denial prevents the write, approval writes
+  exact fixture content, cards fit, and zero page errors. Provider responses are
+  scripted; credential and network paths throw. This is not live Model proof.
+- Workflow YAML/embedded PowerShell parsing and directly related Markdown
+  rendering passed. Native test results and browser screenshots are retained.
 
 ## Pending work
 
-DP-2026-001 is implemented in an isolated eval worktree at `6b5ac19`, with
-191 passing tests: strict case ids and a fixed native-argument/JSON-data
-launcher. Parent self-review requested a narrow follow-up for newly added
-capture/cleanup error propagation, process-tree failure reporting, PS 7.0
-executable-path compatibility and bounded diagnostic log reads. Await the same
-implementer, then review and integrate its final commit.
-
-After integration: full final validation, independent re-review of all finding
-closures and the fix diff, remediation of any Blocker/Major, durable records,
-then push and exact-SHA CI. Do not push before the requested review or report
-completion while a required CI job is pending/failing.
+The original independent reviewer is checking the immutable fix-only diff
+`11490f7..17f6333` and all four finding closures. Source is frozen in its own
+snapshot. Resolve findings before pushing, then verify Package Module and all
+three OS test jobs against the exact pushed SHA. No current-fix-turn push has
+occurred. The prior green CI does not cover these fixes.
 
 ## Retained boundaries
 
