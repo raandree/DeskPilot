@@ -121,6 +121,18 @@ said the change was saved. Only the loader may project a bounded subset of a fil
 that is already too big, and then it says so on `loadError` — which is what makes
 the next save keep the original bytes.
 
+## Extraction treats content as data
+
+Memory extraction serializes its scope, current notes and bounded Conversation
+slice in one JSON data object. Quotes, newlines and section-like content remain
+data values; they cannot terminate an ad-hoc delimiter fence or become a new
+literal prompt section. The text round-trips without stripping the user's quotes.
+
+This is framing hardening, not a claim to solve prompt injection. The Model may
+still misinterpret untrusted content. Host-owned provenance, unverified learned
+notes, Project scope, limits, Permissions and review/forget controls remain the
+actual protections; serialized data grants no authority.
+
 ## When the store cannot be read
 
 A corrupt file, a hand-edit gone wrong, notes this version refuses, a version-1
