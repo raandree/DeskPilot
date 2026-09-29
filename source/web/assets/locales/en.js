@@ -60,6 +60,9 @@ export const en = {
     'empty.heading': 'How can I help?',
     'empty.body': 'Ask a question, or give the agent a task. It can read and write files, run commands, and browse — with the permissions you allow.',
 
+    // Thread
+    'thread.jump': 'Jump to the newest output',
+
     // Per-call approval. The agent is paused inside the tool while this is on
     // screen, so the wording is present tense: nothing has run yet.
     'approval.title': 'The agent wants to run a command',

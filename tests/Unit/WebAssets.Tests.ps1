@@ -322,17 +322,20 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $reasoning.Count | Should -BeGreaterThan 0
         [regex]::Matches($js, 'renderThinking\(wrap, think\)').Count | Should -Be $reasoning.Count
         $js | Should -Not -Match ([regex]::Escape(".thinking .disclosure-body').textContent = think"))
-        # A live box is clipped, so this pin is the only thing keeping the newest
-        # line of the trace in view.
-        $js | Should -Match ([regex]::Escape('body.scrollTop = body.scrollHeight'))
+        # In Chromium a script scroll inside the thread cancels the reader's wheel
+        # scroll of the thread, so the live box is never pinned from script; the
+        # stylesheet keeps its newest line in view instead.
+        $js | Should -Not -Match '(?s)function renderThinking\(wrap, text\) \{(?:(?!\r?\nfunction ).)*scrollTop'
+        $js | Should -Not -Match ([regex]::Escape('body.scrollTop = body.scrollHeight'))
     }
 
     It 'never lets a live run of thinking trap the wheel' {
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # Live boxes follow their newest line without trapping the wheel; the
-        # thread must remain scrollable so earlier output is still reachable.
-        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*overflow: hidden'
+        # Live boxes show their newest line without being a scroller, so neither
+        # the wheel nor a script scroll can fight the thread's own scrolling.
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*overflow: clip'
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*justify-content: flex-end'
         $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*max-height:'
         # A sealed box the reader chose to open may scroll: nothing is moving, and a
         # laid-out trace runs to thousands of lines.
@@ -387,9 +390,16 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match '(?s)function sealThinking\(wrap\).{0,800}?if \(box\.dataset\.touched !== ''1''\)'
         $css | Should -Match '(?s)\.thinking>summary::before \{'
         $css | Should -Match '(?s)\.thinking\[open\]>summary::before \{[^}]*rotate'
-        # A collapsed box has to say what it holds, or it is an unlabelled line.
-        $js | Should -Match 'function thoughtLabel\(startedAt\)'
-        $js | Should -Match ([regex]::Escape('`Thought for ${secs}s`'))
+        # A collapsed box has to say what it holds, or it is an unlabelled line: what
+        # the run was about, with its duration beside the title, never instead of it.
+        $js | Should -Match '(?s)function sealThinking\(wrap\).{0,800}?labelThinking\(box\);'
+        $js | Should -Match 'function thinkingTitle\(section\)'
+        $js | Should -Match '(?s)function labelThinking\(box\).{0,600}?\.thinking-time'
+        $js | Should -Not -Match 'Thought for'
+        $css | Should -Match '(?s)\.thinking-label \{[^}]*text-overflow: ellipsis'
+        # The title is plain text taken from model output, never markup.
+        $js | Should -Match '(?s)function labelThinking\(box\).{0,300}?\.thinking-label''\)\.textContent = '
+        $js | Should -Not -Match '(?s)function openThinkingBox\(flow\) \{(?:(?!\r?\nfunction ).)*innerHTML'
         # A thread rebuilt from storage has the whole trace as one string and no
         # flow to order it by; overwriting the live one with it would destroy the
         # account of the Turn that just ran.
@@ -406,12 +416,31 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match '(?s)function renderThinking\(wrap, text\)(?:(?!\r?\nfunction ).)*hint\.classList\.add\(''hidden''\)'
         $js | Should -Match 'function splitThinkingSections\(text\)'
 
-        # Scrolling up to read earlier output must still pause automatic following.
-        $js | Should -Match '(?s)function followThread\(\) \{\s*if \(threadFollow\) scrollThread\(\);\s*\}'
-        $js | Should -Match ([regex]::Escape('if (top < threadLastTop - 1) threadFollow = atBottom;'))
+        # Scrolling up to read earlier output must still pause automatic following:
+        # an upward wheel at once, any other upward move once it leaves the bottom.
+        $js | Should -Match '(?s)function followThread\(\) \{\s*if \(threadFollow\) scrollThread\(\);'
+        $js | Should -Match ([regex]::Escape('if (top < threadLastTop - 1) threadFollow = threadFollow && atBottom;'))
+        $js | Should -Match ([regex]::Escape('if (e.deltaY < 0 && t.scrollTop > 0) { threadFollow = false;'))
         $js | Should -Match '(?s)function wireGlobal\(\).{0,4000}?wireThreadFollow\(\);'
         [regex]::Matches($js, 'renderMarkdown\(raw\);\s*followThread\(\);').Count | Should -Be 2
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
+    }
+
+    It 'offers a way back to the newest output while the reader is away from it' {
+        $html = Get-Content -LiteralPath (Join-Path $script:webRoot 'index.html') -Raw
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        $html | Should -Match '<button id="thread-jump" class="thread-jump hidden" type="button"[^>]*data-i18n-attr="title:thread\.jump,aria-label:thread\.jump"'
+        $js | Should -Match '(?s)function updateThreadJump\(\).{0,400}?jump\.classList\.toggle\(''hidden'', t\.scrollHeight - t\.scrollTop - t\.clientHeight <= THREAD_STICK_PX\);'
+        $js | Should -Match '(?s)function wireThreadFollow\(\).{0,1500}?jump\.addEventListener\(''click'', \(\) => \{\s*scrollThread\(\);'
+        # Every follow either scrolls or re-checks the control, and a thread
+        # replaced by the empty state cannot keep a stale one.
+        $js | Should -Match '(?s)function followThread\(\) \{\s*if \(threadFollow\) scrollThread\(\);\s*else updateThreadJump\(\);\s*\}'
+        $js | Should -Match '(?s)function renderThread\(\).{0,400}?buildEmptyState\(\)\);\s*updateThreadJump\(\);\s*return;'
+        $css | Should -Match '(?s)\.composer-wrap \{[^}]*position: relative'
+        $css | Should -Match '(?s)\.thread-jump \{[^}]*position: absolute[^}]*bottom: calc\(100% \+ 8px\)'
+        $css | Should -Match '(?s)\.thread-jump:focus-visible \{'
     }
 
     It 'follows the answer all the way to the end of a Turn' {

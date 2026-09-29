@@ -57,6 +57,9 @@ export const de = {
     'empty.heading': 'Womit kann ich helfen?',
     'empty.body': 'Stellen Sie eine Frage oder geben Sie dem Agent eine Aufgabe. Er kann Dateien lesen und schreiben, Befehle ausführen und im Web nachschlagen — im Rahmen der Berechtigungen, die Sie erteilen.',
 
+    // Verlauf
+    'thread.jump': 'Zur neuesten Ausgabe springen',
+
     // Freigabe pro Aufruf. Der Agent wartet im Werkzeug, solange diese Karte zu
     // sehen ist - es wurde also noch nichts ausgeführt.
     'approval.title': 'Der Agent möchte einen Befehl ausführen',

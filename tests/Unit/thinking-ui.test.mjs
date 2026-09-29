@@ -34,10 +34,7 @@ class Element {
     set innerHTML(value) {
         this.html = value;
         this.children = [];
-        if (value.includes('<summary>')) {
-            const summary = this.appendChild(new Element('', 'summary'));
-            if (value.includes('thinking-label')) summary.appendChild(new Element('thinking-label', 'span'));
-        }
+        if (value.includes('<summary>')) this.appendChild(new Element('', 'summary'));
         if (value.includes('class="disclosure-body"')) this.appendChild(new Element('disclosure-body'));
     }
     get innerHTML() { return this.html || ''; }
@@ -65,7 +62,7 @@ class Element {
 }
 
 function fixture() {
-    const nodes = new Map(['thread', 'activity-hint', 'activity-status', 'btn-send', 'btn-dispatch'].map(id => [id, new Element()]));
+    const nodes = new Map(['thread', 'thread-jump', 'prompt', 'activity-hint', 'activity-status', 'btn-send', 'btn-dispatch'].map(id => [id, new Element()]));
     const context = vm.createContext({
         el: (className, tag) => new Element(className, tag),
         $: id => nodes.get(id),
@@ -256,4 +253,119 @@ test('new thinking follows the bottom but does not pull a reader away from earli
     vm.runInContext('threadFollow = true;', context);
     context.renderThinking(wrap, banner(1) + 'First.\n' + banner(2) + 'Second.');
     assert.equal(thread.scrollTop, thread.scrollHeight);
+});
+
+test('a live thinking section keeps its newest line in view without scrolling from script', () => {
+    // In Chromium a script scroll inside the thread cancels the reader's wheel
+    // scroll of the thread, so pinning the live section on every token made the
+    // thread impossible to scroll back down while reasoning streamed.
+    const { context, wrap, boxes } = fixture();
+    const trace = banner(1) + '\nthinking:\n' + 'A long line of reasoning.\n'.repeat(80);
+    for (let end = 40; end <= trace.length; end += 40) context.renderThinking(wrap, trace.slice(0, end));
+    context.renderThinking(wrap, trace);
+    assert.equal(body(boxes()[0]), trace);
+    assert.equal(boxes()[0].querySelector('.disclosure-body').scrollTop, 0);
+});
+
+const tool = (n, name, arg) => `18:13:0${n} \u2192 ${name}\n  path: ${arg}\n`;
+const labels = boxes => boxes.map(box => box.querySelector('.thinking-label').textContent);
+
+test('a finished thinking section is titled by what it was about, with its duration kept aside', () => {
+    const { context, wrap, boxes } = fixture();
+    // The Engine drops the newline after streamed reasoning, so a Tool call can
+    // start on the same line as the last sentence.
+    const first = banner(1) + '\nthinking:\nThe user wants me to compare the spec with the tests. Let me read them.' +
+        tool(1, 'read_file', 'specs/ui.md') + '\n';
+    const second = banner(2) + '\nthinking:\n**Comparing feedback themes**\n\nI am lining up each theme.\n\n';
+    const third = banner(3) + tool(3, 'read_file', 'C:\\repo\\tests\\ui.test.mjs');
+    context.renderThinking(wrap, first);
+    context.renderThinking(wrap, first + second);
+    context.renderThinking(wrap, first + second + third);
+    assert.equal(boxes()[2].querySelector('.thinking-label').textContent, 'Thinking…');
+    context.sealThinking(wrap);
+    assert.deepEqual(labels(boxes()), [
+        'The user wants me to compare the spec with the tests.',
+        'Comparing feedback themes',
+        '\u2192 read_file \u00b7 ui.test.mjs',
+    ]);
+    for (const box of boxes()) {
+        assert.match(box.querySelector('.thinking-time').textContent, /^\d+s$/);
+        assert.equal(box.querySelector('summary').title, box.querySelector('.thinking-label').textContent);
+    }
+    assert.ok(labels(boxes()).every(label => !/Thought for/.test(label)));
+});
+
+test('thinking titles fall back to the opening words, then to the Tools, and stay plain text', () => {
+    const { context } = fixture();
+    const title = text => context.thinkingTitle(text);
+    assert.equal(title(banner(1) + '\nthinking:\nGood. Now I have the spec and the release notes. Next the tests.'),
+        'Good. Now I have the spec and the release notes.');
+    assert.equal(title('Unstructured older reasoning without any boundaries'), 'Unstructured older reasoning without any boundaries');
+    assert.equal(title(banner(1) + '\nthinking:\n## Planning the `review`\nDetails follow.'), 'Planning the review');
+    const long = title(banner(1) + '\nthinking:\n' + 'word '.repeat(120));
+    assert.ok(long.length <= 161 && long.endsWith('\u2026'), long);
+    assert.equal(title(banner(1) + tool(1, 'read_file', 'a.md') + tool(1, 'read_file', 'b.md') + tool(1, 'list_dir', 'notes')),
+        '\u2192 read_file \u00d72, list_dir');
+    assert.equal(title(banner(1) + '18:13:01 \u2192 write_file\n  path: notes/a.md\n  content:\n    The user wants a note.\n    ' + banner(2) +
+        '    18:13:02 \u2192 not_a_tool\n    \u2192 nor_this\n'), '\u2192 write_file \u00b7 a.md');
+    assert.equal(title(banner(1)), '');
+    assert.equal(title('\nthinking:\n<img src=x onerror=alert(1)> is what the page contains.'),
+        '<img src=x onerror=alert(1)> is what the page contains.');
+});
+
+test('stored thinking sections are titled by content and carry no invented duration', () => {
+    const { context, wrap, boxes } = fixture();
+    const text = banner(1) + '\nthinking:\nChecking the June release notes for repeats.\n' + banner(2) + tool(2, 'read_file', 'notes/june.md');
+    context.finalizeAssistant(wrap, { reasoning: text, stopped: true });
+    assert.deepEqual(labels(boxes()), ['Checking the June release notes for repeats.', '\u2192 read_file \u00b7 june.md']);
+    assert.ok(boxes().every(box => box.querySelector('.thinking-time').textContent === ''));
+    const legacy = context.buildAssistantEl({ id: 'legacy' });
+    context.finalizeAssistant(legacy, { text: 'Answer.', reasoning: 'Unstructured older reasoning.' });
+    assert.equal(legacy.querySelector('.thinking-label').textContent, 'Unstructured older reasoning.');
+});
+
+test('an upward wheel stops following at once and the jump control returns to the newest output', () => {
+    const { context, wrap, nodes } = fixture();
+    const thread = nodes.get('thread');
+    const jump = nodes.get('thread-jump');
+    context.wireThreadFollow();
+    thread.scrollTop = 700;
+    thread.listeners.scroll();
+    // One wheel notch is inside the stick distance, and the next token must not
+    // drag the reader straight back down.
+    thread.listeners.wheel({ deltaY: -40 });
+    thread.scrollTop = 660;
+    thread.listeners.scroll();
+    context.renderThinking(wrap, banner(1) + 'First.');
+    assert.equal(thread.scrollTop, 660);
+    thread.scrollTop = 200;
+    thread.listeners.scroll();
+    context.renderThinking(wrap, banner(1) + 'First. More.');
+    assert.equal(thread.scrollTop, 200);
+    assert.equal(jump.classList.contains('hidden'), false);
+    jump.listeners.click();
+    assert.equal(thread.scrollTop, thread.scrollHeight);
+    assert.equal(jump.classList.contains('hidden'), true);
+    context.renderThinking(wrap, banner(1) + 'First. More. Still following.');
+    assert.equal(thread.scrollTop, thread.scrollHeight);
+    // Wheeling down to the bottom resumes following as well.
+    thread.listeners.wheel({ deltaY: -40 });
+    thread.scrollTop = 300;
+    thread.listeners.scroll();
+    thread.scrollTop = 700;
+    thread.listeners.scroll();
+    thread.scrollHeight = 1200;
+    context.renderThinking(wrap, banner(1) + 'First. More. Still following. Again.');
+    assert.equal(thread.scrollTop, 1200);
+});
+
+test('an upward wheel with nothing above it does not stop following', () => {
+    const { context, wrap, nodes } = fixture();
+    const thread = nodes.get('thread');
+    context.wireThreadFollow();
+    thread.scrollHeight = 300;
+    thread.listeners.wheel({ deltaY: -40 });
+    thread.scrollHeight = 1000;
+    context.renderThinking(wrap, banner(1) + 'The Turn has only just started.');
+    assert.equal(thread.scrollTop, 1000);
 });

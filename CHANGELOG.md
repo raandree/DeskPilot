@@ -179,6 +179,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Let the reader scroll back down to the running thinking section while
+  reasoning streams. The live section no longer cancels the wheel scroll after
+  a few pixels; an upward wheel pauses following at once, and a ↓ control
+  returns to the newest output. See
+  [Message layout](specs/040-ui-design.md#4-message-thread).
 - **Security:** prevent evaluation launcher injection by validating case identifiers and passing paths as data, not executable source; retain owned files and block further live trials when child cleanup fails. See the [evaluation guide](tests/live/eval/README.md).
 - Reveal pending approval cards immediately so File, MCP and Terminal requests can be answered instead of leaving the Turn waiting invisibly ([`17f6333`](https://github.com/raandree/DeskPilot/commit/17f6333c2b67fbe9bdcc8e6a2c6d6b964dda049c)).
 
@@ -478,6 +483,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version-2 Memory file before downgrading; do not promote confidential Project
   notes into global recall as a workaround.
 - Keep each thinking run in its own section below collapsed Activity and edited-file panels, and remove the duplicate compressed thinking line above the composer. See [Message layout](specs/040-ui-design.md#4-message-thread).
+- Title each completed thinking section by what it was about — the model's own
+  heading, else its opening sentence, else the Tools it called — instead of
+  `Thought for Ns`. The duration stays beside the title; no extra Model call is
+  made. See [Message layout](specs/040-ui-design.md#4-message-thread).
 - Request structured compaction sections and report reference/section coverage
   without claiming that these heuristics prove a Model's summary is correct.
 

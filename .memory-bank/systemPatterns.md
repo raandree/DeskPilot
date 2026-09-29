@@ -44,7 +44,7 @@ source: repository implementation, regression evidence, and decision records
   directory and frozen policy. Terminal Turn grants are explicit; File/MCP,
   browser and child grants remain once-only. Stop/end/scope changes revoke them.
 - Broader coverage requires the Engine contract in specification 120. Metadata,
-  MCP hints, Skills, recalled Memory and observed Activity grant no authority.
+  MCP hints, Skills, recalled Memory, thinking and observed Activity grant no authority.
 - Terminal isolation does not isolate File/MCP or process-global state. Narrow
   mounts, identity and egress below the Model; untrusted outputs remain data.
 - Authorize network contact first: require CONNECT/encrypted HTTPS, verify TLS
@@ -79,9 +79,9 @@ source: repository implementation, regression evidence, and decision records
   pending replies may bypass mentions. All entries share Turn/Permission gates.
 - Theme and Mode remain independent local display preferences. Bundle licensed
   fonts and check computed colors, actual fonts and control bounds.
-- Split thinking at Engine iteration/output boundaries, never per token. Keep
-  collapsed work summaries above the flow; preserve manual expansion, scrolling,
-  and live sections at completion. Thinking stays inert and grants no authority.
+- Split thinking at Engine iterations, never per token; title it from its own text
+  without a Model call, below collapsed work summaries. Never script-scroll in the
+  streaming thread (Chromium cancels the wheel); bottom-align live text in CSS.
 
 ## Validation and release
 

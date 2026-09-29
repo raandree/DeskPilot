@@ -1442,11 +1442,32 @@ button.tree-row {
     overflow-wrap: anywhere;
 }
 
-/* A live run must not trap the wheel. Clip it and follow its newest line;
-   shorter viewports still need room for the composer. */
+/* A folded run is labelled by what it was about; the duration sits beside it. */
+.thinking-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.thinking-time {
+    flex: none;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A live run must not trap the wheel, and it must never be scrolled from script:
+   in Chromium a script scroll inside the thread cancels the reader's wheel scroll
+   of the thread. So the run is clipped, not a scroller, and bottom-aligned so its
+   newest line stays in view. Shorter viewports still need room for the composer. */
 .thinking:not([data-sealed="1"]) .disclosure-body {
     max-height: min(40vh, 220px);
     overflow: hidden;
+    overflow: clip;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
 }
 
 /* Once the run has ended, opening it is the reader's own choice and nothing is
@@ -2172,8 +2193,42 @@ button.tree-row {
 
 /* ===== Composer ===== */
 .composer-wrap {
+    position: relative;
     padding: 0 24px 14px;
     background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+
+/* The way back to the newest output while the reader is scrolled away from it.
+   It floats over the bottom of the thread, just above the composer. */
+.thread-jump {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--surface);
+    color: var(--muted);
+    box-shadow: var(--shadow);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.thread-jump:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.thread-jump:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 .composer {

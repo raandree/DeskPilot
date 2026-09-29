@@ -1337,6 +1337,7 @@ function renderThread() {
     thread.innerHTML = '';
     if (!state.current || !state.current.messages || state.current.messages.length === 0) {
         thread.appendChild(buildEmptyState());
+        updateThreadJump();
         return;
     }
     for (const m of state.current.messages) {
@@ -2596,15 +2597,12 @@ function hydrateCopies(container) {
 
 const asArray = (v) => (Array.isArray(v) ? v : v == null ? [] : [v]);
 
-// Follow the newest output only while the reader has not scrolled away from the
-// bottom - scrolling up mid-Turn is how the Thinking box gets read, and pinning
-// the thread on every token drags the reader back down mid-line. Distance alone
-// cannot decide this: `.thread` scrolls smoothly, so during an in-flight
-// programmatic scroll `scrollTop` lags behind the newest token and a distance
-// test would read that lag as "the reader scrolled away" and kill auto-follow
-// for the rest of the Turn. Every programmatic scroll here moves *down*, so an
-// upward move is the reader's: that is what stops the following, and arriving
-// back at the bottom is what resumes it.
+// Follow the newest output only while the reader stays at the bottom. An upward
+// wheel is the reader's by definition and stops the following at once: a
+// position test alone lets the next streamed token pull a one-notch scroll
+// straight back down, because that notch is still inside the stick distance.
+// The scroll position remains the fallback for the scrollbar, keyboard and touch,
+// and arriving back at the bottom, or the jump control, resumes following.
 const THREAD_STICK_PX = 120;
 let threadFollow = true;
 let threadLastTop = 0;
@@ -2612,13 +2610,31 @@ let threadLastTop = 0;
 function wireThreadFollow() {
     const t = $('thread');
     if (!t) return;
+    t.addEventListener('wheel', (e) => {
+        if (e.deltaY < 0 && t.scrollTop > 0) { threadFollow = false; updateThreadJump(); }
+    }, { passive: true });
     t.addEventListener('scroll', () => {
         const top = t.scrollTop;
         const atBottom = t.scrollHeight - top - t.clientHeight <= THREAD_STICK_PX;
-        if (top < threadLastTop - 1) threadFollow = atBottom;
+        if (top < threadLastTop - 1) threadFollow = threadFollow && atBottom;
         else if (atBottom) threadFollow = true;
         threadLastTop = top;
+        updateThreadJump();
     }, { passive: true });
+    const jump = $('thread-jump');
+    if (jump) jump.addEventListener('click', () => {
+        scrollThread();
+        // The control hides once it has done its job; keep keyboard focus usable.
+        if (document.activeElement === jump) $('prompt').focus();
+    });
+}
+
+// The way back to the newest output, shown only while the reader is away from it.
+function updateThreadJump() {
+    const t = $('thread');
+    const jump = $('thread-jump');
+    if (!t || !jump) return;
+    jump.classList.toggle('hidden', t.scrollHeight - t.scrollTop - t.clientHeight <= THREAD_STICK_PX);
 }
 
 function scrollThread() {
@@ -2629,10 +2645,12 @@ function scrollThread() {
     // below the fold with the scrollbar apparently already at the end.
     t.scrollTo({ top: t.scrollHeight, behavior: 'instant' });
     threadFollow = true;
+    updateThreadJump();
 }
 
 function followThread() {
     if (threadFollow) scrollThread();
+    else updateThreadJump();
 }
 
 // Reasoning is shown the way GitHub Copilot Chat shows it: one box per run of
@@ -2640,14 +2658,17 @@ function followThread() {
 // folded away the moment it ends.
 function openThinkingBox(flow) {
     const box = el('disclosure thinking', 'details');
-    box.innerHTML = '<summary><span class="thinking-label">Thinking…</span></summary>' +
-        '<div class="disclosure-body"></div>';
+    const summary = el('', 'summary');
+    const label = el('thinking-label', 'span');
+    label.textContent = 'Thinking…';
+    summary.append(label, el('thinking-time', 'span'));
+    box.append(summary, el('disclosure-body'));
     // The box exists only because the reader asked to see the thinking, so it
     // streams open; sealing is what folds it away.
     box.open = true;
     // A box the reader opened themselves must not be yanked shut under them when
     // its run ends. A summary click is the gesture, for mouse and keyboard both.
-    box.querySelector('summary').addEventListener('click', () => { box.dataset.touched = '1'; });
+    summary.addEventListener('click', () => { box.dataset.touched = '1'; });
     flow.appendChild(box);
     return box;
 }
@@ -2670,8 +2691,11 @@ function splitThinkingSections(text) {
 }
 
 // Put a reasoning delta in the message's open Thinking box and follow it down.
-// A live box is clipped rather than scrollable, so this pin is the only thing
-// keeping the newest line in view.
+// The live box keeps its newest line in view through layout alone (see the
+// stylesheet). It must never be scrolled from script: in Chromium a script scroll
+// inside the thread cancels the reader's wheel scroll of the thread itself, so a
+// pin on every token left the reader unable to scroll back down to the newest
+// output while reasoning streamed.
 function renderThinking(wrap, text) {
     const flow = wrap && wrap.querySelector('.turn-flow');
     if (!flow || !text) return;
@@ -2686,9 +2710,7 @@ function renderThinking(wrap, text) {
             box.dataset.startedAt = String(Date.now());
         }
         box._thinkingOffset = offset;
-        const body = box.querySelector('.disclosure-body');
-        body.textContent = section;
-        body.scrollTop = body.scrollHeight;
+        box.querySelector('.disclosure-body').textContent = section;
         offset += section.length;
         if (offset < text.length) sealThinking(wrap);
     }
@@ -2720,18 +2742,82 @@ function sealThinking(wrap) {
     if (!flow) return;
     for (const box of flow.querySelectorAll('.thinking:not([data-sealed="1"])')) {
         box.dataset.sealed = '1';
-        const label = box.querySelector('.thinking-label');
-        if (label) label.textContent = thoughtLabel(box.dataset.startedAt);
+        labelThinking(box);
         if (box.dataset.touched !== '1') box.open = false;
     }
 }
 
-// A folded box is only useful if its one line says what it holds.
-function thoughtLabel(startedAt) {
-    const started = Number(startedAt);
-    if (!started) return 'Thinking';
-    const secs = Math.max(1, Math.round((Date.now() - started) / 1000));
-    return `Thought for ${secs}s`;
+// A folded box is only useful if its one line says what it holds: what the run
+// was about, with how long it took kept beside it rather than in its place.
+function labelThinking(box) {
+    const title = thinkingTitle(box.querySelector('.disclosure-body').textContent);
+    box.querySelector('.thinking-label').textContent = title || 'Thinking';
+    box.querySelector('summary').title = title;
+    const started = Number(box.dataset.startedAt);
+    box.querySelector('.thinking-time').textContent = started
+        ? `${Math.max(1, Math.round((Date.now() - started) / 1000))}s` : '';
+}
+
+const THINKING_TITLE_MIN = 25;
+const THINKING_TITLE_MAX = 160;
+
+// What a run of thinking was about, without another Model call: the model's own
+// heading when it wrote one, else its opening sentence (extended past a short
+// opener such as "Good."), else the Tools it called. Only the trace shapes that
+// Format-DpThinkingTrace writes are recognised, and the result is plain text.
+function thinkingTitle(section) {
+    const prose = [];
+    const tools = [];
+    for (const line of String(section || '').replace(/\r/g, '').split('\n')) {
+        if (/^(?:\d{2}:\d{2}:\d{2} )?\u2500\u2500 Iteration \S+ \([^)]*\) \u2500\u2500$/.test(line)) continue;
+        // The Engine drops the line break after streamed reasoning, so a Tool call
+        // can follow the last sentence on the same line; only its stamp says so.
+        // Indented lines belong to a Tool argument, however much they look alike.
+        const call = /^\s/.test(line) ? null
+            : line.match(/^(.*?)(\d{2}:\d{2}:\d{2} )?\u2192 ([^\s(]+)$/) || line.match(/^()()->\s*([^\s(]+)\(/);
+        if (call && (call[2] || !call[1])) {
+            if (!tools.length && call[1].trim()) prose.push(call[1]);
+            tools.push({ name: call[3], arg: '' });
+            continue;
+        }
+        const arg = tools.length && line.match(/^ {2}[^\s:]+: (.+)$/);
+        if (arg) {
+            const last = tools[tools.length - 1];
+            if (!last.arg) last.arg = arg[1];
+        }
+        if (!tools.length && line.trim() && !/^\s*thinking:\s*$/.test(line)) prose.push(line);
+    }
+    const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
+    const heading = prose.length && prose[0].match(/^\s*(?:#{1,6}\s+(.+?)\s*#*|\*\*(.+?)\*\*:?)\s*$/);
+    if (heading) return plain(heading[1] || heading[2]);
+    if (prose.length) {
+        const text = prose.join('\n');
+        let end = text.length;
+        for (const stop of text.matchAll(/[.!?\u2026](?=\s|$)|\n/g)) {
+            const at = stop[0] === '\n' ? stop.index : stop.index + 1;
+            if (at >= THINKING_TITLE_MIN) { end = at; break; }
+        }
+        const title = plain(text.slice(0, end));
+        if (title.length <= THINKING_TITLE_MAX) return title;
+        const cut = title.lastIndexOf(' ', THINKING_TITLE_MAX);
+        return title.slice(0, cut > THINKING_TITLE_MAX / 2 ? cut : THINKING_TITLE_MAX).trimEnd() + '\u2026';
+    }
+    if (!tools.length) return '';
+    const counts = new Map();
+    for (const call of tools) counts.set(call.name, (counts.get(call.name) || 0) + 1);
+    const names = [...counts].map(([name, n]) => (n > 1 ? `${name} \u00d7${n}` : name));
+    const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ', \u2026' : '');
+    const only = tools.length === 1 && tools[0].arg.trim();
+    return `\u2192 ${shown}${only ? ` \u00b7 ${thinkingToolArg(only)}` : ''}`;
+}
+
+// The one argument that identifies a single Tool call: a file's name, a URL's
+// host, or the start of a command.
+function thinkingToolArg(value) {
+    const url = value.match(/^[a-z][\w+.-]*:\/\/([^/?#\s]+)/i);
+    let short = url ? url[1] : value;
+    if (!url && /[\\/]/.test(value) && !/\s/.test(value)) short = value.split(/[\\/]/).filter(Boolean).pop() || value;
+    return short.length > 60 ? short.slice(0, 59) + '\u2026' : short;
 }
 
 // Stored traces retain iteration boundaries; prose-only records have no

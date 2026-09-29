@@ -2,6 +2,30 @@
 
 Recurring issues and how they were resolved.
 
+## Thread cannot be scrolled back down while thinking streams (2026-09-29)
+
+**Symptom:** During a long Turn with thinking on, the reader could scroll up but
+not back down; each wheel notch moved the thread about 3 px, so the running
+thinking section was unreachable until the Turn ended.
+
+**Root cause:** `renderThinking` pinned the live section with
+`body.scrollTop = body.scrollHeight` on every reasoning token. The live body was
+an `overflow: hidden` scroll container, so each token was a script scroll inside
+the thread, and Chromium/Edge then cancels the reader's in-flight wheel scroll
+of the thread itself. Short sections never overflowed, so the pin was a no-op and
+the bug only appeared once a section outgrew its 220 px box. Following at the
+bottom masked it. Reproduced in headless Edge against a loopback SSE fixture
+using the real SPA: the old assets stuck at 3 px; a CSS override making the live
+body `overflow: clip` alone restored normal wheel scrolling.
+
+**Fix + rule:** Never scroll an element inside the thread from script while
+output streams. The live body is now `overflow: clip` (with a `hidden`
+fallback) and a bottom-aligned column flexbox, so the newest line stays in view
+through layout. An upward wheel stops following at once, and a ↓ control
+returns to the newest output. Headless Edge applies wheel deltas without the
+desktop smooth-scroll animation, so one-notch follow behavior is proved by the
+Node test rather than the browser run.
+
 ## Phantom server-only Branches in the Git bar picker (2026-09-29)
 
 **Symptom:** The Git bar's branch picker listed many `origin/…` Branches marked

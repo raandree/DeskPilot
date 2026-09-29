@@ -142,9 +142,15 @@ accent fills so the bright dark-mode accent stays legible.
   Earlier runs close automatically unless the reader explicitly opened them;
   the latest run stays open at the bottom of the flow. Questions and approvals
   remain below the output, outside every collapsed work panel.
-  Live boxes are height-bounded, clipped rather than separately wheel-scrollable,
-  and pinned to the newest line. Reopened completed boxes may scroll. The thread
-  follows only while the reader has not scrolled up to read earlier output.
+  Live boxes are height-bounded and clipped rather than separate scrollers. Their
+  text is bottom-aligned so the newest line stays in view without a script
+  scroll, because in Chromium a script scroll inside the thread cancels the
+  reader's wheel scroll. Reopened completed boxes may scroll. A completed box is
+  titled by what it was about: the model's own heading, else its opening
+  sentence, else the Tools it called. Its duration sits beside the title, and
+  titling makes no extra Model call. The thread follows only while the reader
+  stays at the bottom. An upward wheel stops following at once; scrolling back
+  to the bottom, or the ↓ control above the composer, resumes it.
   Each complete trace line is laid out before streaming (`Format-DpThinkingTrace`):
   a Tool call becomes its name plus indented arguments, and an iteration banner
   becomes a divider. Reasoning prose is preserved as text, never interpreted as
@@ -566,7 +572,7 @@ same act as a reflex in the middle of a task.
 | State | Cue |
 | --- | --- |
 | Idle | composer focused, Send enabled. |
-| Streaming | Stop button and blinking caret. The newest Thinking section is open below collapsed work summaries; no duplicate trace line appears above the composer. A generic spinner and `Working…` appear only before thinking arrives or when it is off. The thread follows new output only while the reader remains at the bottom. |
+| Streaming | Stop button and blinking caret. The newest Thinking section is open below collapsed work summaries; no duplicate trace line appears above the composer. A generic spinner and `Working…` appear only before thinking arrives or when it is off. The thread follows new output only while the reader remains at the bottom; a ↓ control returns to the newest output while the reader is scrolled away. |
 | Stopping | **Stopping…** disabled immediately; caret and Activity spinner hidden; buffered stream updates ignored. |
 | Tool running | Collapsed `Working — N actions` summary; expand it to inspect the ordered Activity. |
 | Error | red inline card with the message + Retry. |
