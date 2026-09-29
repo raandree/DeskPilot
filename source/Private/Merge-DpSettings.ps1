@@ -146,6 +146,12 @@ function Merge-DpSettings {
             }
             'memoryLearning' { $merged.memoryLearning = [bool]$value }
             'perCallApproval' { $merged.perCallApproval = [bool]$value }
+            'approvalCoverage' {
+                if ($value -isnot [string] -or $value -cnotin @('terminal', 'mutating-tools')) {
+                    throw 'approvalCoverage must be terminal or mutating-tools.'
+                }
+                $merged.approvalCoverage = $value
+            }
             'terminalExecution' {
                 $merged.terminalExecution = ConvertTo-DpTerminalExecution -InputObject $value -Current $merged.terminalExecution
             }

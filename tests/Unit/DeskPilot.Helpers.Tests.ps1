@@ -4357,7 +4357,8 @@ Describe 'New-DpTurnParameter agent memory injection' {
         $p = New-DpTurnParameter -Prompt 'hi' -Settings $s -AgentMemory 'User deploys with Terraform.'
         $p.SystemPrompt | Should -Match 'saved notes about this user'
         $p.SystemPrompt | Should -Match 'Terraform'
-        $p.SystemPrompt | Should -Match 'not as new'
+        $p.SystemPrompt | Should -Match '(?i)unverified'
+        $p.SystemPrompt | Should -Match '(?i)not instructions'
     }
     It 'omits the memory block when no memory is set' {
         $s = Get-DpDefaultSettings
@@ -5350,7 +5351,8 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
         BeforeAll {
             $script:blRemote = Join-Path $TestDrive 'blRemote.git'
             & git init -q --bare $script:blRemote 2>$null
-            & git -C $script:blRemote symbolic-ref HEAD refs/heads/main 2>$null
+            & git --git-dir $script:blRemote symbolic-ref HEAD refs/heads/main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the bare Branch-list fixture HEAD.' }
             $script:blSeed = Join-Path $TestDrive 'blSeed'
             New-WorkbenchRepo -Path $script:blSeed
             [System.IO.File]::WriteAllText((Join-Path $script:blSeed 'a.txt'), "a`n")
@@ -5483,7 +5485,8 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
             & git init -q --bare $script:wbRemote 2>$null
             # Match the working repos' default branch, so a clone of this remote
             # checks out 'main' rather than an unborn 'master'.
-            & git -C $script:wbRemote symbolic-ref HEAD refs/heads/main 2>$null
+            & git --git-dir $script:wbRemote symbolic-ref HEAD refs/heads/main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the bare sync fixture HEAD.' }
             $script:wbC = Join-Path $TestDrive 'wbC'
             New-WorkbenchRepo -Path $script:wbC
             [System.IO.File]::WriteAllText((Join-Path $script:wbC 'base.txt'), "base`n")
@@ -5565,7 +5568,8 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
         BeforeAll {
             $script:cRemote = Join-Path $TestDrive 'cRemote.git'
             & git init -q --bare $script:cRemote 2>$null
-            & git -C $script:cRemote symbolic-ref HEAD refs/heads/main 2>$null
+            & git --git-dir $script:cRemote symbolic-ref HEAD refs/heads/main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the bare conflict fixture HEAD.' }
             $script:cA = Join-Path $TestDrive 'cA'
             New-WorkbenchRepo -Path $script:cA
             [System.IO.File]::WriteAllText((Join-Path $script:cA 'shared.txt'), "original`n")

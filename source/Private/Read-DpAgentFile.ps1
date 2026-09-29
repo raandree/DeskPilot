@@ -12,19 +12,29 @@ function Read-DpAgentFile {
 
         applyTo is only meaningful for an instruction file, where it is the glob
         deciding which files the instruction governs; it is $null everywhere else.
+
+        Pass -Text instead of -Path to parse markup that has already been read.
+        That is how the Skill scanner keeps one parser while reading only a
+        bounded head of a file it does not trust the size of.
     .PARAMETER Path
         The .agent.md file to read.
+    .PARAMETER Text
+        Already-read Markdown to parse instead of opening a file.
     .OUTPUTS
         System.Collections.Hashtable with name, description, applyTo and body.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Path')]
     [OutputType([hashtable])]
     param(
-        [Parameter(Mandatory)]
-        [string]$Path
+        [Parameter(Mandatory, Position = 0, ParameterSetName = 'Path')]
+        [string]$Path,
+
+        [Parameter(Mandatory, ParameterSetName = 'Text')]
+        [AllowEmptyString()]
+        [string]$Text
     )
 
-    $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    $raw = if ($PSCmdlet.ParameterSetName -eq 'Text') { $Text } else { Get-Content -LiteralPath $Path -Raw -ErrorAction Stop }
     if ($null -eq $raw) { $raw = '' }
 
     $name = $null

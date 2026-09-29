@@ -1584,7 +1584,7 @@ Describe 'Approval card renders what is being approved' -Tag 'Unit' {
     }
 
     It 'has both locales for every approval string the card uses' {
-        $used = @([regex]::Matches($script:AppJs, "t\('(approval\.[A-Za-z.]+)'\)") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+        $used = @([regex]::Matches($script:AppJs, "\btr\('(approval\.[A-Za-z.]+)'\)") | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
         $used.Count | Should -BeGreaterThan 5
         foreach ($key in $used) {
             foreach ($locale in $script:LocaleFiles.Keys) {

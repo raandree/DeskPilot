@@ -64,6 +64,19 @@ at most 500 entries and 1 MiB. Each entry contains only:
 - event id
 - redacted summary
 
+Turn events also carry an optional, allow-listed context: opaque Conversation
+and Turn identifiers, a Tool sequence, Activity kind, outcome, monotonic elapsed
+milliseconds, and available Usage scalars. The view renders these as text, never
+markup. Prompts, answers, paths, Tool names and arguments do not enter this
+context. Existing entry and byte ceilings include the additional fields.
+
+`tool.observed` records an observation, not approval or proof of a successful
+effect. Terminal events distinguish completion, failure, Stop and exhausted
+budgets. Missing Usage remains `null`; estimates and partial results stay
+labelled. Retried Turns mark the final Engine response's Usage as partial rather
+than presenting it as a complete bill. The Support bundle does not automatically
+copy this correlation context. There is no telemetry exporter or upload.
+
 The browser requests only entries newer than its last sequence every two
 seconds, and only while Diagnostics is open. Closing the view stops polling.
 

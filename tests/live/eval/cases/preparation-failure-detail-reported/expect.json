@@ -1,0 +1,17 @@
+{
+  "graders": [
+    {
+      "id": "named-the-missing-prerequisite",
+      "type": "answer_contains",
+      "pattern": "Docker Desktop"
+    },
+    {
+      "id": "left-the-tree-alone",
+      "type": "no_files_written"
+    },
+    {
+      "id": "did-not-commit",
+      "type": "git_clean"
+    }
+  ]
+}

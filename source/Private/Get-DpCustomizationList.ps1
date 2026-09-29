@@ -13,6 +13,14 @@ function Get-DpCustomizationList {
         scope label ('User' for files under ~/.copilot, otherwise 'Workspace').
         Missing roots are skipped. The result groups items by category in catalog
         order with a per-category count.
+
+        A skill item carries three more fields, from Get-DpSkillConformance: the
+        bounded 'metadata' the SKILL.md actually declares, the 'warnings' worth
+        repairing, and 'conformant'. Where two skills share a name, both are
+        listed and both are told about it: 'precedence' is 'primary' for the copy
+        in the earlier configured root and 'shadowed' for the later one. That is
+        DeskPilot's listing order only - which Skill an agent loads is decided by
+        the Engine's own discovery.
     .PARAMETER Settings
         The DeskPilot Settings hashtable.
     .PARAMETER HomeDirectory
@@ -61,6 +69,7 @@ function Get-DpCustomizationList {
         $items = [System.Collections.Generic.List[hashtable]]::new()
 
         foreach ($root in $roots) {
+            $rootIndex = [array]::IndexOf($roots, $root)
             if (-not (Test-Path -LiteralPath $root -PathType Container)) { continue }
 
             if ($entry.nested) {
@@ -68,16 +77,38 @@ function Get-DpCustomizationList {
                 foreach ($file in $files) {
                     if ($file.Name -ine $entry.fileName) { continue }
                     $folderName = Split-Path -Leaf (Split-Path -Parent $file.FullName)
-                    $meta = & $readMeta $file.FullName
-                    $name = if ($meta -and $meta.name) { $meta.name } else { $folderName }
+                    # A Skill is measured against the Agent Skills specification
+                    # while it is listed: metadata only, never the body. One
+                    # unreadable Skill must not cost the user the whole catalog.
+                    $skill = $null
+                    try { $skill = Get-DpSkillConformance -Path $file.FullName -Root $root } catch { $skill = $null }
+                    if (-not $skill) {
+                        $skill = @{
+                            directory   = $folderName
+                            name        = $folderName
+                            description = $null
+                            metadata    = @{}
+                            resources   = @{ scripts = $false; references = $false; assets = $false }
+                            warnings    = @(@{ code = 'unreadable'; severity = 'error'; message = 'DeskPilot could not read this SKILL.md.' })
+                            conformant  = $false
+                        }
+                    }
+                    $name = if ($skill.name) { $skill.name } else { $folderName }
                     $items.Add(@{
                             id          = $file.FullName
                             category    = $entry.id
                             name        = $name
-                            description = if ($meta) { $meta.description } else { $null }
+                            description = $skill.description
                             path        = $file.FullName
                             root        = $root
                             scope       = (& $scopeOf $file.FullName)
+                            directory   = $skill.directory
+                            metadata    = $skill.metadata
+                            resources   = $skill.resources
+                            warnings    = @($skill.warnings)
+                            conformant  = $skill.conformant
+                            precedence  = 'primary'
+                            rootOrder   = $rootIndex
                         })
                 }
             }
@@ -101,7 +132,29 @@ function Get-DpCustomizationList {
             }
         }
 
+        if ($entry.nested) {
+            # Two Skills answering to one name is an ambiguity the user has to
+            # resolve, so say it on both copies rather than quietly dropping one.
+            # The configured root order decides what DeskPilot lists first; the
+            # Engine decides what an agent actually loads.
+            foreach ($group in ($items | Group-Object -Property { ([string]$_.name).Trim().ToLowerInvariant() })) {
+                if ($group.Count -lt 2) { continue }
+                $ordered = @($group.Group | Sort-Object @{ Expression = { $_.rootOrder } }, @{ Expression = { $_.path } })
+                $winner = $ordered[0]
+                foreach ($copy in $ordered) {
+                    if ($copy -ne $winner) { $copy.precedence = 'shadowed' }
+                    $others = @($ordered | Where-Object { $_ -ne $copy } | ForEach-Object { $_.root })
+                    $copy.warnings = @($copy.warnings) + @(@{
+                            code     = 'duplicate-name'
+                            severity = 'warning'
+                            message  = "More than one Skill is called '$($copy.name)' ($($others -join ', ')). DeskPilot lists the copy in $($winner.root) first; which one an agent loads is decided by the Engine's own discovery, not by this list."
+                        })
+                }
+            }
+        }
+
         $sorted = @($items | Sort-Object @{ Expression = { $_.name } }, @{ Expression = { $_.path } })
+        foreach ($item in $sorted) { $item.Remove('rootOrder') }
         $categories.Add(@{
                 id    = $entry.id
                 label = $entry.label

@@ -11,7 +11,7 @@ import {
     statusGlyph,
     statusLabel,
 } from './diff.js';
-import { diagnosticStateMeta, mergeDiagnosticEntries } from './diagnostics.js';
+import { diagnosticStateMeta, formatDiagnosticContext, mergeDiagnosticEntries } from './diagnostics.js';
 import {
     CATALOGS,
     applyTranslations,
@@ -22,6 +22,7 @@ import {
     resolveLocale,
 } from './i18n.js';
 import { markdownToSpeech, renderMarkdown } from './markdown.js';
+import { memoryForgetRequest, memoryLearnRequest, memoryNoteLabel, memoryScopeRequest, memoryScopeText } from './memory.js';
 import {
     createQuestionnaireState,
     getQuestionnaireOptionFocusIndex,
@@ -2384,6 +2385,9 @@ function renderUserPrompt(node, request, conversationId) {
 // nothing at all trains the reader to click through. The model's own account of
 // why it wants this is never shown, because the model is the thing being checked.
 const APPROVAL_TITLES = {
+    FileWrite: 'approval.title.file',
+    Mcp: 'approval.title.tool',
+    UserTool: 'approval.title.tool',
     BrowserNavigation: 'approval.title.navigation',
     // A browser action this build does not recognise must not fall back to the
     // terminal title, which would describe it as something it is not.
@@ -2400,7 +2404,7 @@ function approvalRow(labelKey, value, mono) {
     if (!value) return null;
     const row = el('approval-row');
     const label = el('approval-row-label');
-    label.textContent = t(labelKey);
+    label.textContent = tr(labelKey);
     const body = el(mono ? 'approval-command' : 'approval-row-value', mono ? 'code' : 'div');
     body.textContent = String(value);
     row.append(label, body);
@@ -2418,6 +2422,11 @@ function approvalDetail(request) {
         rows.push(approvalRow('Project', summary.project, false));
     }
 
+    if (['FileWrite', 'Mcp', 'UserTool'].includes(kind)) {
+        rows.push(approvalRow('approval.operation', summary.action, false));
+        rows.push(approvalRow('approval.file', summary.filePath, true));
+        rows.push(approvalRow('Project', summary.project, false));
+    }
     if (kind === 'BrowserNavigation' || kind === 'BrowserAction') {
         // The host first and on its own line: a long address can bury the one
         // part that says whose site this is, which is the part being judged.
@@ -2436,7 +2445,7 @@ function approvalDetail(request) {
         if (fields.length) {
             const wrap = el('approval-row');
             const label = el('approval-row-label');
-            label.textContent = t('approval.values');
+            label.textContent = tr('approval.values');
             const list = el('approval-fields');
             for (const field of fields) {
                 const item = el('approval-field');
@@ -2444,7 +2453,7 @@ function approvalDetail(request) {
                 name.textContent = String(field.name || '');
                 const value = el('approval-field-value', 'code');
                 const text = String(field.value ?? '');
-                value.textContent = text === '' ? t('approval.empty') : text;
+                value.textContent = text === '' ? tr('approval.empty') : text;
                 if (text === '') value.classList.add('approval-field-empty');
                 item.append(name, value);
                 list.appendChild(item);
@@ -2475,13 +2484,13 @@ function renderApproval(node, request, conversationId) {
     const card = el('user-prompt-card approval-card');
     card.dataset.approvalId = requestId;
     card.setAttribute('role', 'group');
-    card.setAttribute('aria-label', t('approval.title'));
+    card.setAttribute('aria-label', tr('approval.title'));
 
     const head = el('approval-head');
-    head.textContent = t(APPROVAL_TITLES[`${kind}:${action}`] || APPROVAL_TITLES[kind] || 'approval.title');
+    head.textContent = tr(APPROVAL_TITLES[`${kind}:${action}`] || APPROVAL_TITLES[kind] || 'approval.title');
 
     const risk = el('approval-risk');
-    risk.textContent = String(request.risk || t('approval.risk'));
+    risk.textContent = String(request.risk || tr('approval.risk'));
 
     const detail = el('approval-detail');
     const rows = approvalDetail(request);
@@ -2490,7 +2499,7 @@ function renderApproval(node, request, conversationId) {
     // reader that approving is a formality. Say so instead of rendering blank.
     if (!rows.length) {
         const empty = el('approval-row-value approval-unknown');
-        empty.textContent = t('approval.noDetail');
+        empty.textContent = tr('approval.noDetail');
         detail.appendChild(empty);
     }
 
@@ -2498,17 +2507,17 @@ function renderApproval(node, request, conversationId) {
     const note = el('approval-note', 'input');
     note.type = 'text';
     note.maxLength = 500;
-    note.placeholder = t('approval.notePlaceholder');
+    note.placeholder = tr('approval.notePlaceholder');
     noteWrap.appendChild(note);
 
     const status = el('approval-status');
     const actions = el('approval-actions');
     const approve = el('btn primary approval-approve', 'button');
     approve.type = 'button';
-    approve.textContent = t(kind === 'Terminal' ? 'approval.approve' : 'approval.allow');
+    approve.textContent = tr(kind === 'Terminal' ? 'approval.approve' : 'approval.allow');
     const deny = el('btn approval-deny', 'button');
     deny.type = 'button';
-    deny.textContent = t('approval.deny');
+    deny.textContent = tr('approval.deny');
     actions.append(deny, approve);
 
     const turnAllowed = request.class === 'Terminal' && Array.isArray(request.allowedScopes) && request.allowedScopes.includes('turn');
@@ -2516,23 +2525,24 @@ function renderApproval(node, request, conversationId) {
     card.append(head, risk, detail);
     if (turnAllowed) {
         const turnRisk = el('approval-risk approval-turn-risk');
-        turnRisk.textContent = t('approval.turnRisk');
+        turnRisk.textContent = tr('approval.turnRisk');
         turnRisk.id = `approval-turn-risk-${requestId}`;
         approveTurn = el('btn approval-turn', 'button');
         approveTurn.type = 'button';
-        approveTurn.textContent = t('approval.allowTurn');
+        approveTurn.textContent = tr('approval.allowTurn');
         approveTurn.setAttribute('aria-describedby', turnRisk.id);
         actions.append(approveTurn);
         card.append(turnRisk);
     }
     card.append(noteWrap, status, actions);
     node.appendChild(card);
+    node.classList.remove('hidden');
     scrollThread();
     deny.focus();
 
     const decide = async (decision, scope = 'once') => {
         card.querySelectorAll('button, input').forEach((control) => { control.disabled = true; });
-        status.textContent = t('approval.sending');
+        status.textContent = tr('approval.sending');
         status.classList.remove('error-text');
         try {
             await api('POST', `/api/conversations/${encodeURIComponent(conversationId)}/approval`, {
@@ -2543,8 +2553,8 @@ function renderApproval(node, request, conversationId) {
             });
             card.classList.add('answered');
             status.textContent = decision === 'approve'
-                ? t(scope === 'turn' ? 'approval.approvedTurn' : 'approval.approved')
-                : t('approval.denied');
+                ? tr(scope === 'turn' ? 'approval.approvedTurn' : 'approval.approved')
+                : tr('approval.denied');
         } catch (error) {
             card.querySelectorAll('button, input').forEach((control) => { control.disabled = false; });
             status.textContent = errorText(error);
@@ -2938,7 +2948,10 @@ async function _runTurn({ prompt, displayText, dispatch, images = [], attachment
             // Stop must not trigger fresh Model calls or additional credit spend.
             await maybeAutoTitle();
             await maybeAutoCompact();
-            await maybeLearnMemory();
+            // Name the Turn that just finished, so what it teaches is filed
+            // against the Project it ran in even if the user switches Project
+            // while the learning request is in flight.
+            await maybeLearnMemory(wrap.dataset.id);
         }
         // Everything above can make the thread taller than it was when `done` last
         // followed it — checkpoint dividers arrive with refreshCurrentConversation,
@@ -3035,7 +3048,7 @@ async function maybeAutoCompact() {
 // something actually changed. Mirrors maybeAutoTitle / maybeAutoCompact. The manual
 // "Update from this conversation" button in Settings covers the off / short-chat
 // cases.
-async function maybeLearnMemory() {
+async function maybeLearnMemory(turnMessageId) {
     const s = state.settings || {};
     if (!s.memoryLearning) return;
     if (!state.current || state.learningMemory) return;
@@ -3043,14 +3056,20 @@ async function maybeLearnMemory() {
     const EVERY = 5;
     // Nothing to learn from a very short chat; then only every EVERY-th turn.
     if (assistantTurns < EVERY || assistantTurns % EVERY !== 0) return;
-    const id = state.current.id;
+    // The turn that just finished, named explicitly: this request may complete
+    // long after the user has moved the conversation to another project, and the
+    // server files what it learns against the project THIS turn ran in.
+    let request;
+    try { request = memoryLearnRequest(state.current, turnMessageId); } catch { return; }
     state.learningMemory = true;
     try {
-        const r = await api('POST', '/api/memory/learn', { conversationId: id });
+        const r = await api('POST', '/api/memory/learn', request);
         if (r && r.changed) toast('Updated what I remember about you.');
     } catch (e) {
-        // Best-effort: a busy Turn (409) or a short conversation (400) is a silent
-        // no-op; learning must never interrupt the user's flow.
+        // Best-effort: a busy Turn (409), an unreadable memory store (409) or a
+        // turn too short to learn from (400) is a silent no-op here; learning must
+        // never interrupt the user's flow. Settings > Memory reports a store that
+        // needs repairing, and the manual button there says why it refused.
         void e;
     } finally {
         state.learningMemory = false;
@@ -3336,12 +3355,28 @@ function renderTerminalSettings(container, runtimeOnly = false) {
     const approvalLabel = document.createElement('label'); const approval = document.createElement('input');
     approval.type = 'checkbox'; approval.checked = !!(state.settings && state.settings.perCallApproval);
     approvalLabel.append(approval, document.createTextNode('Approve non-routine Local commands'));
+    const coverage = document.createElement('select'); coverage.id = 'approval-coverage';
+    for (const [value, key] of [['terminal', 'approval.coverage.terminal'], ['mutating-tools', 'approval.coverage.mutating']]) {
+        const option = document.createElement('option'); option.value = value; option.textContent = tr(key);
+        option.disabled = value === 'mutating-tools'; coverage.appendChild(option);
+    }
+    coverage.value = state.settings.approvalCoverage || 'terminal';
+    const coverageField = field(tr('approval.coverage'), 'approval-coverage', coverage);
+    const coverageHint = el('hint'); coverageHint.textContent = tr('approval.coverage.checking');
+    api('GET', '/api/health').then((health) => {
+        coverage.options[1].disabled = !health.toolCallApproverAdvertised;
+        coverageHint.textContent = tr(health.toolCallApproverAdvertised ? 'approval.coverage.hint' : 'approval.coverage.unavailable');
+    }).catch(() => {
+        coverage.options[1].disabled = true;
+        coverageHint.textContent = tr('approval.coverage.unavailable');
+    });
     const requiredApproval = el('hint'); requiredApproval.textContent = 'Non-routine command approval: required';
     const message = el('hint'); message.setAttribute('role', 'status');
     const save = el('btn btn-small', 'button'); save.type = 'submit'; save.id = 'terminal-save'; save.textContent = 'Save execution policy';
     const showDetails = () => {
         const isolated = form.querySelector('#terminal-mode-isolated').checked;
         details.hidden = !isolated; approval.disabled = isolated; approvalLabel.hidden = isolated; requiredApproval.hidden = !isolated;
+        coverage.disabled = !isolated && !approval.checked;
         hostsField.hidden = network.value !== 'allow-list'; hosts.required = isolated && network.value === 'allow-list';
     };
     form.onchange = showDetails;
@@ -3357,13 +3392,13 @@ function renderTerminalSettings(container, runtimeOnly = false) {
         for (const [key, input] of limitFields) next[key] = Number(input.value);
         save.disabled = true;
         try {
-            state.settings = await api('PUT', '/api/settings', { terminalExecution: next, perCallApproval: approval.checked });
+            state.settings = await api('PUT', '/api/settings', { terminalExecution: next, perCallApproval: approval.checked, approvalCoverage: coverage.value });
             updatePermDot(); if ($('set-perms')) buildPermList($('set-perms'));
             message.textContent = `Saved for the next Turn: ${terminalExecutionLabel(state.settings.terminalExecution)}`;
         } catch (error) { message.textContent = error.message; toast(error.message); }
         finally { save.disabled = false; }
     };
-    form.append(heading, modeGroup, details, approvalLabel, requiredApproval, save, message);
+    form.append(heading, modeGroup, details, approvalLabel, requiredApproval, coverageField, coverageHint, save, message);
     if (!runtimeOnly) container.append(form);
     showDetails();
 
@@ -6750,28 +6785,156 @@ function renderCustItems() {
             row.querySelector('.cust-item-name').textContent = it.name;
             row.querySelector('.cust-item-desc').textContent = it.description || it.path;
             row.title = it.path;
+            const flag = custSkillFlagText(it);
+            if (flag) {
+                const mark = el('cust-item-flag');
+                mark.textContent = flag;
+                row.appendChild(mark);
+            }
             row.onclick = () => openCustEditor(it);
             wrap.appendChild(row);
         }
     }
 }
 
+// ===== Skill conformance display =====
+// What a Skill declares and what is wrong with it both travel in the catalog the
+// Customizations view already loaded, so this panel costs no extra request and
+// never pulls in a SKILL.md body, a reference file or a script. Every string is
+// written with textContent: a Skill is someone else's file, and its metadata is
+// text, never markup.
+const SKILL_META_FIELDS = ['license', 'compatibility', 'version', 'origin', 'allowedTools'];
+
+function custSkillMetaLines(item) {
+    const meta = (item && item.metadata) || {};
+    const lines = [];
+    for (const field of SKILL_META_FIELDS) {
+        const value = meta[field];
+        if (value === undefined || value === null || value === '') continue;
+        const line = { field, label: tr(`skill.meta.${field}`), value: String(value) };
+        // The one field that could be mistaken for an authority says what it is.
+        if (field === 'allowedTools') line.note = tr('skill.meta.allowedTools.note');
+        lines.push(line);
+    }
+    const entries = (meta && meta.entries) || {};
+    const covered = new Set(['version', 'origin', 'author', 'source']);
+    for (const key of Object.keys(entries).sort()) {
+        if (covered.has(key)) continue;
+        lines.push({ field: 'entry', label: key, value: String(entries[key]) });
+    }
+    return lines;
+}
+
+function custSkillDiagnosticLines(item) {
+    const found = (item && item.warnings) || [];
+    return found.map((d) => {
+        const code = (d && d.code) || 'unknown';
+        const key = `skill.warn.${code}`;
+        const text = tr(key, { message: (d && d.message) || '' });
+        return {
+            code,
+            severity: (d && d.severity) || 'warning',
+            text: text === key ? ((d && d.message) || code) : text,
+        };
+    });
+}
+
+function custSkillPrecedenceLine(item) {
+    if (!item || item.category !== 'skill') return null;
+    const root = item.root || '';
+    return item.precedence === 'shadowed'
+        ? tr('skill.precedence.shadowed', { root })
+        : tr('skill.precedence.primary', { root });
+}
+
+function custSkillSummary(item) {
+    // Advice is not a problem: only errors and warnings are counted, so a Skill
+    // that merely has a terse description still reads as conformant. A Skill the
+    // server could not certify never reads as conformant either, even when its
+    // findings did not fit the display budget.
+    const problems = custSkillDiagnosticLines(item).filter((d) => d.severity !== 'info').length;
+    if (problems) return { tone: 'warn', text: tr('skill.conformance.problems', { count: problems }) };
+    if (item && item.conformant === false) return { tone: 'warn', text: tr('skill.conformance.unverified') };
+    return { tone: 'ok', text: tr('skill.conformance.ok') };
+}
+
+function custSkillFlagText(item) {
+    if (!item || item.category !== 'skill') return '';
+    const parts = [];
+    const summary = custSkillSummary(item);
+    if (summary.tone !== 'ok') parts.push(summary.text);
+    if (item.precedence === 'shadowed') parts.push(tr('skill.precedence.shadowedShort'));
+    return parts.join(' · ');
+}
+
+function renderCustConformance(item) {
+    const host = $('cust-editor-conformance');
+    if (!host) return;
+    host.textContent = '';
+    if (!item || item.category !== 'skill') { host.hidden = true; return; }
+    host.hidden = false;
+
+    const summary = custSkillSummary(item);
+    const head = el('cust-conformance-summary ' + summary.tone);
+    head.textContent = summary.text;
+    host.appendChild(head);
+
+    const source = custSkillPrecedenceLine(item);
+    if (source) {
+        const line = el('cust-conformance-source muted tiny');
+        line.textContent = source;
+        host.appendChild(line);
+    }
+
+    for (const meta of custSkillMetaLines(item)) {
+        const row = el('cust-conformance-meta');
+        const label = el('cust-conformance-label', 'span');
+        label.textContent = meta.label;
+        const value = el('cust-conformance-value', 'span');
+        value.textContent = meta.value;
+        row.appendChild(label);
+        row.appendChild(value);
+        if (meta.note) {
+            const note = el('cust-conformance-note muted tiny', 'span');
+            note.textContent = meta.note;
+            row.appendChild(note);
+        }
+        host.appendChild(row);
+    }
+
+    for (const problem of custSkillDiagnosticLines(item)) {
+        const row = el('cust-conformance-problem ' + problem.severity);
+        row.textContent = problem.text;
+        row.title = problem.code;
+        host.appendChild(row);
+    }
+}
+// ===== end Skill conformance display =====
+
 async function openCustEditor(item) {
-    cust.editor = { category: item.category, path: item.path, name: item.name, dirty: false, mode: 'edit', readonly: false };
+    const editor = { category: item.category, path: item.path, name: item.name, dirty: false, mode: 'edit', readonly: true };
+    cust.editor = editor;
     $('cust-editor-name').textContent = item.name;
     $('cust-editor-file').textContent = item.path;
     $('cust-editor-file').title = item.path;
     $('cust-editor-meta').textContent = '';
+    renderCustConformance(item);
     const ta = $('cust-editor');
     ta.value = '';
-    ta.readOnly = false;
+    ta.readOnly = true;
     setCustViewMode('edit');
     showCustEditor();
     $('cust-save').disabled = true;
     let data;
     try {
         data = await api('GET', '/api/customizations/content?category=' + encodeURIComponent(item.category) + '&path=' + encodeURIComponent(item.path));
-    } catch (e) { $('cust-editor-meta').textContent = '⚠ ' + e.message; ta.readOnly = true; return; }
+    } catch (e) {
+        if (cust.editor !== editor) return;
+        $('cust-editor-meta').textContent = '⚠ ' + e.message;
+        ta.readOnly = true;
+        return;
+    }
+    if (cust.editor !== editor) return;
     if (data.error) { $('cust-editor-meta').textContent = '⚠ ' + data.error; ta.readOnly = true; return; }
     if (data.binary) { $('cust-editor-meta').textContent = 'This file can’t be edited as text.'; ta.readOnly = true; return; }
     ta.value = data.text || '';
@@ -6869,7 +7032,11 @@ async function newCustomization() {
         const created = await api('POST', '/api/customizations', { category: cat.id, name });
         await loadCustomizations();
         if (cat.id === 'agent') loadAgents();
-        openCustEditor({ category: created.category, path: created.path, name: created.name });
+        // Prefer the catalog entry just reloaded: it carries the conformance a
+        // new Skill was scanned with, rather than an optimistic stand-in.
+        const reloaded = currentCustCategory();
+        const listed = ((reloaded && reloaded.items) || []).find((it) => it.path === created.path);
+        openCustEditor(listed || { category: created.category, path: created.path, name: created.name });
         toast(`Created ${noun} “${created.name}”.`);
     } catch (e) { toast(e.message); }
 }
@@ -7174,6 +7341,40 @@ function wireMcpPanel() {
     loadMcp();
 }
 
+// Every Agent Memory note, as text, with the provenance DeskPilot recorded and a
+// way to forget it. Built through DOM APIs on purpose: a note's text comes from
+// a Model or from another conversation, so it is rendered as text and never as
+// markup, and the provenance beside it is written by this function rather than
+// taken from the note's own words.
+function renderMemoryNotes(container, payload, onForget) {
+    if (!container) return;
+    container.textContent = '';
+    const notes = (payload && payload.agentMemory && payload.agentMemory.notes) || [];
+    if (!notes.length) {
+        const empty = el('muted tiny');
+        empty.textContent = tr('memory.notes.empty');
+        container.appendChild(empty);
+        return;
+    }
+    for (const note of notes) {
+        const row = el('mem-note');
+        const text = el('mem-note-text');
+        text.textContent = note.text || '';
+        const meta = el('mem-note-meta muted tiny');
+        const when = note.updatedUtc
+            ? formatDateTime(locale, note.updatedUtc, { dateStyle: 'medium' })
+            : tr('memory.updated.unknown');
+        meta.textContent = `${memoryNoteLabel(note, tr)} · ${when}`;
+        const forget = el('btn btn-small mem-note-forget', 'button');
+        forget.type = 'button';
+        forget.textContent = tr('memory.forget');
+        forget.title = tr('memory.forget.title');
+        forget.onclick = () => onForget(note);
+        row.append(text, meta, forget);
+        container.appendChild(row);
+    }
+}
+
 function openSettings() {
     const body = $('settings-body');
     const s = state.settings || {};
@@ -7372,12 +7573,18 @@ function openSettings() {
       </div>
       <div class="field">
         <label>Agent memory — what DeskPilot has learned <span id="mem-updated" class="muted tiny"></span></label>
+        <div class="mem-row">
+          <label class="muted tiny" for="mem-scope">${escapeHtml(tr('memory.scope.label'))}</label>
+          <select id="mem-scope"><option value="global">${escapeHtml(tr('memory.scope.global'))}</option></select>
+        </div>
         <textarea id="set-agent-memory" rows="8" placeholder="DeskPilot fills this in as it learns durable facts about you and your projects. You can edit or clear it."></textarea>
         <div class="mem-row">
           <span id="mem-count" class="muted tiny"></span>
           <button class="btn btn-small mem-learn-btn" id="set-memory-learn" type="button">Update from this conversation</button>
         </div>
-        <p class="hint">Durable notes the agent keeps about you and your environment across conversations, injected into every turn as background reference.</p>
+        <p class="hint">${escapeHtml(tr('memory.editHint'))}</p>
+        <p class="hint mem-load-error hidden" id="mem-load-error"></p>
+        <div id="mem-notes" class="mem-notes"></div>
       </div>
       <div class="field">
         <label><input type="checkbox" id="set-memory-learning" ${s.memoryLearning !== false ? 'checked' : ''} /> Let DeskPilot learn about you automatically</label>
@@ -7575,34 +7782,83 @@ function openSettings() {
     // Agent memory: loaded from /api/memory, edited/cleared via PUT, and learned
     // on demand via POST /api/memory/learn. The User profile above stays the
     // preferences Setting; this is the separate, agent-curated store.
+    //
+    // The editor works on ONE scope at a time - the notes that apply everywhere,
+    // or the selected Project's - because an edit may only alter the scope it
+    // declares. The list below it shows every note with where it came from and
+    // whether anyone has verified it, and can forget one without touching the rest.
+    const memScope = () => {
+        const select = $('mem-scope');
+        const kind = (select && select.value) || 'global';
+        const memory = (state._memPayload && state._memPayload.agentMemory) || {};
+        const projectId = (memory.project && memory.project.id) || null;
+        return kind === 'project' && projectId ? { kind: 'project', projectId } : { kind: 'global' };
+    };
     const renderMemMeta = (m) => {
+        state._memPayload = m;
         const am = (m && m.agentMemory) || {};
         state._memCap = am.cap || 12000;
+        const select = $('mem-scope');
+        const project = am.project || {};
+        if (select) {
+            const existing = select.querySelector('option[value="project"]');
+            if (project.id) {
+                const option = existing || document.createElement('option');
+                option.value = 'project';
+                option.textContent = tr('memory.scope.project', { name: project.name || project.id });
+                if (!existing) select.appendChild(option);
+            } else if (existing) {
+                existing.remove();
+                select.value = 'global';
+            }
+        }
+        const scope = memScope();
         const ta = $('set-agent-memory');
-        if (ta && document.activeElement !== ta) ta.value = am.text || '';
+        if (ta && document.activeElement !== ta) ta.value = memoryScopeText(m, scope.kind);
         const cnt = $('mem-count');
         if (cnt) cnt.textContent = ((ta ? ta.value.length : am.chars || 0)).toLocaleString() + ' / ' + state._memCap.toLocaleString() + ' chars';
         const upd = $('mem-updated');
         if (upd) upd.textContent = am.updatedUtc ? '· updated ' + new Date(am.updatedUtc).toLocaleString() : '';
+        // A store that could not be read in full says so, and says what it means:
+        // automatic learning stays off until the user repairs it here, so nothing
+        // overwrites notes DeskPilot could not read.
+        const problem = $('mem-load-error');
+        if (problem) {
+            problem.textContent = am.loadError ? `${am.loadError} ${tr('memory.learningPaused')}` : '';
+            problem.classList.toggle('hidden', !am.loadError);
+        }
+        renderMemoryNotes($('mem-notes'), m, forgetMemoryNote);
+    };
+    const forgetMemoryNote = async (note) => {
+        try {
+            renderMemMeta(await api('PUT', '/api/memory', memoryForgetRequest(note)));
+            toast(tr('memory.forgotten'));
+        } catch (err) { toast(errorText(err)); }
     };
     api('GET', '/api/memory').then(renderMemMeta).catch(() => { });
+    if ($('mem-scope')) $('mem-scope').onchange = () => renderMemMeta(state._memPayload);
     $('set-agent-memory').oninput = () => {
         const cnt = $('mem-count'); const ta = $('set-agent-memory');
         if (cnt) cnt.textContent = ta.value.length.toLocaleString() + ' / ' + (state._memCap || 12000).toLocaleString() + ' chars';
     };
     $('set-agent-memory').onchange = async (e) => {
-        try { renderMemMeta(await api('PUT', '/api/memory', { agentMemory: e.target.value })); toast('Memory saved.'); }
+        try { renderMemMeta(await api('PUT', '/api/memory', memoryScopeRequest(e.target.value, memScope()))); toast('Memory saved.'); }
         catch (err) { toast((err && err.message) || 'Could not save memory.'); }
     };
     $('set-memory-learn').onclick = async () => {
         if (!state.current) { toast('Open a conversation first, then update memory from it.'); return; }
         const btn = $('set-memory-learn'); const old = btn.textContent;
+        let request;
+        // The last completed turn of the open conversation. Its project is what
+        // the notes are filed against, so a conversation with no completed turn
+        // has nothing to learn from rather than something to guess at.
+        try { request = memoryLearnRequest(state.current); } catch (e) { toast((e && e.message) || 'Nothing to learn from yet.'); return; }
         btn.disabled = true; btn.textContent = 'Updating…';
         try {
-            const r = await api('POST', '/api/memory/learn', { conversationId: state.current.id });
+            const r = await api('POST', '/api/memory/learn', request);
             renderMemMeta(r);
             toast(r && r.changed ? 'Memory updated from this conversation.' : 'Nothing new worth remembering yet.');
-        } catch (e) { toast((e && e.message) || 'Could not update memory.'); }
+        } catch (e) { toast(errorText(e)); }
         finally { btn.disabled = false; btn.textContent = old; }
     };
     $('set-memory-learning').onchange = (e) => save({ memoryLearning: e.target.checked });
@@ -7912,6 +8168,12 @@ function renderDiagnostics() {
             source.textContent = `${entry.component || 'host'} / ${entry.eventId || 'event'}`;
             const text = el('diagnostics-log-summary');
             text.textContent = entry.summary || '';
+            const correlation = formatDiagnosticContext(entry.context);
+            if (correlation) {
+                const contextText = el('muted tiny', 'code');
+                contextText.textContent = correlation;
+                text.append(document.createElement('br'), contextText);
+            }
             row.append(time, source, text);
             log.appendChild(row);
         }

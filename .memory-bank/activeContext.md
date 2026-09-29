@@ -1,76 +1,108 @@
 ---
 schema-version: 1
 status: accepted
-owner: shared
-last-verified: 2026-09-08
-source: user-confirmed missing Docker Desktop and red-green prerequisite regressions
+owner: software-engineer
+last-verified: 2026-09-25
+source: independent review, exact-SHA hosted CI, and local regression evidence
 ---
 
 # Active context
 
 ## Current focus
 
-The user confirmed that the separate machine used for testing has no Docker
-Desktop installation. That missing prerequisite prevents Terminal runtime
-preparation. The earlier successful runtime checks applied only to this
-development machine; they did not verify the user's test machine.
+The requested fix, independent re-review, push and CI repair are complete for
+code/test commit `ee0d2c9` on `ai/agent-reliability`. All four original findings
+and three follow-up observations are closed. No main Merge, package publication
+or default Engine replacement occurred; those remain user-controlled.
 
-The focused fix is on `ai/terminal-docker-prerequisite`. The existing trusted
-Docker executable check now raises `DockerDesktopNotInstalled` with explicit
-Windows, WSL 2, Linux containers, and Prepare runtime instructions. DeskPilot
-does not install Docker Desktop automatically.
+The fix baseline is `11490f7`; the compatibility Engine is pinned to
+`08a4a22e07cb5887996bc4262c638b360f5de74e`. Final record-only changes are checked
+by the same CI workflow without changing executable files.
 
-The preparation handler recognizes the error identifier after job serialization,
-reports `unavailable`, and displays only its redacted installation guidance.
-Unknown failures remain `degraded` with the earlier bounded, redacted error and
-generic recovery advice. The UI's existing text-only rendering is unchanged.
+## Completed local fixes
 
-No Docker installation, runtime preparation, Settings change, or action on the
-test machine was performed in this turn. Docker launch settings, trusted paths,
-timeouts, Permissions, and execution boundaries are unchanged.
+- `34d1e40`: DP-2026-001 validates case identifiers before allocating paths and
+  passes launch values as JSON data through a fixed `-File` launcher. Capture or
+  process-tree cleanup failure retains owned state, blocks further live trials
+  and fails the run. All 217 focused eval regressions pass.
+- `864afae`: DP-2026-002 Memory extraction scope, current notes and bounded
+  Conversation text are JSON data, not interpolated fence contents. Exact text
+  is preserved. Five new tests failed before the fix; 95 Memory tests passed.
+  This is framing hardening, not a claim to solve general prompt injection.
+- `5093f3d`: DP-2026-003 supports the real `ToolCallControl` schema-1 Pre hook and
+  retains the legacy `ToolCallApprover` adapter. Bind effective argument bytes,
+  derive the already-permitted policy fact from the Engine contract, translate
+  decisions and use explicit closed failure posture. Capture original MCP Tool
+  identities from registrations; do not reverse lossy namespaced names.
+- The same commit closes DP-2026-004 source-marker dependence. Local registration
+  and Isolated readiness share a bounded negative/positive inert dispatch proof
+  in a separate Runspace. Cache by module bytes and loaded command digest.
+  A comment containing the old marker cannot pass the behavioral test.
+- CI now builds the immutable compatibility Engine and supplies its manifest to
+  every OS test job. Its missing DocGenerator build dependency was reproduced,
+  then resolved through the Engine's declared dependencies in the build cache.
+- `17f6333`: real-browser acceptance found approval cards were appended to a
+  hidden container. Reveal that container on a valid request, with permanent
+  renderer regressions and an uninstrumented browser rerun.
 
-## Verification
+## Local validation
 
-- Both new regressions first failed: missing structured prerequisite identity
-  and `degraded` instead of `unavailable`. All five preparation tests then
-  passed on Pester 6.1.0, including generic failure, redaction, and retry guards.
-- Missing installation is simulated through the real executable check; no
-  system dependency is removed. A failed job proves error-identifier transport,
-  redaction, job cleanup, and omission of irrelevant disk/download advice.
-- Full Windows `build.ps1 -Tasks build,test` completed at 17:44:31 UTC:
-  2,502 passed, zero failures, eight skips, and no unrun tests. All 16 tasks
-  completed with zero build errors or warnings. No production change followed.
-- ScriptAnalyzer reports zero diagnostics in the Docker helper and tests, and
-  no new diagnostics in the handler. Its existing `ShouldProcess` warning and
-  historical changelog heading/list warnings are unchanged. Markdown renders.
-- Self-review covered correctness, scope, naming, redaction, job handling, and
-  unchanged authority. Independent review remains off. No Model or live test
-  machine acceptance was performed.
+- Full combined `build.ps1 -Tasks build,test` at `84a6012`: 2,966 passed, zero
+  failures, nine skips, no unrun tests; 16 tasks, zero errors, seven expected
+  negative-path Memory preservation warnings. All 59 native Node UI tests pass.
+- All 95 Terminal/Turn-grant cases ran with the real pinned Engine, including
+  the five tests previously skipped by source-marker selection.
+- Six real-Engine integration cases prove File/MCP approve and deny, native
+  policy precedence and disabled-Terminal refusal. Provider responses and
+  execution are inert fixtures; no network, credentials or paid Model requests.
+- Modern mapping and legacy compatibility tests pass, including correlated
+  identity validation before read-only admission. Native analyzer is clean on
+  the new control/probe helpers; one existing pure Memory-builder warning remains.
+- Actual built Host Server and pinned Engine pass browser approval journeys at
+  1440px and 390px: no pending write, denial prevents the write, approval writes
+  exact fixture content, cards fit, and zero page errors. Provider responses are
+  scripted; credential and network paths throw. This is not live Model proof.
+- Workflow YAML/embedded PowerShell parsing and directly related Markdown
+  rendering passed. Native test results and browser screenshots are retained.
 
-Evidence under TEMP:
+## Review and hosted CI
 
-- `deskpilot-docker-prerequisite-red-da34c43ac8b843659f0149d54f9efc48.log`
-- `deskpilot-docker-prerequisite-green-e818141cd1c343bb82739b3490016045.log`
-- `deskpilot-docker-prerequisite-full-639a2e0bfa36478bbfdfd5222ce9e58a.log`
+Independent re-review approved the original four closures at `17f6333`, then
+approved `84a6012` and closed all three follow-up observations: exact Tool names,
+early MCP catalog compatibility errors, and direct CI artifact/error checks.
+No new findings remain. The final full local gate passed after those repairs.
+Production analyzer has no Warning/Error findings; three pre-existing Pester
+cross-phase warnings remain unchanged. The reviewer independently confirmed
+the real Engine and behavioral boundary cases ran, not skipped.
 
-## Next action
+The first hosted run exposed only a macOS fixture alias mismatch (`/var` versus
+`/private/var`). Canonicalize the fixture root before child launch; no transport
+or non-execution assertion was relaxed. All 173 focused eval tests pass locally.
+The previously failing assertion then passed on the hosted macOS runner.
 
-The code and documentation are ready for local commit. On the user's test
-machine, install Docker Desktop for Windows, enable its WSL 2 backend and Linux
-containers, and start it before selecting Prepare runtime. The rebuilt code
-improves the message; it does not satisfy that machine's missing prerequisite.
+[CI run 36122275951](https://github.com/raandree/DeskPilot/actions/runs/36122275951)
+is verified green at `ee0d2c9dfce152ff73e86951fb2291f5acc0ee29`:
 
-There is no data migration. Merge, push, and publication require a new explicit
-user request. See [runtime troubleshooting](../docs/isolated-terminal.md#if-preparation-fails).
+| Gate | Result |
+| --- | --- |
+| Package Module | Passed, including the pinned Engine build |
+| Windows | 2,966 passed, zero failures, nine skips |
+| Ubuntu | 2,920 passed, zero failures, 55 skips |
+| macOS | 2,919 passed, zero failures, 56 skips |
+| Deploy | Skipped as intended for the topic Branch |
 
-## Retained release boundaries
+The native Engine cases ran on every OS. No live Model acceptance is claimed.
 
-The earlier CI repair and Preview `0.5.0-preview0021` publication remain recorded
-in [progress](progress.md); no remote changed in this turn. Pester resolves from
-`latest`, currently verified as 6.1.0. Do not restore the former 5.7.1 pin.
+## Retained boundaries
 
-FIND-011/FIND-012 remain closed. Child execution stays disabled; no live Model
-profile was rerun. Strict V2 still lacks its verified provider counter, decision
-0005 remains unapproved, and clean-install Engine availability and complete
-Terminal-only acceptance remain separate work. Runtime readiness alone does not
-prove that the installed Engine meets its dispatch-enforcement contract.
+Terminal-only approval remains the default. Permissions, isolation and child
+opt-in are unchanged; source-bound child proof is invalidated by source changes
+and must be renewed before enablement. Parallel topology remains unapproved.
+Memory provenance and per-Project scope remain Host-controlled. Keep a private
+copy of version-2 Memory before downgrade; never promote confidential notes to
+global scope merely to retain them in an older build.
+
+The separate ShellPilot source checkout is untouched. All four task-owned
+worktrees and browser dependencies were removed after verification. Review
+reports, immutable diffs, test results, CI logs and browser evidence are retained
+in session storage. No further implementation is planned for this request.

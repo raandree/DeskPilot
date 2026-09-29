@@ -3161,6 +3161,46 @@ button.tree-row {
     flex: none;
 }
 
+/* The Agent Memory note list: one fact per row, with the provenance DeskPilot
+   recorded beneath it and a Forget control beside it. */
+.mem-notes {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mem-note {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'text forget' 'meta forget';
+    align-items: center;
+    gap: 2px 10px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.mem-note-text {
+    grid-area: text;
+    word-break: break-word;
+}
+
+.mem-note-meta {
+    grid-area: meta;
+}
+
+.mem-note-forget {
+    grid-area: forget;
+    width: auto;
+    margin-top: 0;
+    flex: none;
+}
+
+.mem-load-error {
+    color: var(--changed);
+}
+
 .bolt {
     color: var(--accent);
 }
@@ -4171,6 +4211,80 @@ button.tree-row {
     text-align: center;
     color: var(--muted);
     font-size: 13px;
+}
+
+/* Skill conformance: what a SKILL.md declares, and what is worth repairing. */
+.cust-item-flag {
+    margin-top: 3px;
+    font-size: 11.5px;
+    color: var(--warn, var(--muted));
+}
+
+.cust-conformance {
+    margin: 8px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-2);
+    font-size: 12.5px;
+    max-height: 30vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.cust-conformance[hidden] {
+    display: none;
+}
+
+.cust-conformance-summary {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.cust-conformance-summary.warn {
+    color: var(--warn, var(--text));
+}
+
+.cust-conformance-source {
+    margin-bottom: 6px;
+}
+
+.cust-conformance-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 1px 0;
+}
+
+.cust-conformance-label {
+    min-width: 96px;
+    color: var(--muted);
+}
+
+.cust-conformance-value {
+    word-break: break-word;
+}
+
+.cust-conformance-note {
+    flex-basis: 100%;
+}
+
+.cust-conformance-problem {
+    margin-top: 4px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+}
+
+.cust-conformance-problem.error {
+    border-left-color: var(--danger, var(--border));
+}
+
+.cust-conformance-problem.warning {
+    border-left-color: var(--warn, var(--border));
+}
+
+.cust-conformance-problem.info {
+    color: var(--muted);
 }
 
 /* Editor view */

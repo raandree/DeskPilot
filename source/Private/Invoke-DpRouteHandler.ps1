@@ -57,6 +57,7 @@
                 status           = 'ok'
                 version          = $state.Version
                 engineImported   = $state.Engine.Imported
+                toolCallApproverAdvertised = [bool](Get-DpPropertyValue -InputObject $state.Engine -Name 'ToolCallApproverAdvertised' -Default $false)
                 engineError      = $state.Engine.ImportError
                 authenticated    = (Test-Path -LiteralPath $state.Engine.TokenPath)
                 model            = $state.Settings.model
@@ -371,6 +372,16 @@
                     $previous.perCallApproval -ne $merged.perCallApproval -or
                     ($previous.permissions.terminal -and -not $merged.permissions.terminal) -or
                     ($previous.permissions.userTools -and -not $merged.permissions.userTools)
+                $previousCoverage = [string](Get-DpPropertyValue -InputObject $previous -Name 'approvalCoverage' -Default 'terminal')
+                $nextCoverage = [string](Get-DpPropertyValue -InputObject $merged -Name 'approvalCoverage' -Default 'terminal')
+                if ($previousCoverage -cne $nextCoverage) { $scopeChanged = $true }
+                if ($previousCoverage -ceq 'mutating-tools' -or $nextCoverage -ceq 'mutating-tools') {
+                    foreach ($permissionName in @('file', 'mcp', 'askUser')) {
+                        if ([bool]$previous.permissions[$permissionName] -and -not [bool]$merged.permissions[$permissionName]) {
+                            $scopeChanged = $true
+                        }
+                    }
+                }
                 foreach ($key in $merged.terminalExecution.Keys) {
                     if (($previous.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress) -cne
                         ($merged.terminalExecution[$key] | ConvertTo-Json -Depth 6 -Compress)) { $scopeChanged = $true }
@@ -1262,7 +1273,13 @@
         'updateMemory' {
             # Manual edits to either memory store. User Profile is the preferences
             # Setting (validated + persisted via Merge-DpSettings); Agent Memory is
-            # its own store. Either or both may be present in the body.
+            # its own store of attributed notes. Either or both may be present.
+            #
+            # An Agent Memory edit names the scope it is editing and alters only
+            # that scope: the plain text an existing client sends with no scope is
+            # the global notes, exactly the view it was shown, so saving that box
+            # can never reach into a Project's notes. Everything is validated
+            # before anything is written - a rejected edit changes nothing.
             if ($null -eq $Body) {
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'empty_body'; message = 'Nothing to update.' } }
                 return
@@ -1283,13 +1300,84 @@
                     return
                 }
             }
-            if ($Body.PSObject.Properties['agentMemory']) {
-                $memText = if ($null -eq $Body.agentMemory) { '' } else { ([string]$Body.agentMemory).Trim() }
-                if ($memText.Length -gt $limits.agentMemory) {
-                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_long'; message = "The agent memory must be $($limits.agentMemory) characters or fewer." } }
+
+            $editsMemory = [bool]$Body.PSObject.Properties['agentMemory']
+            $forgetIds = @()
+            if ($Body.PSObject.Properties['forget'] -and $null -ne $Body.forget) {
+                $forgetIds = @(@($Body.forget) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+            }
+
+            if ($editsMemory -or $forgetIds.Count -gt 0) {
+                $notes = @(Get-DpPropertyValue -InputObject $state.Memory -Name @('notes') -Default @())
+
+                # Scope. Absent means the global notes: the version-1 contract.
+                $scopeKind = 'global'
+                $scopeProjectId = $null
+                if ($Body.PSObject.Properties['scope'] -and $Body.scope) {
+                    $scopeKind = ([string](Get-DpPropertyValue -InputObject $Body.scope -Name @('kind') -Default 'global')).Trim().ToLowerInvariant()
+                    if ($scopeKind -notin @('global', 'project')) {
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_scope'; message = "'$scopeKind' is not a memory scope. Use global or project." } }
+                        return
+                    }
+                    if ($scopeKind -eq 'project') {
+                        $scopeProjectId = ([string](Get-DpPropertyValue -InputObject $Body.scope -Name @('projectId') -Default '')).Trim()
+                        $known = @(@($state.Settings.projects) | Where-Object { [string](Get-DpPropertyValue -InputObject $_ -Name @('id') -Default '') -eq $scopeProjectId })
+                        if (-not $scopeProjectId -or $known.Count -eq 0) {
+                            Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'bad_scope'; message = 'That project is not registered, so memory cannot be scoped to it.' } }
+                            return
+                        }
+                    }
+                }
+
+                if ($forgetIds.Count -gt 0) {
+                    $existingIds = @($notes | ForEach-Object { $_.id })
+                    $unknown = @($forgetIds | Where-Object { $existingIds -notcontains $_ })
+                    if ($unknown.Count -gt 0) {
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'unknown_note'; message = 'That memory note no longer exists; reload the page and try again.' } }
+                        return
+                    }
+                }
+
+                $memText = ''
+                if ($editsMemory) {
+                    $memText = if ($null -eq $Body.agentMemory) { '' } else { ([string]$Body.agentMemory).Trim() }
+                    if ($memText.Length -gt $limits.agentMemory) {
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_long'; message = "The agent memory must be $($limits.agentMemory) characters or fewer." } }
+                        return
+                    }
+                    # One line is one fact, so a line longer than a note is told
+                    # about rather than quietly cut in half on the way in.
+                    $tooLong = @(@($memText -split '\r?\n') | Where-Object { ($_.Trim()).Length -gt $limits.note })
+                    if ($tooLong.Count -gt 0) {
+                        Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'note_too_long'; message = "Each line of agent memory is one fact and must be $($limits.note) characters or fewer." } }
+                        return
+                    }
+                }
+
+                $kept = @($notes | Where-Object { $forgetIds -notcontains $_.id })
+                if ($editsMemory) {
+                    $kept = @($kept | Where-Object {
+                            if ($scopeKind -eq 'project') { -not ($_.scope -eq 'project' -and $_.projectId -eq $scopeProjectId) }
+                            else { $_.scope -ne 'global' }
+                        })
+                    # The user wrote this text, so it is theirs and verified - but
+                    # only within the scope they were editing.
+                    $authored = @(New-DpMemoryNoteSet -Text $memText -Source 'user' -Scope $scopeKind -ProjectId $scopeProjectId)
+                    $kept = @($kept) + @($authored)
+                }
+
+                # The store is bounded, and a change that does not fit is refused
+                # rather than trimmed: trimming would drop whichever notes happened
+                # to be last - the new ones, or another Project's - behind a
+                # response that said the edit had been saved. Nothing is assigned
+                # until this succeeds, so a refusal leaves every scope as it was.
+                try { $updatedStore = New-DpMemoryStore -Note @($kept) -UpdatedUtc ([DateTime]::UtcNow.ToString('o')) }
+                catch {
+                    Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'memory_full'; message = "$_" } }
                     return
                 }
-                $state.Memory = @{ text = $memText; updatedUtc = [DateTime]::UtcNow.ToString('o') }
+
+                $state.Memory = $updatedStore
                 if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpMemoryPayload)
@@ -1312,16 +1400,64 @@
                 Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'busy'; message = 'A Turn is already running.' } }
                 return
             }
-            $limits = Get-DpMemoryLimits
-            $recent = @($conversation.messages | Where-Object { $_.role -in @('user', 'assistant') } | Select-Object -Last 8)
-            if ($recent.Count -lt 2) {
-                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_short'; message = 'This conversation is too short to learn from.' } }
+
+            # A store DeskPilot could not read in full is not a store it may
+            # rewrite. Learning would replace what it managed to read and drop the
+            # rest for good, unattended and without anyone deciding to. It waits
+            # for the user to repair the memory in Settings, which is an explicit
+            # act by someone who can see what is there.
+            $memoryLoadError = [string](Get-DpPropertyValue -InputObject $state.Memory -Name @('loadError') -Default '')
+            if ($memoryLoadError) {
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'memory_unreadable'; message = 'Some saved memory could not be read, so DeskPilot will not learn over it. Open Settings > Memory, check what is there and save it to repair the store.' } }
                 return
             }
-            $current = if ($state.Memory) { [string]$state.Memory.text } else { '' }
+
+            # Which Turn this request is about, and what that Turn is allowed to
+            # have read. Both come from the assistant Message's own immutable Host
+            # stamp, never from the Conversation or the current selection - see
+            # Get-DpLearningSource.
+            $messageId = if ($Body -and $Body.PSObject.Properties['messageId'] -and $Body.messageId) { [string]$Body.messageId } else { '' }
+            $limits = Get-DpMemoryLimits
+            $source = Get-DpLearningSource -Conversation $conversation -MessageId $messageId
+            if (-not $source.ok) {
+                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = $source.code; message = $source.message } }
+                return
+            }
+
+            $frozenProjectId = [string]$source.projectId
+            $projectName = $null
+            if ($frozenProjectId) {
+                $project = @(@($state.Settings.projects) | Where-Object { [string](Get-DpPropertyValue -InputObject $_ -Name @('id') -Default '') -eq $frozenProjectId }) | Select-Object -First 1
+                if (-not $project) {
+                    # The Project was removed since that Turn ran. Filing its
+                    # learning anywhere else would be a guess, so refuse.
+                    Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'project_unavailable'; message = 'The project that turn ran in is no longer registered, so its notes cannot be filed.' } }
+                    return
+                }
+                $projectName = [string](Get-DpPropertyValue -InputObject $project -Name @('name') -Default '')
+            }
+            $scopeKind = $source.scope
+            $scopeLabel = if ($frozenProjectId) { "the project $(if ($projectName) { $projectName } else { $frozenProjectId })" } else { 'work with no project selected' }
+            $recent = @($source.messages)
+
+            $notes = @(Get-DpPropertyValue -InputObject $state.Memory -Name @('notes') -Default @())
+            $inScope = {
+                param($note)
+                $note.source -eq 'learned' -and $(
+                    if ($scopeKind -eq 'project') { $note.scope -eq 'project' -and $note.projectId -eq $frozenProjectId }
+                    else { $note.scope -eq 'global' }
+                )
+            }
+            # The Model is shown only what it may rewrite: what it previously
+            # learned in this same scope. It never sees, and so can never
+            # overwrite, the user's own notes or another Project's.
+            $scopeNotes = @($notes | Where-Object { & $inScope $_ })
+            $current = (@($scopeNotes | ForEach-Object { $_.text }) -join "`n")
+
             $changed = $false
+            $memoryFull = $null
             $engineParams = @{
-                Prompt             = New-DpMemoryPrompt -CurrentMemory $current -Messages $recent -MaxChars $limits.agentMemory
+                Prompt             = New-DpMemoryPrompt -CurrentMemory $current -Messages $recent -MaxChars $limits.agentMemory -MaxNotes $limits.learnedPerScope -NoteChars $limits.note -ScopeLabel $scopeLabel
                 DisableBrowsing    = $true
                 DisableFileAccess  = $true
                 DisableTerminal    = $true
@@ -1337,9 +1473,21 @@
                 $content = if ($engineResult) { [string]$engineResult.Content } else { '' }
                 $extracted = ConvertFrom-DpMemoryResult -Text $content -MaxLength $limits.agentMemory
                 if (-not [string]::IsNullOrWhiteSpace($extracted) -and $extracted -ne $current) {
-                    $state.Memory = @{ text = $extracted; updatedUtc = [DateTime]::UtcNow.ToString('o') }
-                    if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
-                    $changed = $true
+                    # Provenance is stamped here, by the Host, from the frozen
+                    # binding. Nothing the Model wrote can set it.
+                    $learned = @(New-DpMemoryNoteSet -Text $extracted -Source 'learned' -Scope $scopeKind -ProjectId $frozenProjectId -ConversationId $conversationId -MaxNotes $limits.learnedPerScope)
+                    $kept = @($notes | Where-Object { -not (& $inScope $_) })
+                    # A full store refuses the new notes rather than silently
+                    # dropping some of them - or some of another Project's - on the
+                    # way in. Nothing is assigned unless the whole set fits.
+                    $candidate = $null
+                    try { $candidate = New-DpMemoryStore -Note (@($kept) + @($learned)) -UpdatedUtc ([DateTime]::UtcNow.ToString('o')) }
+                    catch { $memoryFull = "$_" }
+                    if ($candidate) {
+                        $state.Memory = $candidate
+                        if ($state.DataDir) { Save-DpMemoryStore -Memory $state.Memory -Directory $state.DataDir }
+                        $changed = $true
+                    }
                 }
             }
             catch {
@@ -1348,6 +1496,12 @@
             }
             finally {
                 $state.TurnRunning = $false
+            }
+            if ($memoryFull) {
+                # The user did not ask for this pass, so the refusal is about the
+                # store's state rather than their request - and it names what to do.
+                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'memory_full'; message = $memoryFull } }
+                return
             }
             $payload = Get-DpMemoryPayload
             $payload.changed = $changed
@@ -1915,6 +2069,12 @@
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'too_short'; message = 'This conversation is too short to compact.' } }
                 return
             }
+            # What the summary actually kept from the Turns it replaces, measured
+            # rather than assumed. It is reported, not enforced: refusing a weak
+            # summary would strand a Conversation that has run out of context
+            # window, and the honest answer is to say what was lost.
+            $summarisedSlice = @($history | Select-Object -First $compact.summarised)
+            $preservation = Measure-DpCompactionPreservation -History $summarisedSlice -Summary $summary
             $conversation.history = $compact.history
             # compactedUtc is an organisational marker; it does not bump updatedUtc
             # (compaction changes only the replayed context, not the visible thread).
@@ -1930,6 +2090,14 @@
                 after          = $compact.after
                 estimatedFreed = $estimatedFreed
                 compactedUtc   = $conversation.compactedUtc
+                preservation   = @{
+                    complete        = [bool]$preservation.complete
+                    coverage        = $preservation.coverage
+                    missingSections = @($preservation.missingSections)
+                    missing         = @($preservation.missing)
+                    preserved       = @($preservation.preserved).Count
+                    anchors         = @($preservation.anchors).Count
+                }
             }
         }
         'uploads' {

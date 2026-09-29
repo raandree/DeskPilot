@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-08
+last-verified: 2026-09-24
 source: repository evidence
 ---
 
@@ -91,7 +91,11 @@ source: repository evidence
 Resolved as `$LOCALAPPDATA/DeskPilot` → `$XDG_DATA_HOME/DeskPilot` →
 `~/.local/share/DeskPilot` (overridable with `Start-DeskPilot -DataDir`). Holds
 `conversations.json`, `lifetime-usage.json`, and `settings.json`. All writes are
-atomic (temp file + `Move-Item -Force`).
+atomic (temp file + `Move-Item -Force`). Agent Memory now uses a bounded version-2
+`agent-memory.json` with attributed global/Project notes and a compatible global
+text projection. Learning requires a Host-stamped assistant Message id. Lossy
+imports pause learning; explicit repair preserves old bytes with no-clobber
+backups. Keep a private copy before downgrade; older saves omit Project notes.
 
 ## Constraints & risks
 

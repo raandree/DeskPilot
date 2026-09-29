@@ -86,13 +86,17 @@ function Get-DpStreamFrame {
         $status = Get-DpPropertyValue -InputObject $payload -Name 'Status'
         $scope = Get-DpPropertyValue -InputObject $payload -Name 'Scope'
         $source = Get-DpPropertyValue -InputObject $payload -Name 'Source'
-        if ((Get-DpPropertyValue -InputObject $payload -Name 'Kind') -cne 'TerminalApproval' -or
+        $approvalKind = Get-DpPropertyValue -InputObject $payload -Name 'Kind'
+        $toolClass = if ($approvalKind -ceq 'TerminalApproval') { 'Terminal' } else { Get-DpPropertyValue -InputObject $payload -Name 'ToolClass' }
+        if ($approvalKind -cnotin @('TerminalApproval', 'ToolApproval') -or
+            ($approvalKind -ceq 'ToolApproval' -and ($toolClass -cnotin @('FileWrite', 'Mcp', 'UserTool') -or $scope -cne 'once' -or $source -ceq 'turn-grant')) -or
             $status -cnotin @('requested', 'approved', 'denied') -or $scope -cnotin @('once', 'turn') -or
             $source -cnotin @('prompt', 'turn-grant', 'cancelled', 'timeout')) { return }
         $written = Get-DpPropertyValue -InputObject $Record -Name 'TimeGenerated' -Default ([datetime]::UtcNow)
         $action = @{
-            kind = 'approval'; tool = 'run_terminal_command'; status = $status; scope = $scope; source = $source
-            detail = "Terminal $status ($scope scope, $source)"; timestamp = $written.ToUniversalTime().ToString('o')
+            kind = 'approval'; tool = $(if ($toolClass -ceq 'Terminal') { 'run_terminal_command' } else { [string]$toolClass })
+            status = $status; scope = $scope; source = $source
+            detail = "$toolClass $status ($scope scope, $source)"; timestamp = $written.ToUniversalTime().ToString('o')
         }
         return @{ event = 'activity'; data = $action; Action = $action }
     }

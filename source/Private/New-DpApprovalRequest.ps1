@@ -27,6 +27,9 @@ function New-DpApprovalRequest {
         The Conversation this request belongs to.
     .PARAMETER TurnId
         The Turn this request belongs to.
+    .PARAMETER ActionFingerprint
+        Optional Host-computed digest of complete arguments and Engine call
+        identity. Only the digest reaches the card, never secret-bearing data.
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -54,7 +57,10 @@ function New-DpApprovalRequest {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string]$TurnId
+        [string]$TurnId,
+
+        [ValidatePattern('^(?:[0-9a-f]{64})?$')]
+        [string]$ActionFingerprint = ''
     )
 
     # The card is the security boundary, so it shows exactly what will happen.
@@ -119,6 +125,7 @@ function New-DpApprovalRequest {
         $url.Trim(), $targetHost.Trim(),
         $action.Trim(), $control.Trim(), $filePath.Trim(), $fieldMaterial, $executionMaterial
     ) -join [char]31
+    if ($ActionFingerprint) { $material += [char]31 + $ActionFingerprint }
     $sha = [System.Security.Cryptography.SHA256]::Create()
     $scopeFingerprint = $null
     try {
@@ -142,7 +149,7 @@ function New-DpApprovalRequest {
             }
             else { 'This runs a command on your computer with your account. It can read, change or delete files, and it can reach the network.' }
         }
-        'FileWrite' { 'This writes to a file outside the project folder, where DeskPilot cannot undo it for you.' }
+        'FileWrite' { 'This changes a file or directory. Check the destination; changes outside the Project may not be undoable.' }
         'Mcp' { 'This calls an attached tool that may change something outside DeskPilot.' }
         'BrowserNavigation' { 'This opens an address outside the site this task started on. Check the whole address, including anything after the question mark - that is where a page tries to send information it should not have.' }
         'BrowserAction' {

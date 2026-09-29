@@ -1,0 +1,23 @@
+{
+  "id": "structured-run-report",
+  "set": "capability",
+  "note": "Authored for this harness so structured-outcome grading is exercised by a real case rather than only by a unit test. Nobody typed this prompt.",
+  "provenance": {
+    "origin": "synthetic",
+    "source": "authored with the repeated-trial harness; not taken from a user session or a recorded failure",
+    "verbatimUserPrompt": false
+  },
+  "repository": "DeskPilot",
+  "commit": "3d74541",
+  "model": "claude-opus-5",
+  "agent": "software-engineer",
+  "maxToolIterations": 15,
+  "permissions": {
+    "browsing": false,
+    "file": true,
+    "terminal": false,
+    "askUser": false,
+    "userTools": true
+  },
+  "timeoutSeconds": 900
+}
