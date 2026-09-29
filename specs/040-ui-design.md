@@ -268,9 +268,10 @@ with lazy-expanding directories and file sizes. Collapsed and non-expandable whe
 no Project is selected; refreshes after each Turn so files the agent creates
 appear. A **Git bar** at the top of the panel shows whether the Project folder is
 a Git repository: if not, a warning with a **git init** button; if so, the
-current branch and a dropdown to switch between local branches (switching
-refreshes the file tree), a merged-status legend, and a **Branches…** button that
-opens the Branch Wizard.
+current branch and a dropdown to switch between branches (switching refreshes
+the file tree), a merged-status legend, and a **Branches…** button that opens
+the Branch Wizard. Choosing a *server only* branch in the dropdown creates a
+local branch that follows it and switches to that.
 
 Beneath the Git bar, a **Changes panel** lists the changed files directly, in two
 sections. **DeskPilot changed N files** (accent-edged) is the layer above Git:
@@ -324,7 +325,10 @@ a non-expert does with branches. It speaks plain language: *get from server*,
   no remote it says there is nothing to sync with instead of offering buttons.
 - **Branch list**: one row per branch with the merged badge (`✓` merged, `❗` not
   merged, `•` unknown), tags for *current* / *main* / *server only*, and per-row
-  **Switch** and **Delete**.
+  **Switch** and **Delete**. **Switch** on a *server only* row creates a local
+  branch that follows the server one, then switches to it; a branch deleted on
+  the server since the list was drawn is refused with an explanation. **Delete**
+  applies to local branches only.
 - **Footer**: **New branch…**, **Merge a branch…** (hands off to the Merge
   Wizard), **Close**.
 - **New branch** step: a name field (validated in plain language before git sees

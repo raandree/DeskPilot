@@ -98,7 +98,8 @@ without the user's approval.
    sync status in parallel. An unresolved conflict short-circuits straight to the
    conflict step — it is the most urgent state a repository can be in.
 3. Home shows: where you are, what is unsent/unreceived, uncommitted count, and
-   the Branch list with per-row Switch / Delete.
+   the Branch list with per-row Switch / Delete. Switch on a server-only Branch
+   fetches first, then creates a local Branch that tracks it and switches to it.
 4. Actions: Sync · Get from server · Send to server · Review changes… ·
    New branch… · Merge a branch… (hands off to the Merge Wizard of spec 070).
 
@@ -137,6 +138,9 @@ Backend helpers (each via `Invoke-DpGitCommand`, confined to
   `nothingToCommit` distinctly from an error.
 - `Test-DpGitBranchName` — git's ref rules in plain language.
 - `New-DpGitBranch` — create (handling an unborn HEAD) and optionally switch.
+- `Switch-DpGitBranch` — switch to a local Branch, or to a remote-only one by
+  creating a local Branch that tracks it after a pruning fetch that refuses a
+  Branch deleted on the server.
 - `Remove-DpGitBranch` — safe local delete with `notMerged`, optional remote.
 - `Get-DpGitSyncStatus` — ahead/behind, upstream, dirty, in-merge, conflicts.
 - `Invoke-DpGitSync` — pull / push / sync with autostash and conflict reporting.

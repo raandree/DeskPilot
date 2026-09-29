@@ -563,20 +563,12 @@
                 Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'no_branch'; message = 'A branch name is required.' } }
                 return
             }
-            # Only allow switching to a branch that already exists, validated against
-            # the live branch list (the process call already prevents shell injection).
-            $status = Get-DpGitStatus -Path $root
-            if (-not $status.isRepo) {
-                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'not_a_repo'; message = 'This project is not a Git repository.' } }
-                return
-            }
-            if (@($status.branches) -notcontains $branch) {
-                Write-DpResponse -Stream $Stream -Status 400 -Json @{ error = @{ code = 'unknown_branch'; message = "Unknown branch '$branch'." } }
-                return
-            }
-            $checkout = Invoke-DpGitCommand -Path $root -Arguments @('checkout', $branch)
-            if (-not $checkout.Ok) {
-                Write-DpResponse -Stream $Stream -Status 409 -Json @{ error = @{ code = 'checkout_failed'; message = $checkout.StdErr.Trim() } }
+            # Only a Branch from the live list is switched to: a local one as it is,
+            # a remote-only one through a new local Branch that tracks it.
+            $switched = Switch-DpGitBranch -Root $root -Name $branch
+            if (-not $switched.switched) {
+                $statusCode = if ($switched.code -in @('checkout_failed', 'branch_gone')) { 409 } else { 400 }
+                Write-DpResponse -Stream $Stream -Status $statusCode -Json @{ error = @{ code = $switched.code; message = $switched.error } }
                 return
             }
             Write-DpResponse -Stream $Stream -Json (Get-DpGitStatus -Path $root)

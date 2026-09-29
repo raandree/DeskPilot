@@ -4868,7 +4868,7 @@ function branchTitle(b, def) {
     if (b.merged === true) s = `Already merged into ${where}.`;
     else if (b.merged === false) s = `Not yet merged into ${where}.`;
     else s = 'Merge status unknown.';
-    if (b.isRemote) s += ' Remote-only branch (exists on the server only).';
+    if (b.isRemote) s += ' Remote-only branch (exists on the server only). Switching to it creates a local branch that follows it.';
     return s;
 }
 
@@ -4912,12 +4912,14 @@ function renderGitBar(status, branchData, silent) {
         select.appendChild(o);
     }
 
+    // A server-only branch is chosen like any other: the Host Server creates a
+    // local branch that follows it, which first needs a trip to the server.
+    const serverOnly = new Set();
     if (entries) {
         for (const b of entries) {
             const o = document.createElement('option');
-            // Remote-only branches can't be checked out directly here.
-            o.value = b.isRemote ? '' : b.name;
-            if (b.isRemote) o.disabled = true;
+            o.value = b.name;
+            if (b.isRemote) serverOnly.add(b.name);
             o.textContent = gitBranchBadge(b) + b.display + (b.isDefault ? '  (main)' : '') + (b.isRemote ? '  (remote)' : '');
             o.title = branchTitle(b, def);
             if (!status.detached && b.isCurrent) o.selected = true;
@@ -4932,7 +4934,7 @@ function renderGitBar(status, branchData, silent) {
             select.appendChild(o);
         }
     }
-    select.onchange = () => { if (select.value) switchBranch(select.value); };
+    select.onchange = () => { if (select.value) switchBranch(select.value, serverOnly.has(select.value)); };
 
     bar.append(info, label, select);
 
@@ -5488,10 +5490,12 @@ async function gitInit() {
     } catch (e) { toast(e.message); }
 }
 
-async function switchBranch(branch) {
+async function switchBranch(branch, fromServer) {
+    if (fromServer) toast('Getting ' + branch + ' from the server…');
     try {
-        await api('POST', '/api/git/checkout', { branch });
-        toast('Switched to ' + branch + '.');
+        // A server-only branch switches to the local branch created for it.
+        const status = await api('POST', '/api/git/checkout', { branch });
+        toast('Switched to ' + ((status && status.branch) || branch) + '.');
         refreshExplorer();
     } catch (e) { toast(e.message); refreshGitBar(); }
 }
@@ -5673,8 +5677,10 @@ function buildBranchRow(b, def) {
         (b.isDefault ? '<span class="merge-tag muted tiny">main</span>' : '') +
         (b.isRemote ? '<span class="merge-tag muted tiny">server only</span>' : '');
     const acts = el('branch-row-acts');
-    if (!b.isCurrent && !b.isRemote) {
-        acts.appendChild(branchWizBtn('Switch', 'btn-small', () => branchWizSwitch(b.name)));
+    if (!b.isCurrent) {
+        const switchBtn = branchWizBtn('Switch', 'btn-small', () => branchWizSwitch(b.name, !!b.isRemote));
+        if (b.isRemote) switchBtn.title = 'Creates a local branch that follows this server branch, and switches to it.';
+        acts.appendChild(switchBtn);
     }
     if (!b.isDefault && !b.isRemote) {
         acts.appendChild(branchWizBtn('Delete', 'btn-small', () => {
@@ -5687,13 +5693,13 @@ function buildBranchRow(b, def) {
     return row;
 }
 
-async function branchWizSwitch(name) {
-    branchWiz.busyLabel = 'Switching branch…';
+async function branchWizSwitch(name, fromServer) {
+    branchWiz.busyLabel = fromServer ? 'Getting the branch from the server…' : 'Switching branch…';
     branchWiz.step = 'busy';
     renderBranchWizard();
     try {
-        await api('POST', '/api/git/checkout', { branch: name });
-        toast('Switched to ' + name + '.');
+        const status = await api('POST', '/api/git/checkout', { branch: name });
+        toast('Switched to ' + ((status && status.branch) || name) + '.');
         refreshExplorer();
     } catch (e) { toast(e.message); }
     branchWiz.step = 'home';

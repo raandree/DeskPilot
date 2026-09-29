@@ -10,13 +10,17 @@ function Invoke-DpGitFetch {
         git secrets.
     .PARAMETER Path
         The repository folder.
+    .PARAMETER RemoteName
+        Fetch only this remote. Without it, git picks its default remote.
     .OUTPUTS
         System.Collections.Hashtable with ok, hasRemote and error.
     #>
     [CmdletBinding()]
     [OutputType([hashtable])]
     param(
-        [string]$Path
+        [string]$Path,
+
+        [string]$RemoteName
     )
 
     $result = @{ ok = $false; hasRemote = $false; error = $null }
@@ -34,7 +38,9 @@ function Invoke-DpGitFetch {
         return $result
     }
 
-    $fetch = Invoke-DpGitCommand -Path $Path -Arguments @('fetch', '--prune') -TimeoutSeconds 60
+    $fetchArguments = @('fetch', '--prune')
+    if (-not [string]::IsNullOrWhiteSpace($RemoteName)) { $fetchArguments += $RemoteName }
+    $fetch = Invoke-DpGitCommand -Path $Path -Arguments $fetchArguments -TimeoutSeconds 60
     if ($fetch.Ok) {
         $result.ok = $true
     }

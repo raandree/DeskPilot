@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-25
+last-verified: 2026-09-29
 source: full Sampler gates, scoped regressions, and real browser acceptance
 ---
 
@@ -29,6 +29,7 @@ parallel topology remains proposed; no parallel scheduling is enabled.
 
 | Date | Milestone |
 | --- | --- |
+| 2026-09-29 | Explain phantom server-only Branches in the Git bar picker: its poll reads stale remote-tracking refs, which the Branch Wizard's pruning fetch removes. Add switching to a server-only Branch from the Branch Wizard and the picker through `Switch-DpGitBranch`: a pruning fetch of that remote, refusal of a Branch deleted on the server (`409 branch_gone`), then a local tracking Branch created and checked out in one step, or the existing local Branch reused. 14 new Pester and 3 new Node cases failed first and now pass, plus one characterization each. Full Sampler gate: 2,970 passed, zero failures, 20 skips (11 Engine-integration cases skip without `DESKPILOT_TEST_ENGINE_PATH`); 16 tasks, zero errors, seven known warnings. 64/64 Node UI tests; ESM check passes. Local Branch `ai/switch-server-only-branch`; no push. Another chat shares this working tree. |
 | 2026-09-25 | Verify green hosted CI [36122275951](https://github.com/raandree/DeskPilot/actions/runs/36122275951) at pushed `ee0d2c9`: Package Module and Windows/macOS/Ubuntu pass; Deploy correctly skips. Windows passes 2,966 tests, Ubuntu 2,920 and macOS 2,919, with zero failures and only environment/platform skips. The original macOS child-CWD assertion now passes unchanged after fixture canonicalization. All four review findings and three follow-ups are independently closed; runtime source remains the reviewed `84a6012`. Remove all four owned worktrees and browser dependencies while retaining review/test/browser/CI evidence. Final record-only close-out is checked by the same workflow; no main Merge, release or default Engine change. |
 | 2026-09-25 | Push approved fixes as `5864cdb`; CI `36121088703` passes Package Module, Windows (2,966 passed) and Ubuntu (2,920 passed), but macOS reports one physical-CWD fixture mismatch. Canonicalize its temporary root before child launch with the existing helper; keep all transport/non-execution assertions unchanged. All 173 focused eval tests pass locally, zero failures/skips. Hosted macOS and the full matrix must be rechecked after the repair push. |
 | 2026-09-25 | Complete all four review fixes and three follow-up observations through `84a6012`, with independent approval and no remaining findings. Preserve data-only eval launch/cleanup retention, JSON Memory references, exact Engine controls and MCP identities, behavioral Terminal proof, visible approvals, and precise CI artifact checks. Final local gate: 2,966 passed, zero failures, nine environment/platform skips; 16 tasks, zero errors, seven expected Memory preservation warnings. All 59 Node tests and desktop/mobile scripted-provider approval journeys pass. Actual Engine and behavioral boundary cases ran without skips. Topic-Branch push and exact-SHA hosted CI are next. |

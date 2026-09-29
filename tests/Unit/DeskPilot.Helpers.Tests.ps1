@@ -3882,6 +3882,18 @@ Describe 'Invoke-DpGitFetch' {
         $r.ok | Should -BeTrue
     }
 
+    It 'fetches only the named remote when one is given' {
+        Mock -CommandName Invoke-DpGitCommand -MockWith {
+            $j = $Arguments -join ' '
+            if ($j -eq 'remote') { return Ok "origin`nupstream`n" }
+            if ($j -match 'fetch') { return Ok '' }
+            @{ Ok = $false; ExitCode = 1; StdOut = ''; StdErr = '' }
+        }
+        $r = Invoke-DpGitFetch -Path $script:fDir -RemoteName 'upstream'
+        $r.ok | Should -BeTrue
+        Should -Invoke Invoke-DpGitCommand -Times 1 -Exactly -ParameterFilter { ($Arguments -join ' ') -eq 'fetch --prune upstream' }
+    }
+
     It 'captures a fetch failure (offline / auth)' {
         Mock -CommandName Invoke-DpGitCommand -MockWith {
             $j = $Arguments -join ' '
@@ -5476,6 +5488,179 @@ Describe 'Git workbench against a real repository' -Skip:(-not (Get-Command git 
 
         It 'reports a branch that does not exist' {
             (Remove-DpGitBranch -Root $script:wbB -Name 'ghost').error | Should -Match 'no local branch'
+        }
+    }
+
+    Context 'switching to a server-only branch' {
+        BeforeAll {
+            $script:soRemote = Join-Path $TestDrive 'soRemote.git'
+            & git init -q --bare $script:soRemote 2>$null
+            & git --git-dir $script:soRemote symbolic-ref HEAD refs/heads/main
+            if ($LASTEXITCODE -ne 0) { throw 'Could not initialize the bare server-only fixture HEAD.' }
+            $script:soSeed = Join-Path $TestDrive 'soSeed'
+            New-WorkbenchRepo -Path $script:soSeed
+            [System.IO.File]::WriteAllText((Join-Path $script:soSeed 'a.txt'), "a`n")
+            & git -C $script:soSeed add . 2>$null
+            & git -C $script:soSeed commit -q -m 'init' 2>$null
+            foreach ($branch in 'feature/remote-work', 'feature/gone', 'feature/route', 'feature/route-gone') {
+                & git -C $script:soSeed checkout -q -b $branch main 2>$null
+                [System.IO.File]::WriteAllText((Join-Path $script:soSeed (($branch -replace '/', '-') + '.txt')), "$branch`n")
+                & git -C $script:soSeed add . 2>$null
+                & git -C $script:soSeed commit -q -m "work on $branch" 2>$null
+            }
+            & git -C $script:soSeed checkout -q -b 'feature/overwrites' main 2>$null
+            [System.IO.File]::WriteAllText((Join-Path $script:soSeed 'a.txt'), "server version`n")
+            & git -C $script:soSeed commit -q -am 'change a on the server' 2>$null
+            & git -C $script:soSeed checkout -q main 2>$null
+            & git -C $script:soSeed remote add origin $script:soRemote 2>$null
+            & git -C $script:soSeed push -q origin --all 2>$null
+            $script:soClone = Join-Path $TestDrive 'soClone'
+            & git clone -q $script:soRemote $script:soClone 2>$null
+            if (-not (Test-Path -LiteralPath (Join-Path $script:soClone '.git'))) { throw 'Could not clone the server-only fixture.' }
+
+            function Invoke-CheckoutRoute {
+                param([string]$Branch)
+                $settings = Get-DpDefaultSettings
+                $settings.workspaceFolder = $script:soClone
+                $script:DeskPilot = @{ Settings = $settings }
+                $stream = [System.IO.MemoryStream]::new()
+                try {
+                    Invoke-DpRouteHandler -Name 'gitCheckout' -Body ([pscustomobject]@{ branch = $Branch }) -Stream $stream
+                    $response = [System.Text.Encoding]::UTF8.GetString($stream.ToArray())
+                }
+                finally {
+                    $stream.Dispose()
+                    $script:DeskPilot = $null
+                }
+                @{
+                    StatusLine = ($response -split "`r`n", 2)[0]
+                    Json       = ($response -split "`r`n`r`n", 2)[1] | ConvertFrom-Json
+                }
+            }
+        }
+
+        BeforeEach {
+            & git -C $script:soClone checkout -q main 2>$null
+        }
+
+        It 'creates a local branch that follows the server-only branch and switches to it' {
+            $r = Switch-DpGitBranch -Root $script:soClone -Name 'origin/feature/remote-work'
+
+            $r.error | Should -BeNullOrEmpty
+            $r.switched | Should -BeTrue
+            $r.created | Should -BeTrue
+            $r.branch | Should -Be 'feature/remote-work'
+            (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'feature/remote-work'
+            & git -C $script:soClone rev-parse --abbrev-ref 'feature/remote-work@{upstream}' | Should -Be 'origin/feature/remote-work'
+            Join-Path $script:soClone 'feature-remote-work.txt' | Should -Exist
+        }
+
+        It 'switches to the local branch that already carries the server branch name' {
+            & git -C $script:soClone branch --track 'feature/remote-work' 'origin/feature/remote-work' 2>$null
+
+            $r = Switch-DpGitBranch -Root $script:soClone -Name 'origin/feature/remote-work'
+
+            $r.switched | Should -BeTrue
+            $r.created | Should -BeFalse
+            $r.branch | Should -Be 'feature/remote-work'
+            (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'feature/remote-work'
+        }
+
+        It 'still switches to a local branch by its own name' {
+            & git -C $script:soClone branch 'local-only' 2>$null
+
+            $r = Switch-DpGitBranch -Root $script:soClone -Name 'local-only'
+
+            $r.switched | Should -BeTrue
+            $r.created | Should -BeFalse
+            $r.branch | Should -Be 'local-only'
+            (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'local-only'
+        }
+
+        It 'refuses a branch deleted on the server since the list was drawn, and creates nothing' {
+            & git --git-dir $script:soRemote branch -D 'feature/gone' 2>$null | Out-Null
+            & git -C $script:soClone show-ref --verify --quiet 'refs/remotes/origin/feature/gone'
+            $LASTEXITCODE | Should -Be 0 -Because 'the clone still holds the stale remote-tracking ref'
+
+            $r = Switch-DpGitBranch -Root $script:soClone -Name 'origin/feature/gone'
+
+            $r.switched | Should -BeFalse
+            $r.code | Should -Be 'branch_gone'
+            $r.error | Should -Match 'no longer exists on the server'
+            & git -C $script:soClone show-ref --verify --quiet 'refs/heads/feature/gone'
+            $LASTEXITCODE | Should -Not -Be 0
+            (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'main'
+        }
+
+        It 'keeps uncommitted work and creates nothing when the switch would overwrite it' {
+            $aPath = Join-Path $script:soClone 'a.txt'
+            [System.IO.File]::WriteAllText($aPath, "local edit`n")
+            try {
+                $r = Switch-DpGitBranch -Root $script:soClone -Name 'origin/feature/overwrites'
+
+                $r.switched | Should -BeFalse
+                $r.code | Should -Be 'checkout_failed'
+                $r.error | Should -Not -BeNullOrEmpty
+                [System.IO.File]::ReadAllText($aPath) | Should -Be "local edit`n"
+                & git -C $script:soClone show-ref --verify --quiet 'refs/heads/feature/overwrites'
+                $LASTEXITCODE | Should -Not -Be 0
+                (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'main'
+            }
+            finally {
+                & git -C $script:soClone checkout -q -- 'a.txt' 2>$null
+            }
+        }
+
+        It 'refuses <Name>, which is neither a local nor a server branch' -ForEach @(
+            @{ Name = 'origin/no-such-branch' }
+            @{ Name = 'no-such-branch' }
+            @{ Name = 'upstream/feature/remote-work' }
+            @{ Name = 'origin/HEAD' }
+        ) {
+            $r = Switch-DpGitBranch -Root $script:soClone -Name $Name
+
+            $r.switched | Should -BeFalse
+            $r.code | Should -Be 'unknown_branch'
+            (Get-DpGitStatus -Path $script:soClone).branch | Should -Be 'main'
+        }
+
+        It 'refuses an option-shaped name before it reaches git' {
+            $r = Switch-DpGitBranch -Root $script:soClone -Name '--orphan=evil'
+
+            $r.switched | Should -BeFalse
+            $r.code | Should -Be 'unknown_branch'
+            $r.error | Should -Match 'dash'
+        }
+
+        It 'reports a missing project folder' {
+            $r = Switch-DpGitBranch -Root (Join-Path $TestDrive 'no-such-switch') -Name 'main'
+
+            $r.switched | Should -BeFalse
+            $r.error | Should -Be 'No project folder.'
+        }
+
+        It 'answers a server-only switch through the checkout route with the new status' {
+            $r = Invoke-CheckoutRoute -Branch 'origin/feature/route'
+
+            $r.StatusLine | Should -Match '^HTTP/1\.1 200 '
+            $r.Json.branch | Should -Be 'feature/route'
+            $r.Json.branches | Should -Contain 'feature/route'
+        }
+
+        It 'answers 409 through the checkout route for a branch deleted on the server' {
+            & git --git-dir $script:soRemote branch -D 'feature/route-gone' 2>$null | Out-Null
+
+            $r = Invoke-CheckoutRoute -Branch 'origin/feature/route-gone'
+
+            $r.StatusLine | Should -Match '^HTTP/1\.1 409 '
+            $r.Json.error.code | Should -Be 'branch_gone'
+        }
+
+        It 'still answers 400 through the checkout route for an unknown branch' {
+            $r = Invoke-CheckoutRoute -Branch 'no-such-branch'
+
+            $r.StatusLine | Should -Match '^HTTP/1\.1 400 '
+            $r.Json.error.code | Should -Be 'unknown_branch'
         }
     }
 

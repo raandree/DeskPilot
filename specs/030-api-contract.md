@@ -617,10 +617,17 @@ Runs `git init` in the Project folder and returns the new status (same shape as
 
 ### `POST /api/git/checkout`
 
-Body `{ "branch": "<name>" }`. Switches to an **existing** local branch (validated
-against the live branch list) and returns the new status. `400` for an unknown
-branch or no Project; `409` when the checkout fails (for example uncommitted
-changes would be overwritten).
+Body `{ "branch": "<name>" }`. Switches to an **existing** Branch, validated
+against the live Branch list, and returns the new status. A local Branch is
+checked out as it is. A remote-only Branch, named `<remote>/<branch>` the way
+`GET /api/git/branches` lists it, is first fetched from that remote with prune;
+DeskPilot then creates a local Branch `<branch>` that tracks it and switches to
+it, or switches to the local Branch of that name when one already exists. The
+returned `branch` is the local Branch now checked out. An unreachable server
+falls back to the copy fetched last time. `400` for an unknown branch or no
+Project; `409` when the checkout fails (for example uncommitted changes would be
+overwritten, in which case nothing is created), or with code `branch_gone` when
+the remote-only Branch no longer exists on the server.
 
 ## Git Workbench (selected Project)
 

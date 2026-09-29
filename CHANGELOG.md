@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Allow switching to a server-only Branch from the Branch Wizard or the Git
+  bar's branch picker. DeskPilot creates a local Branch that follows the server
+  one and switches to it; a Branch deleted on the server since the list was
+  drawn is refused with an explanation instead of being revived.
 - Add attributable, Project-scoped Agent Memory with source and verification
   labels, explicit scope editing and forgetting, and preserved recovery copies
   before a lossy store is replaced. Full stores refuse changes instead of

@@ -2,6 +2,25 @@
 
 Recurring issues and how they were resolved.
 
+## Phantom server-only Branches in the Git bar picker (2026-09-29)
+
+**Symptom:** The Git bar's branch picker listed many `origin/…` Branches marked
+*(remote)* that the Branch Wizard did not show. Checked again later, both
+agreed.
+
+**Root cause:** Both views come from `Get-DpBranchList`, but the Git bar polls
+`GET /api/git/branches` without `fetch=1` and so reads local `refs/remotes/*`
+only. A Branch deleted on the server, for example after its pull request was
+merged, leaves a stale remote-tracking ref until something runs
+`git fetch --prune`. The Branch Wizard, the Merge Wizard and Sync fetch with
+prune; opening the Branch Wizard deleted the stale refs, and the next Git bar
+refresh showed the real list. It is Git's local state, not a DeskPilot cache.
+
+**Rule:** Treat the Git bar's remote list as possibly stale. Anything that acts
+on a server-only Branch fetches that remote with prune and re-checks the ref
+first. That is why `Switch-DpGitBranch` refuses a Branch gone from the server
+(`409 branch_gone`) instead of reviving it from a stale ref.
+
 ## Cross-platform CI drift after a green local gate (2026-09-08)
 
 Run `34209511633` built `912b158` with Sampler 0.120.1, Pester 6.1.0,
