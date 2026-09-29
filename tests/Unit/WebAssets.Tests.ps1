@@ -306,7 +306,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         # One growing answer body with the whole trace stacked on one side of it
         # puts the reasoning in the wrong place whichever side that is. The flow
         # holds the Turn as it happened; the answer body is the summary after it.
-        $js | Should -Match ([regex]::Escape('wrap.append(role, steps, flow, content,'))
+        $js | Should -Match ([regex]::Escape('wrap.append(role, steps, tasks, changes, activity, flow, content, userPrompts, usage);'))
         $js | Should -Match ([regex]::Escape('wrap._refs = { content, flow, steps,'))
         $js | Should -Not -Match ([regex]::Escape('wrap.append(role, thinking, steps, content,'))
         $js | Should -Not -Match ([regex]::Escape('wrap.append(role, steps, content, thinking,'))
@@ -315,7 +315,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match '(?s)function openThinkingBox\(flow\).{0,700}?box\.open = true;'
         # The box only appears after the turn-start scroll, so the thread has to
         # follow it or it unfolds below the fold and the turn reads as stalled.
-        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{.{0,900}?followThread\(\);\s*\}'
+        $js | Should -Match '(?s)function renderThinking\(wrap, text\) \{(?:(?!\r?\nfunction ).)*followThread\(\);\s*\}'
         # Every live reasoning frame goes through that helper; an inline update
         # would silently lose the scroll again.
         $reasoning = [regex]::Matches($js, 'reasoning: \(d\) =>')
@@ -330,11 +330,8 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
     It 'never lets a live run of thinking trap the wheel' {
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # A live box sits in the middle of the flow with the answer and the Activity
-        # panel below it. A wheel over a box that scrolls itself never reaches the
-        # thread, so the reader ends at that box's own bar with the rest of the
-        # message out of reach - which is exactly what was reported. Clipped, and
-        # kept on its newest line by renderThinking's pin instead.
+        # Live boxes follow their newest line without trapping the wheel; the
+        # thread must remain scrollable so earlier output is still reachable.
         $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*overflow: hidden'
         $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.disclosure-body \{[^}]*max-height:'
         # A sealed box the reader chose to open may scroll: nothing is moving, and a
@@ -400,40 +397,19 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Not -Match ([regex]::Escape("wrap.querySelector('.thinking .disclosure-body').textContent = m.reasoning"))
     }
 
-    It 'keeps the live thinking readable once the answer has scrolled it away' {
+    It 'keeps thinking in the flow without a duplicate compressed composer line' {
         $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
         $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
 
-        # A long Turn pushes the newest box past the fold and only the spinner is
-        # left - which cannot tell "still working" from "hung". The newest trace
-        # line is mirrored beside it.
-        $js | Should -Match ([regex]::Escape('setActivityStatus(lastTraceLine(text))'))
-        $js | Should -Match ([regex]::Escape('id="activity-status"'))
-        $js | Should -Match ([regex]::Escape('$(''activity-status'').onclick = revealThinking'))
-        $js | Should -Match '(?s)function revealThinking\(\).{0,500}?scrollIntoView'
-        # It reaches the newest box inside the flow, not the flow itself.
-        $js | Should -Match ([regex]::Escape("'.msg-assistant .turn-flow:not(.hidden) .thinking'"))
-        # Scanning the whole trace once per streamed frame would cost more than the
-        # repaint it decorates.
-        $js | Should -Match ([regex]::Escape('text.slice(-600)'))
-        # One line, ellipsised: this row sits above the composer and must not grow
-        # the footer while a Turn streams.
-        $css | Should -Match '(?s)\.activity-status \{[^}]*white-space: nowrap'
-        $css | Should -Match '(?s)\.activity-status \{[^}]*text-overflow: ellipsis'
+        $js | Should -Not -Match 'setActivityStatus|lastTraceLine|revealThinking|activity-status'
+        $css | Should -Not -Match '\.activity-status'
+        $js | Should -Match '(?s)function renderThinking\(wrap, text\)(?:(?!\r?\nfunction ).)*hint\.classList\.add\(''hidden''\)'
+        $js | Should -Match 'function splitThinkingSections\(text\)'
 
-        # And reading it has to be possible: pinning the thread on every token used
-        # to drag the reader back to the bottom mid-line. `.thread` scrolls
-        # smoothly, so a distance test would misread the in-flight programmatic
-        # scroll as "the reader scrolled away" - the direction of the move is what
-        # decides, and a listener that is never wired would silently restore the
-        # old behaviour.
+        # Scrolling up to read earlier output must still pause automatic following.
         $js | Should -Match '(?s)function followThread\(\) \{\s*if \(threadFollow\) scrollThread\(\);\s*\}'
         $js | Should -Match ([regex]::Escape('if (top < threadLastTop - 1) threadFollow = atBottom;'))
         $js | Should -Match '(?s)function wireGlobal\(\).{0,4000}?wireThreadFollow\(\);'
-        # Clicking the status line means "let me read this", so it stops following
-        # outright - the scroll it starts is smooth, and the next streamed frame
-        # would otherwise win the race back to the bottom.
-        $js | Should -Match '(?s)function revealThinking\(\).{0,500}?threadFollow = false;'
         [regex]::Matches($js, 'renderMarkdown\(raw\);\s*followThread\(\);').Count | Should -Be 2
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
     }
@@ -446,8 +422,6 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         # the newest content sits below the fold with the bar apparently at the end.
         $js | Should -Match ([regex]::Escape("t.scrollTo({ top: t.scrollHeight, behavior: 'instant' });"))
         $js | Should -Not -Match ([regex]::Escape('t.scrollTop = t.scrollHeight;'))
-        # revealThinking is the one scroll that should ease, and it asks for it.
-        $js | Should -Match ([regex]::Escape("scrollIntoView({ block: 'nearest', behavior: 'smooth' })"))
         # refreshCurrentConversation fills in checkpoint dividers and auto-compaction
         # rebuilds the thread, both after `done` has already followed - so the last
         # follow has to come after everything the finally block does.
@@ -474,6 +448,9 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         [regex]::Matches($js, 'noteActivity\(wrap, d\)').Count | Should -Be $activityFrames.Count
         # A write is also a change to review, so it still feeds the live edit rows.
         $js | Should -Match ([regex]::Escape("if (action.kind === 'write' && action.detail) noteFileEdit(wrap, action.detail);"))
+        $js | Should -Match ([regex]::Escape("const changes = el('changes-card hidden', 'details');"))
+        [regex]::Matches($js, [regex]::Escape("const head = el('changes-head', 'summary');")).Count |
+            Should -Be 2 -Because 'live edits and completed Changes must both be collapsible'
         # One row per file, not one per write: an agent that rewrites the same file
         # five times is still editing one file.
         $js | Should -Match '(?s)function noteFileEdit\(wrap, path\) \{.{0,600}?if \(edits\.has\(key\)\) return;'
@@ -495,9 +472,9 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         # Six reads in a row are one moment of the Turn; six reads spread across it
         # are six. Grouping by kind alone would lose that.
         $js | Should -Match '(?s)function groupActivity\(actions\).{0,400}?last\.kind === a\.kind'
-        # Open while it runs, closed when it ends: the collapsed panel IS the
-        # summary line, and re-opening it is the whole point.
+        # Collapsed from the first action; the reader may expand it while it runs.
         $js | Should -Match ([regex]::Escape('if (!live) node.open = false;'))
+        $js | Should -Not -Match '(?s)function paintActivity\((?:(?!\r?\nfunction ).)*node\.open = true'
         $js | Should -Match ([regex]::Escape("live ? 'Working' : 'Activity'"))
         # A stopped or budget-exhausted Turn never receives an Engine result, so
         # what streamed live is the only account it has.

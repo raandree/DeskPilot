@@ -477,6 +477,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Project. The bundled UI sends the identifier. Keep a private copy of the
   version-2 Memory file before downgrading; do not promote confidential Project
   notes into global recall as a workaround.
+- Keep each thinking run in its own section below collapsed Activity and edited-file panels, and remove the duplicate compressed thinking line above the composer. See [Message layout](specs/040-ui-design.md#4-message-thread).
 - Request structured compaction sections and report reference/section coverage
   without claiming that these heuristics prove a Model's summary is correct.
 

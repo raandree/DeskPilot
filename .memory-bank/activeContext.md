@@ -3,47 +3,50 @@ schema-version: 1
 status: accepted
 owner: software-engineer
 last-verified: 2026-09-29
-source: red/green regressions, full local Sampler gate, and Node UI tests
+source: red/green UI regressions, web-asset contracts, and desktop/mobile browser evidence
 ---
 
 # Active context
 
 ## Current focus
 
-Switching to a server-only Branch is implemented and validated locally on
-`ai/switch-server-only-branch`, created from `main` at `fd9e463`. It is committed
-locally, not pushed or merged; both remain user-controlled. Another chat shares
-this working tree, so stage exact paths only and never stash, reset or switch
-Branches underneath it without asking.
+The requested thinking and file Activity layout is implemented and validated on
+the existing `ai/switch-server-only-branch`. Another chat shares this working
+tree: preserve its server-only Branch work at `8634db8`, stage only owned paths,
+and do not stash, reset, or switch Branches. No push or Merge was requested.
 
 ## Latest change
 
-- The Git bar picker and the Branch Wizard offer **Switch** on a server-only
-  Branch. `POST /api/git/checkout` accepts `<remote>/<branch>` and delegates to
-  `Switch-DpGitBranch`. Local Branches are checked out as before. A remote-only
-  Branch gets a pruning fetch of its remote, a `409 branch_gone` refusal when
-  the server deleted it, and otherwise one `git checkout --track -b` step, or
-  reuse of the local Branch of the same name.
-- `Invoke-DpGitFetch` gained `-RemoteName`. Unknown names still answer `400`;
-  a refused checkout answers `409` and creates nothing.
-- The picker's phantom `origin/…` entries were stale remote-tracking refs: the
-  Git bar never fetches. See `debugging-insights.md`.
+- Thinking now starts a new section at each Engine iteration divider, including
+  Tool-only outputs. Tokens stay in their current section; intermediate answer
+  text and the final answer keep their chronological positions.
+- Tasks, Changes, and Activity precede the output flow. Activity and file lists
+  start collapsed, preserve manual expansion during updates, and remain
+  keyboard-accessible. Keep, Undo, Diff viewer, and approvals remain available.
+- Remove the mirrored, truncated thinking line above the composer. Generic
+  Working feedback remains before reasoning arrives or when thinking is off.
+- Completed live sections survive finalization. Stored traces retain explicit
+  iteration boundaries; prose-only records cannot recover missing boundaries.
+  No Host Server, Permission, Engine, or persisted schema change was needed.
 
 ## Validation
 
-- Red/green: 14 Pester and 3 Node cases failed first for the expected reasons.
-- Full `build.ps1 -Tasks build,test`: 2,970 passed, zero failures, 20 skips.
-  Eleven Engine-integration cases skip because `DESKPILOT_TEST_ENGINE_PATH` is
-  unset here; CI supplies the pinned Engine. 16 tasks, zero errors, seven known
-  Memory preservation warnings.
-- 64/64 Node UI tests; source and built `app.js` pass the ESM check; analyzer is
-  clean on the changed PowerShell. No live browser check was available.
+- Twelve focused Node cases pass; ten failed against the old behavior and two
+  characterize retained behavior. All 76 native Node UI tests pass, including
+  the other chat's Branch regressions. JavaScript syntax check passes.
+- All 54 web-asset Pester contracts pass in an isolated process, zero skips.
+- Six headless Edge journeys at 1440px and 390px pass: Send/completion,
+  regenerate/Stop, and edit without reasoning. Verify actual section bounds,
+  latest-line visibility, keyboard disclosure controls, manual-scroll retention,
+  and approval denial. No page errors, unexpected requests, or Model calls.
+  These are loopback SSE fixtures using the real UI, not live Engine acceptance.
 
-## Previous focus
+## Concurrent work retained
 
-The agent-reliability package, its review fixes and green hosted CI at
-`ee0d2c9` are complete and merged to `main` as `fd9e463`; the details are in
-`progress.md`.
+`8634db8` adds server-only Branch switching with a pruning fetch, refusal of
+deleted Branches, and local tracking-Branch reuse. Its earlier full Sampler gate
+passed 2,970 tests with 20 environment skips; see `progress.md` for that separate
+change's evidence. The agent-reliability work is already merged at `fd9e463`.
 
 ## Retained boundaries
 

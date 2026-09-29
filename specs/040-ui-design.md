@@ -102,14 +102,16 @@ accent fills so the bright dark-mode accent stays legible.
   account of what the agent is touching; consecutive rows of one kind fold into
   one line (`Read 6 files`), open while the Turn runs and closed once it ends.
   The whole block is headed `Working — N actions` while streaming and
-  `Activity — N actions` afterwards, and is collapsed once complete — one line
-  the reader can open again. Independent of **Show the model's thinking**.
+  `Activity — N actions` afterwards. It starts collapsed from the first action,
+  preserves the reader's expansion while streaming, and closes when complete.
+  Independent of **Show the model's thinking**.
   Persisted on the Message and replayed on reload; a Message from before the
   ordered account existed replays the Engine's unordered sets instead.
 - **Changes** card per assistant Message (Git Projects only): a header reading
   `N files changed  +A  −D`, then one row per file with a status badge
   (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and its own `+`/`−`
-  counts — measured against the snapshot taken before that Turn. Clicking a row
+  counts — measured against the snapshot taken before that Turn. The card starts
+  collapsed; its header opens the file list with mouse or keyboard. Clicking a row
   opens the **Diff viewer**. The header carries two actions: **Keep** (accept
   these files and stop tracking them) and **Undo** (put them back the way they
   were before the Turn; files the agent created are deleted). The card disappears
@@ -118,8 +120,10 @@ accent fills so the bright dark-mode accent stays legible.
 - **Live edits** in that same card while the Turn runs: one row per file the
   moment the agent starts writing it, under an `Editing N files…` header, with no
   counts and no click target — the write has not happened yet, so there is
-  nothing to measure or diff. Independent of the Project being a Git repository
-  and of **Show the model's thinking**. The Changes card replaces the rows on
+  nothing to measure or diff. The file list starts collapsed and preserves the
+  reader's expansion through updates and completion. Independent of the Project
+  being a Git repository and of **Show the model's thinking**. The Changes card
+  replaces the rows on
   `done`; when there is nothing to review (no Project, no repository, or files
   already put back) the rows stay, re-headed `N files edited`, rather than
   vanishing with the record of what the Turn wrote.
@@ -130,18 +134,27 @@ accent fills so the bright dark-mode accent stays legible.
   the panel on every update (idempotent), so at most one Task is ever
   `in-progress`. Hidden when the list is empty or `taskTracking` is off.
   Persisted on the Message and replayed on reload.
-- **Thinking** block (when reasoning present / showThinking on): collapsible,
-  dim, above the answer. Height-bounded with its own scroll and pinned to the
-  newest line while it streams. Each complete trace line is laid out before it
-  is streamed (`Format-DpThinkingTrace`): a tool call becomes its name plus one
-  indented entry per argument, with the argument's escaped newlines restored, and
-  the iteration banner becomes a divider. The model's own reasoning prose streams
-  token by token and is never rewritten. A completed Message replays the Engine
-  result's `.Reasoning` (prose only); a **stopped** Message has no such result, so
-  it replays the trace that streamed before the Stop. The block sits above the
-  answer, so a long answer scrolls it out of view: while a Turn streams its newest
-  line is mirrored in the Activity hint above the composer, and clicking that line
-  opens the block and brings it back into view.
+- **Thinking** sections (when reasoning present / showThinking on): each run gets
+  its own collapsible box in the order it happened, below the Tasks, Changes, and
+  Activity summaries. Intermediate answer text stays between the runs; the final
+  answer follows them. A new Engine iteration starts a new box even when there
+  was only Tool use between outputs. Individual tokens never create new boxes.
+  Earlier runs close automatically unless the reader explicitly opened them;
+  the latest run stays open at the bottom of the flow. Questions and approvals
+  remain below the output, outside every collapsed work panel.
+  Live boxes are height-bounded, clipped rather than separately wheel-scrollable,
+  and pinned to the newest line. Reopened completed boxes may scroll. The thread
+  follows only while the reader has not scrolled up to read earlier output.
+  Each complete trace line is laid out before streaming (`Format-DpThinkingTrace`):
+  a Tool call becomes its name plus indented arguments, and an iteration banner
+  becomes a divider. Reasoning prose is preserved as text, never interpreted as
+  markup. Fragmented or coalesced frames retain the same section boundaries.
+  Completion preserves the live sections. Stored traces, including stopped Turns,
+  split at their recorded iteration dividers; prose-only Engine results
+  remain one box because they contain no recoverable output boundaries.
+  No compressed thinking or Activity text is repeated above the composer. A
+  generic `Working…` indicator appears before thinking arrives or when thinking
+  is off, and hides when the full thinking section becomes visible.
 - **Usage** footer per assistant Message: tokens · $cost · credits · duration.
 - Hover actions: copy, regenerate.
 
@@ -553,9 +566,9 @@ same act as a reflex in the middle of a task.
 | State | Cue |
 | --- | --- |
 | Idle | composer focused, Send enabled. |
-| Streaming | Stop button, blinking caret, and an Activity hint above the composer carrying the spinner plus the newest line of the Thinking trace, or — with Thinking off — the newest Activity action. The thread follows new output only while it is already at the bottom, so scrolling up to read mid-Turn survives the next token. |
+| Streaming | Stop button and blinking caret. The newest Thinking section is open below collapsed work summaries; no duplicate trace line appears above the composer. A generic spinner and `Working…` appear only before thinking arrives or when it is off. The thread follows new output only while the reader remains at the bottom. |
 | Stopping | **Stopping…** disabled immediately; caret and Activity spinner hidden; buffered stream updates ignored. |
-| Tool running | "Working… (using tools)" pill under the streaming Message. |
+| Tool running | Collapsed `Working — N actions` summary; expand it to inspect the ordered Activity. |
 | Error | red inline card with the message + Retry. |
 | Unauthenticated | Authenticate screen replaces the thread. |
 | Empty | friendly empty-state with example prompts. |

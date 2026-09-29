@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-25
+last-verified: 2026-09-29
 source: repository implementation, regression evidence, and decision records
 ---
 
@@ -11,9 +11,8 @@ source: repository implementation, regression evidence, and decision records
 ## Architecture
 
 - ShellPilot owns provider transport, authentication, Models and Usage;
-  DeskPilot owns the Host Server, policy and presentation. Probe capabilities,
-  not version strings or refactor-sensitive source markers. Test real contract
-  shapes and distinguish interface declarations from live enforcement proof.
+  DeskPilot owns the Host Server, policy and presentation. Test real contracts
+  and live enforcement, not version strings, source markers or declarations.
 - Each Turn uses a fresh pipeline in one Engine Runspace. Tool state is scoped
   there; process environment and working directory are not isolation boundaries.
 - Keep visible Messages separate from replay history. Information records drive
@@ -74,14 +73,15 @@ source: repository implementation, regression evidence, and decision records
   semantic quality grades. Gate async editor replies by the owning editor identity.
 - Pre-Turn Git snapshots use a separate index. Keep accepts, Save commits and Undo
   preserve user edits. Compare normalized blobs before refreshing an index.
-- Diagnostics is allow-listed and bounded; no prompts/arguments in correlation
-  records. Unknown Usage stays unknown. Preserve redacted preparation errors and
-  stable prerequisite identifiers; readiness evidence belongs to one machine.
-- Intercom allow-lists first. Mentions address work, never authorize it; exact
-  same-chat plain-text pending replies may bypass mentions. All entry points use
-  the Turn dispatcher and the same Permission boundaries.
+- Diagnostics is bounded and allow-listed; correlation excludes prompts/arguments.
+  Keep Usage unknown, errors redacted, prerequisite ids stable and readiness machine-bound.
+- Intercom allow-lists first; mentions never authorize. Exact same-chat plain-text
+  pending replies may bypass mentions. All entries share Turn/Permission gates.
 - Theme and Mode remain independent local display preferences. Bundle licensed
   fonts and check computed colors, actual fonts and control bounds.
+- Split thinking at Engine iteration/output boundaries, never per token. Keep
+  collapsed work summaries above the flow; preserve manual expansion, scrolling,
+  and live sections at completion. Thinking stays inert and grants no authority.
 
 ## Validation and release
 

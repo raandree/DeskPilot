@@ -1482,18 +1482,16 @@ function buildAssistantEl(m) {
     const steps = el('disclosure steps hidden', 'details');
     steps.innerHTML = '<summary>Steps</summary><div class="disclosure-body"></div>';
     const content = el('content');
-    // The Turn as it happened: a box per run of thinking, and the prose the model
-    // emitted between them, in order. The answer body below it is the summary —
-    // one growing body with the whole trace stacked on one side of it puts the
-    // reasoning in the wrong place whichever side that is.
+    // Work summaries precede the chronological flow so the newest output stays
+    // at the bottom. Questions and approvals remain below it, ready to answer.
     const flow = el('turn-flow hidden');
     const tasks = el('tasks-panel hidden');
     const userPrompts = el('user-prompts hidden');
     userPrompts.setAttribute('aria-live', 'polite');
-    const changes = el('changes-card hidden');
+    const changes = el('changes-card hidden', 'details');
     const activity = el('disclosure activity hidden', 'details');
     const usage = el('usage-foot hidden');
-    wrap.append(role, steps, flow, content, tasks, userPrompts, changes, activity, usage);
+    wrap.append(role, steps, tasks, changes, activity, flow, content, userPrompts, usage);
     wrap._refs = { content, flow, steps, tasks, userPrompts, changes, activity, usage, actions };
     return wrap;
 }
@@ -1628,11 +1626,8 @@ function paintActivity(node, actions, opts) {
             '</details>';
     }).join('');
     node.classList.remove('hidden');
-    // Open it when the first action arrives, and leave it alone after that: a
-    // reader who folds it away mid-Turn should not have to keep folding it. The
-    // end of the Turn is what closes it again.
+    // Live updates preserve the reader's choice; new panels start collapsed.
     if (!live) node.open = false;
-    else if (actions.length <= 1) node.open = true;
     const n = actions.filter((a) => a.kind !== 'dropped').length;
     node.innerHTML =
         `<summary>${live ? 'Working' : 'Activity'} — ${n} action${n === 1 ? '' : 's'}</summary>` +
@@ -1659,7 +1654,6 @@ function noteActivity(wrap, action) {
     // A write is also a change to review, which the Changes card takes over at the
     // end of the Turn.
     if (action.kind === 'write' && action.detail) noteFileEdit(wrap, action.detail);
-    setActivityStatus(activityLine(action));
     followThread();
 }
 
@@ -1754,7 +1748,7 @@ function paintLiveEdits(node, edits, editing) {
     node.classList.add('changes-live');
     node.innerHTML = '';
     const n = edits.size;
-    const head = el('changes-head');
+    const head = el('changes-head', 'summary');
     head.innerHTML = `<span class="changes-count">${editing ? 'Editing ' : ''}${n} file${n === 1 ? '' : 's'}${editing ? '\u2026' : ' edited'}</span>`;
     node.appendChild(head);
     const list = el('changes-list');
@@ -1803,7 +1797,7 @@ function paintChangesCard(node, files) {
     node.classList.remove('changes-live');
     node.innerHTML = '';
 
-    const head = el('changes-head');
+    const head = el('changes-head', 'summary');
     head.innerHTML =
         `<span class="changes-count">${files.length} file${files.length === 1 ? '' : 's'} changed</span>` +
         `<span class="changes-stat changes-add">+${escapeHtml(String(totals.a))}</span>` +
@@ -2632,8 +2626,7 @@ function scrollThread() {
     // 'instant' overrides the stylesheet's smooth behaviour on purpose. The follow
     // re-targets the bottom on every streamed frame, and an animation restarted
     // that often never lands: it trails the newest content, which then sits just
-    // below the fold with the scrollbar apparently already at the end. The one
-    // scroll that should ease is revealThinking's, and that one asks for it.
+    // below the fold with the scrollbar apparently already at the end.
     t.scrollTo({ top: t.scrollHeight, behavior: 'instant' });
     threadFollow = true;
 }
@@ -2659,25 +2652,48 @@ function openThinkingBox(flow) {
     return box;
 }
 
+// The Engine can emit several Tool-only iterations without any answer text.
+// Only its complete, unindented dividers separate runs, never individual tokens
+// or divider-like text inside an indented Tool argument.
+function splitThinkingSections(text) {
+    const divider = /^(?:\d{2}:\d{2}:\d{2} )?\u2500\u2500 Iteration \S+ \([^\r\n)]*\) \u2500\u2500\r?$/gm;
+    const sections = [];
+    let start = 0;
+    for (const match of text.matchAll(divider)) {
+        if (text.slice(start, match.index).trim()) {
+            sections.push(text.slice(start, match.index));
+            start = match.index;
+        }
+    }
+    sections.push(text.slice(start));
+    return sections;
+}
+
 // Put a reasoning delta in the message's open Thinking box and follow it down.
 // A live box is clipped rather than scrollable, so this pin is the only thing
 // keeping the newest line in view.
 function renderThinking(wrap, text) {
     const flow = wrap && wrap.querySelector('.turn-flow');
-    if (!flow) return;
+    if (!flow || !text) return;
     flow.classList.remove('hidden');
     flow.dataset.live = '1';
-    // Null when the flow ends in a flushed answer chunk, which is what makes the
-    // prose a boundary rather than something a later run can grow through.
     let box = flow.querySelector('.thinking:last-child');
-    if (!box || box.dataset.sealed === '1') {
-        box = openThinkingBox(flow);
-        box.dataset.startedAt = String(Date.now());
+    // Only rescan the current run, not every earlier iteration on each token.
+    let offset = box && box.dataset.sealed !== '1' ? box._thinkingOffset || 0 : 0;
+    for (const section of splitThinkingSections(text.slice(offset))) {
+        if (!box || box.dataset.sealed === '1') {
+            box = openThinkingBox(flow);
+            box.dataset.startedAt = String(Date.now());
+        }
+        box._thinkingOffset = offset;
+        const body = box.querySelector('.disclosure-body');
+        body.textContent = section;
+        body.scrollTop = body.scrollHeight;
+        offset += section.length;
+        if (offset < text.length) sealThinking(wrap);
     }
-    const body = box.querySelector('.disclosure-body');
-    body.textContent = text;
-    body.scrollTop = body.scrollHeight;
-    setActivityStatus(lastTraceLine(text));
+    const hint = $('activity-hint');
+    if (hint) hint.classList.add('hidden');
     followThread();
 }
 
@@ -2718,60 +2734,15 @@ function thoughtLabel(startedAt) {
     return `Thought for ${secs}s`;
 }
 
-// A thread rebuilt from storage has the whole trace as one string and no flow to
-// order it by, so it gets a single box. A message that just streamed already has
-// its runs laid out, and overwriting them with the flat string would destroy the
-// account of the Turn that just ran.
+// Stored traces retain iteration boundaries; prose-only records have no
+// recoverable boundaries. Never replace a live flow with the flat Engine result.
 function renderStoredThinking(wrap, reasoning) {
     const flow = wrap && wrap.querySelector('.turn-flow');
     if (!flow || flow.dataset.live === '1') return;
     flow.classList.remove('hidden');
-    openThinkingBox(flow).querySelector('.disclosure-body').textContent = reasoning;
-}
-
-// A long Turn pushes the newest box past the fold and the only thing still moving
-// is the spinner — which cannot tell "still working" from "hung". Mirror the
-// newest trace line next to that spinner, where the composer keeps it visible
-// whatever the thread does, and let a click jump back to the box it came from.
-function setActivityStatus(line) {
-    const hint = $('activity-hint');
-    const status = $('activity-status');
-    if (!hint || !status || !line || hint.classList.contains('hidden')) return;
-    status.textContent = line;
-    status.title = line;
-    status.disabled = false;
-    hint.classList.add('has-trace');
-}
-
-// Only the tail can hold the newest line, and a laid-out trace runs to thousands
-// of lines, so never scan the whole thing once per streamed frame.
-function lastTraceLine(text) {
-    if (!text) return '';
-    const tail = text.length > 600 ? text.slice(-600) : text;
-    const lines = tail.split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i].trim();
-        if (line) return line;
+    for (const section of splitThinkingSections(reasoning)) {
+        openThinkingBox(flow).querySelector('.disclosure-body').textContent = section;
     }
-    return '';
-}
-
-// Jump from the status line to the box it mirrors, unfolding it if it was sealed
-// or the user left it closed. Clicking it means "let me read this", so it also
-// stops the following outright: the scroll below is smooth, and the next streamed
-// frame would otherwise win the race and pull the thread straight back to the
-// bottom. With Thinking off there is no such box and the line is mirroring the
-// Activity panel, so open that instead.
-function revealThinking() {
-    const thread = $('thread');
-    const thinking = thread.querySelectorAll('.msg-assistant .turn-flow:not(.hidden) .thinking');
-    const activity = thread.querySelectorAll('.msg-assistant .activity:not(.hidden)');
-    const box = thinking[thinking.length - 1] || activity[activity.length - 1];
-    if (!box) return;
-    threadFollow = false;
-    box.open = true;
-    box.dataset.touched = '1';
-    box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
 // ===== Sending a Turn =====
@@ -3115,10 +3086,8 @@ function setStreamingUI(on) {
     const hint = $('activity-hint');
     if (on) {
         hint.classList.remove('hidden');
-        hint.classList.remove('has-trace');
-        hint.innerHTML = '<span class="spinner"></span>' +
-            '<button type="button" id="activity-status" class="activity-status" disabled>Working…</button>';
-        $('activity-status').onclick = revealThinking;
+        hint.setAttribute('role', 'status');
+        hint.innerHTML = '<span class="spinner" aria-hidden="true"></span><span>Working…</span>';
     } else {
         hint.classList.add('hidden');
     }

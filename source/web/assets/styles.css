@@ -1419,6 +1419,8 @@ button.tree-row {
 
 /* A folded run has to look openable, and the shared summary rule hides the
    native marker - so the chevron is drawn back in here. */
+.activity>summary::before,
+.changes-card>summary::before,
 .thinking>summary::before {
     content: "›";
     display: inline-block;
@@ -1427,6 +1429,8 @@ button.tree-row {
     transition: transform .15s ease;
 }
 
+.activity[open]>summary::before,
+.changes-card[open]>summary::before,
 .thinking[open]>summary::before {
     transform: rotate(90deg);
 }
@@ -1438,13 +1442,10 @@ button.tree-row {
     overflow-wrap: anywhere;
 }
 
-/* A live run sits in the middle of the flow with the answer and the Activity
-   panel below it, so it must not be a scroll trap: a wheel over a box that
-   scrolls itself never reaches the thread, and the reader is left at the end of
-   the box's own bar with the rest of the message out of reach. It is clipped
-   instead, and renderThinking keeps it pinned to its newest line. */
+/* A live run must not trap the wheel. Clip it and follow its newest line;
+   shorter viewports still need room for the composer. */
 .thinking:not([data-sealed="1"]) .disclosure-body {
-    max-height: 220px;
+    max-height: min(40vh, 220px);
     overflow: hidden;
 }
 
@@ -2484,36 +2485,6 @@ button.tree-row {
     gap: 8px;
 }
 
-/* The newest line of the trace, mirrored beside the spinner. It is one line and
-   never wraps: this row sits above the composer and must not grow the footer or
-   push the thread around while a Turn streams. */
-.activity-status {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: left;
-    font: inherit;
-    font-family: var(--font-read);
-    color: inherit;
-    background: none;
-    border: 0;
-    padding: 0;
-    cursor: default;
-}
-
-.activity-hint.has-trace .activity-status {
-    cursor: pointer;
-}
-
-.activity-hint.has-trace .activity-status:hover,
-.activity-hint.has-trace .activity-status:focus-visible {
-    color: var(--text);
-    text-decoration: underline;
-}
-
-/* A long trace line must never squash the donut. */
 .activity-hint .spinner {
     flex: 0 0 auto;
 }
@@ -5260,9 +5231,9 @@ button.tree-row {
     color: var(--text);
 }
 
-/* ===== Changes review card (below an assistant message) ===== */
+/* ===== Changes review card ===== */
 .changes-card {
-    margin: 10px 0 4px;
+    margin: 0 0 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
     overflow: hidden;
@@ -5277,6 +5248,16 @@ button.tree-row {
     border-bottom: 1px solid var(--border);
     font-size: 13px;
     font-weight: 600;
+    list-style: none;
+    cursor: pointer;
+}
+
+.changes-head::-webkit-details-marker {
+    display: none;
+}
+
+.changes-card:not([open])>.changes-head {
+    border-bottom: 0;
 }
 
 .changes-acts {
