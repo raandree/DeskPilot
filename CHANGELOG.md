@@ -184,6 +184,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a few pixels; an upward wheel pauses following at once, and a ↓ control
   returns to the newest output. See
   [Message layout](specs/040-ui-design.md#4-message-thread).
+- Show contained-browser steps as `Browsed <address>` in Activity instead of the
+  generic `Used <address>`.
 - **Security:** prevent evaluation launcher injection by validating case identifiers and passing paths as data, not executable source; retain owned files and block further live trials when child cleanup fails. See the [evaluation guide](tests/live/eval/README.md).
 - Reveal pending approval cards immediately so File, MCP and Terminal requests can be answered instead of leaving the Turn waiting invisibly ([`17f6333`](https://github.com/raandree/DeskPilot/commit/17f6333c2b67fbe9bdcc8e6a2c6d6b964dda049c)).
 
@@ -487,6 +489,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heading, else its opening sentence, else the Tools it called — instead of
   `Thought for Ns`. The duration stays beside the title; no extra Model call is
   made. See [Message layout](specs/040-ui-design.md#4-message-thread).
+- Show DeskPilot's own drawn icons instead of emoji throughout the Turn: each
+  Activity kind, the Working/Activity, Tasks and Changes headers, and every
+  thinking section. A live section shows a thought bubble in the accent colour
+  with pulsing bubbles and a shimmering label, which stop under reduced motion.
+  A finished section that only called Tools shows that Tool's icon and verb, for
+  example `Read notes.md` or `Ran 2 commands`. Icons follow every theme and mode
+  and load nothing from the network. See
+  [Message layout](specs/040-ui-design.md#4-message-thread).
 - Request structured compaction sections and report reference/section coverage
   without claiming that these heuristics prove a Model's summary is correct.
 

@@ -14,7 +14,7 @@ Describe 'Web assets bundle' -Tag 'Unit' {
     }
 
     It 'has the core SPA files under assets/' {
-        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diagnostics.js', 'diff.js', 'i18n.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
+        foreach ($name in 'app.js', 'attachments.js', 'auth.js', 'diagnostics.js', 'diff.js', 'i18n.js', 'icons.js', 'markdown.js', 'questionnaire.js', 'speech.js', 'styles.css') {
             Test-Path -LiteralPath (Join-Path $script:webRoot 'assets' $name) -PathType Leaf | Should -BeTrue
         }
         foreach ($name in 'en.js', 'de.js') {
@@ -393,7 +393,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         # A collapsed box has to say what it holds, or it is an unlabelled line: what
         # the run was about, with its duration beside the title, never instead of it.
         $js | Should -Match '(?s)function sealThinking\(wrap\).{0,800}?labelThinking\(box\);'
-        $js | Should -Match 'function thinkingTitle\(section\)'
+        $js | Should -Match 'function summarizeThinking\(section\)'
         $js | Should -Match '(?s)function labelThinking\(box\).{0,600}?\.thinking-time'
         $js | Should -Not -Match 'Thought for'
         $css | Should -Match '(?s)\.thinking-label \{[^}]*text-overflow: ellipsis'
@@ -424,6 +424,31 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         $js | Should -Match '(?s)function wireGlobal\(\).{0,4000}?wireThreadFollow\(\);'
         [regex]::Matches($js, 'renderMarkdown\(raw\);\s*followThread\(\);').Count | Should -Be 2
         $js | Should -Not -Match 'renderMarkdown\(raw\);\s*scrollThread\(\);'
+    }
+
+    It 'draws its own icons instead of emoji or an icon font' {
+        $js = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'app.js') -Raw
+        $icons = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'icons.js') -Raw
+        $css = Get-Content -LiteralPath (Join-Path $script:webRoot 'assets' 'styles.css') -Raw
+
+        # Bundled drawings: no font, request or third-party licence, and every icon
+        # takes its colour from the text beside it, so all themes and modes apply.
+        $js | Should -Match ([regex]::Escape("import { iconKey, iconSvg } from './icons.js';"))
+        $icons | Should -Not -Match 'fetch\(|import |@font-face|https?://'
+        $icons | Should -Match 'stroke="currentColor"'
+        $js | Should -Match '(?s)const ACTIVITY_KINDS = \{\s*read: \{ icon: ''file'''
+        $js | Should -Not -Match '(?s)const ACTIVITY_KINDS = \{(?:(?!\};).)*ico: '
+        # A slot is a fixed 16px square, so rows and summaries line up.
+        $css | Should -Match '(?s)\.ico \{[^}]*width: 16px;[^}]*height: 16px;'
+        $css | Should -Match '(?s)\.ico>\.icon \{[^}]*width: 16px;'
+        # Folded sections show what they held; the live one keeps the thought icon.
+        $js | Should -Match '(?s)function openThinkingBox\(flow\).{0,400}?setIcon\(icon, ''thinking''\);'
+        $js | Should -Match '(?s)function labelThinking\(box\).{0,500}?setIcon\(box\.querySelector\(''\.thinking-icon''\), icon\);'
+        # Motion only while a run is live, never for a reader who asked for less of it.
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.thinking-icon \.icon-bubble \{[^}]*animation: thinking-bubble'
+        $css | Should -Match '(?s)\.thinking:not\(\[data-sealed="1"\]\) \.thinking-label \{[^}]*animation: thinking-shimmer'
+        $css | Should -Match '(?s)@media \(prefers-reduced-motion: reduce\) \{\s*\* \{\s*animation: none !important;'
+        $css | Should -Match '(?s)@media \(forced-colors: active\) \{\s*\.thinking:not\(\[data-sealed="1"\]\) \.thinking-label \{[^}]*color: CanvasText'
     }
 
     It 'offers a way back to the newest output while the reader is away from it' {

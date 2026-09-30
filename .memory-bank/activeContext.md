@@ -3,34 +3,41 @@ schema-version: 1
 status: accepted
 owner: software-engineer
 last-verified: 2026-09-30
-source: GitHub Models and pricing page, live Engine model list, ShellPilot and DeskPilot test runs
+source: red/green Node regressions, Pester web-asset contracts, and headless Edge loopback journeys
 ---
 
 # Active context
 
 ## Current focus
 
-Model rates were requested "in this branch" after DeskPilot showed `cost
-unknown` for `claude-opus-5.5`. Pricing stays Engine-owned, so the rates were
-updated upstream in ShellPilot, not in DeskPilot: branch
-`ai/update-price-table` in the separate worktree `D:\Git\ShellPilot-price-table`,
-cut from ShellPilot `origin/main` at `08a4a22`. The main ShellPilot checkout
-stays on `ai/agent-modernization`. No push, Merge or release was requested.
+DeskPilot now draws its own icons, like the VS Code chat screenshot the user
+shared, instead of emoji. This is on `ai/thinking-scroll-titles`, after
+the scroll/title fix (`2cb8948`) and the rate-update record (`420e3d2`). No push
+or Merge was requested.
 
-- The table matches all 47 Model/tier rows of the GitHub page read on
-  2026-09-30 and prices every picker-enabled chat Model the service advertised
-  that day, except the internal-only `gpt-5.6-sol-fast`, which has no published
-  rate and stays `cost unknown`.
-- DeskPilot uses the highest installed ShellPilot and never updates an
-  installed one. Costs appear only after an Engine containing the new table is
-  installed or passed with `-EngineModulePath`. That changes the Engine's
-  `data/PriceTable.psd1` bytes, so prepared private-child proof must be renewed.
+- `source/web/assets/icons.js` holds 19 original 16px stroke drawings in
+  currentColor. `iconSvg(name)`/`iconKey(name)` accept names only; unknown or
+  inherited names draw `tool`. `iconHtml`/`setIcon` in `app.js` fill `.ico` slots.
+- Activity kinds carry an `icon` name (the new `browse` kind reads `Browsed`).
+  Working/Activity, Tasks, Changes/live edits and Steps headers carry icons.
+- Thinking boxes: live = accented thought bubble with pulsing bubbles and a
+  shimmering label. When a box seals, `summarizeThinking` returns `{ title, icon }`.
+  Tool-only runs use `TOOL_KINDS`, a mirror of `ConvertTo-DpActivityAction`
+  guarded by `icons.test.mjs`, to show the kind icon and verb.
 
-## Earlier change on this branch
+## Validation
 
-`2cb8948` keeps the live thinking section scrollable and titles completed
-sections by content. Its evidence: 82/82 Node UI tests, 719 Pester cases with
-six environment skips, and headless Edge journeys 16/16 new versus 10/16 old.
+- 91/91 Node UI tests; 720 Pester cases with six environment skips.
+- Headless Edge loopback fixtures with the real SPA: icon suite 28/28 (dark,
+  light, Terminal Green, 390 px), scroll/jump regression 16/16, reduced motion
+  and forced colours checked. Not a live Engine run.
+
+## Earlier on this branch
+
+The rates for `claude-opus-5.5` and the other advertised Models were updated
+upstream in ShellPilot `ai/update-price-table` @ `4096260` (worktree
+`D:\Git\ShellPilot-price-table`). DeskPilot shows the costs once that Engine is
+installed, and prepared private-child proof must then be renewed.
 
 ## Retained boundaries
 

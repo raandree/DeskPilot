@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { iconKey, iconSvg } from '../../source/web/assets/icons.js';
 
 const source = readFileSync(new URL('../../source/web/assets/app.js', import.meta.url), 'utf8');
 function definition(name, optional = false) {
@@ -20,12 +21,14 @@ const context = vm.createContext({
     tr: (value) => value,
     el: (className, tag = 'div') => ({ className, tag, textContent: '', children: [], append(...items) { this.children.push(...items); } }),
     escapeHtml: (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'),
-    activityKind: () => ({ ico: '#', label: 'Ran', noun: 'commands' }),
+    iconKey, iconSvg,
+    activityKind: () => ({ icon: 'terminal', label: 'Ran', noun: 'commands' }),
     activityLine: () => 'Ran command',
 });
 vm.runInContext([
     definition('terminalExecutionRows', true),
     definition('terminalExecutionLabel', true),
+    definition('iconHtml'),
     definition('approvalRow'), definition('approvalDetail'), definition('activityRowHtml'),
 ].join('\n'), context);
 const flatten = (node) => [node.textContent, ...(node.children || []).map(flatten)].join(' ');
@@ -53,6 +56,7 @@ test('command Activity renders its recorded mode, not current Settings', () => {
     const html = context.activityRowHtml({ kind: 'run', detail: 'git status', execution: policy }, false);
     assert.ok(html.includes('Isolated'));
     assert.ok(html.includes('read-only'));
+    assert.ok(html.includes('data-icon="terminal"'));
 });
 
 test('File approvals show the full destination and action without file content', () => {

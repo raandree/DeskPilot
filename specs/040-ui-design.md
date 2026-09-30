@@ -95,20 +95,30 @@ accent fills so the bright dark-mode accent stays legible.
 - Assistant Messages: left-aligned, full width, Markdown-rendered (headings,
   lists, tables, code with copy buttons).
 - **Streaming**: tokens fade in; a caret blinks at the tail until `done`.
+- **Icons** (`icons.js`): DeskPilot's own 16px line drawings, stroked in the
+  surrounding text colour so every theme and mode applies. No icon font, network
+  request or third-party licence is involved. Callers pass a name, never markup,
+  and an unknown name draws the generic Tool icon. Icons are decorative and hidden
+  from assistive technology; the text beside each one carries the meaning.
 - **Activity** block per assistant Message: one row per tool call — files read
-  and written, folders listed, commands run, pages fetched, searches made,
-  questions asked — each with an icon, **in the order the agent made them**.
+  and written, folders listed or created, commands run, pages fetched or browsed,
+  searches made, questions asked, Skills loaded, MCP Tools and approvals — each
+  with the icon for its kind (page, folder, pencil, terminal, globe, browser
+  window, magnifier, speech bubble, book, plug, shield; a wrench for any other
+  Tool), **in the order the agent made them**.
   Rows appear the moment the Engine announces the call, so the block is the live
   account of what the agent is touching; consecutive rows of one kind fold into
   one line (`Read 6 files`), open while the Turn runs and closed once it ends.
   The whole block is headed `Working — N actions` while streaming and
-  `Activity — N actions` afterwards. It starts collapsed from the first action,
+  `Activity — N actions` afterwards, beside an activity icon that takes the
+  accent colour while the Turn runs. It starts collapsed from the first action,
   preserves the reader's expansion while streaming, and closes when complete.
   Independent of **Show the model's thinking**.
   Persisted on the Message and replayed on reload; a Message from before the
   ordered account existed replays the Engine's unordered sets instead.
-- **Changes** card per assistant Message (Git Projects only): a header reading
-  `N files changed  +A  −D`, then one row per file with a status badge
+- **Changes** card per assistant Message (Git Projects only): a header with a
+  file-diff icon reading `N files changed  +A  −D`, then one row per file with a
+  status badge
   (`M`/`A`/`U`/`D`/`R`/`!`), the file name, its dimmed folder, and its own `+`/`−`
   counts — measured against the snapshot taken before that Turn. The card starts
   collapsed; its header opens the file list with mouse or keyboard. Clicking a row
@@ -118,8 +128,9 @@ accent fills so the bright dark-mode accent stays legible.
   once those files are reviewed. See
   [090-git-workbench](090-git-workbench.md).
 - **Live edits** in that same card while the Turn runs: one row per file the
-  moment the agent starts writing it, under an `Editing N files…` header, with no
-  counts and no click target — the write has not happened yet, so there is
+  moment the agent starts writing it, under an `Editing N files…` header with a
+  pencil icon, with no counts and no click target — the write has not happened
+  yet, so there is
   nothing to measure or diff. The file list starts collapsed and preserves the
   reader's expansion through updates and completion. Independent of the Project
   being a Git repository and of **Show the model's thinking**. The Changes card
@@ -128,8 +139,9 @@ accent fills so the bright dark-mode accent stays legible.
   already put back) the rows stay, re-headed `N files edited`, rather than
   vanishing with the record of what the Turn wrote.
 - **Tasks** block per assistant Message: a compact panel showing the agent's
-  in-Turn Task List as the agent works, with a header `Tasks — {completed}/{total}`
-  and one row per Task. Each row carries a status glyph (`not-started` ○,
+  in-Turn Task List as the agent works, with a checklist icon and a header
+  `Tasks — {completed}/{total}` and one row per Task. Each row carries a status
+  glyph (`not-started` ○,
   `in-progress` ◐, `completed` ✓) and the Task title. The full list replaces
   the panel on every update (idempotent), so at most one Task is ever
   `in-progress`. Hidden when the list is empty or `taskTracking` is off.
@@ -148,9 +160,15 @@ accent fills so the bright dark-mode accent stays legible.
   reader's wheel scroll. Reopened completed boxes may scroll. A completed box is
   titled by what it was about: the model's own heading, else its opening
   sentence, else the Tools it called. Its duration sits beside the title, and
-  titling makes no extra Model call. The thread follows only while the reader
-  stays at the bottom. An upward wheel stops following at once; scrolling back
-  to the bottom, or the ↓ control above the composer, resumes it.
+  titling makes no extra Model call. Each box carries an icon: a thought bubble
+  while live, in the accent colour, with pulsing bubbles and a shimmering
+  `Thinking…` label. Reduced motion stops both animations and forced colours show
+  plain system text. A completed box keeps the thought bubble for reasoning. A box
+  that only called Tools takes that kind's Activity icon and verb
+  (`Read notes.md`, `Ran 2 commands`); mixed or unknown Tools show the wrench and
+  their names. The thread follows only while the reader stays at the bottom. An
+  upward wheel stops following at once; scrolling back to the bottom, or the ↓
+  control above the composer, resumes it.
   Each complete trace line is laid out before streaming (`Format-DpThinkingTrace`):
   a Tool call becomes its name plus indented arguments, and an iteration banner
   becomes a divider. Reasoning prose is preserved as text, never interpreted as

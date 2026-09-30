@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
 import { splitRelPath } from '../../source/web/assets/diff.js';
+import { iconKey, iconSvg } from '../../source/web/assets/icons.js';
 
 const source = readFileSync(new URL('../../source/web/assets/app.js', import.meta.url), 'utf8');
 function between(start, end) {
@@ -71,16 +72,18 @@ function fixture() {
         asArray: value => Array.isArray(value) ? value : value == null ? [] : [value],
         escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),
         renderMarkdown: value => value,
-        splitRelPath, projectRelPath: () => null,
+        splitRelPath, projectRelPath: () => null, iconKey, iconSvg,
+        terminalExecutionLabel: () => 'Local', openDiffViewer() {},
         hydrateCopies() {}, decorateArtifacts() {}, buildMessageActions() {}, renderSteps() {},
-        renderTasks() {}, renderUsage() {}, renderChanges() {}, closeDispatchPopover() {},
+        renderUsage() {}, renderChanges() {}, closeDispatchPopover() {},
         aiChanges: { undoable: true },
         buildChangeRow: () => new Element('changes-row', 'button'),
     });
     vm.runInContext([
         between('function buildAssistantEl(', 'function renderSteps('),
-        between('const ACTIVITY_KINDS =', '// ===== Changes review'),
+        between('// ===== Activity (what the Turn touched', '// ===== Changes review'),
         between('function noteFileEdit(', 'function buildChangeRow('),
+        between('function renderTasks(', 'function renderUserPrompt('),
         between('const THREAD_STICK_PX =', '// ===== Sending a Turn'),
         between('function showInlineError(', '// After the first Turn'),
         between('function setStreamingUI(', '// ===== Dispatch'),
@@ -286,7 +289,7 @@ test('a finished thinking section is titled by what it was about, with its durat
     assert.deepEqual(labels(boxes()), [
         'The user wants me to compare the spec with the tests.',
         'Comparing feedback themes',
-        '\u2192 read_file \u00b7 ui.test.mjs',
+        'Read ui.test.mjs',
     ]);
     for (const box of boxes()) {
         assert.match(box.querySelector('.thinking-time').textContent, /^\d+s$/);
@@ -297,7 +300,7 @@ test('a finished thinking section is titled by what it was about, with its durat
 
 test('thinking titles fall back to the opening words, then to the Tools, and stay plain text', () => {
     const { context } = fixture();
-    const title = text => context.thinkingTitle(text);
+    const title = text => context.summarizeThinking(text).title;
     assert.equal(title(banner(1) + '\nthinking:\nGood. Now I have the spec and the release notes. Next the tests.'),
         'Good. Now I have the spec and the release notes.');
     assert.equal(title('Unstructured older reasoning without any boundaries'), 'Unstructured older reasoning without any boundaries');
@@ -305,19 +308,95 @@ test('thinking titles fall back to the opening words, then to the Tools, and sta
     const long = title(banner(1) + '\nthinking:\n' + 'word '.repeat(120));
     assert.ok(long.length <= 161 && long.endsWith('\u2026'), long);
     assert.equal(title(banner(1) + tool(1, 'read_file', 'a.md') + tool(1, 'read_file', 'b.md') + tool(1, 'list_dir', 'notes')),
-        '\u2192 read_file \u00d72, list_dir');
+        'read_file \u00d72, list_dir');
     assert.equal(title(banner(1) + '18:13:01 \u2192 write_file\n  path: notes/a.md\n  content:\n    The user wants a note.\n    ' + banner(2) +
-        '    18:13:02 \u2192 not_a_tool\n    \u2192 nor_this\n'), '\u2192 write_file \u00b7 a.md');
+        '    18:13:02 \u2192 not_a_tool\n    \u2192 nor_this\n'), 'Wrote a.md');
     assert.equal(title(banner(1)), '');
     assert.equal(title('\nthinking:\n<img src=x onerror=alert(1)> is what the page contains.'),
         '<img src=x onerror=alert(1)> is what the page contains.');
+});
+
+const iconOf = holder => holder && holder.dataset.icon;
+const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u2318]/u;
+
+test('a live thinking section shows the thought icon, and a finished one shows what it did', () => {
+    const { context, wrap, boxes } = fixture();
+    const sections = [
+        banner(1) + '\nthinking:\nComparing the spec with the tests.\n' + tool(1, 'read_file', 'specs/ui.md'),
+        banner(2) + tool(2, 'read_file', 'C:\\repo\\tests\\ui.test.mjs'),
+        banner(3) + '18:13:03 \u2192 run_command\n  cwd: C:\\repo\n  command: git status --short\n',
+        banner(4) + tool(4, 'read_file', 'a.md') + tool(4, 'read_file', 'b.md'),
+        banner(5) + tool(5, 'read_file', 'a.md') + tool(5, 'list_directory', 'notes'),
+        banner(6) + '18:13:06 \u2192 mcp_docs_search\n  query: pester mocks\n',
+        banner(7) + '18:13:07 \u2192 fetch_url\n  url: https://docs.github.com/en/copilot\n',
+        banner(8) + '18:13:08 \u2192 constructor\n  path: __proto__\n',
+    ];
+    let text = '';
+    for (const section of sections) {
+        text += section;
+        context.renderThinking(wrap, text);
+        const live = boxes().at(-1);
+        assert.equal(iconOf(live.querySelector('.thinking-icon')), 'thinking');
+        assert.equal(live.querySelector('summary').children.indexOf(live.querySelector('.thinking-icon')), 0);
+    }
+    context.sealThinking(wrap);
+    assert.deepEqual(boxes().map(box => [iconOf(box.querySelector('.thinking-icon')), box.querySelector('.thinking-label').textContent]), [
+        ['thinking', 'Comparing the spec with the tests.'],
+        ['file', 'Read ui.test.mjs'],
+        ['terminal', 'Ran git status --short'],
+        ['file', 'Read 2 files'],
+        ['tool', 'read_file, list_directory'],
+        ['plug', 'mcp_docs_search \u00b7 pester mocks'],
+        ['globe', 'Fetched docs.github.com'],
+        ['tool', 'constructor \u00b7 __proto__'],
+    ]);
+    for (const box of boxes()) assert.match(box.querySelector('.thinking-icon').innerHTML, /^<svg /);
+});
+
+test('Activity rows, groups and the panel line use drawn icons for each kind instead of emoji', () => {
+    const { context, wrap } = fixture();
+    context.noteActivity(wrap, { kind: 'read', detail: 'notes/a.md' });
+    context.noteActivity(wrap, { kind: 'read', detail: 'notes/b.md' });
+    context.noteActivity(wrap, { kind: 'run', detail: 'git status' });
+    context.noteActivity(wrap, { kind: 'browse', detail: 'https://example.com/' });
+    context.noteActivity(wrap, { kind: 'mcp', tool: 'mcp_docs_search' });
+    const node = wrap._refs.activity;
+    for (const icon of ['activity', 'file', 'terminal', 'browser', 'plug']) assert.match(node.innerHTML, new RegExp(`data-icon="${icon}"`));
+    assert.doesNotMatch(node.innerHTML, emoji);
+    assert.match(node.innerHTML, /Browsed <span class="path">https:\/\/example\.com\/<\/span>/);
+    assert.match(node.innerHTML, /<summary><span class="ico" data-icon="file">/, 'a run of reads folds under the file icon');
+    assert.equal(node.classList.contains('is-live'), true);
+    context.renderActivity(node, null);
+    assert.equal(node.classList.contains('is-live'), false);
+    assert.match(node.innerHTML, /^<summary><span class="ico" data-icon="activity">/);
+});
+
+test('Messages stored before the ordered Activity keep their rows, now with drawn icons', () => {
+    const { context, wrap } = fixture();
+    context.renderActivity(wrap._refs.activity, {
+        filesRead: ['a.md'], filesWritten: ['b.md'], commandsRun: ['git log'], pagesFetched: ['https://x.test'], questionsAsked: ['Which one?'],
+    });
+    const html = wrap._refs.activity.innerHTML;
+    for (const icon of ['activity', 'file', 'edit', 'terminal', 'globe', 'question']) assert.match(html, new RegExp(`data-icon="${icon}"`));
+    assert.doesNotMatch(html, emoji);
+});
+
+test('the live-edit, Changes and Tasks lines carry icons that say what they hold', () => {
+    const { context, wrap } = fixture();
+    context.noteFileEdit(wrap, 'notes/a.md');
+    assert.match(wrap._refs.changes.children[0].innerHTML, /^<span class="ico" data-icon="edit">/);
+    context.paintChangesCard(wrap._refs.changes, [{ rel: 'notes/a.md', added: 1, deleted: 0 }]);
+    assert.match(wrap._refs.changes.children[0].innerHTML, /^<span class="ico" data-icon="diff">/);
+    context.renderTasks(wrap._refs.tasks, [{ id: 1, title: 'Read <b>notes</b>', status: 'completed' }, { id: 2, title: 'Summarise', status: 'in-progress' }]);
+    assert.match(wrap._refs.tasks.innerHTML, /data-icon="checklist"[\s\S]*Tasks — 1\/2/);
+    assert.doesNotMatch(wrap._refs.tasks.innerHTML, /<b>/);
 });
 
 test('stored thinking sections are titled by content and carry no invented duration', () => {
     const { context, wrap, boxes } = fixture();
     const text = banner(1) + '\nthinking:\nChecking the June release notes for repeats.\n' + banner(2) + tool(2, 'read_file', 'notes/june.md');
     context.finalizeAssistant(wrap, { reasoning: text, stopped: true });
-    assert.deepEqual(labels(boxes()), ['Checking the June release notes for repeats.', '\u2192 read_file \u00b7 june.md']);
+    assert.deepEqual(labels(boxes()), ['Checking the June release notes for repeats.', 'Read june.md']);
     assert.ok(boxes().every(box => box.querySelector('.thinking-time').textContent === ''));
     const legacy = context.buildAssistantEl({ id: 'legacy' });
     context.finalizeAssistant(legacy, { text: 'Answer.', reasoning: 'Unstructured older reasoning.' });

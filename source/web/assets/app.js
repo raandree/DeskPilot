@@ -12,6 +12,7 @@ import {
     statusLabel,
 } from './diff.js';
 import { diagnosticStateMeta, formatDiagnosticContext, mergeDiagnosticEntries } from './diagnostics.js';
+import { iconKey, iconSvg } from './icons.js';
 import {
     CATALOGS,
     applyTranslations,
@@ -1481,7 +1482,7 @@ function buildAssistantEl(m) {
     // What the model said between its tool calls. Deliberately NOT gated on the
     // thinking setting: this is answer text the model chose to emit, not a trace.
     const steps = el('disclosure steps hidden', 'details');
-    steps.innerHTML = '<summary>Steps</summary><div class="disclosure-body"></div>';
+    steps.innerHTML = `<summary>${iconHtml('steps')}<span class="steps-label">Steps</span></summary><div class="disclosure-body"></div>`;
     const content = el('content');
     // Work summaries precede the chronological flow so the newest output stays
     // at the bottom. Questions and approvals remain below it, ready to answer.
@@ -1538,8 +1539,8 @@ function renderSteps(node, narration) {
     const blocks = asArray(narration).filter((b) => b && b.text);
     if (!blocks.length) { node.classList.add('hidden'); return; }
     node.classList.remove('hidden');
-    const summary = node.querySelector('summary');
-    if (summary) summary.textContent = blocks.length === 1 ? '1 step' : `${blocks.length} steps`;
+    const label = node.querySelector('.steps-label') || node.querySelector('summary');
+    if (label) label.textContent = blocks.length === 1 ? '1 step' : `${blocks.length} steps`;
     const body = node.querySelector('.disclosure-body');
     body.innerHTML = blocks
         .map((b) => `<div class="step-block">${renderMarkdown(String(b.text))}</div>`)
@@ -1552,26 +1553,64 @@ function renderSteps(node, narration) {
 // one kind fold into a group ("Read 6 files"), which is open while the Turn runs
 // — the point is to see the files go by — and closed once it ends, leaving the
 // whole panel as the single line the reader can open again.
+
+// An icon in its fixed slot. Names are code constants; anything else draws the
+// generic Tool icon, so no Tool or Model text ever reaches this markup.
+function iconHtml(name) {
+    return `<span class="ico" data-icon="${iconKey(name)}">${iconSvg(name)}</span>`;
+}
+
+function setIcon(holder, name) {
+    if (!holder) return;
+    holder.dataset.icon = iconKey(name);
+    holder.innerHTML = iconSvg(name);
+}
+
 const ACTIVITY_KINDS = {
-    read: { ico: '📄', label: 'Read', noun: 'files' },
-    list: { ico: '📁', label: 'Listed', noun: 'folders' },
-    write: { ico: '✏️', label: 'Wrote', noun: 'files' },
-    create: { ico: '📂', label: 'Created', noun: 'folders' },
-    run: { ico: '⌘', label: 'Ran', noun: 'commands' },
-    approval: { ico: '?', label: 'Approval', noun: 'decisions' },
-    fetch: { ico: '🌐', label: 'Fetched', noun: 'pages' },
-    search: { ico: '🔎', label: 'Searched', noun: 'searches' },
-    ask: { ico: '❓', label: 'Asked', noun: 'questions' },
-    load: { ico: '📘', label: 'Loaded', noun: 'files' },
+    read: { icon: 'file', label: 'Read', noun: 'files' },
+    list: { icon: 'folder', label: 'Listed', noun: 'folders' },
+    write: { icon: 'edit', label: 'Wrote', noun: 'files' },
+    create: { icon: 'folder-plus', label: 'Created', noun: 'folders' },
+    run: { icon: 'terminal', label: 'Ran', noun: 'commands' },
+    approval: { icon: 'shield', label: 'Approval', noun: 'decisions' },
+    fetch: { icon: 'globe', label: 'Fetched', noun: 'pages' },
+    browse: { icon: 'browser', label: 'Browsed', noun: 'pages' },
+    search: { icon: 'search', label: 'Searched', noun: 'searches' },
+    ask: { icon: 'question', label: 'Asked', noun: 'questions' },
+    load: { icon: 'book', label: 'Loaded', noun: 'files' },
     // A tool from an attached MCP server. Marked apart from 'other' because this
     // is the one tool class running somebody else's code, and the reader should be
     // able to tell that at a glance.
-    mcp: { ico: '🔌', label: 'MCP', noun: 'MCP tools' },
-    other: { ico: '•', label: 'Used', noun: 'tools' },
-    dropped: { ico: '…', label: '', noun: '' },
+    mcp: { icon: 'plug', label: 'MCP', noun: 'MCP tools' },
+    other: { icon: 'tool', label: 'Used', noun: 'tools' },
+    dropped: { icon: 'more', label: '', noun: '' },
 };
 
-const activityKind = (kind) => ACTIVITY_KINDS[kind] || ACTIVITY_KINDS.other;
+const activityKind = (kind) => (Object.hasOwn(ACTIVITY_KINDS, kind) ? ACTIVITY_KINDS[kind] : ACTIVITY_KINDS.other);
+
+// The Host Server's Tool table (ConvertTo-DpActivityAction), mirrored so that a
+// thinking section which only called Tools carries the same icon and verb.
+const TOOL_KINDS = new Map([
+    ['read_file', ['read', 'path']],
+    ['list_directory', ['list', 'path']],
+    ['write_file', ['write', 'path']],
+    ['replace_in_file', ['write', 'path']],
+    ['create_directory', ['create', 'path']],
+    ['run_command', ['run', 'command']],
+    ['run_terminal_command', ['run', 'command']],
+    ['fetch_url', ['fetch', 'url']],
+    ['browser_page', ['browse', 'url']],
+    ['search_files', ['search', 'pattern']],
+    ['search_text', ['search', 'query']],
+    ['ask_user', ['ask', 'question']],
+    ['ask_questions', ['ask', '']],
+    ['load_skill', ['load', 'name']],
+    ['load_instruction', ['load', 'name']],
+]);
+
+function toolKind(name) {
+    return TOOL_KINDS.get(name) || [name.startsWith('mcp_') ? 'mcp' : 'other', ''];
+}
 
 // What an action says on one line. An unknown tool is named, because "Used" on
 // its own says nothing; a known one that could not be read keeps its verb.
@@ -1601,7 +1640,7 @@ function activityRowHtml(action, showDiff) {
     const kind = activityKind(action.kind);
     const detail = String(action.detail || '');
     if (action.kind === 'dropped') {
-        return `<div class="activity-item muted tiny"><span class="ico">${kind.ico}</span><span>${escapeHtml(detail)}</span></div>`;
+        return `<div class="activity-item muted tiny">${iconHtml(kind.icon)}<span>${escapeHtml(detail)}</span></div>`;
     }
     const diffBtn = (showDiff && action.kind === 'write' && detail)
         ? `<button class="git-diff-btn" data-path="${escapeHtml(detail)}" title="Show what changed (Git diff)">diff</button>`
@@ -1611,7 +1650,7 @@ function activityRowHtml(action, showDiff) {
         : escapeHtml(activityLine(action));
     const boundary = action.kind === 'run'
         ? `<span class="terminal-boundary">${escapeHtml(terminalExecutionLabel(action.execution))}</span>` : '';
-    return `<div class="activity-item"><span class="ico">${kind.ico}</span><span>${body}${boundary}</span>${diffBtn}</div>`;
+    return `<div class="activity-item">${iconHtml(kind.icon)}<span>${body}${boundary}</span>${diffBtn}</div>`;
 }
 
 function paintActivity(node, actions, opts) {
@@ -1622,16 +1661,17 @@ function paintActivity(node, actions, opts) {
         const kind = activityKind(g.kind);
         if (g.items.length === 1) return activityRowHtml(g.items[0], gitOn);
         return `<details class="activity-group"${live ? ' open' : ''}>` +
-            `<summary><span class="ico">${kind.ico}</span>${escapeHtml(kind.label)} ${g.items.length} ${escapeHtml(kind.noun)}</summary>` +
+            `<summary>${iconHtml(kind.icon)}${escapeHtml(kind.label)} ${g.items.length} ${escapeHtml(kind.noun)}</summary>` +
             `<div class="activity-sub">${g.items.map((a) => activityRowHtml(a, gitOn)).join('')}</div>` +
             '</details>';
     }).join('');
     node.classList.remove('hidden');
+    node.classList.toggle('is-live', live);
     // Live updates preserve the reader's choice; new panels start collapsed.
     if (!live) node.open = false;
     const n = actions.filter((a) => a.kind !== 'dropped').length;
     node.innerHTML =
-        `<summary>${live ? 'Working' : 'Activity'} — ${n} action${n === 1 ? '' : 's'}</summary>` +
+        `<summary>${iconHtml('activity')}<span>${live ? 'Working' : 'Activity'} — ${n} action${n === 1 ? '' : 's'}</span></summary>` +
         `<div class="disclosure-body"><div class="activity-list">${body}</div></div>`;
     wireActivityDiffButtons(node);
 }
@@ -1672,23 +1712,23 @@ function renderActivity(node, activity) {
     // Messages written before the Turn kept an ordered account: the Engine's
     // unordered sets are all they have.
     const groups = [
-        ['filesRead', '📄', 'Read'],
-        ['filesWritten', '✏️', 'Wrote'],
-        ['commandsRun', '⌘', 'Ran'],
-        ['pagesFetched', '🌐', 'Fetched'],
-        ['questionsAsked', '❓', 'Asked'],
+        ['filesRead', 'file', 'Read'],
+        ['filesWritten', 'edit', 'Wrote'],
+        ['commandsRun', 'terminal', 'Ran'],
+        ['pagesFetched', 'globe', 'Fetched'],
+        ['questionsAsked', 'question', 'Asked'],
     ];
     const gitOn = !!(state.settings && state.settings.workspaceFolder);
     const written = asArray(activity.filesWritten).map(String);
     const items = [];
-    for (const [key, ico, label] of groups) {
+    for (const [key, icon, label] of groups) {
         for (const v of asArray(activity[key])) {
             const path = String(v);
             const isWritten = key === 'filesWritten';
             const diffBtn = (isWritten && gitOn)
                 ? `<button class="git-diff-btn" data-path="${escapeHtml(path)}" title="Show what changed (Git diff)">diff</button>`
                 : '';
-            items.push(`<div class="activity-item"><span class="ico">${ico}</span><span>${label} <span class="path">${escapeHtml(path)}</span></span>${diffBtn}</div>`);
+            items.push(`<div class="activity-item">${iconHtml(icon)}<span>${label} <span class="path">${escapeHtml(path)}</span></span>${diffBtn}</div>`);
         }
     }
     const toolCount = asArray(activity.toolCalls).length;
@@ -1696,7 +1736,7 @@ function renderActivity(node, activity) {
     node.classList.remove('hidden');
     const n = items.length || toolCount;
     node.innerHTML =
-        `<summary>Activity — ${n} action${n === 1 ? '' : 's'}</summary>` +
+        `<summary>${iconHtml('activity')}<span>Activity — ${n} action${n === 1 ? '' : 's'}</span></summary>` +
         `<div class="disclosure-body"><div class="activity-list">${items.join('') || '<span class="muted tiny">' + toolCount + ' tool call(s)</span>'}</div></div>`;
     node.querySelectorAll('.git-diff-btn').forEach((btn) => {
         btn.onclick = (e) => { e.preventDefault(); openDiffViewer(written.map((p) => ({ rel: p })), btn.dataset.path); };
@@ -1750,7 +1790,7 @@ function paintLiveEdits(node, edits, editing) {
     node.innerHTML = '';
     const n = edits.size;
     const head = el('changes-head', 'summary');
-    head.innerHTML = `<span class="changes-count">${editing ? 'Editing ' : ''}${n} file${n === 1 ? '' : 's'}${editing ? '\u2026' : ' edited'}</span>`;
+    head.innerHTML = `${iconHtml('edit')}<span class="changes-count">${editing ? 'Editing ' : ''}${n} file${n === 1 ? '' : 's'}${editing ? '\u2026' : ' edited'}</span>`;
     node.appendChild(head);
     const list = el('changes-list');
     for (const rel of edits.values()) {
@@ -1800,6 +1840,7 @@ function paintChangesCard(node, files) {
 
     const head = el('changes-head', 'summary');
     head.innerHTML =
+        iconHtml('diff') +
         `<span class="changes-count">${files.length} file${files.length === 1 ? '' : 's'} changed</span>` +
         `<span class="changes-stat changes-add">+${escapeHtml(String(totals.a))}</span>` +
         `<span class="changes-stat changes-del">\u2212${escapeHtml(String(totals.d))}</span>`;
@@ -2132,7 +2173,7 @@ function renderTasks(node, tasks) {
         })
         .join('');
     node.classList.remove('hidden');
-    node.innerHTML = `<div class="tasks-head">Tasks — ${completed}/${total}</div><div class="task-list">${rows}</div>`;
+    node.innerHTML = `<div class="tasks-head">${iconHtml('checklist')}<span>Tasks — ${completed}/${total}</span></div><div class="task-list">${rows}</div>`;
 }
 
 function renderUserPrompt(node, request, conversationId) {
@@ -2659,9 +2700,11 @@ function followThread() {
 function openThinkingBox(flow) {
     const box = el('disclosure thinking', 'details');
     const summary = el('', 'summary');
+    const icon = el('ico thinking-icon', 'span');
+    setIcon(icon, 'thinking');
     const label = el('thinking-label', 'span');
     label.textContent = 'Thinking…';
-    summary.append(label, el('thinking-time', 'span'));
+    summary.append(icon, label, el('thinking-time', 'span'));
     box.append(summary, el('disclosure-body'));
     // The box exists only because the reader asked to see the thinking, so it
     // streams open; sealing is what folds it away.
@@ -2747,12 +2790,13 @@ function sealThinking(wrap) {
     }
 }
 
-// A folded box is only useful if its one line says what it holds: what the run
-// was about, with how long it took kept beside it rather than in its place.
+// A folded box is only useful if its one line says what it holds: an icon for
+// what kind of run it was, what it was about, and how long it took beside that.
 function labelThinking(box) {
-    const title = thinkingTitle(box.querySelector('.disclosure-body').textContent);
+    const { title, icon } = summarizeThinking(box.querySelector('.disclosure-body').textContent);
     box.querySelector('.thinking-label').textContent = title || 'Thinking';
     box.querySelector('summary').title = title;
+    setIcon(box.querySelector('.thinking-icon'), icon);
     const started = Number(box.dataset.startedAt);
     box.querySelector('.thinking-time').textContent = started
         ? `${Math.max(1, Math.round((Date.now() - started) / 1000))}s` : '';
@@ -2764,8 +2808,8 @@ const THINKING_TITLE_MAX = 160;
 // What a run of thinking was about, without another Model call: the model's own
 // heading when it wrote one, else its opening sentence (extended past a short
 // opener such as "Good."), else the Tools it called. Only the trace shapes that
-// Format-DpThinkingTrace writes are recognised, and the result is plain text.
-function thinkingTitle(section) {
+// Format-DpThinkingTrace writes are recognised, and the title is plain text.
+function summarizeThinking(section) {
     const prose = [];
     const tools = [];
     for (const line of String(section || '').replace(/\r/g, '').split('\n')) {
@@ -2777,19 +2821,16 @@ function thinkingTitle(section) {
             : line.match(/^(.*?)(\d{2}:\d{2}:\d{2} )?\u2192 ([^\s(]+)$/) || line.match(/^()()->\s*([^\s(]+)\(/);
         if (call && (call[2] || !call[1])) {
             if (!tools.length && call[1].trim()) prose.push(call[1]);
-            tools.push({ name: call[3], arg: '' });
+            tools.push({ name: call[3], args: new Map() });
             continue;
         }
-        const arg = tools.length && line.match(/^ {2}[^\s:]+: (.+)$/);
-        if (arg) {
-            const last = tools[tools.length - 1];
-            if (!last.arg) last.arg = arg[1];
-        }
+        const arg = tools.length && line.match(/^ {2}([^\s:]+): (.+)$/);
+        if (arg && !tools[tools.length - 1].args.has(arg[1])) tools[tools.length - 1].args.set(arg[1], arg[2]);
         if (!tools.length && line.trim() && !/^\s*thinking:\s*$/.test(line)) prose.push(line);
     }
     const plain = (text) => text.replace(/\*\*|`/g, '').replace(/\s+/g, ' ').trim();
     const heading = prose.length && prose[0].match(/^\s*(?:#{1,6}\s+(.+?)\s*#*|\*\*(.+?)\*\*:?)\s*$/);
-    if (heading) return plain(heading[1] || heading[2]);
+    if (heading) return { title: plain(heading[1] || heading[2]), icon: 'thinking' };
     if (prose.length) {
         const text = prose.join('\n');
         let end = text.length;
@@ -2798,17 +2839,35 @@ function thinkingTitle(section) {
             if (at >= THINKING_TITLE_MIN) { end = at; break; }
         }
         const title = plain(text.slice(0, end));
-        if (title.length <= THINKING_TITLE_MAX) return title;
+        if (title.length <= THINKING_TITLE_MAX) return { title, icon: 'thinking' };
         const cut = title.lastIndexOf(' ', THINKING_TITLE_MAX);
-        return title.slice(0, cut > THINKING_TITLE_MAX / 2 ? cut : THINKING_TITLE_MAX).trimEnd() + '\u2026';
+        return { title: title.slice(0, cut > THINKING_TITLE_MAX / 2 ? cut : THINKING_TITLE_MAX).trimEnd() + '\u2026', icon: 'thinking' };
     }
-    if (!tools.length) return '';
+    return tools.length ? describeToolCalls(tools) : { title: '', icon: 'thinking' };
+}
+
+// A run that only called Tools says what they did the way Activity does: "Read
+// notes.md", "Ran 2 commands". Tools with no verb of their own keep their names.
+function describeToolCalls(tools) {
+    const calls = tools.map((call) => {
+        const [kind, field] = toolKind(call.name);
+        const value = (field ? call.args.get(field) : call.args.values().next().value) || '';
+        return { name: call.name, kind, detail: value.trim() ? thinkingToolArg(value.trim()) : '' };
+    });
+    const [first] = calls;
+    const meta = activityKind(first.kind);
+    const named = first.kind === 'other' || first.kind === 'mcp';
+    if (calls.length === 1) {
+        if (!named && first.detail) return { title: `${meta.label} ${first.detail}`, icon: meta.icon };
+        return { title: first.detail ? `${first.name} \u00b7 ${first.detail}` : first.name, icon: meta.icon };
+    }
+    if (!named && calls.every((call) => call.kind === first.kind)) {
+        return { title: `${meta.label} ${calls.length} ${meta.noun}`, icon: meta.icon };
+    }
     const counts = new Map();
-    for (const call of tools) counts.set(call.name, (counts.get(call.name) || 0) + 1);
+    for (const call of calls) counts.set(call.name, (counts.get(call.name) || 0) + 1);
     const names = [...counts].map(([name, n]) => (n > 1 ? `${name} \u00d7${n}` : name));
-    const shown = names.slice(0, 3).join(', ') + (names.length > 3 ? ', \u2026' : '');
-    const only = tools.length === 1 && tools[0].arg.trim();
-    return `\u2192 ${shown}${only ? ` \u00b7 ${thinkingToolArg(only)}` : ''}`;
+    return { title: names.slice(0, 3).join(', ') + (names.length > 3 ? ', \u2026' : ''), icon: 'tool' };
 }
 
 // The one argument that identifies a single Tool call: a file's name, a URL's

@@ -1356,6 +1356,22 @@ button.tree-row {
 }
 
 /* thinking + activity blocks */
+/* One icon slot (icons.js): a 16px line drawing coloured like its text. */
+.ico {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.ico>.icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+}
+
 .disclosure {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -1421,6 +1437,7 @@ button.tree-row {
    native marker - so the chevron is drawn back in here. */
 .activity>summary::before,
 .changes-card>summary::before,
+.steps>summary::before,
 .thinking>summary::before {
     content: "›";
     display: inline-block;
@@ -1431,6 +1448,7 @@ button.tree-row {
 
 .activity[open]>summary::before,
 .changes-card[open]>summary::before,
+.steps[open]>summary::before,
 .thinking[open]>summary::before {
     transform: rotate(90deg);
 }
@@ -1455,6 +1473,53 @@ button.tree-row {
     flex: none;
     font-size: 12px;
     font-variant-numeric: tabular-nums;
+}
+
+/* A run that is still thinking says so without more words: its icon takes the
+   accent, the trailing bubbles pulse and the label shimmers. The global
+   reduced-motion rule stops both animations and leaves the label plain. */
+.thinking:not([data-sealed="1"]) .thinking-icon,
+.activity.is-live>summary .ico {
+    color: var(--accent);
+}
+
+.thinking:not([data-sealed="1"]) .thinking-icon .icon-bubble {
+    animation: thinking-bubble 1.4s ease-in-out infinite;
+}
+
+.thinking:not([data-sealed="1"]) .thinking-icon .icon-bubble+.icon-bubble {
+    animation-delay: .2s;
+}
+
+@keyframes thinking-bubble {
+    0%, 100% {
+        opacity: .25;
+    }
+
+    40% {
+        opacity: 1;
+    }
+}
+
+.thinking:not([data-sealed="1"]) .thinking-label {
+    background: linear-gradient(90deg, var(--muted) 40%, var(--text) 50%, var(--muted) 60%) 100% 0 / 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: thinking-shimmer 2.4s linear infinite;
+}
+
+@keyframes thinking-shimmer {
+    to {
+        background-position: 0 0;
+    }
+}
+
+@media (forced-colors: active) {
+    .thinking:not([data-sealed="1"]) .thinking-label {
+        background: none;
+        color: CanvasText;
+    }
 }
 
 /* A live run must not trap the wheel, and it must never be scrolled from script:
@@ -1501,14 +1566,17 @@ button.tree-row {
 .activity-item {
     display: flex;
     gap: 8px;
-    align-items: baseline;
+    align-items: flex-start;
     font-size: 13px;
 }
 
-.activity-item .ico,
-.activity-group>summary .ico {
-    width: 18px;
-    text-align: center;
+/* Centred on the first line of a row that may wrap. */
+.activity-item>.ico {
+    margin-top: 2px;
+}
+
+.activity-item>.git-diff-btn {
+    align-self: center;
 }
 
 .activity-item .path {
@@ -1526,7 +1594,7 @@ button.tree-row {
     color: var(--muted);
     list-style: none;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
 }
 
@@ -1567,6 +1635,9 @@ button.tree-row {
 }
 
 .tasks-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 8px 12px;
     font-size: 13px;
     color: var(--muted);

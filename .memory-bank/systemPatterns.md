@@ -77,8 +77,8 @@ source: repository implementation, regression evidence, and decision records
   Keep Usage unknown, errors redacted, prerequisite ids stable and readiness machine-bound.
 - Intercom allow-lists first; mentions never authorize. Exact same-chat plain-text
   pending replies may bypass mentions. All entries share Turn/Permission gates.
-- Theme and Mode remain independent local display preferences. Bundle licensed
-  fonts and check computed colors, actual fonts and control bounds.
+- Theme and Mode stay local. Bundle licensed fonts; draw icons by name in `icons.js`
+  with currentColor, never emoji or remote assets. Check colors, fonts and bounds.
 - Split thinking at Engine iterations, never per token; title it from its own text
   without a Model call, below collapsed work summaries. Never script-scroll in the
   streaming thread (Chromium cancels the wheel); bottom-align live text in CSS.
