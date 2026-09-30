@@ -2,41 +2,35 @@
 schema-version: 1
 status: accepted
 owner: software-engineer
-last-verified: 2026-09-29
-source: red/green Node regressions, Pester web-asset contracts, and headless Edge loopback journeys
+last-verified: 2026-09-30
+source: GitHub Models and pricing page, live Engine model list, ShellPilot and DeskPilot test runs
 ---
 
 # Active context
 
 ## Current focus
 
-The thread could not be scrolled back down to the running thinking section
-while reasoning streamed, and completed sections said only `Thought for Ns`.
-Both are fixed on topic Branch `ai/thinking-scroll-titles`, cut from `main` at
-`4c9cda4` (already on `origin/main`). No push or Merge was requested.
+Model rates were requested "in this branch" after DeskPilot showed `cost
+unknown` for `claude-opus-5.5`. Pricing stays Engine-owned, so the rates were
+updated upstream in ShellPilot, not in DeskPilot: branch
+`ai/update-price-table` in the separate worktree `D:\Git\ShellPilot-price-table`,
+cut from ShellPilot `origin/main` at `08a4a22`. The main ShellPilot checkout
+stays on `ai/agent-modernization`. No push, Merge or release was requested.
 
-## Latest change
+- The table matches all 47 Model/tier rows of the GitHub page read on
+  2026-09-30 and prices every picker-enabled chat Model the service advertised
+  that day, except the internal-only `gpt-5.6-sol-fast`, which has no published
+  rate and stays `cost unknown`.
+- DeskPilot uses the highest installed ShellPilot and never updates an
+  installed one. Costs appear only after an Engine containing the new table is
+  installed or passed with `-EngineModulePath`. That changes the Engine's
+  `data/PriceTable.psd1` bytes, so prepared private-child proof must be renewed.
 
-- Root cause: `renderThinking` pinned the live section with a script scroll on
-  every token; in Chromium that cancels the reader's wheel scroll of the thread.
-  The live body is now clipped and bottom-aligned in CSS and never scrolled.
-- An upward wheel stops following at once; scrolling back to the bottom resumes
-  it. A ↓ control (`#thread-jump`, i18n `thread.jump`) appears above the
-  composer while the reader is away from the newest output.
-- `thinkingTitle` labels completed sections from their own text: the model's
-  heading, else its opening sentence (past short openers), else the Tool calls.
-  The duration sits beside the title. Plain text only; no Model call.
-  Stored sections get titles without an invented duration.
+## Earlier change on this branch
 
-## Validation
-
-- Six new Node cases failed first; 18 focused and 82/82 Node UI tests pass.
-- Pester 6.2.0, isolated: WebAssets, Localization, BrowserAutomation and
-  SkillConformance pass 719 with six symlink/case-sensitivity environment skips.
-- Headless Edge journeys against a loopback SSE fixture using the real SPA pass
-  16/16 on the new assets and fail 6/16 on the old ones (3 px stall, no titles).
-  Desktop and 390 px mobile; no page errors or off-loopback requests. Headless
-  wheel input has no smooth animation, so one-notch follow is Node-proved.
+`2cb8948` keeps the live thinking section scrollable and titles completed
+sections by content. Its evidence: 82/82 Node UI tests, 719 Pester cases with
+six environment skips, and headless Edge journeys 16/16 new versus 10/16 old.
 
 ## Retained boundaries
 
@@ -45,4 +39,5 @@ opt-in are unchanged; source-bound child proof is invalidated by source changes
 and must be renewed before enablement. Parallel topology remains unapproved.
 Memory provenance and per-Project scope remain Host-controlled. Keep a private
 copy of version-2 Memory before downgrade; never promote confidential notes to
-global scope merely to retain them in an older build.
+global scope merely to retain them in an older build. Never price Models in
+DeskPilot; fix a missing or stale rate in ShellPilot's price table.
