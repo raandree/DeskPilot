@@ -48,6 +48,12 @@ function Invoke-DpIntercomCommand {
     }
 
     if ($Command.kind -eq 'ignore') {
+        # Group chatter meant for someone else is folded into one counted line
+        # per chat, so a busy group cannot evict rejections and errors.
+        if ([bool](Get-DpPropertyValue -InputObject $Command -Name @('unaddressed') -Default $false)) {
+            Add-DpIntercomLog -Direction 'in' -Kind 'unaddressed' -Detail $Command.reason -ChatId $attribution.ChatId -Accepted $false -Coalesce
+            return
+        }
         Add-DpIntercomLog -Direction 'in' -Kind 'ignored' -Detail $Command.reason -Accepted $false @attribution
         if ($Command.reason -like 'Unknown command*') {
             $null = Send-DpIntercomMessage -Title 'Unknown command' -Line @($Command.reason) -Kind 'notice'

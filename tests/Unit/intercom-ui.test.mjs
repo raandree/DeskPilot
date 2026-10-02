@@ -5,6 +5,29 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../source/web/assets/app.js', import.meta.url), 'utf8');
 
+function between(start, end) {
+    const first = source.indexOf(start);
+    const last = source.indexOf(end, first);
+    assert.ok(first >= 0 && last > first, `Missing source boundaries: ${start}, ${end}`);
+    return source.slice(first, last);
+}
+
+// The real renderer and its two helpers, run against a stub status box.
+function renderPanel(intercom) {
+    const box = { innerHTML: '' };
+    const context = vm.createContext({
+        $: (id) => (id === 'set-intercom-status' ? box : null),
+        state: { intercom, intercomStale: false },
+    });
+    vm.runInContext(
+        between('const escapeHtml = ', 'function toast(') + '\n' +
+        between('const asArray = ', '\n') + '\n' +
+        between('function renderIntercomPanel() {', '\n// The dismissible "update available" banner.') + '\n' +
+        'renderIntercomPanel();',
+        context);
+    return box.innerHTML;
+}
+
 function controls(failSave = false) {
     const input = { checked: false, disabled: false };
     const requests = [];
@@ -76,3 +99,37 @@ for (const required of [false, true]) {
         assert.deepEqual(notices, ['Save failed']);
     });
 }
+
+test('a folded audit line says how many group Messages it stands for', () => {
+    const sinceUtc = '2026-10-02T10:00:00.000Z';
+    const html = renderPanel({
+        status: 'on',
+        counters: { received: 38 },
+        log: [
+            { utc: '2026-10-02T10:01:00.000Z', direction: 'in', kind: 'prompt', detail: 'ship it', chatId: '111', from: 'Mo', accepted: true },
+            {
+                utc: '2026-10-02T10:05:00.000Z', direction: 'in', kind: 'unaddressed',
+                detail: 'Group Message did not mention this Intercom.', chatId: '-1004455397827', from: '',
+                accepted: false, messageCount: 37, sinceUtc,
+            },
+        ],
+    });
+
+    assert.match(html, /intercom-kind tiny">unaddressed</);
+    assert.ok(html.includes(`×37 since ${new Date(sinceUtc).toLocaleTimeString()}`), html);
+    assert.equal(html.split('×').length - 1, 1, 'Only the folded line carries a count');
+});
+
+test('a single un-addressed Message carries no count', () => {
+    const html = renderPanel({
+        status: 'on',
+        log: [{
+            utc: '2026-10-02T10:05:00.000Z', direction: 'in', kind: 'unaddressed',
+            detail: 'Group Message did not mention this Intercom.', chatId: '-1004455397827', from: '',
+            accepted: false, messageCount: 1, sinceUtc: '2026-10-02T10:05:00.000Z',
+        }],
+    });
+
+    assert.match(html, /Group Message did not mention this Intercom\./);
+    assert.ok(!html.includes('×'), html);
+});

@@ -79,19 +79,9 @@ function Update-DpIntercomState {
             $intercom.Priming = -not $isPairing
             $intercom.LastError = ''
             Add-DpIntercomLog -Direction 'system' -Kind 'enabled' -Detail $(if ($isPairing) { 'Listening for a pairing message.' } else { 'Intercom is on.' })
-            # One attempt per session. A failure only costs the mention strip, so
-            # it is not worth retrying against an endpoint the poll is also failing
-            # - but it is still recorded, because a symptom with no log line is how
-            # a Telegram-side problem gets blamed on DeskPilot ignoring the operator.
-            if ([string]::IsNullOrWhiteSpace($intercom.BotUsername) -and -not $intercom.IdentityTask) {
-                try { $intercom.IdentityTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe' }
-                catch {
-                    $intercom.IdentityTask = $null
-                    $intercom.Counters.errors++
-                    Add-DpIntercomLog -Direction 'system' -Kind 'identity-error' -Accepted $false `
-                        -Detail "I could not ask Telegram for my own name, so a leading @mention will stay in the prompt: $(Hide-DpIntercomSecret -Text "$_")"
-                }
-            }
+            # Every start may ask Telegram for this bot's name afresh, below.
+            $intercom['IdentityAttempts'] = 0
+            $intercom['IdentityRetryUtc'] = $null
             $null = Send-DpIntercomMessage -Title 'DeskPilot Intercom is on.' -Line @(
                 "Machine: $([Environment]::MachineName)",
                 'Send /help for the command list.'
@@ -110,17 +100,36 @@ function Update-DpIntercomState {
         }
         if (-not $intercom.Running) { return }
 
-        # Reap the identity lookup started on the enable transition.
+        # Ask Telegram for this bot's own @name when Intercom starts, and again on
+        # a bounded schedule after a failure. A failure is still recorded, because
+        # a symptom with no log line is how a Telegram-side problem gets blamed on
+        # DeskPilot ignoring the operator.
+        $identityAttempts = [int](Get-DpPropertyValue -InputObject $intercom -Name @('IdentityAttempts') -Default 0)
+        $identityRetryUtc = Get-DpPropertyValue -InputObject $intercom -Name @('IdentityRetryUtc') -Default $null
+        if ([string]::IsNullOrWhiteSpace($intercom.BotUsername) -and -not $intercom.IdentityTask -and
+            ($identityAttempts -eq 0 -or ($null -ne $identityRetryUtc -and [DateTime]::UtcNow -ge [DateTime]$identityRetryUtc))) {
+            $intercom['IdentityAttempts'] = $identityAttempts + 1
+            $intercom['IdentityRetryUtc'] = $null
+            try { $intercom.IdentityTask = Invoke-DpTelegramRequest -Client $intercom.Client -Token $intercom.Token -Operation 'getMe' }
+            catch {
+                $intercom.IdentityTask = $null
+                Add-DpIntercomIdentityFailure -Problem 'I could not ask Telegram for my own name' -Cause "$_"
+            }
+        }
+
+        # Reap the identity lookup.
         if ($intercom.IdentityTask -and $intercom.IdentityTask.IsCompleted) {
             $identity = Receive-DpTelegramResponse -Task $intercom.IdentityTask
             $intercom.IdentityTask = $null
             if ($identity.ok) {
                 $intercom.BotUsername = [string](Get-DpPropertyValue -InputObject $identity.result -Name @('username') -Default '')
+                # Answers the error line an earlier attempt left in the log.
+                if ($intercom.BotUsername -and [int](Get-DpPropertyValue -InputObject $intercom -Name @('IdentityAttempts') -Default 0) -gt 1) {
+                    Add-DpIntercomLog -Direction 'system' -Kind 'identity' -Detail "Telegram told me my name, @$($intercom.BotUsername), so group mentions work now."
+                }
             }
             else {
-                $intercom.Counters.errors++
-                Add-DpIntercomLog -Direction 'system' -Kind 'identity-error' -Accepted $false `
-                    -Detail "Telegram did not tell me my own name, so a leading @mention will stay in the prompt: $($identity.error)"
+                Add-DpIntercomIdentityFailure -Problem 'Telegram did not tell me my own name' -Cause ([string]$identity.error)
             }
         }
 

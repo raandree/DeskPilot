@@ -484,6 +484,10 @@ Describe 'Support bundle' -Tag 'Unit' {
         $record.configuration.mcpServers[0].Keys | Should -Be @(
             'name', 'source', 'enabled', 'environmentKeyCount', 'toolRestrictionCount'
         )
+        $record.configuration.intercom.Keys | Should -Be @(
+            'enabled', 'tokenConfigured', 'chatConfigured', 'groupEnabled', 'groupCount', 'requireGroupMention'
+        )
+        $record.configuration.intercom.requireGroupMention | Should -BeFalse
         $json | Should -Not -Match 'MESSAGE-CONTENT|REASONING-MUST|RAW-TOOL-SECRET|RAW-MCP-BEARER|UNKNOWN-MCP|UNKNOWN-STATE|HOST-TOKEN|ENGINE-TOKEN|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         $json | Should -Not -Match ([regex]::Escape($script:bundleData))
         $json | Should -Not -Match ([regex]::Escape($script:bundleModule))
@@ -491,6 +495,22 @@ Describe 'Support bundle' -Tag 'Unit' {
         $json | Should -Match '<Project:private-project>'
         $json | Should -Not -Match 'C:\\unrelated|/home/person'
         $json | Should -Match '<path:secret\.txt>|<path:private\.txt>'
+    }
+
+    It 'says whether Intercom only hears group Messages that mention it' {
+        $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+        $script:DeskPilot.Settings.intercom.groupChatIds = @('-1001234567890')
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+
+        $record = & {
+            Set-StrictMode -Version Latest
+            New-DpSupportBundleRecord
+        }
+
+        $record.configuration.intercom.groupEnabled | Should -BeTrue
+        $record.configuration.intercom.groupCount | Should -Be 1
+        $record.configuration.intercom.requireGroupMention | Should -BeTrue
+        ($record | ConvertTo-Json -Depth 12 -Compress) | Should -Not -Match '1001234567890'
     }
 
     It 'constructs a bundle record before any self-check under StrictMode' {

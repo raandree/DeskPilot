@@ -127,6 +127,8 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
 
         $result.kind | Should -Be 'ignore'
         $result.text | Should -BeNullOrEmpty
+        # Addressed, just empty: it keeps its own audit line.
+        $result.unaddressed | Should -BeFalse
     }
 
     Context 'group mention requirement' {
@@ -176,6 +178,8 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
             $result.text | Should -BeNullOrEmpty
             $result.preview | Should -BeNullOrEmpty
             $result.attachment | Should -BeNullOrEmpty
+            # Marked, so the audit log can fold group chatter instead of filling up with it.
+            $result.unaddressed | Should -BeTrue
         }
 
         It 'uses Telegram UTF-16 offsets after a supplementary character' {
@@ -199,6 +203,7 @@ Describe 'ConvertFrom-DpIntercomUpdate' -Tag 'Unit' {
 
             $result.kind | Should -Be 'ignore'
             $result.text | Should -BeNullOrEmpty
+            $result.unaddressed | Should -BeTrue
         }
 
         It 'leaves private Messages unchanged' {

@@ -4957,11 +4957,17 @@ function renderIntercomPanel() {
             // Who, not just what: with more than one chat allow-listed, a line
             // that names only the action cannot attribute it to anyone.
             const who = [e.from, e.chatId].filter(Boolean).join(' ');
+            // One line stands for every group Message that was meant for
+            // someone else, so it says how many and since when.
+            const count = Number(e.messageCount) || 0;
+            const folded = count > 1
+                ? ` <span class="tiny muted">×${count} since ${escapeHtml(new Date(e.sinceUtc).toLocaleTimeString())}</span>`
+                : '';
             return `<div class="intercom-log-row${e.accepted ? '' : ' rejected'}">` +
                 `<span class="tiny muted">${escapeHtml(when)}</span> <span class="intercom-arrow">${arrow}</span> ` +
                 `<span class="intercom-kind tiny">${escapeHtml(e.kind)}</span> ` +
                 (who ? `<span class="intercom-who tiny muted">${escapeHtml(who)}</span> ` : '') +
-                `<span class="tiny">${escapeHtml(e.detail || '')}</span></div>`;
+                `<span class="tiny">${escapeHtml(e.detail || '')}</span>${folded}</div>`;
         }).join('');
         rows.push(`<div class="intercom-log">${items}</div>`);
     }

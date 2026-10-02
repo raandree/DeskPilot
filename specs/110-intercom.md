@@ -78,9 +78,17 @@ addressed to another Telegram username remain ignored.
 After **Something else** arms free text, a reply to that question needs no
 mention; an ordinary Message without reply metadata still needs one. Other
 unmentioned group Messages are ignored without an acknowledgement, Turn, or
-download. Private Messages and validated Keyboard callbacks are unchanged.
+download. The audit log folds them into one counted line per group, so busy
+group chatter cannot evict rejections and errors from its 200 entries.
+Private Messages and validated Keyboard callbacks are unchanged.
 The Setting filters Host Server intake, not Telegram delivery, and does not
 change Group Privacy, the allow-list, or Project Permissions.
+
+Intercom learns its username from `getMe` when it starts. A failed lookup is
+logged with its current consequence and asked again after 30 seconds, then
+2, 10, and 30 minutes. After that, **Send a test message** or switching
+Intercom off and on asks again. Storing a new bot token forgets the old
+username.
 
 ## Failure detection (resolves F2)
 

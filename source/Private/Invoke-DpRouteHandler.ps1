@@ -2403,6 +2403,11 @@
                 $state.Intercom.PollTask = $null
                 $state.Intercom.StatusMessageId = 0
                 $state.Intercom.PendingQuestion = $null
+                # Including the bot's own name: another bot answers to another one.
+                $state.Intercom.BotUsername = ''
+                $state.Intercom.IdentityTask = $null
+                $state.Intercom['IdentityAttempts'] = 0
+                $state.Intercom['IdentityRetryUtc'] = $null
                 Add-DpIntercomLog -Direction 'system' -Kind 'token' -Detail $(if ($configured) { 'A bot token was stored.' } else { 'The bot token was removed.' })
             }
 

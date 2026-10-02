@@ -56,6 +56,8 @@ function New-DpSupportBundleRecord {
             chatConfigured  = -not [string]::IsNullOrWhiteSpace([string](Get-DpPropertyValue -InputObject $intercomSettings -Name @('chatId') -Default ''))
             groupEnabled    = [bool](Get-DpPropertyValue -InputObject $intercomSettings -Name @('allowGroupChat') -Default $false)
             groupCount      = @(Get-DpPropertyValue -InputObject $intercomSettings -Name @('groupChatIds') -Default @()).Count
+            # Explains "Intercom ignores my group": with the gate on, only a mention reaches it.
+            requireGroupMention = [bool](Get-DpPropertyValue -InputObject $intercomSettings -Name @('requireGroupMention') -Default $false)
         }
     }
 

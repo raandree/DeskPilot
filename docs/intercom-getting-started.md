@@ -157,11 +157,16 @@ group workflows stay unchanged; the persisted Setting is
   question do not qualify. Commands, edits, and Attachments still need a mention.
 
 Other unmentioned group Messages receive no acknowledgement and start no Turn
-or download. Private Messages and Keyboard taps are unchanged. A leading
+or download. The Intercom log shows them as one `unaddressed` line per group
+that counts them, rather than one line each. Private Messages and Keyboard taps
+are unchanged. A leading
 `@yourbot` followed by a space is removed before
 the instruction reaches the Engine. If Intercom cannot obtain its own username
 from Telegram, new group work is ignored while this option is on; direct
 plain-text replies to the pending question and Keyboard taps still work.
+Intercom asks Telegram again after 30 seconds, then 2, 10, and 30 minutes, and
+the log says which consequence applies. After that, press
+**Send a test message** or switch Intercom off and on.
 
 This Setting filters updates at the Host Server; it does not change Telegram's
 Group Privacy or stop Telegram delivering updates. It also grants no Permission:

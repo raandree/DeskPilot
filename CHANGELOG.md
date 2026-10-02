@@ -188,6 +188,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep the Intercom log useful in a busy group when **Require a bot mention in
+  groups** is on. Messages meant for someone else now fold into one
+  `unaddressed` line per group that counts them, instead of pushing rejections
+  and errors out of its 200 entries. See
+  [Require a mention in groups](docs/intercom-getting-started.md#require-a-mention-in-groups).
+- Say what a failed bot-name lookup costs. With **Require a bot mention in
+  groups** on, the log now says Intercom ignores every group Message except a
+  reply to its question, instead of only mentioning the leading @mention.
+  Intercom asks Telegram again after 30 seconds, then 2, 10, and 30 minutes, and
+  storing a new bot token forgets the old bot's name.
+- Report whether Intercom requires a group mention in the support bundle, so a
+  bundle can explain why Intercom ignores a group.
 - Let the reader scroll back down to the running thinking section while
   reasoning streams. The live section no longer cancels the wheel scroll after
   a few pixels; an upward wheel pauses following at once, and a ↓ control

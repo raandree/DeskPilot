@@ -17,6 +17,11 @@ function Add-DpIntercomLog {
         an audit trail: after a bad /undo the log has to answer who. Telegram
         supplies the sender name and DeskPilot does not verify it, so it is a
         display label beside the chat id rather than an identity.
+
+        A coalesced event is noise by volume rather than by meaning: group
+        chatter that was meant for someone else. One entry per chat and kind
+        stands for all of it, counts it, and moves to the newest position, so a
+        busy group can never evict the rejections and errors the ring is for.
     .PARAMETER Direction
         'in', 'out' or 'system'.
     .PARAMETER Kind
@@ -29,6 +34,9 @@ function Add-DpIntercomLog {
         The sender's display name as Telegram reported it. Untrusted.
     .PARAMETER Accepted
         Whether the event was acted on. Rejections are highlighted in the UI.
+    .PARAMETER Coalesce
+        Fold the event into the chat's existing entry of the same kind. The entry
+        carries messageCount and sinceUtc, the time of the first folded event.
     .OUTPUTS
         None.
     #>
@@ -54,7 +62,9 @@ function Add-DpIntercomLog {
         [AllowEmptyString()]
         [string]$From = '',
 
-        [bool]$Accepted = $true
+        [bool]$Accepted = $true,
+
+        [switch]$Coalesce
     )
 
     $intercom = $script:DeskPilot.Intercom
@@ -71,15 +81,34 @@ function Add-DpIntercomLog {
     $fromName = Hide-DpIntercomSecret -Text $From
     if ($fromName.Length -gt 60) { $fromName = $fromName.Substring(0, 60) }
 
-    $intercom.Log.Add([ordered]@{
-            utc       = [DateTime]::UtcNow.ToString('o')
-            direction = $Direction
-            kind      = $Kind
-            detail    = $text
-            chatId    = ([string]$ChatId).Trim()
-            from      = $fromName
-            accepted  = $Accepted
-        })
+    $now = [DateTime]::UtcNow.ToString('o')
+    $chat = ([string]$ChatId).Trim()
+    $entry = [ordered]@{
+        utc       = $now
+        direction = $Direction
+        kind      = $Kind
+        detail    = $text
+        chatId    = $chat
+        from      = $fromName
+        accepted  = $Accepted
+    }
+
+    if ($Coalesce) {
+        $entry['messageCount'] = 1
+        $entry['sinceUtc'] = $now
+        for ($index = $intercom.Log.Count - 1; $index -ge 0; $index--) {
+            $previous = $intercom.Log[$index]
+            if ($previous -is [System.Collections.IDictionary] -and $previous.Contains('messageCount') -and
+                [string]$previous['kind'] -eq $Kind -and [string]$previous['chatId'] -eq $chat) {
+                $entry['messageCount'] = [int]$previous['messageCount'] + 1
+                $entry['sinceUtc'] = [string]$previous['sinceUtc']
+                $intercom.Log.RemoveAt($index)
+                break
+            }
+        }
+    }
+
+    $intercom.Log.Add($entry)
 
     $maxEntries = 200
     while ($intercom.Log.Count -gt $maxEntries) { $intercom.Log.RemoveAt(0) }

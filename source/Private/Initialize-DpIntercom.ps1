@@ -58,11 +58,15 @@ function Initialize-DpIntercom {
         ModelIndex       = @()
         ProjectIndex     = @()
         Offset           = 0
-        # This bot's own @name, learned once per session from getMe. A group
+        # This bot's own @name, learned from getMe when Intercom starts. A group
         # message has to mention it to arrive at all under Telegram's group
         # privacy, and that mention is addressing rather than instruction.
         BotUsername      = ''
         IdentityTask     = $null
+        # Lookups started since Intercom last started, and when a failed one may
+        # be asked again - see Add-DpIntercomIdentityFailure.
+        IdentityAttempts = 0
+        IdentityRetryUtc = $null
         # The first poll only learns the newest update id and discards the
         # backlog: acting on a command the operator sent while DeskPilot was not
         # running would be a genuinely dangerous surprise on startup.

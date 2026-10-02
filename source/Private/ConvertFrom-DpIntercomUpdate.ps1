@@ -30,7 +30,9 @@ function ConvertFrom-DpIntercomUpdate {
           help     - /help
           edited   - the operator edited an earlier message; acknowledged, never run
           rejected - the chat is not allow-listed
-          ignore   - nothing actionable (a photo, a channel post, an empty message)
+          ignore   - nothing actionable (a photo, a channel post, an empty message).
+                     'unaddressed' marks group chatter the mention gate turned
+                     away, which the audit log folds instead of listing.
     .PARAMETER Update
         One element of the Telegram getUpdates result array.
     .PARAMETER AllowedChatId
@@ -121,6 +123,8 @@ function ConvertFrom-DpIntercomUpdate {
         # The tap on an inline-keyboard button that produced this, answered so
         # Telegram stops showing the button as loading.
         callbackId       = ''
+        # A group Message the mention gate turned away as meant for someone else.
+        unaddressed      = $false
     }
 
     if ($null -eq $Update) {
@@ -245,6 +249,7 @@ function ConvertFrom-DpIntercomUpdate {
         if (-not $addressed) {
             $result.preview = ''
             $result.reason = 'Group Message did not mention this Intercom.'
+            $result.unaddressed = $true
             return $result
         }
     }
@@ -326,6 +331,7 @@ function ConvertFrom-DpIntercomUpdate {
         $commandName[1] -ne $BotUsername.Trim().TrimStart('@')) {
         $result.preview = ''
         $result.reason = 'Group command addresses a different Telegram username.'
+        $result.unaddressed = $true
         return $result
     }
     $verb = $commandName[0].ToLowerInvariant()

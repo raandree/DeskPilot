@@ -548,6 +548,141 @@ Describe 'FIND-006 - a failed getMe is recorded like every other Intercom error'
     }
 }
 
+Describe 'FIND-015 - a failed getMe names what it costs and is asked again' -Tag 'Unit' {
+    BeforeAll {
+        function New-TestIdentityTask {
+            [CmdletBinding()]
+            param(
+                [int]$Status = 200,
+                [string]$Body = '{"ok":true,"result":{"username":"Janis1bot"}}'
+            )
+            $response = [System.Net.Http.HttpResponseMessage]::new($Status)
+            $response.Content = [System.Net.Http.StringContent]::new($Body, [System.Text.Encoding]::UTF8, 'application/json')
+            [System.Threading.Tasks.Task]::FromResult($response)
+        }
+        $script:Refused = '{"ok":false,"description":"Unauthorized"}'
+    }
+
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $script:dataDir = Join-Path $TestDrive ('retry-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:dataDir | Out-Null
+        $settings = Get-DpDefaultSettings
+        $settings.intercom.enabled = $true
+        $settings.intercom.chatId = '111'
+        $script:DeskPilot = @{
+            Settings      = $settings
+            Conversations = @{}
+            TurnRunning   = $false
+            DataDir       = $script:dataDir
+            Intercom      = Initialize-DpIntercom -Directory $script:dataDir
+        }
+        $script:DeskPilot.Intercom.TokenConfigured = $true
+        $script:DeskPilot.Intercom.Token = '123456789:AAHqWeRtYuIoPaSdFgHjKlZxCvBnM12'
+        $script:DeskPilot.Intercom.Running = $true
+        $script:DeskPilot.Intercom.Priming = $false
+        # Nothing may reach the network: polls and sends never complete, and a
+        # lookup answers with the bot's name.
+        Mock Invoke-DpTelegramRequest {
+            ([System.Threading.Tasks.TaskCompletionSource[System.Net.Http.HttpResponseMessage]]::new()).Task
+        }
+        Mock Invoke-DpTelegramRequest -ParameterFilter { $Operation -eq 'getMe' } { New-TestIdentityTask }
+    }
+
+    AfterEach {
+        if ($script:DeskPilot.Intercom.Client) { $script:DeskPilot.Intercom.Client.Dispose() }
+        $script:DeskPilot = $null
+    }
+
+    It 'says no group Message gets through while a mention is required' {
+        $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+        $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+        $script:DeskPilot.Intercom.IdentityAttempts = 1
+        $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
+
+        Update-DpIntercomState
+
+        $entries = @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity-error' })
+        $entries.Count | Should -Be 1
+        $entries[0].detail | Should -Match 'ignore every group Message except a reply to my question'
+        $entries[0].detail | Should -Not -Match 'stay in the prompt'
+    }
+
+    It 'names the mention it cannot strip when no mention is required' {
+        $script:DeskPilot.Intercom.IdentityAttempts = 1
+        $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
+
+        Update-DpIntercomState
+
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity-error' })[0].detail |
+            Should -Match 'leading @mention will stay in the prompt'
+    }
+
+    It 'asks again once the delay has passed, and learns the name' {
+        $script:DeskPilot.Intercom.IdentityAttempts = 1
+        $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
+
+        Update-DpIntercomState
+        Update-DpIntercomState
+
+        Should -Invoke Invoke-DpTelegramRequest -ParameterFilter { $Operation -eq 'getMe' } -Times 0 -Exactly
+        ([DateTime]$script:DeskPilot.Intercom.IdentityRetryUtc - [DateTime]::UtcNow).TotalSeconds | Should -BeGreaterThan 0
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity-error' })[0].detail |
+            Should -Match 'ask again in 30 seconds'
+
+        $script:DeskPilot.Intercom.IdentityRetryUtc = [DateTime]::UtcNow.AddSeconds(-1)
+        Update-DpIntercomState
+
+        Should -Invoke Invoke-DpTelegramRequest -ParameterFilter { $Operation -eq 'getMe' } -Times 1 -Exactly
+        $script:DeskPilot.Intercom.BotUsername | Should -Be 'Janis1bot'
+        $script:DeskPilot.Intercom.IdentityAttempts | Should -Be 2
+        # The earlier error line is answered, so it does not read as still true.
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity' }).Count | Should -Be 1
+    }
+
+    It 'stops asking after the last attempt and says how to try again' {
+        $script:DeskPilot.Intercom.IdentityAttempts = 5
+        $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
+
+        Update-DpIntercomState
+        Update-DpIntercomState
+
+        Should -Invoke Invoke-DpTelegramRequest -ParameterFilter { $Operation -eq 'getMe' } -Times 0 -Exactly
+        $script:DeskPilot.Intercom.IdentityRetryUtc | Should -BeNullOrEmpty
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity-error' })[0].detail |
+            Should -Match 'Send a test message'
+    }
+
+    It 'asks once when Intercom is switched on, without logging a success' {
+        $script:DeskPilot.Intercom.Running = $false
+
+        Update-DpIntercomState
+
+        Should -Invoke Invoke-DpTelegramRequest -ParameterFilter { $Operation -eq 'getMe' } -Times 1 -Exactly
+        $script:DeskPilot.Intercom.BotUsername | Should -Be 'Janis1bot'
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -like 'identity*' }).Count | Should -Be 0
+    }
+
+    It 'forgets the name an old token established when a new token is stored' {
+        $script:DeskPilot.Intercom.BotUsername = 'Oldbot'
+        $script:DeskPilot.Intercom.IdentityAttempts = 5
+        $script:DeskPilot.Intercom.IdentityRetryUtc = [DateTime]::UtcNow.AddMinutes(10)
+        Mock Save-DpIntercomSecret { $true }
+        Mock Update-DpIntercomState { }
+        $stream = [System.IO.MemoryStream]::new()
+        try {
+            Invoke-DpRouteHandler -Name 'putIntercom' -Stream $stream -Body ([pscustomobject]@{ botToken = '987654321:AAHqWeRtYuIoPaSdFgHjKlZxCvBnM12' })
+        }
+        finally { $stream.Dispose() }
+
+        $script:DeskPilot.Intercom.BotUsername | Should -Be ''
+        $script:DeskPilot.Intercom.IdentityTask | Should -BeNullOrEmpty
+        $script:DeskPilot.Intercom.IdentityAttempts | Should -Be 0
+        $script:DeskPilot.Intercom.IdentityRetryUtc | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'FIND-007 - a chat id is bounded by int64, not by a digit count' -Tag 'Unit' {
     BeforeEach {
         Set-StrictMode -Version Latest
@@ -577,5 +712,126 @@ Describe 'FIND-007 - a chat id is bounded by int64, not by a digit count' -Tag '
         $merged = Merge-DpSettings -Current $script:settings -Patch @{ intercom = @{ groupChatIds = '-9223372036854775807' } }
 
         @($merged.intercom.groupChatIds) | Should -Be @('-9223372036854775807')
+    }
+}
+
+Describe 'FIND-016 - group chatter not addressed to Intercom cannot flood the audit log' -Tag 'Unit' {
+    BeforeAll {
+        $script:SecondGroup = '-1005550001111'
+
+        # The real intake chain: a raw Telegram update through the parser, then
+        # the command executor that writes the audit log.
+        function Receive-TestGroupMessage {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory)][string]$ChatId,
+                [Parameter(Mandatory)][string]$Text,
+                [object[]]$Entities = @()
+            )
+
+            $script:nextUpdateId++
+            $update = @{
+                update_id = $script:nextUpdateId
+                message   = @{
+                    message_id = $script:nextUpdateId
+                    chat       = @{ id = $ChatId; type = 'supergroup' }
+                    from       = @{ first_name = 'Mo'; username = 'mo' }
+                    text       = $Text
+                    entities   = @($Entities)
+                }
+            }
+            $command = ConvertFrom-DpIntercomUpdate -Update $update @script:intakeParams
+            $null = Invoke-DpIntercomCommand -Command $command
+            $command
+        }
+    }
+
+    BeforeEach {
+        Set-StrictMode -Version Latest
+        $script:DeskPilot = New-TestAuthorityState -GroupAllowed -ProjectRemote -ProjectGroup
+        $script:DeskPilot.Settings.intercom.groupChatIds = @($script:GroupChat, $script:SecondGroup)
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+        $script:intakeParams = @{
+            AllowedChatId       = $script:OwnChat
+            AllowedGroupChatId  = @($script:GroupChat, $script:SecondGroup)
+            BotUsername         = 'Janis1bot'
+            RequireGroupMention = $true
+        }
+        $script:nextUpdateId = 100
+    }
+
+    AfterEach { $script:DeskPilot = $null }
+
+    It 'keeps the rejection and the error a busy group would have evicted' {
+        $rejected = New-TestCommand -Kind 'rejected' -ChatId '-1009999999999' -FromName 'Nobody'
+        $rejected.reason = "Message from chat '-1009999999999' is not allow-listed."
+        Invoke-DpIntercomCommand -Command $rejected
+        Add-DpIntercomLog -Direction 'out' -Kind 'error' -Detail 'Telegram refused the message.' -Accepted $false
+
+        1..250 | ForEach-Object { $null = Receive-TestGroupMessage -ChatId $script:GroupChat -Text "chatter $_" }
+
+        $log = @($script:DeskPilot.Intercom.Log)
+        @($log | Where-Object { $_.kind -eq 'rejected' }).Count | Should -Be 1
+        @($log | Where-Object { $_.kind -eq 'error' }).Count | Should -Be 1
+        $folded = @($log | Where-Object { $_.kind -eq 'unaddressed' })
+        $folded.Count | Should -Be 1
+        $folded[0]['messageCount'] | Should -Be 250
+        $folded[0].chatId | Should -Be $script:GroupChat
+        $script:DeskPilot.Intercom.Counters.received | Should -Be 251
+    }
+
+    It 'keeps the folded line newest and remembers when the chatter began' {
+        $first = Receive-TestGroupMessage -ChatId $script:GroupChat -Text 'first chatter'
+        $since = @($script:DeskPilot.Intercom.Log)[-1].sinceUtc
+        $mentioned = Receive-TestGroupMessage -ChatId $script:GroupChat -Text '@Janis1bot ship it' `
+            -Entities @(@{ type = 'mention'; offset = 0; length = 10 })
+        $null = Receive-TestGroupMessage -ChatId $script:GroupChat -Text 'more chatter'
+
+        $first.unaddressed | Should -BeTrue
+        $mentioned.kind | Should -Be 'prompt'
+        $log = @($script:DeskPilot.Intercom.Log)
+        @($log | Where-Object { $_.kind -eq 'prompt' }).Count | Should -Be 1
+        $log[-1].kind | Should -Be 'unaddressed'
+        $log[-1]['messageCount'] | Should -Be 2
+        $log[-1].sinceUtc | Should -Be $since
+        $log[-1].utc | Should -Not -BeNullOrEmpty
+        $log[-1].detail | Should -Be 'Group Message did not mention this Intercom.'
+        $log[-1].accepted | Should -BeFalse
+        # The line stands for several senders, so it names none of them.
+        $log[-1].from | Should -Be ''
+    }
+
+    It 'folds each group into its own line' {
+        $null = Receive-TestGroupMessage -ChatId $script:GroupChat -Text 'chatter'
+        $null = Receive-TestGroupMessage -ChatId $script:SecondGroup -Text 'other chatter'
+        $null = Receive-TestGroupMessage -ChatId $script:GroupChat -Text 'chatter again'
+
+        $folded = @(@($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'unaddressed' })
+        $folded.Count | Should -Be 2
+        @($folded | Where-Object { $_.chatId -eq $script:GroupChat })[0]['messageCount'] | Should -Be 2
+        @($folded | Where-Object { $_.chatId -eq $script:SecondGroup })[0]['messageCount'] | Should -Be 1
+    }
+
+    It 'folds a command meant for another bot into the same line' {
+        $null = Receive-TestGroupMessage -ChatId $script:GroupChat -Text 'chatter'
+        $command = Receive-TestGroupMessage -ChatId $script:GroupChat -Text '@Janis1bot /status@Otherbot' `
+            -Entities @(@{ type = 'mention'; offset = 0; length = 10 })
+
+        $command.reason | Should -Be 'Group command addresses a different Telegram username.'
+        $folded = @(@($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'unaddressed' })
+        $folded.Count | Should -Be 1
+        $folded[0]['messageCount'] | Should -Be 2
+        $folded[0].detail | Should -Be 'Group command addresses a different Telegram username.'
+    }
+
+    It 'still records every other ignored Message on its own line' {
+        $ignored = New-TestCommand -Kind 'ignore' -ChatId $script:OwnChat
+        $ignored.reason = 'Message carried no text.'
+
+        Invoke-DpIntercomCommand -Command $ignored
+        Invoke-DpIntercomCommand -Command $ignored
+
+        @(@($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'ignored' }).Count | Should -Be 2
+        @(@($script:DeskPilot.Intercom.Log) | Where-Object { $_.kind -eq 'unaddressed' }).Count | Should -Be 0
     }
 }
