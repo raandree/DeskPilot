@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-24
+last-verified: 2026-10-02
 source: repository evidence
 ---
 
@@ -17,7 +17,7 @@ source: repository evidence
 | Transport to UI | **HTTP REST + SSE** (Server-Sent Events) | REST for state (models, settings, conversations); SSE for live token streaming of a Turn. Simpler and more robust than WebSockets for one-directional streaming. |
 | Frontend | **Static SPA** — vanilla HTML/CSS/JS, no build step | Zero toolchain for end users; the Host Server serves the files directly. A calm, deep-teal, dependency-free UI. |
 | Launcher | `Start-DeskPilot.ps1` + a double-click `.cmd` | One action to start the server and open the browser. |
-| Tests | **Pester 6** | Resolve `latest` per repository policy; test Host Server helpers and routing through Sampler's QA/Unit paths. |
+| Tests | **Pester 6** | Resolve `latest` per repository policy; test Host Server helpers and routing through Sampler's QA/Unit paths. SPA behavior tests (`tests/Unit/*.test.mjs`) run under `node --test` through `tests/Unit/SpaNodeTests.Tests.ps1`, so the same gate runs them; CI fails rather than skips without Node.js. |
 | Build | **Sampler** (ModuleBuilder, InvokeBuild, GitVersion, PSScriptAnalyzer) | Mirrors ShellPilot. Source in `source/`, built to `output/module/DeskPilot/<version>/`; version from GitVersion. `./build.ps1` runs build/test/pack/publish workflows. |
 
 ## Prerequisites (end user)

@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-09-29
+last-verified: 2026-10-02
 source: repository implementation, regression evidence, and decision records
 ---
 
@@ -82,6 +82,9 @@ source: repository implementation, regression evidence, and decision records
   Keep Usage unknown, errors redacted, prerequisite ids stable and readiness machine-bound.
 - Intercom allow-lists first; mentions never authorize. Exact same-chat plain-text
   pending replies may bypass mentions. All entries share Turn/Permission gates.
+  Fold benign high-volume intake (un-addressed group chatter) into one counted
+  audit line per chat and kind, so it cannot evict rejections and errors. Retry
+  a failed `getMe` on a bounded schedule; a new token forgets the old name.
 - Theme and Mode stay local. Bundle licensed fonts; draw icons by name in `icons.js`
   with currentColor, never emoji or remote assets. Check colors, fonts and bounds.
 - Split thinking at Engine iterations, never per token; title it from its own text
@@ -98,6 +101,8 @@ source: repository implementation, regression evidence, and decision records
   blocks more live trials; only verified cleanup permits deletion.
 - Resolve Pester from latest and validate Pester 6. Detach Sampler/Pester with
   instrumented TEMP logs. Use `--git-dir` for bare Git fixtures, not weaker policy.
+  SPA `*.test.mjs` run inside the Pester gate (`SpaNodeTests.Tests.ps1`); CI
+  fails rather than skips without Node.js.
 - Bind CI evidence to the pushed SHA and artifact; inspect the whole OS matrix
   and deployment condition. Compile related Add-Type sources as one guarded set.
 - Earlier detail: [patterns archive](archive/system-patterns-2026-09-05.md) and accepted Decisions. Logs never override current source.

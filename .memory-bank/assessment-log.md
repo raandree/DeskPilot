@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: security-reviewer
-last-verified: 2026-09-08
+last-verified: 2026-10-02
 source: repository evidence
 ---
 
@@ -28,10 +28,10 @@ FIND-011 and the specification gap in FIND-012.
 | --- | --- | --- | --- | --- |
 | FIND-011 | Major | — | With the gate on, a Telegram reply to the forwarded question is dropped in an allow-listed group. The Turn stays blocked until `questionTimeoutMinutes` expires, with no reply to the sender | **closed** |
 | FIND-012 | Minor | — | Specification 110's Settings table and its *Addressing a group message* row do not carry `requireGroupMention`; the spec is the Intercom contract | **closed** |
-| FIND-013 | Minor | — | `tests/Unit/intercom-ui.test.mjs` runs in no automated gate: Pester discovers only `*.Tests.ps1`, and no build task or CI step invokes `node --test` | **open** |
-| FIND-014 | Minor | — | `New-DpSupportBundleRecord` reports `groupEnabled`/`groupCount` but not `requireGroupMention`, so a bundle cannot explain "Intercom ignores my group" | **open** |
-| FIND-015 | Minor | — | When `getMe` fails, the `identity-error` line still says only a mention will stay in the prompt; with the gate on the real consequence is that no group Message is accepted for the session, and there is no retry | **open** |
-| FIND-016 | Low | — | Every un-addressed group Message adds an entry to the 200-item audit ring, evicting genuine rejections and errors in exactly the busy group the option targets | **open** |
+| FIND-013 | Minor | — | `tests/Unit/intercom-ui.test.mjs` runs in no automated gate: Pester discovers only `*.Tests.ps1`, and no build task or CI step invokes `node --test` | **closed** |
+| FIND-014 | Minor | — | `New-DpSupportBundleRecord` reports `groupEnabled`/`groupCount` but not `requireGroupMention`, so a bundle cannot explain "Intercom ignores my group" | **closed** |
+| FIND-015 | Minor | — | When `getMe` fails, the `identity-error` line still says only a mention will stay in the prompt; with the gate on the real consequence is that no group Message is accepted for the session, and there is no retry | **closed** |
+| FIND-016 | Low | — | Every un-addressed group Message adds an entry to the 200-item audit ring, evicting genuine rejections and errors in exactly the busy group the option targets | **closed** |
 
 ### Evidence
 
@@ -85,6 +85,46 @@ Blocker or Major; independent subagent tooling was unavailable. The earlier
 CONDITIONAL verdict describes the original feature, not a fresh full-system
 security assessment of these fixes.
 
+### Remediation of FIND-013 to FIND-016, 2026-10-02
+
+**Author-verified: all four are closed**, test-first, on `ai/subagents`. No
+independent re-assessment was dispatched (`review: off`), so this note is the
+implementer's evidence rather than a fresh verdict.
+
+- **FIND-013.** `tests/Unit/SpaNodeTests.Tests.ps1` runs every
+  `tests/Unit/*.test.mjs` in one `node --test` process (TAP reporter, bounded at
+  three minutes) inside the Sampler `test` task, and therefore in CI. Without
+  Node.js it skips on a workstation and fails when `CI` or `TF_BUILD` is set. A
+  temporary, deliberately failing Node test turned it red (104 tests, one
+  failure); without that file it passes.
+- **FIND-014.** `New-DpSupportBundleRecord` adds the boolean
+  `requireGroupMention` to the Intercom section. The key-set and value
+  assertions failed first, then passed. The group id still never appears.
+- **FIND-015.** `Add-DpIntercomIdentityFailure` names the consequence that
+  applies now. With groups allowed and the gate on, it says Intercom ignores
+  every group Message except a reply to its question; otherwise it keeps the
+  leading-mention text. The lookup is asked again after 30 seconds, then 2, 10
+  and 30 minutes. It then stops and says how to ask by hand: **Send a test
+  message**, or switch Intercom off and on. A recovered lookup logs `identity`.
+  Storing a new token now clears `BotUsername` and the retry state. Before, the
+  old name survived a bot change and, with the gate on, every mention of the
+  new bot was ignored. Four regressions failed first. Two characterizations,
+  the first lookup on enable and the old text with the gate off, passed before
+  and after.
+- **FIND-016.** The parser marks its two gate refusals `unaddressed`.
+  `Invoke-DpIntercomCommand` logs them through `Add-DpIntercomLog -Coalesce`:
+  one entry per chat and kind, carrying `messageCount` and `sinceUtc`. It is
+  removed and re-appended, so the ring stays in time order. 250 un-addressed
+  Messages now leave one counted line and keep the earlier rejection and error,
+  which were evicted before. Other ignored Messages still log one line each.
+  The SPA shows `×N since <local time>` on a folded line.
+- **Evidence.** All six Intercom suites: 355 passed, 0 failed. Diagnostics:
+  49/49. Node UI: 103/103. Full Sampler gate: 3,082 passed, 0 failed, 15
+  skipped; 16 tasks, 0 errors, the 7 known Memory preservation warnings; the
+  SPA wrapper ran inside it. PSScriptAnalyzer
+  adds no standard-rule finding; the only new findings are the DscResource style
+  rules the existing files already break.
+
 ## 2026-09-07 — Staged `main` merge candidate (`64b8b16` + `MERGE_HEAD 7631b10`)
 
 **Scope:** the uncommitted 97-file merge of `ai/turn-wide-terminal-approvals`
@@ -100,7 +140,7 @@ candidate modifies.
 | --- | --- | --- | --- | --- |
 | FIND-008 | High | 7.5 | `New-DpApprovalRequest` truncates commands/URLs at 2,000 characters and form values at 500, and derives the form fingerprint from the truncated copy — while the executors dispatch the full value. An approval can authorize content it never displayed | **closed** |
 | FIND-009 | Minor | — | Child stderr drain tasks (`_providerErrors`, `_errors`) are assigned and never observed, so a 16 KiB overflow surfaces as a deadline timeout with a misleading reason instead of its real cause | **open** |
-| FIND-010 | Minor | — | The new `stopTurn` active-child branch has no direct route test; `ChildRoutes.Tests.ps1` covers only `stopChildRun` | **open** |
+| FIND-010 | Minor | — | The new `stopTurn` active-child branch has no direct route test; `ChildRoutes.Tests.ps1` covers only `stopChildRun` | **closed** |
 
 ### Evidence
 
@@ -149,6 +189,27 @@ as `e109c55`; the fix follows it on `main`.
 - Specification 050 no longer claims the command is "bounded and marked when
   truncated"; it now states the refusal rule and why a shared prefix would
   otherwise collide.
+
+### FIND-010 closed and FIND-009 re-examined, 2026-10-02
+
+- **FIND-010 — closed (author-verified), `439d3cf`.**
+  `tests/Unit/StopTurnRoute.Tests.ps1` drives the `stopTurn` route. It releases
+  every place a running Turn can be parked, still stops the Turn when the
+  browser cannot be closed, stops an Engine with nothing parked, and stops an
+  active child run through its own controller without touching the parent's
+  bridges. Removing the approval-bridge cancel turned two tests red; restored,
+  all four pass.
+- **FIND-009 — still open, deliberately.** The cause is confirmed in source.
+  `RunController` drains provider stderr with a token linked to the run
+  authority, so an overflow cancels only that link. The faulted task is never
+  observed, the provider then blocks on a full stderr pipe, and the run ends at
+  its deadline with the deadline as its reason. `EngineContainer` has the same
+  shape with its own `_cancel`. The remediation is to observe both drain tasks
+  and, when one faults, close the run authority with a precise code such as
+  `provider-output-limit` or `engine-output-limit`, plus a regression that
+  overflows each drain. It was not done unattended: the isolated child runtime
+  ships disabled, and its acceptance is a live Docker and Model proof bound to
+  the child source hashes, which only an operator can re-run.
 
 ## 2026-09-02 — Intercom group chat (`ee0bdd7`, branch `ai/intercom-group-chat`)
 

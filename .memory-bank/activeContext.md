@@ -3,16 +3,20 @@ schema-version: 1
 status: accepted
 owner: software-engineer
 last-verified: 2026-10-02
-source: red/green Pester and Node regressions, real-Engine scripted-provider journey, headless Edge renders
+source: red/green Pester and Node regressions, real-Engine scripted-provider journey, headless Edge renders, full Sampler gate
 ---
 
 # Active context
 
 ## Current focus
 
-**Subagents**, as in the VS Code chat screenshot the user shared, on
-`ai/subagents` from `main` `9d3890c`. No push or Merge was requested.
-Decision: [0012](decisions/0012-bounded-subagents.md); guide:
+`ai/subagents`, from `main` `9d3890c`, carries two pieces of unattended work.
+No push or Merge was requested.
+
+### Subagents (`3ee65d2`)
+
+As in the VS Code chat screenshot the user shared. Decision:
+[0012](decisions/0012-bounded-subagents.md); guide:
 [docs/subagents.md](../docs/subagents.md).
 
 - `run_subagent` is a DeskPilot User Tool. The Engine's `Invoke-ShpSubagent`
@@ -23,30 +27,44 @@ Decision: [0012](decisions/0012-bounded-subagents.md); guide:
 - Host-owned context travels as `$global:DeskPilotSubagentContext`: catalog,
   parent capability (Disable* switches plus the Turn's own `ToolCallControl`),
   Turn identity, limits and ledger. A legacy `ToolCallApprover` turns Subagents
-  off.
+  off. Subagent Terminal commands are approved once only and neither use nor
+  create a Turn-wide grant.
 - DeskPilot's Invoker (`ConvertTo-DpSubagentTurnParameter`) mirrors the
   Engine's dispatcher and adds Model, ReasoningEffort, DisableTodoList and
-  ExcludeTool (`run_subagent`, `ask_questions`). A parity test against the
-  installed Engine guards it.
-- Subagent Terminal commands are approved once only and neither use nor create
-  a Turn-wide grant.
-- `DeskPilotSubagent` records become `activity` frames of kind `agent`
-  (started/finished). Child Tool calls nest via `parentId`, and the child's Task
-  List is ignored. Turn Usage merges the Engine delta with the runs' real
-  round-trips, and child writes join pending changes. The UI shows one card per
-  run with Input, Tool calls and Output.
+  ExcludeTool. A parity test against the installed Engine guards it. CI's pinned
+  compatibility Engine `08a4a22` has the same Subagent sources as ShellPilot
+  `main`; only its price table differs, which no Subagent test asserts.
+- `DeskPilotSubagent` records become `agent` Activity; the UI shows one card
+  per run with Input, Tool calls and Output.
+
+### Open assessment findings
+
+Closed test-first and recorded in
+[assessment-log.md](assessment-log.md) as author-verified:
+
+- FIND-010 (`439d3cf`): behavioural `stopTurn` route tests.
+- FIND-013: `tests/Unit/SpaNodeTests.Tests.ps1` runs every
+  `tests/Unit/*.test.mjs` under `node --test` inside the Pester gate. A
+  deliberately failing Node test turned it red.
+- FIND-014: the support bundle's Intercom section carries `requireGroupMention`.
+- FIND-015: a failed `getMe` names the consequence that applies now and is asked
+  again after 30 seconds, then 2, 10 and 30 minutes
+  (`Add-DpIntercomIdentityFailure`). Storing a new token forgets the old bot
+  name.
+- FIND-016: un-addressed group chatter folds into one `unaddressed` audit line
+  per chat (`Add-DpIntercomLog -Coalesce`, `messageCount`, `sinceUtc`); the SPA
+  shows `×N since <time>`.
 
 ## Validation
 
-- Full Sampler gate: 3,068 passed, 0 failed, 15 skips; 16 tasks, 0 errors,
-  7 known Memory preservation warnings. Node UI tests: 101/101.
-- `tests/Unit/Subagents.Tests.ps1` (87) and `StopTurnRoute.Tests.ps1` (4) also
-  pass under `Set-StrictMode -Version Latest`. They include an end-to-end run
-  through the installed Engine (0.4.0-preview0016) with a scripted provider,
-  where the dispatch and the Subagent's write both met the Turn's approval
-  control. A parity guard against the Engine's dispatcher was mutation-checked.
-- Headless Edge renders of the real functions and stylesheet look right in dark,
-  light and a 390 px column. Not a live Model run.
+- Full Sampler gate: 3,082 passed, 0 failed, 15 skips; 16 tasks, 0 errors,
+  the 7 known Memory preservation warnings. The SPA Node wrapper ran inside it.
+- Intercom suites 355/355, Diagnostics 49/49, Node UI 103/103. Subagent and
+  stopTurn suites pass under `Set-StrictMode -Version Latest`; the Intercom
+  suites set it themselves.
+- The Subagent proof includes an end-to-end run through the installed Engine
+  (0.4.0-preview0016) with a scripted provider. Headless Edge renders checked
+  the Subagent cards in dark, light and a 390 px column. Not a live Model run.
 
 ## Retained boundaries
 
@@ -57,9 +75,10 @@ price Models in DeskPilot.
 
 ## Open follow-ups
 
+- FIND-009 stays open on purpose: the fix belongs in the disabled isolated
+  child runtime, whose live Docker and Model proof is bound to its source
+  hashes. The assessment log records the remediation plan.
 - A live, authenticated Model run of a Subagent has not been done. It belongs to
   the operator acceptance profile.
-- An independent security review of the Subagent approval inheritance is
-  recommended (`review: on`); none was dispatched.
-- The other 2026-09-07 Minor finding, unobserved child stderr drains in the
-  isolated child runtime, stays open. It touches source-bound child proof.
+- An independent review is recommended (`review: on`) for the Subagent approval
+  inheritance and the Intercom intake and audit changes; none was dispatched.
