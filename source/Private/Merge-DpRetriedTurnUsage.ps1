@@ -2,18 +2,29 @@ function Merge-DpRetriedTurnUsage
 {
     <#
     .SYNOPSIS
-        Merges Engine Usage from every attempt of a successful retried Turn.
+        Merges Engine Usage from every Engine call a successful Turn made.
     .DESCRIPTION
         Uses the exact delta between pre- and post-Turn Engine Usage summaries so
         an empty but billable attempt is not hidden behind the final successful
         result. Unknown fields from the final result are preserved. When either
         summary is unavailable, the final result is returned unchanged.
+
+        A Subagent run is an Engine call of its own, nested inside the Turn's, so
+        the delta covers it too. Its round-trips are known exactly and are passed
+        as AdditionalIterations, because Session Info divides the Turn's prompt
+        tokens by its iterations to estimate one prompt: counting a several-step
+        Subagent as one step would inflate that estimate.
     .PARAMETER Usage
         Usage mapped from the final successful Engine result.
     .PARAMETER Before
         Engine Usage summary captured before the first attempt.
     .PARAMETER After
         Engine Usage summary captured after the successful attempt.
+    .PARAMETER AdditionalCalls
+        Engine calls the Turn knows about besides its own attempts: one per
+        Subagent run that reached the Engine.
+    .PARAMETER AdditionalIterations
+        The round-trips those calls made.
     .OUTPUTS
         System.Collections.Hashtable
     #>
@@ -28,7 +39,13 @@ function Merge-DpRetriedTurnUsage
         [object]$Before,
 
         [AllowNull()]
-        [object]$After
+        [object]$After,
+
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$AdditionalCalls = 0,
+
+        [ValidateRange(0, [int]::MaxValue)]
+        [int]$AdditionalIterations = 0
     )
 
     $merged = @{}
@@ -77,7 +94,10 @@ function Merge-DpRetriedTurnUsage
     # The summary exposes Engine call count, not each failed call's internal
     # iteration count. Every pre-stream retry adds at least one round-trip; keep
     # the final result's exact iterations and add that conservative minimum.
-    $merged.iterations = [int]$merged.iterations + [Math]::Max(0, $calls - 1)
+    # Subagent calls are not retries: their round-trips are known, so they are
+    # counted exactly and taken out of the retry estimate.
+    $retries = [Math]::Max(0, $calls - 1 - $AdditionalCalls)
+    $merged.iterations = [int]$merged.iterations + $AdditionalIterations + $retries
 
     $merged
 }

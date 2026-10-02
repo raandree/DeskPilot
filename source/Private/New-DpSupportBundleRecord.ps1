@@ -22,7 +22,7 @@ function New-DpSupportBundleRecord {
 
     $permissions = Get-DpPropertyValue -InputObject $settings -Name @('permissions') -Default @{}
     $permissionRecord = [ordered]@{}
-    foreach ($name in 'browsing', 'file', 'terminal', 'askUser', 'userTools', 'browserAutomation', 'mcp') {
+    foreach ($name in 'browsing', 'file', 'terminal', 'askUser', 'userTools', 'browserAutomation', 'mcp', 'subagents') {
         $permissionRecord[$name] = [bool](Get-DpPropertyValue -InputObject $permissions -Name @($name) -Default $false)
     }
 

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add **Subagents**: with the new Subagents Permission on, the Model can hand
+  one self-contained task to a helper Agent through `run_subagent` and get back
+  only its report. Each run appears as a card with its task, the Tool calls it
+  made and its report, or the reason it did not complete. A Subagent has no
+  more authority than the Turn that started it: the same Permissions and
+  approvals, no questions to you, no Subagents of its own, and one run at a
+  time. Its Terminal commands are always approved once. Turn Usage includes
+  every run. The Permission is off by default and needs an Engine with bounded
+  Subagent support. See [Subagents](docs/subagents.md).
 - Allow switching to a server-only Branch from the Branch Wizard or the Git
   bar's branch picker. DeskPilot creates a local Branch that follows the server
   one and switches to it; a Branch deleted on the server since the list was

@@ -1625,6 +1625,175 @@ button.tree-row {
     border-left: 1px solid var(--border);
 }
 
+/* Work handed to a Subagent: one card per run, with what it was asked, the Tool
+   calls it made and what it reported. Laid out like the other work summaries. */
+.agent-runs {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    margin: 0 0 12px;
+}
+
+.agent-run {
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+/* The line wraps rather than widening the Message on a narrow window: a long
+   Subagent name or label must never push the thread sideways. */
+.agent-run>summary {
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: var(--muted);
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    min-width: 0;
+}
+
+.agent-run>summary::-webkit-details-marker {
+    display: none;
+}
+
+.agent-run>summary::before {
+    content: "›";
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    transition: transform .15s ease;
+}
+
+.agent-run[open]>summary::before {
+    transform: rotate(90deg);
+}
+
+.agent-run[open]>summary {
+    border-bottom: 1px solid var(--border);
+}
+
+.agent-run-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.agent-run-name {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text);
+    word-break: break-all;
+}
+
+.agent-run-label {
+    flex: 1 1 8em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-run-meta {
+    flex: none;
+    margin-left: auto;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* A run still working takes the accent and its icon pulses; the global
+   reduced-motion rule stops the pulse. */
+.agent-run[data-status="running"] .agent-run-icon {
+    color: var(--accent);
+    animation: agent-run-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes agent-run-pulse {
+    0%, 100% {
+        opacity: .45;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.agent-run[data-status="completed"] .agent-run-icon {
+    color: var(--ok);
+}
+
+.agent-run[data-status="refused"] .agent-run-icon,
+.agent-run[data-status="failed"] .agent-run-icon,
+.agent-run[data-status="cancelled"] .agent-run-icon,
+.agent-run[data-status="stopped"] .agent-run-icon {
+    color: var(--danger);
+}
+
+.agent-run-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.agent-run-heading {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+}
+
+/* The task and the report are Model text, shown as written and scrollable so a
+   long report cannot bury the thread. */
+.agent-run-text {
+    margin: 0;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: min(40vh, 320px);
+    overflow: auto;
+}
+
+.agent-run-reason {
+    color: var(--danger);
+    overflow-wrap: anywhere;
+}
+
+/* The approval a Subagent asked for names the run it came from. */
+.approval-agent {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+@media (forced-colors: active) {
+    .agent-run[data-status] .agent-run-icon {
+        color: CanvasText;
+    }
+}
+
 /* in-Turn Task List panel */
 .tasks-panel {
     border: 1px solid var(--border);

@@ -71,7 +71,7 @@ function Add-DpDiagnosticLog {
                 'action' {
                     if ($value -isnot [string] -or $value -cnotin @(
                             'read', 'list', 'write', 'create', 'run', 'fetch',
-                            'browse', 'search', 'ask', 'load', 'mcp', 'approval', 'other'
+                            'browse', 'search', 'ask', 'load', 'mcp', 'approval', 'agent', 'other'
                         )) {
                         throw "Diagnostic context '$key' is not a recognized Activity kind."
                     }

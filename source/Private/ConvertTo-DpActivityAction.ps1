@@ -78,6 +78,9 @@ function ConvertTo-DpActivityAction {
         ask_questions    = @{ kind = 'ask'; field = '' }
         load_skill       = @{ kind = 'load'; field = 'name' }
         load_instruction = @{ kind = 'load'; field = 'name' }
+        # DeskPilot's Subagent Tool. The name of the Subagent is the detail; the
+        # task is Model prose that the run's own records show in full, bounded.
+        run_subagent     = @{ kind = 'agent'; field = 'agent' }
     }
 
     $kind = 'other'

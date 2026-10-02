@@ -20,7 +20,9 @@ function Invoke-DpTerminalApprovalTool {
           3. **Turn-wide approval is explicit and scoped.** Allow once remains the
               default. Allow for this Turn covers later Terminal commands only in
               the same Conversation, Turn, Project, working directory and execution
-              policy. Stop or the Turn boundary clears the in-memory grant.
+              policy. Stop or the Turn boundary clears the in-memory grant. A
+              command a Subagent proposes is always asked about once: it neither
+              uses nor creates a Turn-wide grant.
 
         Execution is delegated to the Engine's own run_command through the
         injected executor. DeskPilot owns the gate; it does not re-implement
@@ -89,6 +91,10 @@ function Invoke-DpTerminalApprovalTool {
     $bridge = & $read 'DeskPilotApprovalBridge'
     $approvalScope = 'once'
     $approvalSource = 'prompt'
+    # A Subagent's command is its own: a Turn-wide grant does not cover it, and
+    # its card cannot create one the Turn would then run under (decision 0012).
+    $subagent = & $read 'DeskPilotSubagentContext'
+    $inSubagent = $subagent -is [hashtable] -and $subagent.state -is [hashtable] -and [bool]$subagent.state.active
     $recordApproval = {
         param([string]$Status, [string]$Scope, [string]$Source)
         Write-Information -Tags 'DeskPilotApproval' -MessageData ([pscustomobject]@{
@@ -125,11 +131,12 @@ function Invoke-DpTerminalApprovalTool {
         -ConversationId ([string]$context.conversationId) `
         -TurnId ([string]$context.turnId)
 
-    if ($bridge.HasTurnScope([string]$context.conversationId, $request.scopeFingerprint)) {
+    if (-not $inSubagent -and $bridge.HasTurnScope([string]$context.conversationId, $request.scopeFingerprint)) {
         $approvalScope = 'turn'
         $approvalSource = 'turn-grant'
         return (& $run)
     }
+    if ($inSubagent) { $request.allowedScopes = @('once') }
     & $recordApproval 'requested' 'once' 'prompt'
     $bridge.CaptureQuestion(($request | ConvertTo-Json -Depth 6 -Compress))
 
@@ -163,6 +170,9 @@ function Invoke-DpTerminalApprovalTool {
     if ($answer.PSObject.Properties['scope']) { $scope = $answer.scope }
     if ($scope -isnot [string] -or $scope -cnotin @('once', 'turn')) {
         return (& $refuse 'The approval scope was invalid, so nothing was run.')
+    }
+    if ($inSubagent -and $scope -cne 'once') {
+        return (& $refuse 'A Subagent''s command can only be approved once, not for the whole Turn, so nothing was run.')
     }
     if (-not $bridge.Enabled -or $bridge.Cancelled) {
         return (& $refuse 'The Turn ended before this command was approved, so nothing was run.')

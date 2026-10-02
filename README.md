@@ -49,6 +49,11 @@ work without driving the tool stack themselves.
   was read, written, run, fetched, searched, or asked — listed in order the
   moment the agent does it. A run of the same kind of action folds into one line
   (*Read 6 files*), and the whole panel folds away when the answer is done.
+- **Subagents, when you want them.** Switch on the Subagents Permission and the
+  agent can hand a self-contained task to a helper Agent with its own context.
+  Each run shows its task, its Tool calls and its report. It has the same
+  Permissions and approvals as the Turn, and runs one at a time. See
+  [Subagents](docs/subagents.md).
 - **Review every change.** When the agent edits files in a Git project, the
   answer carries a **Changes** card — `N files changed  +A  −D`, one row per
   file. Click a file for a real diff with line numbers; then **Keep** it (accept

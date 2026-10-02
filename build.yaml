@@ -8,11 +8,13 @@ BuiltModuleSubdirectory: module
 # browser/ ships the same way: it holds the supervisor sources and the Playwright
 # pin, which are copied into the data directory at install time because the
 # module folder may be read-only and is replaced wholesale by an update.
+# subagents/ holds the bundled general-purpose Subagent definition, read in place.
 CopyPaths:
   - web
   - browser
   - isolation
   - child
+  - subagents
 Encoding: UTF8
 prefix: Prefix.ps1
 VersionedOutputDirectory: true

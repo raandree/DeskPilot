@@ -35,6 +35,10 @@ const DRAWINGS = {
     checklist: '<path d="m2.25 4.1 1.15 1.15L5.5 2.9M2.25 8.6l1.15 1.15L5.5 7.4M7.75 4.1H14M7.75 8.6H14M7.75 12.85H14"/><circle cx="3.85" cy="12.85" r="1.2"/>',
     steps: `<path d="${BUBBLE}"/><path d="M5 5.75h6M5 8.5h4"/>`,
     more: `<circle cx="4" cy="8" r="1.1" ${DOT}/><circle cx="8" cy="8" r="1.1" ${DOT}/><circle cx="12" cy="8" r="1.1" ${DOT}/>`,
+    // A Subagent: a small helper's face with an antenna, so a run reads as work
+    // handed to someone else rather than as a Tool.
+    agent: '<rect x="2.75" y="5" width="10.5" height="8.25" rx="2.25"/><path d="M8 5V3.1M6.1 10.6h3.8"/>' +
+        `<circle cx="8" cy="2.4" r=".8" ${DOT}/><circle cx="5.85" cy="8.25" r=".85" ${DOT}/><circle cx="10.15" cy="8.25" r=".85" ${DOT}/>`,
 };
 
 export const ICON_NAMES = Object.freeze(Object.keys(DRAWINGS));

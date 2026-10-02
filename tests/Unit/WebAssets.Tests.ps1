@@ -306,7 +306,7 @@ if (merged.length !== 2 || merged[0].sequence !== 2 || merged[1].sequence !== 3)
         # One growing answer body with the whole trace stacked on one side of it
         # puts the reasoning in the wrong place whichever side that is. The flow
         # holds the Turn as it happened; the answer body is the summary after it.
-        $js | Should -Match ([regex]::Escape('wrap.append(role, steps, tasks, changes, activity, flow, content, userPrompts, usage);'))
+        $js | Should -Match ([regex]::Escape('wrap.append(role, steps, tasks, changes, activity, agents, flow, content, userPrompts, usage);'))
         $js | Should -Match ([regex]::Escape('wrap._refs = { content, flow, steps,'))
         $js | Should -Not -Match ([regex]::Escape('wrap.append(role, thinking, steps, content,'))
         $js | Should -Not -Match ([regex]::Escape('wrap.append(role, steps, content, thinking,'))

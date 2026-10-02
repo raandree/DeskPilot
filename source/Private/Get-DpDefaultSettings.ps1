@@ -32,6 +32,10 @@ function Get-DpDefaultSettings {
             # because it is inert until the user attaches one: the Engine discovers
             # nothing, so an empty mcpServers list means no MCP tools exist at all.
             mcp       = $true
+            # Lets the Model hand a self-contained task to a Subagent through
+            # run_subagent. It grants nothing a Subagent's Turn did not already
+            # hold, but every run is more Model calls, so it waits to be asked for.
+            subagents = $false
         }
         projects          = @()
         # MCP servers the user configured. The Engine holds registrations only for

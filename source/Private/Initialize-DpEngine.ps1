@@ -141,6 +141,9 @@ if ($m) {
         finally { $mcpShell.Dispose() }
     }
 
+    # Subagents need the Engine's bounded Subagent contract, probed the same way.
+    $subagentSupported = $imported -and (Test-DpSubagentSupport -Runspace $runspace)
+
     @{
         Runspace         = $runspace
         Imported         = $imported
@@ -156,6 +159,7 @@ if ($m) {
         BrowserState     = $null
         TerminalSession  = $null
         McpSupported     = $mcpSupported
+        SubagentSupported = $subagentSupported
         ToolCallApproverAdvertised = $imported -and (Test-DpToolCallApprovalSupport -Runspace $runspace)
     }
 }

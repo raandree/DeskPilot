@@ -35,6 +35,7 @@ source: repository implementation, regression evidence, and decision records
 | [0009](decisions/0009-single-child-isolation.md) | Single-child V2 |
 | [0010](decisions/0010-child-budget-estimates.md) | V3 provider estimates |
 | [0011](decisions/0011-turn-wide-terminal-approval.md) | Ordinary Terminal Turn grants |
+| [0012](decisions/0012-bounded-subagents.md) | Bounded Subagents (no concurrency) |
 
 ## Execution and authority
 
@@ -59,6 +60,10 @@ source: repository implementation, regression evidence, and decision records
 - Provider counts are protocol-specific. Preserve unknown reservations; V3
   estimates never become invoice caps. Match Tool names/ids across protocols and
   keep child approval tokens distinct. Structural redaction is not a secrets proof.
+- A Subagent is an attenuation, not a delegation: hand the Engine the Turn's own
+  control objects, withhold `run_subagent`/`ask_questions`, refuse a control it
+  cannot inherit, and keep Turn grants out of it. Mirror an Engine translation
+  only behind a parity test against the installed Engine.
 
 ## Data and user experience
 

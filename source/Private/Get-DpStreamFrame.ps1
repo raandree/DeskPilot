@@ -29,7 +29,14 @@ function Get-DpStreamFrame {
           set is what makes it a fact. Read from the structured record rather than
           the host trace, so the live account also works with Thinking switched
           off. ConvertTo-DpActivityAction decides the shape, and suppresses
-          manage_todo_list, which has its own live panel.
+          manage_todo_list, which has its own live panel. run_subagent is left to
+          the run's own records, which say more than its arguments.
+        - DeskPilotSubagent records from run_subagent -> an 'activity' frame with
+          kind 'agent': 'started' announces the run with its label and task,
+          'finished' accounts for it. Only the exact shape run_subagent writes is
+          accepted, and its text is bounded again here. The files the Subagent
+          wrote, its Engine calls and its iterations ride on the decision for the
+          Turn's own accounting and never reach the window.
         - ShpProgress + any other Kind (future kinds included) -> no frame, for
           forward-compatibility.
         - A non-ShpProgress trace line (model reasoning, '=== iteration', '-> tool',
@@ -100,6 +107,59 @@ function Get-DpStreamFrame {
         }
         return @{ event = 'activity'; data = $action; Action = $action }
     }
+    if (@($tags) -contains 'DeskPilotSubagent') {
+        $payload = Get-DpPropertyValue -InputObject $Record -Name 'MessageData'
+        $id = [string](Get-DpPropertyValue -InputObject $payload -Name 'Id' -Default '')
+        $phase = [string](Get-DpPropertyValue -InputObject $payload -Name 'Phase' -Default '')
+        $status = [string](Get-DpPropertyValue -InputObject $payload -Name 'Status' -Default '')
+        $flat = {
+            param([object]$Value, [int]$Max)
+            $text = (([string]$Value -replace '[\x00-\x1f\x7f]+', ' ') -replace '\s+', ' ').Trim()
+            if ($text.Length -gt $Max) { $text = $text.Substring(0, $Max - 1) + [char]0x2026 }
+            $text
+        }
+        $bounded = {
+            param([object]$Value, [int]$Max)
+            $text = [string]$Value
+            if ($text.Length -gt $Max) { $text = $text.Substring(0, $Max - 1) + [char]0x2026 }
+            $text
+        }
+        $count = {
+            param([string]$Name)
+            $value = Get-DpPropertyValue -InputObject $payload -Name $Name -Default 0
+            $number = 0
+            if (-not [int]::TryParse([string]$value, [ref]$number) -or $number -lt 0) { $number = 0 }
+            $number
+        }
+        $agent = & $flat (Get-DpPropertyValue -InputObject $payload -Name 'Agent' -Default '') 64
+        if ($id -cnotmatch '^a_[0-9a-f]{16}$' -or $phase -cnotin @('started', 'finished') -or -not $agent -or
+            ($phase -ceq 'finished' -and $status -cnotin @('completed', 'refused', 'failed', 'cancelled'))) { return }
+        $written = Get-DpPropertyValue -InputObject $Record -Name 'TimeGenerated' -Default ([datetime]::UtcNow)
+        $action = @{
+            id = $id; tool = 'run_subagent'; kind = 'agent'; detail = $agent; phase = $phase
+            description = & $flat (Get-DpPropertyValue -InputObject $payload -Name 'Description' -Default '') 80
+            timestamp = ([datetime]$written).ToUniversalTime().ToString('o')
+        }
+        if ($phase -ceq 'started') {
+            $action.status = 'running'
+            $action.input = & $bounded (Get-DpPropertyValue -InputObject $payload -Name 'Input' -Default '') 8200
+            return @{ event = 'activity'; data = $action; Action = $action }
+        }
+        $action.status = $status
+        $action.output = & $bounded (Get-DpPropertyValue -InputObject $payload -Name 'Output' -Default '') 20200
+        $action.reason = & $flat (Get-DpPropertyValue -InputObject $payload -Name 'Reason' -Default '') 500
+        $action.durationMs = & $count 'DurationMs'
+        $action.iterations = & $count 'Iterations'
+        $action.toolCalls = & $count 'ToolCalls'
+        $cost = Get-DpPropertyValue -InputObject $payload -Name 'CostUSD' -Default $null
+        $action.costUSD = if ($null -ne $cost -and $cost -is [ValueType]) { [double]$cost } else { $null }
+        $files = @(@(Get-DpPropertyValue -InputObject $payload -Name 'FilesWritten' -Default @()) |
+                Where-Object { $_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1000)
+        return @{
+            event = 'activity'; data = $action; Action = $action
+            FilesWritten = $files; EngineCalls = (& $count 'EngineCalls'); Iterations = $action.iterations
+        }
+    }
     if (@($tags) -contains 'ShpProgress') {
         $payload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
         $kind = [string](Get-DpPropertyValue -InputObject $payload -Name @('Kind') -Default '')
@@ -123,6 +183,8 @@ function Get-DpStreamFrame {
             }
             $action = ConvertTo-DpActivityAction @actionParams
             if ($null -eq $action) { return }
+            # The run's own DeskPilotSubagent records account for it, in full.
+            if ($action.tool -ceq 'run_subagent') { return }
             return @{ event = 'activity'; data = $action; Action = $action }
         }
         # Any future Kind is consumed silently (no answer leak).

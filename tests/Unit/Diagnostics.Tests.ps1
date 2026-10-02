@@ -479,6 +479,8 @@ Describe 'Support bundle' -Tag 'Unit' {
         $record.paths.data.Keys | Should -Be @('purpose', 'leaf')
         $record.paths.module.Keys | Should -Be @('purpose', 'leaf')
         $record.configuration.permissions.terminal | Should -BeFalse
+        $record.configuration.permissions.Keys | Should -Contain 'subagents'
+        $record.configuration.permissions.subagents | Should -BeFalse
         $record.configuration.mcpServers[0].Keys | Should -Be @(
             'name', 'source', 'enabled', 'environmentKeyCount', 'toolRestrictionCount'
         )

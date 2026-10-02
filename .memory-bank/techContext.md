@@ -69,6 +69,14 @@ source: repository evidence
 - Native Vision input: `Invoke-Shp -Image <string[]>` accepts local image paths
   or HTTP(S) URLs. DeskPilot forwards only local image Attachment paths that the
   current Host Server launch successfully accepted through `/api/uploads`.
+- Bounded Subagents: `Invoke-ShpSubagent -DefinitionPath -Root -Prompt -Parent
+  -Capability -Budget -Invoker` (ShellPilot 0.4.0-preview0016, spec 045) runs a
+  synchronous nested Turn as a strict subset of its parent. Its own dispatcher
+  binds no Model, so DeskPilot passes an Invoker. A child result is the plain
+  `Invoke-Shp` result; `Invoke-ShpSubagent` returns Answer/Refused/Cancelled/
+  Reason/Evidence and never a transcript. The Engine announces a ToolCall
+  progress record after its pre-call decision, and refuses to dispatch a known
+  Tool it did not offer.
 - Auth: `Initialize-Shp` runs the GitHub device-code flow once; the Engine caches
   the token as a hidden dot-file in the user's home directory. The filename is the
   Engine's own default and is NOT stable across versions (ShellPilot renamed it

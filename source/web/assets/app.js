@@ -197,6 +197,7 @@ const PERMISSIONS = [
     { key: 'userTools', name: 'Your tools', note: 'Call tools you registered.', powerful: false },
     { key: 'browserAutomation', name: 'Browser', note: 'Open a throwaway browser and follow links. Asks before leaving the site.', powerful: true },
     { key: 'mcp', name: 'MCP servers', note: 'Call tools from servers you attached.', powerful: true },
+    { key: 'subagents', name: 'Subagents', note: 'Hand a self-contained task to a helper agent with these same permissions and approvals. Each run costs extra Model calls.', powerful: false },
 ];
 
 // Fixed palette for the optional Conversation colour label. These names must
@@ -1492,9 +1493,11 @@ function buildAssistantEl(m) {
     userPrompts.setAttribute('aria-live', 'polite');
     const changes = el('changes-card hidden', 'details');
     const activity = el('disclosure activity hidden', 'details');
+    // Work handed to Subagents: one card per run, with its task and its report.
+    const agents = el('agent-runs hidden');
     const usage = el('usage-foot hidden');
-    wrap.append(role, steps, tasks, changes, activity, flow, content, userPrompts, usage);
-    wrap._refs = { content, flow, steps, tasks, userPrompts, changes, activity, usage, actions };
+    wrap.append(role, steps, tasks, changes, activity, agents, flow, content, userPrompts, usage);
+    wrap._refs = { content, flow, steps, tasks, userPrompts, changes, activity, agents, usage, actions };
     return wrap;
 }
 
@@ -1525,6 +1528,7 @@ function finalizeAssistant(wrap, m, opts) {
     renderSteps(r.steps, r.flow && r.flow.querySelector('.flow-answer') ? null : m.narration);
     renderTasks(r.tasks, m.tasks);
     renderActivity(r.activity, m.activity);
+    renderAgentRuns(wrap, m.activity && m.activity.actions);
     renderChanges(r.changes, m);
     renderUsage(r.usage, m);
     return wrap;
@@ -1582,6 +1586,9 @@ const ACTIVITY_KINDS = {
     // is the one tool class running somebody else's code, and the reader should be
     // able to tell that at a glance.
     mcp: { icon: 'plug', label: 'MCP', noun: 'MCP tools' },
+    // A run handed to a Subagent. Its own Tool calls are listed inside the run's
+    // card, so here it is one row; a fold of several reads "Ran 2 agents".
+    agent: { icon: 'agent', label: 'Ran agent', group: 'Ran', noun: 'agents' },
     other: { icon: 'tool', label: 'Used', noun: 'tools' },
     dropped: { icon: 'more', label: '', noun: '' },
 };
@@ -1606,6 +1613,7 @@ const TOOL_KINDS = new Map([
     ['ask_questions', ['ask', '']],
     ['load_skill', ['load', 'name']],
     ['load_instruction', ['load', 'name']],
+    ['run_subagent', ['agent', 'agent']],
 ]);
 
 function toolKind(name) {
@@ -1661,7 +1669,7 @@ function paintActivity(node, actions, opts) {
         const kind = activityKind(g.kind);
         if (g.items.length === 1) return activityRowHtml(g.items[0], gitOn);
         return `<details class="activity-group"${live ? ' open' : ''}>` +
-            `<summary>${iconHtml(kind.icon)}${escapeHtml(kind.label)} ${g.items.length} ${escapeHtml(kind.noun)}</summary>` +
+            `<summary>${iconHtml(kind.icon)}${escapeHtml(kind.group || kind.label)} ${g.items.length} ${escapeHtml(kind.noun)}</summary>` +
             `<div class="activity-sub">${g.items.map((a) => activityRowHtml(a, gitOn)).join('')}</div>` +
             '</details>';
     }).join('');
@@ -1686,11 +1694,25 @@ function wireActivityDiffButtons(node) {
 // One tool call, announced before the Engine runs it. This is the whole point of
 // the panel: with the Thinking pane off, it was the only thing that ever said
 // which files the agent was touching, and it said nothing until the Turn ended.
+// A Subagent run is one action whose 'finished' frame completes it in place, and
+// the Tool calls made inside it (parentId) belong to its card, not to the panel.
 function noteActivity(wrap, action) {
     const node = wrap && wrap._refs && wrap._refs.activity;
     if (!node || !action || !action.kind) return;
     const live = node._liveActions || (node._liveActions = []);
-    live.push(action);
+    const runOf = (id) => live.find((a) => a.kind === 'agent' && a.id === id);
+    if (action.kind === 'agent') {
+        const known = runOf(action.id);
+        const run = known ? Object.assign(known, action, { actions: asArray(known.actions) }) : { ...action, actions: asArray(action.actions) };
+        if (!known) live.push(run);
+        renderAgentRun(wrap, run, true);
+    } else if (action.parentId && runOf(action.parentId)) {
+        const run = runOf(action.parentId);
+        run.actions.push(action);
+        renderAgentRun(wrap, run, true);
+    } else {
+        live.push(action);
+    }
     paintActivity(node, live, { live: true });
     // A write is also a change to review, which the Changes card takes over at the
     // end of the Turn.
@@ -1741,6 +1763,117 @@ function renderActivity(node, activity) {
     node.querySelectorAll('.git-diff-btn').forEach((btn) => {
         btn.onclick = (e) => { e.preventDefault(); openDiffViewer(written.map((p) => ({ rel: p })), btn.dataset.path); };
     });
+}
+
+// ===== Subagent runs (work the Model handed to a Subagent) =====
+// One card per run, in the order the runs started: what the Subagent was asked,
+// the Tool calls it made, and the report it sent back - or why there is none. A
+// card is open while its run works and folds when the run ends, unless the reader
+// opened it. Everything in it came from a Model, so all of it is set as text.
+const AGENT_RUN_STATUS = {
+    running: ['Running agent', '\u2026'],
+    completed: ['Agent', ' completed'],
+    refused: ['Agent', ' was refused'],
+    failed: ['Agent', ' failed'],
+    cancelled: ['Agent', ' was cancelled'],
+    stopped: ['Agent', ' was stopped'],
+};
+
+function agentRunMeta(run) {
+    const parts = [];
+    const ms = Number(run.durationMs);
+    if (ms > 0) parts.push(`${Math.max(1, Math.round(ms / 1000))}s`);
+    const calls = Number(run.toolCalls) || asArray(run.actions).length;
+    if (calls) parts.push(`${calls} tool call${calls === 1 ? '' : 's'}`);
+    // An unpriced run has no cost, which is not the same as a free one.
+    if (typeof run.costUSD === 'number' && Number.isFinite(run.costUSD)) parts.push('$' + run.costUSD.toFixed(4));
+    return parts.join(' \u00b7 ');
+}
+
+function agentRunSection(className, heading, text) {
+    const section = el('agent-run-section');
+    const title = el('agent-run-heading');
+    title.textContent = heading;
+    const body = el(`agent-run-text ${className}`, 'pre');
+    body.textContent = String(text);
+    section.append(title, body);
+    return section;
+}
+
+function renderAgentRun(wrap, run, live) {
+    const holder = wrap && wrap._refs && wrap._refs.agents;
+    if (!holder || !run || !run.id) return;
+    holder.classList.remove('hidden');
+    const status = Object.hasOwn(AGENT_RUN_STATUS, run.status) ? run.status : 'running';
+    let card = Array.from(holder.querySelectorAll('.agent-run')).find((c) => c.dataset.runId === String(run.id));
+    if (!card) {
+        card = el('agent-run', 'details');
+        card.dataset.runId = String(run.id);
+        // Open while it works, so the reader sees the task; a stored run starts folded.
+        card.open = !!live && status === 'running';
+        holder.appendChild(card);
+    }
+    const wasRunning = card.dataset.status === 'running';
+    card.dataset.status = status;
+
+    const summary = el('', 'summary');
+    const icon = el('ico agent-run-icon', 'span');
+    setIcon(icon, 'agent');
+    const title = el('agent-run-title', 'span');
+    const name = el('agent-run-name', 'code');
+    name.textContent = String(run.detail || 'general-purpose');
+    const [lead, tail] = AGENT_RUN_STATUS[status];
+    title.append(`${lead} `, name, tail);
+    summary.append(icon, title);
+    if (run.description) {
+        const label = el('agent-run-label', 'span');
+        label.textContent = String(run.description);
+        summary.appendChild(label);
+    }
+    const meta = el('agent-run-meta', 'span');
+    meta.textContent = agentRunMeta(run);
+    summary.appendChild(meta);
+    // A summary click is the reader's choice; it must survive the run ending.
+    summary.addEventListener('click', () => { card.dataset.touched = '1'; });
+
+    const body = el('agent-run-body');
+    if (run.input) body.appendChild(agentRunSection('agent-run-input', 'Input', run.input));
+    const actions = asArray(run.actions).filter((a) => a && a.kind);
+    if (actions.length) {
+        const section = el('agent-run-section');
+        const heading = el('agent-run-heading');
+        heading.textContent = 'Tool calls';
+        const list = el('activity-list agent-run-tools');
+        const gitOn = !!(state.settings && state.settings.workspaceFolder);
+        list.innerHTML = actions.map((a) => activityRowHtml(a, gitOn)).join('');
+        section.append(heading, list);
+        body.appendChild(section);
+    }
+    if (status === 'completed') {
+        body.appendChild(agentRunSection('agent-run-output', 'Output', run.output || ''));
+    } else if (status !== 'running') {
+        const reason = el('agent-run-reason');
+        reason.textContent = String(run.reason || (status === 'stopped' ? 'The Turn stopped before this run finished.' : 'No reason was given.'));
+        body.appendChild(reason);
+    }
+    card.replaceChildren(summary, body);
+    wireActivityDiffButtons(card);
+    // The run is over: fold it, unless the reader opened it themselves.
+    if (wasRunning && status !== 'running' && card.dataset.touched !== '1') card.open = false;
+}
+
+// A stored Message carries its runs in its ordered Activity.
+function renderAgentRuns(wrap, actions) {
+    for (const run of asArray(actions)) {
+        if (run && run.kind === 'agent') renderAgentRun(wrap, run, false);
+    }
+}
+
+// The run still working in this message, if any: while it runs the Turn waits,
+// so an approval that arrives now was asked for by that Subagent.
+function runningAgent(wrap) {
+    const live = (wrap && wrap._refs && wrap._refs.activity && wrap._refs.activity._liveActions) || [];
+    return live.find((a) => a.kind === 'agent' && a.status === 'running') || null;
 }
 
 // ===== Changes review (what this Turn wrote, with per-file counts) =====
@@ -2509,6 +2642,22 @@ function approvalDetail(request) {
     return rows.filter(Boolean);
 }
 
+// An approval that arrives while a Subagent runs was asked for by that Subagent,
+// because the Turn waits for it. The card says so; what it asks is unchanged.
+function tagApprovalWithAgent(wrap, request) {
+    const run = runningAgent(wrap);
+    const node = wrap && wrap._refs && wrap._refs.userPrompts;
+    if (!run || !node || !request || !request.id) return;
+    const card = Array.from(node.children).find((child) => child.dataset.approvalId === String(request.id));
+    if (!card || card.querySelector('.approval-agent')) return;
+    const note = el('approval-agent');
+    setIcon(note.appendChild(el('ico', 'span')), 'agent');
+    const text = el('', 'span');
+    text.textContent = `Asked by Subagent ${run.detail || 'general-purpose'}${run.description ? ` (${run.description})` : ''}`;
+    note.appendChild(text);
+    card.prepend(note);
+}
+
 function renderApproval(node, request, conversationId) {
     if (!node || !request || !request.id) return;
     const requestId = String(request.id);
@@ -2862,7 +3011,7 @@ function describeToolCalls(tools) {
         return { title: first.detail ? `${first.name} \u00b7 ${first.detail}` : first.name, icon: meta.icon };
     }
     if (!named && calls.every((call) => call.kind === first.kind)) {
-        return { title: `${meta.label} ${calls.length} ${meta.noun}`, icon: meta.icon };
+        return { title: `${meta.group || meta.label} ${calls.length} ${meta.noun}`, icon: meta.icon };
     }
     const counts = new Map();
     for (const call of calls) counts.set(call.name, (counts.get(call.name) || 0) + 1);
@@ -3011,7 +3160,7 @@ async function _runTurn({ prompt, displayText, dispatch, images = [], attachment
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
-            approval: (d) => { if (!state.stopRequested) renderApproval(wrap._refs.userPrompts, d, conversationId); },
+            approval: (d) => { if (!state.stopRequested) { renderApproval(wrap._refs.userPrompts, d, conversationId); tagApprovalWithAgent(wrap, d); } },
             stopping: (d) => {
                 turnStopped = true;
                 state.stopRequested = true;
@@ -3554,6 +3703,17 @@ function buildPermList(container) {
             const policy = state.streaming && state.activeTerminalExecution ? state.activeTerminalExecution : state.settings && state.settings.terminalExecution;
             boundary.textContent = (state.streaming ? 'Active Turn: ' : '') + terminalExecutionLabel(policy) + (!state.streaming && !p.terminal ? ' | Terminal off' : '');
             meta.appendChild(boundary);
+        }
+        // An Engine without the bounded Subagent contract keeps this switch inert,
+        // and a switch that silently does nothing teaches the reader it is broken.
+        if (def.key === 'subagents') {
+            const support = el('perm-support muted tiny');
+            meta.appendChild(support);
+            api('GET', '/api/health').then((health) => {
+                if (health && health.subagentsSupported === false) {
+                    support.textContent = 'This Engine cannot run Subagents. Update ShellPilot to use them.';
+                }
+            }).catch(() => { /* offline: say nothing rather than guess */ });
         }
         const sw = el('switch', 'label');
         const input = document.createElement('input');
@@ -9134,7 +9294,7 @@ async function _streamRerun({ endpoint, body }) {
             tasks: (d) => { if (!state.stopRequested && d && d.tasks) renderTasks(wrap._refs.tasks, d.tasks); },
             activity: (d) => { if (!state.stopRequested && d) noteActivity(wrap, d); },
             question: (d) => { if (!state.stopRequested) renderUserPrompt(wrap._refs.userPrompts, d, conversationId); },
-            approval: (d) => { if (!state.stopRequested) renderApproval(wrap._refs.userPrompts, d, conversationId); },
+            approval: (d) => { if (!state.stopRequested) { renderApproval(wrap._refs.userPrompts, d, conversationId); tagApprovalWithAgent(wrap, d); } },
             stopping: (d) => { turnStopped = true; state.stopRequested = true; setStoppingUI(); wrap._refs.content.classList.remove('stream-caret'); showInlineError(wrap, (d && d.message) || 'Turn stopped.'); },
             stopped: (m) => { turnStopped = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },
             done: (m) => { turnCompleted = true; wrap._refs.content.classList.remove('stream-caret'); finalizeAssistant(wrap, m, { isLast: true }); markLastAssistant(); followThread(); },

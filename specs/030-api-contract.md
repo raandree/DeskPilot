@@ -19,11 +19,16 @@ Status codes: `200` OK, `201` Created, `204` No Content, `400` bad input,
   "status": "ok",
   "version": "0.1.0",
   "engineImported": true,
+  "subagentsSupported": true,
   "authenticated": true,
   "model": "claude-opus-4.8",
   "engineModulePath": "C:/Users/you/Documents/PowerShell/Modules/ShellPilot/0.1.0/ShellPilot.psd1"
 }
 ```
+
+`subagentsSupported` is the start-up capability probe of the imported Engine's
+bounded Subagent contract (`Invoke-ShpSubagent` with an Invoker). When it is
+`false`, the Subagents Permission has no effect.
 
 ### `GET /api/auth/status` → `{ "authenticated": true|false }`
 
@@ -1091,7 +1096,7 @@ running.
 | --- | --- | --- |
 | `start` | `{ "messageId": "m_3" }` | Turn accepted; assistant Message id allocated. |
 | `delta` | `{ "text": "partial answer…" }` | each streamed answer chunk. |
-| `activity` | `{ "tool": "fetch_url", "kind": "fetch", "detail": "https://example.com/spec" }` | the agent is about to use a tool. Emitted from the Engine's structured tool-call record **before** the tool runs, so it states intent and carries no result; the client lists it under the Message in order, folding consecutive actions of one kind into one line. `kind` is one of `read`, `list`, `write`, `create`, `run`, `fetch`, `search`, `ask`, `load`, `other`. `detail` is the tool's one whitelisted argument — the path, URL, command, pattern, query or name — and is empty for a tool the whitelist does not know or arguments that could not be parsed. `manage_todo_list` emits nothing; it has the `tasks` event. A `write` action is also what drives the live edit list that the Changes card supersedes on `done`. |
+| `activity` | `{ "tool": "fetch_url", "kind": "fetch", "detail": "https://example.com/spec" }` | the agent is about to use a tool. Emitted from the Engine's structured tool-call record **before** the tool runs, so it states intent and carries no result; the client lists it under the Message in order, folding consecutive actions of one kind into one line. `kind` is one of `read`, `list`, `write`, `create`, `run`, `fetch`, `browse`, `search`, `ask`, `load`, `mcp`, `approval`, `agent`, `other`. `detail` is the tool's one whitelisted argument — the path, URL, command, pattern, query or name — and is empty for a tool the whitelist does not know or arguments that could not be parsed. `manage_todo_list` emits nothing; it has the `tasks` event. A `write` action is also what drives the live edit list that the Changes card supersedes on `done`. A Subagent run is described below the table. |
 | `tasks` | `{ "tasks": [ { "id": 1, "title": "…", "status": "in-progress" } ] }` | Task List update during the Turn; the **full** list is sent each time (idempotent replace, not a delta). At most one Task is `in-progress`. Status is one of `not-started`, `in-progress`, `completed`. |
 | `question` | `{ "id": "…", "structured": true, "title": "Profile", "questions": [{ "header": "Location", "question": "Where?", "options": [{ "label": "Munich", "description": "Within 30 km" }], "multiSelect": false, "allowFreeformInput": true }] }` | Ask-User is waiting. The client renders a Questionnaire wizard. Plain Engine text is normalized to one free-text step with `structured: false`. |
 | `stopping` | `{ "message": "Turn stopped." }` | Stop was accepted; the client immediately freezes the live Message while the Engine pipeline unwinds. |
@@ -1102,6 +1107,33 @@ running.
 The `tasks` event is emitted only when the `taskTracking` Setting is on. The
 live frames originate from structured progress events on the Engine
 Runspace's Information stream; see [020-architecture.md](020-architecture.md#in-turn-task-list).
+
+#### Subagent runs
+
+When the Subagents Permission is on, the Model can dispatch a Subagent through
+the `run_subagent` Tool. Its own tool-call record emits nothing; the run is
+described by two `activity` frames with `kind: "agent"` and the same `id`:
+
+```json
+{ "id": "a_0123456789abcdef", "tool": "run_subagent", "kind": "agent", "phase": "started",
+  "status": "running", "detail": "general-purpose", "description": "docs audit",
+  "input": "Check every example in docs/…", "actions": [], "actionsDropped": 0, "timestamp": "…" }
+{ "id": "a_0123456789abcdef", "tool": "run_subagent", "kind": "agent", "phase": "finished",
+  "status": "completed", "detail": "general-purpose", "description": "docs audit",
+  "output": "Two examples are stale…", "reason": "", "durationMs": 12400,
+  "iterations": 5, "toolCalls": 3, "costUSD": 0.0042, "timestamp": "…" }
+```
+
+`status` on the finished frame is `completed`, `refused`, `failed` or
+`cancelled`; `costUSD` is `null` for a Model the Engine cannot price. Every
+`activity` frame between the two is a Tool call the Subagent made and carries
+`parentId` with the run's `id`. The client lists those inside the run, not as
+Turn actions, and a Subagent's Task List never replaces the Turn's. `input` is
+capped near 8,000 characters and `output` near 20,000; the Model receives the
+full answer up to 60,000 characters. On the stored Message the run is one
+`activity.actions` entry, completed in place, holding its own Tool calls in
+`actions` (at most 100, the overflow counted in `actionsDropped`). A run that was
+still working when the Turn stopped is stored with `status: "stopped"`.
 
 The approval endpoints and event below are enforced by DeskPilot-owned Tools.
 Activity remains observation, not authorization. Approval for Engine-owned File

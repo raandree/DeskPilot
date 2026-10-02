@@ -215,7 +215,8 @@ launch and can be overridden with `Start-DeskPilot -DataDir`.
   "model": "claude-opus-4.8",
   "permissions": {
     "browsing": true, "file": true, "terminal": true,
-    "askUser": true, "userTools": true, "browserAutomation": false
+    "askUser": true, "userTools": true, "browserAutomation": false,
+    "mcp": true, "subagents": false
   },
   "projects": [
     { "id": "p_a1b2c3d4e5", "name": "DeskPilot", "path": "C:/Users/me/Documents/DeskPilot",
@@ -251,6 +252,7 @@ next prompt. Permissions map to Engine switches:
 | askUser | `-DisableUserPrompts` |
 | userTools | `-DisableUserTools` |
 | browserAutomation | *(no Engine switch — see below)* |
+| subagents | *(no Engine switch — see below)* |
 
 `browserAutomation` has no Engine switch because the Engine has no interactive
 browser. It gates a **registered User Tool** DeskPilot owns, `browser_page`, so
@@ -258,6 +260,16 @@ it is honoured by registering or not registering that Tool for the Turn. It is
 deliberately separate from `browsing`: reading a page DeskPilot fetched and
 driving a live one are different amounts of authority, and one must not imply
 the other. It ships **off**.
+
+`subagents` gates DeskPilot's `run_subagent` User Tool the same way, and also
+needs `userTools` and an Engine with the bounded Subagent contract. It grants no
+authority: the Engine's `Invoke-ShpSubagent` runs the Subagent synchronously in
+the same Engine Runspace as a strict subset of the Turn, under its Disable*
+switches and its approval control, and DeskPilot withholds `run_subagent` and
+`ask_questions` from it. See
+[decision 0012](../.memory-bank/decisions/0012-bounded-subagents.md) and
+[the user guide](../docs/subagents.md). It ships **off** because every run is
+extra Model calls.
 
 `browserDomains` on a Project extends the browser's scope durably. It is
 validated on merge — a bad entry throws rather than being dropped — and it is

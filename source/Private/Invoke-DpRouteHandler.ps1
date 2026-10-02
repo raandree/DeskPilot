@@ -58,6 +58,7 @@
                 version          = $state.Version
                 engineImported   = $state.Engine.Imported
                 toolCallApproverAdvertised = [bool](Get-DpPropertyValue -InputObject $state.Engine -Name 'ToolCallApproverAdvertised' -Default $false)
+                subagentsSupported = [bool](Get-DpPropertyValue -InputObject $state.Engine -Name 'SubagentSupported' -Default $false)
                 engineError      = $state.Engine.ImportError
                 authenticated    = (Test-Path -LiteralPath $state.Engine.TokenPath)
                 model            = $state.Settings.model

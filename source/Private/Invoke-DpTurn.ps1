@@ -66,6 +66,7 @@ function Invoke-DpTurn {
     $shell = $null
     $userPromptBridge = $script:DeskPilot.Engine.UserPromptBridge
     $engineUsageBefore = $null
+    $engineUsageAfter = $null
     $stoppedUsageEstimate = $null
     $isolatedTerminal = $null
     $terminalPolicy = ConvertTo-DpTerminalExecution -InputObject $settings.terminalExecution
@@ -109,6 +110,13 @@ function Invoke-DpTurn {
         diagnosticOutcome  = 'failed'
         diagnosticUsage    = $null
         diagnosticClock    = [System.Diagnostics.Stopwatch]::StartNew()
+        # The Subagent run in progress (its Activity action), and what finished
+        # runs leave for the Turn's own accounting: Engine calls, their
+        # round-trips, and the files they wrote.
+        activeAgent        = $null
+        agentCalls         = 0
+        agentIterations    = 0
+        agentFiles         = [System.Collections.Generic.List[string]]::new()
     }
 
     $recordDiagnostic = {
@@ -151,8 +159,10 @@ function Invoke-DpTurn {
     # The ordered Activity is persisted on the Message, so it is capped: a runaway
     # Turn must not be able to grow the Conversation store without bound. Every
     # action still streams live; only the record kept afterwards is bounded, and
-    # the overflow is named rather than dropped in silence.
+    # the overflow is named rather than dropped in silence. A Subagent's own Tool
+    # calls are kept inside its run, under a cap of their own.
     $actionCap = 300
+    $agentActionCap = 100
 
     # The Turn transcript is a diagnostic that writes files, so it is off unless
     # asked for. The iteration source is decided once, here: the Engine only writes
@@ -221,8 +231,15 @@ function Invoke-DpTurn {
 
     # The ordered account of what the Turn touched, as it goes on the Message. It is
     # the only Activity a stopped or budget-exhausted Turn has, because those exits
-    # never receive an Engine result to read the unordered sets from.
+    # never receive an Engine result to read the unordered sets from. A Subagent
+    # still running when the Turn ended never finished: it was stopped.
     $finalActions = {
+        foreach ($action in $turnState.actions) {
+            if ($action -is [hashtable] -and $action.kind -ceq 'agent' -and $action.status -ceq 'running') {
+                $action.status = 'stopped'
+                $action.phase = 'finished'
+            }
+        }
         $list = @($turnState.actions)
         if ([int]$turnState.actionsDropped -gt 0) {
             $list += @{ tool = ''; kind = 'dropped'; detail = ('{0} more action(s) not shown' -f [int]$turnState.actionsDropped) }
@@ -376,11 +393,13 @@ function Invoke-DpTurn {
         # decision because Get-DpStreamFrame consumes most tool-call records silently.
         $recordTags = Get-DpPropertyValue -InputObject $Record -Name @('Tags') -Default @()
         $isToolCall = $false
+        $callName = ''
         if (@($recordTags) -contains 'ShpProgress') {
             $recordPayload = Get-DpPropertyValue -InputObject $Record -Name @('MessageData') -Default $null
             $recordKind = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Kind') -Default '')
             if ($recordKind -eq 'ToolCall') {
                 $isToolCall = $true
+                $callName = [string](Get-DpPropertyValue -InputObject $recordPayload -Name @('Name') -Default '')
                 $turnState.diagnosticSequence = [long]$turnState.diagnosticSequence + 1
                 & $flush
                 & $sealNarration
@@ -399,7 +418,9 @@ function Invoke-DpTurn {
         }
         $decision = Get-DpStreamFrame -Record $Record -ShowThinking:([bool]$settings.showThinking)
         if ($isToolCall) {
-            $actionKind = if ($decision -and $decision.event -eq 'activity') { [string]$decision.Action.kind } else { 'other' }
+            $actionKind = if ($decision -and $decision.event -eq 'activity') { [string]$decision.Action.kind }
+            elseif ($callName -ceq 'run_subagent') { 'agent' }
+            else { 'other' }
             & $recordDiagnostic 'tool.observed' 'observed' $actionKind
         }
         if (@($recordTags) -contains 'DeskPilotApproval') {
@@ -415,6 +436,8 @@ function Invoke-DpTurn {
         # first frame, so answer text is never duplicated).
         $turnState.emitted = [int]$turnState.emitted + 1
         if ($decision.event -eq 'tasks') {
+            # A Subagent's Task List is its own; it must not replace the Turn's.
+            if ($turnState.activeAgent) { return }
             & $flush
             $turnState.tasks = $decision.Tasks
             & $addRecord @{ Kind = 'tasks'; Text = ('{0} task(s)' -f @($decision.Tasks).Count) }
@@ -429,7 +452,41 @@ function Invoke-DpTurn {
                 $decision.Action.execution = $terminalBoundary
                 $decision.data.execution = $terminalBoundary
             }
-            if ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($decision.Action) }
+            # A Subagent run is one action that holds the Tool calls made inside it.
+            # 'started' opens it; 'finished' completes the same action in place, so
+            # the Message keeps one record per run with its outcome.
+            if ($decision.Action.kind -eq 'agent') {
+                $run = $decision.Action
+                if ($run.phase -ceq 'started') {
+                    $run.actions = [System.Collections.Generic.List[object]]::new()
+                    $run.actionsDropped = 0
+                    $turnState.activeAgent = $run
+                    if ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($run) }
+                    else { $turnState.actionsDropped = [int]$turnState.actionsDropped + 1 }
+                }
+                else {
+                    $open = $turnState.activeAgent
+                    if ($open -and $open.id -ceq $run.id) {
+                        foreach ($key in @('phase', 'status', 'output', 'reason', 'durationMs', 'iterations', 'toolCalls', 'costUSD')) { $open[$key] = $run[$key] }
+                    }
+                    elseif ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($run) }
+                    else { $turnState.actionsDropped = [int]$turnState.actionsDropped + 1 }
+                    $turnState.activeAgent = $null
+                    $turnState.agentCalls = [int]$turnState.agentCalls + [int]$decision['EngineCalls']
+                    $turnState.agentIterations = [int]$turnState.agentIterations + [int]$decision['Iterations']
+                    foreach ($file in @($decision['FilesWritten'])) { if ($file) { [void]$turnState.agentFiles.Add([string]$file) } }
+                }
+                $writer.Write((ConvertTo-DpSseFrame -EventName 'activity' -Data $decision.data))
+                return
+            }
+            $parentRun = $turnState.activeAgent
+            if ($parentRun) {
+                $decision.Action.parentId = [string]$parentRun.id
+                $decision.data.parentId = [string]$parentRun.id
+                if ($parentRun.actions.Count -lt $agentActionCap) { [void]$parentRun.actions.Add($decision.Action) }
+                else { $parentRun.actionsDropped = [int]$parentRun.actionsDropped + 1 }
+            }
+            elseif ($turnState.actions.Count -lt $actionCap) { [void]$turnState.actions.Add($decision.Action) }
             else { $turnState.actionsDropped = [int]$turnState.actionsDropped + 1 }
             $writer.Write((ConvertTo-DpSseFrame -EventName 'activity' -Data $decision.data))
             return
@@ -712,6 +769,30 @@ function Invoke-DpTurn {
             $params[$key] = $toolCallApprovalParameters[$key]
         }
 
+        # run_subagent, registered last because a Subagent inherits the finished
+        # Turn parameters: the Disable* switches and the approval control. Only on
+        # an Engine with the bounded Subagent contract; there is nothing to remove
+        # from one without it. A failure costs the Turn its Subagents, not the Turn.
+        if ([bool](Get-DpPropertyValue -InputObject $script:DeskPilot.Engine -Name 'SubagentSupported' -Default $false)) {
+            try {
+                $subagentCatalog = Get-DpSubagentCatalog -Root ([string]$settings.agentsRoot) -SelectedAgent ([string]$settings.selectedAgent)
+                $subagentPlanParams = @{
+                    Settings         = $settings
+                    TurnParameter    = $params
+                    Catalog          = $subagentCatalog
+                    WorkingDirectory = [string](Get-DpEngineWorkingDir -WorkspaceFolder $settings.workspaceFolder)
+                    EngineSupported  = $true
+                }
+                $subagentPlan = New-DpSubagentContext @subagentPlanParams
+                $null = Set-DpSubagentTool -Runspace $script:DeskPilot.Engine.Runspace -Enabled ([bool]$subagentPlan.enabled) -Context $subagentPlan.context
+            }
+            catch {
+                $subagentError = $_
+                Write-Verbose "Subagents are unavailable for this Turn: $subagentError"
+                try { $null = Set-DpSubagentTool -Runspace $script:DeskPilot.Engine.Runspace -Enabled $false } catch { $null = $_ }
+            }
+        }
+
         # A hard pipeline stop can interrupt the Engine before its normal result
         # and Usage-log append. Capture a pre-Turn Usage summary and an input-cost
         # estimate while the Runspace is idle. On cancellation, an exact summary
@@ -965,7 +1046,9 @@ function Invoke-DpTurn {
             estimated = $false
             partial = $attempt -gt 1 -or $null -eq $reportedUsage
         }
-        if ($attempt -gt 1) {
+        # Retried attempts and Subagent runs are Engine calls of their own; the
+        # exact Usage delta across the Turn counts every one of them.
+        if ($attempt -gt 1 -or [int]$turnState.agentCalls -gt 0) {
             try {
                 $usageCommandParams = @{
                     Command   = 'Get-ShpUsage'
@@ -973,11 +1056,16 @@ function Invoke-DpTurn {
                 }
                 $engineUsageAfter = Invoke-DpEngineCommand @usageCommandParams |
                     Select-Object -Last 1
-                $mapped.usage = Merge-DpRetriedTurnUsage -Usage $mapped.usage -Before $engineUsageBefore -After $engineUsageAfter
+                $mapped.usage = Merge-DpRetriedTurnUsage -Usage $mapped.usage -Before $engineUsageBefore -After $engineUsageAfter -AdditionalCalls ([int]$turnState.agentCalls) -AdditionalIterations ([int]$turnState.agentIterations)
             }
             catch {
                 $usageProbeError = $_
-                Write-Verbose "Could not capture retried-Turn Engine Usage: $usageProbeError"
+                Write-Verbose "Could not capture the Turn's complete Engine Usage: $usageProbeError"
+            }
+            # Without both summaries the Subagents' share cannot be measured, so
+            # the Usage is incomplete rather than the parent's alone in disguise.
+            if ([int]$turnState.agentCalls -gt 0 -and ($null -eq $engineUsageBefore -or $null -eq $engineUsageAfter)) {
+                $mapped.usage.partial = $true
             }
         }
 
@@ -988,9 +1076,11 @@ function Invoke-DpTurn {
         # runspace is idle again.
         $editedFiles = @(Get-DpEngineEditedFile -Runspace $script:DeskPilot.Engine.Runspace)
         if ($isolatedTerminal) { $editedFiles += @($isolatedTerminal.FilesWritten) }
+        # A Subagent's native writes are on its own result, which only its run saw.
+        $editedFiles += @($turnState.agentFiles)
         if ($editedFiles.Count -gt 0) {
             $alreadyWritten = @($mapped.activity.filesWritten)
-            $mapped.activity.filesWritten = @($alreadyWritten + @($editedFiles | Where-Object { $alreadyWritten -notcontains $_ }))
+            $mapped.activity.filesWritten = @($alreadyWritten + @($editedFiles | Where-Object { $alreadyWritten -notcontains $_ } | Select-Object -Unique))
         }
 
         # The Engine reports its Activity as unordered sets, which cannot say what
