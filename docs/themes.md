@@ -60,7 +60,10 @@ DeskPilot unless a terminal theme is selected. Unknown values fall back to
 DeskPilot and System. Choose **DeskPilot** to restore the original palette and
 fonts. No Host Server Settings or Conversation data is migrated or changed.
 
-Run the frontend unit suite with `node --test tests/Unit/*.test.mjs`. Run
+Run the frontend unit suite with `node --test tests/Unit/*.test.mjs`. The
+Sampler `test` task runs the same files through
+`tests/Unit/SpaNodeTests.Tests.ps1`, so a failing frontend test fails the build
+and CI. Run
 `node tests/live/themes.mjs` with the existing DeskPilot Playwright runtime to
 check the real frontend against local fixture data. It checks font loading,
 English/German labels, persistence, System changes, toolbar bounds, and both
