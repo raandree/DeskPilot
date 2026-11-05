@@ -80,7 +80,9 @@ function Invoke-DpSubagentTool {
         param([hashtable]$Data)
         $Data['Id'] = $runId
         $Data['Agent'] = $agentName
-        Write-Information -MessageData ([pscustomobject]$Data) -Tags 'DeskPilotSubagent'
+        # Pinned: these records are how the Host Server accounts for the run, so a
+        # caller's InformationAction or preference must not be able to drop them.
+        Write-Information -MessageData ([pscustomobject]$Data) -Tags 'DeskPilotSubagent' -InformationAction SilentlyContinue
     }
     $finish = {
         param([string]$Status, [string]$Reason, [string]$Answer, [hashtable]$Stats)
@@ -122,13 +124,23 @@ function Invoke-DpSubagentTool {
     else { '' }
     if ($refusal) { return (& $finish 'refused' $refusal '' $null) }
 
+    # The Engine's own commands, read from this runspace's function table. A
+    # lookup by name could import another installed copy of the Engine, which
+    # replaces the commands this Tool and its Turn run on.
+    $engineCommand = {
+        param([string]$Name)
+        Get-Item -LiteralPath "function:$Name" -ErrorAction SilentlyContinue
+    }
+
     # Withhold only what the Engine knows: it refuses an unregistered name. A list
     # that cannot be read leaves nothing to withhold, so nothing runs.
     $registered = $null
     try {
+        $listTools = & $engineCommand 'Get-ShpTool'
+        if (-not $listTools) { throw 'The Engine has no Get-ShpTool.' }
         $registered = & {
             $ErrorActionPreference = 'Stop'
-            @(Get-ShpTool -Origin User | ForEach-Object { [string]$_.Name })
+            @(& $listTools -Origin User | ForEach-Object { [string]$_.Name })
         }
     }
     catch {
@@ -153,6 +165,23 @@ function Invoke-DpSubagentTool {
         $turnResult
     }.GetNewClosure()
 
+    # What the Engine's Usage log says has been spent so far. A run that throws at
+    # its iteration cap or deadline returns no result to read a cost from, but it
+    # was billed all the same.
+    $measureSpend = {
+        try {
+            $usage = & $engineCommand 'Get-ShpUsage'
+            if (-not $usage) { return $null }
+            $summary = & {
+                $ErrorActionPreference = 'Stop'
+                @(& $usage -Summary)[-1]
+            }
+            if ($summary -and $summary.PSObject.Properties['CostUSD'] -and $null -ne $summary.CostUSD) { [double]$summary.CostUSD } else { $null }
+        }
+        catch { $null }
+    }
+
+    $spentBefore = & $measureSpend
     $clock = [System.Diagnostics.Stopwatch]::StartNew()
     $result = $null
     $failure = $null
@@ -183,9 +212,14 @@ function Invoke-DpSubagentTool {
         $state.active = $null
     }
 
+    $spentAfter = & $measureSpend
     $turnResult = $capture['result']
     $cost = $null
     if ($turnResult -and $turnResult.PSObject.Properties['CostUSD'] -and $null -ne $turnResult.CostUSD) { $cost = [double]$turnResult.CostUSD }
+    if ($null -ne $spentBefore -and $null -ne $spentAfter) {
+        $measured = [Math]::Round([double]$spentAfter - [double]$spentBefore, 6)
+        if ($measured -gt 0 -and ($null -eq $cost -or $measured -gt $cost)) { $cost = $measured }
+    }
     if ($null -ne $cost) { $state.spentUSD = [double]$state.spentUSD + $cost }
     $evidence = if ($result -and $result.PSObject.Properties['Evidence']) { $result.Evidence } else { $null }
     $stats = @{

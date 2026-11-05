@@ -583,7 +583,8 @@ $global:FakeShpCalls.Add($bound)
                 [string]$Engine = $script:engineCompleted,
                 [string]$SubagentAnswer = 'The docs are current.',
                 [AllowNull()][object]$SubagentCost = 0.0125,
-                [string]$ToolList = "param([string]`$Origin) @([pscustomobject]@{ Name = 'run_subagent' }, [pscustomobject]@{ Name = 'ask_questions' })"
+                [string]$ToolList = "param([string]`$Origin) @([pscustomobject]@{ Name = 'run_subagent' }, [pscustomobject]@{ Name = 'ask_questions' })",
+                [string]$Usage
             )
             $runspace = [runspacefactory]::CreateRunspace()
             $runspace.Open()
@@ -591,11 +592,13 @@ $global:FakeShpCalls.Add($bound)
             $shell.Runspace = $runspace
             try {
                 $null = $shell.AddScript(@'
-param($Definitions, $Context, $Engine, $SubagentShp, $Arguments, $SubagentAnswer, $SubagentCost, $ToolList)
+param($Definitions, $Context, $Engine, $SubagentShp, $Arguments, $SubagentAnswer, $SubagentCost, $ToolList, $Usage)
 . ([scriptblock]::Create($Definitions))
 . ([scriptblock]::Create("function global:Invoke-ShpSubagent {`n$Engine`n}"))
 . ([scriptblock]::Create("function global:Invoke-Shp {`n$SubagentShp`n}"))
 . ([scriptblock]::Create("function global:Get-ShpTool {`n$ToolList`n}"))
+if ($Usage) { . ([scriptblock]::Create("function global:Get-ShpUsage {`n$Usage`n}")) }
+$global:FakeUsageReads = 0
 $global:FakeSubagentCalls = [System.Collections.Generic.List[object]]::new()
 $global:FakeShpCalls = [System.Collections.Generic.List[object]]::new()
 $global:FakeSubagentAnswer = $SubagentAnswer
@@ -603,7 +606,7 @@ $global:FakeSubagentCost = $SubagentCost
 Set-Variable -Name DeskPilotSubagentContext -Scope Global -Value $Context
 $json = Invoke-DpSubagentTool @Arguments
 [pscustomobject]@{ Json = $json; Subagent = @($global:FakeSubagentCalls); Shp = @($global:FakeShpCalls) }
-'@).AddArgument($script:toolDefinitions).AddArgument($Context).AddArgument($Engine).AddArgument($script:subagentShp).AddArgument($Arguments).AddArgument($SubagentAnswer).AddArgument($SubagentCost).AddArgument($ToolList)
+'@).AddArgument($script:toolDefinitions).AddArgument($Context).AddArgument($Engine).AddArgument($script:subagentShp).AddArgument($Arguments).AddArgument($SubagentAnswer).AddArgument($SubagentCost).AddArgument($ToolList).AddArgument($Usage)
                 $output = @($shell.Invoke())
                 if ($shell.HadErrors) { throw $shell.Streams.Error[0] }
                 [pscustomobject]@{
@@ -724,6 +727,39 @@ $json = Invoke-DpSubagentTool @Arguments
 
         $run.Reply.status | Should -BeExactly 'failed'
         $run.Shp | Should -HaveCount 0
+    }
+
+    It 'announces and accounts for a run even when its caller asks to ignore information' {
+        # FIND-018: InformationAction Ignore dropped both records, so the run left
+        # no card, no Engine call and no written file in the Turn's account.
+        $context = New-ToolContext
+        $run = Invoke-SubagentToolFixture -Context $context -Arguments @{ Prompt = 'Audit the docs folder.'; InformationAction = 'Ignore' }
+
+        @($run.Records.Phase) | Should -Be @('started', 'finished')
+        @($run.Records[1].FilesWritten) | Should -Be @('C:\work\alpha\notes.md')
+    }
+
+    It 'charges a run that throws with what the Engine measured it spent' {
+        # FIND-019: a Subagent that hit its iteration cap or deadline threw after
+        # spending, returned no result, and charged nothing to the Turn's cap.
+        $context = New-ToolContext
+        $usage = "param([switch]`$Summary) `$global:FakeUsageReads++; [pscustomobject]@{ Calls = `$global:FakeUsageReads; CostUSD = 1.0 + 0.3 * (`$global:FakeUsageReads - 1) }"
+        $throwing = "param(`$DefinitionPath, `$Root, `$Prompt, `$Parent, `$Capability, `$Budget, `$Invoker)`nthrow 'The Subagent reached its iteration cap.'"
+        $run = Invoke-SubagentToolFixture -Context $context -Engine $throwing -Usage $usage
+
+        $run.Reply.status | Should -BeExactly 'failed'
+        $run.Records[1].CostUSD | Should -Be 0.3
+        $context.state.spentUSD | Should -Be 0.3
+    }
+
+    It 'charges the larger of what a run reported and what the Engine measured' {
+        $context = New-ToolContext
+        $usage = "param([switch]`$Summary) `$global:FakeUsageReads++; [pscustomobject]@{ Calls = `$global:FakeUsageReads; CostUSD = 0.5 + 0.02 * (`$global:FakeUsageReads - 1) }"
+        $run = Invoke-SubagentToolFixture -Context $context -Usage $usage -SubagentCost 0.0125
+
+        $run.Reply.status | Should -BeExactly 'completed'
+        $run.Records[1].CostUSD | Should -Be 0.02
+        $context.state.spentUSD | Should -Be 0.02
     }
 
     It 'refuses <Case> without dispatching anything' -ForEach @(

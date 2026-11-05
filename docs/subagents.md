@@ -108,7 +108,9 @@ shown as plain text, never as markup.
 
 The cost caps bind only when the Engine has a rate for the Model. For an
 unpriced Model the run and iteration caps are the bound. The Turn's Usage
-includes every Subagent run, measured from the Engine's own Usage records.
+includes every Subagent run, measured from the Engine's own Usage records. A run
+is charged what the Engine recorded it spent, so a run cut off at its iteration
+cap or deadline still counts towards the Turn's cap.
 
 ## Turn it off or roll back
 
