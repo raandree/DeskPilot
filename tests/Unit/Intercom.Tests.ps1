@@ -1346,20 +1346,45 @@ Describe 'Intercom Settings validation' -Tag 'Unit' {
         @($script:current.intercom.groupChatIds) | Should -BeNullOrEmpty
     }
 
-    It 'defaults the group mention requirement to off for compatibility' {
+    It 'defaults the group mention requirement to on' {
         $script:current.intercom.ContainsKey('requireGroupMention') | Should -BeTrue
-        $script:current.intercom.requireGroupMention | Should -BeFalse
+        $script:current.intercom.requireGroupMention | Should -BeTrue
     }
 
-    It 'can enable and disable the group mention requirement independently' {
-        $enabled = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ requireGroupMention = $true } }
-        $enabled.intercom.requireGroupMention | Should -BeTrue
-        $enabled.intercom.allowGroupChat | Should -BeFalse
-        $enabled.intercom.groupApproval | Should -BeFalse
-
-        $disabled = Merge-DpSettings -Current $enabled -Patch @{ intercom = @{ requireGroupMention = $false } }
+    It 'can disable and re-enable the group mention requirement independently' {
+        $disabled = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ requireGroupMention = $false } }
         $disabled.intercom.requireGroupMention | Should -BeFalse
+        $disabled.intercom.allowGroupChat | Should -BeFalse
+        $disabled.intercom.groupApproval | Should -BeFalse
+
+        $enabled = Merge-DpSettings -Current $disabled -Patch @{ intercom = @{ requireGroupMention = $true } }
         $enabled.intercom.requireGroupMention | Should -BeTrue
+        $disabled.intercom.requireGroupMention | Should -BeFalse
+    }
+
+    It 'requires a group mention for a settings file saved before the option existed' {
+        $directory = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $directory
+        Set-Content -LiteralPath (Join-Path $directory 'settings.json') -Encoding utf8 `
+            -Value '{"version":1,"intercom":{"enabled":true,"chatId":"111","allowGroupChat":true,"groupChatIds":["-1004455397827"]}}'
+
+        $loaded = Import-DpSettings -Directory $directory -ErrorAction Stop
+
+        $loaded.intercom.allowGroupChat | Should -BeTrue
+        $loaded.intercom.requireGroupMention | Should -BeTrue
+    }
+
+    It 'keeps a group mention requirement that settings.json saved as off' {
+        # Save-DpSettings writes every key, so a saved false cannot be told apart
+        # from a deliberate choice; the default applies only where nothing was saved.
+        $directory = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $directory
+        $saved = Merge-DpSettings -Current $script:current -Patch @{ intercom = @{ requireGroupMention = $false } }
+        Save-DpSettings -Settings $saved -Directory $directory -ErrorAction Stop
+
+        $loaded = Import-DpSettings -Directory $directory -ErrorAction Stop
+
+        $loaded.intercom.requireGroupMention | Should -BeFalse
     }
 
     It 'accepts a group chat id, which is always negative' {
@@ -1607,6 +1632,12 @@ Describe 'Get-DpIntercomPayload' -Tag 'Unit' {
 
         $payload.ContainsKey('requireGroupMention') | Should -BeTrue
         $payload.requireGroupMention | Should -BeTrue
+    }
+
+    It 'reports the group mention requirement as on when the Settings carry no value for it' {
+        $script:DeskPilot.Settings.intercom.Remove('requireGroupMention')
+
+        (Get-DpIntercomPayload).requireGroupMention | Should -BeTrue
     }
 
     It 'reports the rejection count so a probe is visible' {
@@ -2158,6 +2189,71 @@ Describe 'Intercom update batching' -Tag 'Unit' {
         $script:handled | Should -Be @('')
         $script:DeskPilot.Intercom.Offset | Should -Be 14
         $script:DeskPilot.Intercom.Counters.errors | Should -Be 0
+    }
+
+    Context 'with the default group mention requirement' {
+        BeforeAll {
+            function Set-TestGroupMessage {
+                [CmdletBinding()]
+                [System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'A test helper that queues an in-memory Telegram poll result; it changes nothing outside the test.')]
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Text,
+
+                    [object[]]$Entities = @()
+                )
+                $body = @{
+                    ok     = $true
+                    result = @(
+                        @{
+                            update_id = 13
+                            message   = @{
+                                message_id = 44
+                                chat       = @{ id = '-1004455397827'; type = 'supergroup' }
+                                text       = $Text
+                                entities   = $Entities
+                            }
+                        }
+                    )
+                } | ConvertTo-Json -Depth 6
+                $httpResponse = [System.Net.Http.HttpResponseMessage]::new(200)
+                $httpResponse.Content = [System.Net.Http.StringContent]::new($body, [System.Text.Encoding]::UTF8, 'application/json')
+                $script:DeskPilot.Intercom.PollTask = [System.Threading.Tasks.Task]::FromResult($httpResponse)
+            }
+        }
+
+        BeforeEach {
+            $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+            $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
+            $script:DeskPilot.Intercom.BotUsername = 'Janis1bot'
+        }
+
+        It 'ignores a group Message that does not mention Intercom' {
+            Set-TestGroupMessage -Text 'ordinary group chatter'
+
+            Update-DpIntercomState
+
+            $script:handledKinds | Should -Be @('ignore')
+            $script:handled | Should -Be @('')
+        }
+
+        It 'acts on a group Message that mentions Intercom' {
+            Set-TestGroupMessage -Text '@Janis1bot build the report' -Entities @(@{ type = 'mention'; offset = 0; length = 10 })
+
+            Update-DpIntercomState
+
+            $script:handledKinds | Should -Be @('prompt')
+            $script:handled | Should -Be @('build the report')
+        }
+
+        It 'still requires a mention when the Settings carry no value for it' {
+            $script:DeskPilot.Settings.intercom.Remove('requireGroupMention')
+            Set-TestGroupMessage -Text 'ordinary group chatter'
+
+            Update-DpIntercomState
+
+            $script:handledKinds | Should -Be @('ignore')
+        }
     }
 
     It 'treats ordinary text as the pending answer after Something else is tapped' {

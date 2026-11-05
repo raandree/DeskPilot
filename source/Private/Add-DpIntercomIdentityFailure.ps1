@@ -39,7 +39,7 @@ function Add-DpIntercomIdentityFailure {
 
     $groupsAllowed = [bool](Get-DpPropertyValue -InputObject $settings -Name @('allowGroupChat') -Default $false) -and
         @(Get-DpPropertyValue -InputObject $settings -Name @('groupChatIds') -Default @()).Count -gt 0
-    $mentionRequired = [bool](Get-DpPropertyValue -InputObject $settings -Name @('requireGroupMention') -Default $false)
+    $mentionRequired = [bool](Get-DpPropertyValue -InputObject $settings -Name @('requireGroupMention') -Default $true)
     $consequence = if ($groupsAllowed -and $mentionRequired) {
         'so I ignore every group Message except a reply to my question'
     }

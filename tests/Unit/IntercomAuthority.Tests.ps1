@@ -609,7 +609,21 @@ Describe 'FIND-015 - a failed getMe names what it costs and is asked again' -Tag
         $entries[0].detail | Should -Not -Match 'stay in the prompt'
     }
 
+    It 'says no group Message gets through when the Settings carry no mention requirement' {
+        $script:DeskPilot.Settings.intercom.allowGroupChat = $true
+        $script:DeskPilot.Settings.intercom.groupChatIds = @('-1004455397827')
+        $script:DeskPilot.Settings.intercom.Remove('requireGroupMention')
+        $script:DeskPilot.Intercom.IdentityAttempts = 1
+        $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
+
+        Update-DpIntercomState
+
+        @($script:DeskPilot.Intercom.Log | Where-Object { $_.kind -eq 'identity-error' })[0].detail |
+            Should -Match 'ignore every group Message except a reply to my question'
+    }
+
     It 'names the mention it cannot strip when no mention is required' {
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $false
         $script:DeskPilot.Intercom.IdentityAttempts = 1
         $script:DeskPilot.Intercom.IdentityTask = New-TestIdentityTask -Status 401 -Body $script:Refused
 

@@ -117,6 +117,10 @@ and stays off until you turn on **two** separate switches.
    group may work in. **A group can reach nothing until you do this**, even for a
    project that already has **allow phone control** ticked — that switch was for
    your own phone, and a group is a much wider set of people.
+6. Address your bot by name in the group, for example
+   `@yourbot build the report` or `/status@yourbot`. By default Intercom
+   ignores group Messages that do not mention your bot; see
+   [Require a mention in groups](#require-a-mention-in-groups).
 
 If any project is already shared with groups when you turn the group switch on,
 DeskPilot lists them by name and asks you to confirm before the switch takes
@@ -140,11 +144,13 @@ not verify it.
 
 ### Require a mention in groups
 
-In **Settings > Intercom**, enable **Require a bot mention in groups** to keep
-ordinary group chatter out of the Engine. It saves immediately and applies to
-all allowed groups, including supergroups. It is off by default so existing
-group workflows stay unchanged; the persisted Setting is
-`intercom.requireGroupMention`.
+**Require a bot mention in groups** in **Settings > Intercom** keeps ordinary
+group chatter out of the Engine: Intercom acts on a group Message only when it
+is addressed to your bot. It is on by default and applies to all allowed
+groups, including supergroups. Untick it to let every group Message through;
+the change saves immediately. Settings saved while this option was still off by
+default keep that saved value, so tick the box there to switch to mention-only.
+The persisted Setting is `intercom.requireGroupMention`.
 
 - Send `@yourbot build the report` or `could you check this, @yourbot?` using
   your bot's actual username. Matching is case-insensitive and exact.

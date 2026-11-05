@@ -487,7 +487,7 @@ Describe 'Support bundle' -Tag 'Unit' {
         $record.configuration.intercom.Keys | Should -Be @(
             'enabled', 'tokenConfigured', 'chatConfigured', 'groupEnabled', 'groupCount', 'requireGroupMention'
         )
-        $record.configuration.intercom.requireGroupMention | Should -BeFalse
+        $record.configuration.intercom.requireGroupMention | Should -BeTrue
         $json | Should -Not -Match 'MESSAGE-CONTENT|REASONING-MUST|RAW-TOOL-SECRET|RAW-MCP-BEARER|UNKNOWN-MCP|UNKNOWN-STATE|HOST-TOKEN|ENGINE-TOKEN|ABCDEFGHIJKLMNOPQRSTUVWXYZ'
         $json | Should -Not -Match ([regex]::Escape($script:bundleData))
         $json | Should -Not -Match ([regex]::Escape($script:bundleModule))
@@ -500,7 +500,7 @@ Describe 'Support bundle' -Tag 'Unit' {
     It 'says whether Intercom only hears group Messages that mention it' {
         $script:DeskPilot.Settings.intercom.allowGroupChat = $true
         $script:DeskPilot.Settings.intercom.groupChatIds = @('-1001234567890')
-        $script:DeskPilot.Settings.intercom.requireGroupMention = $true
+        $script:DeskPilot.Settings.intercom.requireGroupMention = $false
 
         $record = & {
             Set-StrictMode -Version Latest
@@ -509,8 +509,19 @@ Describe 'Support bundle' -Tag 'Unit' {
 
         $record.configuration.intercom.groupEnabled | Should -BeTrue
         $record.configuration.intercom.groupCount | Should -Be 1
-        $record.configuration.intercom.requireGroupMention | Should -BeTrue
+        $record.configuration.intercom.requireGroupMention | Should -BeFalse
         ($record | ConvertTo-Json -Depth 12 -Compress) | Should -Not -Match '1001234567890'
+    }
+
+    It 'reports the default group mention requirement when the Settings carry no value for it' {
+        $script:DeskPilot.Settings.intercom.Remove('requireGroupMention')
+
+        $record = & {
+            Set-StrictMode -Version Latest
+            New-DpSupportBundleRecord
+        }
+
+        $record.configuration.intercom.requireGroupMention | Should -BeTrue
     }
 
     It 'constructs a bundle record before any self-check under StrictMode' {

@@ -74,6 +74,9 @@ source: repository implementation, regression evidence, and decision records
   Messages and same-scope history, never mutable window/Conversation state.
 - Refuse over-cap mutations; report lossy imports. Preserve exact old bytes with
   create-new backup semantics before replacement; unknown verification is not true.
+- A changed Setting default reaches only Settings that never stored the key:
+  `Save-DpSettings` writes every key, so a stored old default cannot be told
+  from a choice. Migrate deliberately or state that saved values are kept.
 - Compact only replay context, not visible Messages. Coverage heuristics are not
   semantic quality grades. Gate async editor replies by the owning editor identity.
 - Pre-Turn Git snapshots use a separate index. Keep accepts, Save commits and Undo
@@ -84,7 +87,8 @@ source: repository implementation, regression evidence, and decision records
   pending replies may bypass mentions. All entries share Turn/Permission gates.
   Fold benign high-volume intake (un-addressed group chatter) into one counted
   audit line per chat and kind, so it cannot evict rejections and errors. Retry
-  a failed `getMe` on a bounded schedule; a new token forgets the old name.
+  a failed `getMe` on a bounded schedule; a new token forgets the old name. The
+  group mention gate defaults on; mentions still grant nothing.
 - Theme and Mode stay local. Bundle licensed fonts; draw icons by name in `icons.js`
   with currentColor, never emoji or remote assets. Check colors, fonts and bounds.
 - Split thinking at Engine iterations, never per token; title it from its own text

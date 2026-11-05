@@ -10,8 +10,8 @@ source: red/green Pester and Node regressions, real-Engine scripted-provider jou
 
 ## Current focus
 
-`ai/subagents`, from `main` `9d3890c`, carries two pieces of unattended work.
-No push or Merge was requested.
+`ai/subagents`, from `main` `9d3890c`, carries two pieces of unattended work
+and one requested Intercom default change. No push or Merge was requested.
 
 ### Subagents (`3ee65d2`)
 
@@ -54,6 +54,23 @@ Closed test-first and recorded in
 - FIND-016: un-addressed group chatter folds into one `unaddressed` audit line
   per chat (`Add-DpIntercomLog -Coalesce`, `messageCount`, `sinceUtc`); the SPA
   shows `×N since <time>`.
+
+### Intercom mention gate on by default (2026-11-05)
+
+- `intercom.requireGroupMention` now defaults to `true`: a Telegram group
+  reaches Intercom only through an @mention of the bot, a command addressed to
+  it, or a plain-text reply to the pending question in its chat.
+- The user chose **new installs only**. A `false` saved by Previews 0021-0026
+  is kept on purpose; there is no migration and no settings `version` bump.
+  Settings that never stored the key, including 0.4.0 files, get the default.
+- The read-site fallbacks in `Update-DpIntercomState`, `Get-DpIntercomPayload`,
+  `New-DpSupportBundleRecord` and `Add-DpIntercomIdentityFailure` agree with
+  the default; `ConvertFrom-DpIntercomUpdate -RequireGroupMention` keeps its
+  neutral `$false` because its only caller always passes the Setting.
+- Spec 110, the getting-started guide (new group step 6) and the changelog
+  describe it. Validation: 1,494/1,494 across the 13 related suites; Intercom
+  Node UI 7/7. The full Sampler gate was not run because another chat's
+  in-progress Subagent edits share this worktree.
 
 ## Validation
 

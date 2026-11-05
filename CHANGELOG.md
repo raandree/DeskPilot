@@ -505,6 +505,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Project. The bundled UI sends the identifier. Keep a private copy of the
   version-2 Memory file before downgrading; do not promote confidential Project
   notes into global recall as a workaround.
+- Turn on **Require a bot mention in groups** by default. A Telegram group now
+  reaches Intercom only by mentioning your bot (`@yourbot build the report`),
+  addressing a command to it (`/status@yourbot`), or replying to its pending
+  question. Settings saved while the option was still off by default keep that
+  value; tick the box to switch them to mention-only. See
+  [Require a mention in groups](docs/intercom-getting-started.md#require-a-mention-in-groups).
 - Keep each thinking run in its own section below collapsed Activity and edited-file panels, and remove the duplicate compressed thinking line above the composer. See [Message layout](specs/040-ui-design.md#4-message-thread).
 - Title each completed thinking section by what it was about — the model's own
   heading, else its opening sentence, else the Tools it called — instead of

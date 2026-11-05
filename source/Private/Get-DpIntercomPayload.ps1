@@ -39,7 +39,7 @@ function Get-DpIntercomPayload {
         chatId                 = [string]$settings.chatId
         allowGroupChat         = [bool]$settings.allowGroupChat
         groupChatIds           = @($settings.groupChatIds)
-        requireGroupMention    = [bool](Get-DpPropertyValue -InputObject $settings -Name @('requireGroupMention') -Default $false)
+        requireGroupMention    = [bool](Get-DpPropertyValue -InputObject $settings -Name @('requireGroupMention') -Default $true)
         heartbeatMinutes       = [int]$settings.heartbeatMinutes
         stallMinutes           = [int]$settings.stallMinutes
         questionTimeoutMinutes = [int]$settings.questionTimeoutMinutes
