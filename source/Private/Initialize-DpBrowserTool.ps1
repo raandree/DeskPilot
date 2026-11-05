@@ -50,6 +50,7 @@ function Initialize-DpBrowserTool {
     )
 
     $names = @(
+        'Protect-DpUserTool'
         'Get-DpPropertyValue'
         'Get-DpDataDir'
         'Get-DpNodeCommand'
@@ -133,6 +134,9 @@ a different approach or explain why you need this one.
 "@
 
 Register-ShpTool -Command 'Invoke-DpBrowserTool' -ToolName 'browser_page' -Description $browserDescription -Confirm:$false
+# The schema is built from the advanced function above; the Model's arguments
+# then reach a plain function that binds only the Tool's own parameters.
+Protect-DpUserTool -Name 'Invoke-DpBrowserTool'
 '@)
 
     $shell = [powershell]::Create()

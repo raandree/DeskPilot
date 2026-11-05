@@ -22,7 +22,11 @@ function Initialize-DpQuestionnaireTool {
     $shell = [powershell]::Create()
     $shell.Runspace = $Runspace
     try {
-        $null = $shell.AddScript(@'
+        # The schema is built from the advanced function below; the Model's
+        # arguments then reach a plain function that binds only its own parameter.
+        $guard = Get-Command -Name 'Protect-DpUserTool' -CommandType Function -ErrorAction Stop
+        $guardDefinition = "function global:Protect-DpUserTool {`n$($guard.Definition)`n}`n"
+        $null = $shell.AddScript($guardDefinition + @'
 function global:Invoke-DpQuestionnaireTool {
     [CmdletBinding()]
     [OutputType([string])]
@@ -58,6 +62,7 @@ $registerParams = @{
     Confirm     = $false
 }
 Register-ShpTool @registerParams
+Protect-DpUserTool -Name 'Invoke-DpQuestionnaireTool'
 '@)
         $shell.Invoke() | Out-Null
         if ($shell.HadErrors) {

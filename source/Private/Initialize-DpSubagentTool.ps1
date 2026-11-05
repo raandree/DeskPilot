@@ -45,13 +45,16 @@ function Initialize-DpSubagentTool {
     $builder = [System.Text.StringBuilder]::new()
     [void]$builder.AppendLine('param($Context, $Description)')
     [void]$builder.AppendLine('Set-Variable -Name DeskPilotSubagentContext -Scope Global -Value $Context')
-    foreach ($name in @('ConvertTo-DpSubagentTurnParameter', 'Invoke-DpSubagentTool')) {
+    foreach ($name in @('Protect-DpUserTool', 'ConvertTo-DpSubagentTurnParameter', 'Invoke-DpSubagentTool')) {
         $command = Get-Command -Name $name -CommandType Function -ErrorAction Stop
         [void]$builder.AppendLine("function global:$name {")
         [void]$builder.AppendLine($command.Definition)
         [void]$builder.AppendLine('}')
     }
     [void]$builder.AppendLine("Register-ShpTool -Command 'Invoke-DpSubagentTool' -ToolName 'run_subagent' -Description `$Description -Confirm:`$false")
+    # The schema is built from the advanced function above; the Model's arguments
+    # then reach a plain function that binds only the Tool's own parameters.
+    [void]$builder.AppendLine("Protect-DpUserTool -Name 'Invoke-DpSubagentTool'")
 
     $shell = [powershell]::Create()
     $shell.Runspace = $Runspace

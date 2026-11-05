@@ -76,6 +76,7 @@ function Initialize-DpTerminalTool {
     }
 
     $names = @(
+        'Protect-DpUserTool'
         'Get-DpPropertyValue'
         'ConvertTo-DpTerminalExecution'
         'New-DpApprovalRequest'
@@ -172,6 +173,12 @@ separate Tools and are not isolated by this Terminal boundary.
 Register-ShpTool -Command 'Invoke-DpTerminalApprovalTool' -ToolName 'run_terminal_command' -Description $isolatedDescription -Confirm:$false
 '@)
     }
+
+    # Once, after the last registration: Register-ShpTool builds the schema from
+    # whatever function holds the name, and it must be the advanced one. The
+    # Model's arguments then reach a plain function that binds only the Tool's
+    # own parameters.
+    [void]$builder.AppendLine("Protect-DpUserTool -Name 'Invoke-DpTerminalApprovalTool'")
 
     $shell = [powershell]::Create()
     $shell.Runspace = $Runspace

@@ -188,6 +188,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security:** stop a Model from switching off DeskPilot's safeguards by adding
+  extra arguments to a Tool call. A call to any of DeskPilot's own Tools could
+  carry PowerShell parameters such as `OutVariable` that overwrote the Engine's
+  checks: commands could then run on your computer with Terminal off and without
+  an approval card, and file changes could skip their approval. DeskPilot's
+  Tools now accept only their own arguments and refuse anything else without
+  running. See [the security model](specs/050-security-model.md) (T16).
 - Keep the Intercom log useful in a busy group when **Require a bot mention in
   groups** is on. Messages meant for someone else now fold into one
   `unaddressed` line per group that counts them, instead of pushing rejections

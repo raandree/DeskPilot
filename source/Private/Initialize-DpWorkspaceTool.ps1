@@ -50,6 +50,7 @@ function Initialize-DpWorkspaceTool {
     # Dependencies first: a function must exist in the runspace before the one
     # that calls it is invoked, and re-declaring in call order keeps that obvious.
     $names = @(
+        'Protect-DpUserTool'
         'Invoke-DpGitCommand'
         'ConvertTo-DpSearchRegex'
         'Get-DpSearchPatternError'
@@ -137,6 +138,11 @@ exact, and prefer several small precise edits over one large one.
 Register-ShpTool -Command 'Invoke-DpFileSearchTool' -ToolName 'search_files' -Description $fileDescription -Confirm:$false
 Register-ShpTool -Command 'Invoke-DpTextSearchTool' -ToolName 'search_text' -Description $textDescription -Confirm:$false
 Register-ShpTool -Command 'Invoke-DpReplaceInFileTool' -ToolName 'replace_in_file' -Description $replaceDescription -Confirm:$false
+# The schemas are built from the advanced functions above; the Model's arguments
+# then reach plain functions that bind only each Tool's own parameters.
+Protect-DpUserTool -Name 'Invoke-DpFileSearchTool'
+Protect-DpUserTool -Name 'Invoke-DpTextSearchTool'
+Protect-DpUserTool -Name 'Invoke-DpReplaceInFileTool'
 '@)
 
     $shell = [powershell]::Create()
