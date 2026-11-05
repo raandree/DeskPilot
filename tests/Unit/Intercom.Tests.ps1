@@ -2315,16 +2315,16 @@ Describe 'Intercom refuses an image too large for the Engine Vision input' -Tag 
                 Token        = ''
                 QueuedPrompt = $null
                 QueuedImage  = $null
-                Download     = @{
-                    stage    = 'fetch'
-                    task     = $null
-                    fileName = 'photo.jpg'
-                    mimeType = 'image/jpeg'
-                    isImage  = $true
-                    caption  = 'What is this?'
-                }
+                Download     = New-DpIntercomDownloadState
             }
         }
+        # One photo sent on its own, its content just downloaded.
+        $download = $script:DeskPilot.Intercom.Download
+        $download.stage = 'fetch'
+        $download.fileName = 'photo.jpg'
+        $download.mimeType = 'image/jpeg'
+        $download.isImage = $true
+        $download.caption = 'What is this?'
 
         Mock Send-DpIntercomMessage { $true }
         Mock Receive-DpTelegramResponse { @{ ok = $true; result = $null } }

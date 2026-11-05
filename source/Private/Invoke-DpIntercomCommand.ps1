@@ -52,6 +52,14 @@ function Invoke-DpIntercomCommand {
         # per chat, so a busy group cannot evict rejections and errors.
         if ([bool](Get-DpPropertyValue -InputObject $Command -Name @('unaddressed') -Default $false)) {
             Add-DpIntercomLog -Direction 'in' -Kind 'unaddressed' -Detail $Command.reason -ChatId $attribution.ChatId -Accepted $false -Coalesce
+            # A file of an Album may still be wanted: another file of the same
+            # Album can carry the caption that mentions Intercom. It is never
+            # fetched or answered unless one does.
+            $heldAttachment = Get-DpPropertyValue -InputObject $Command -Name @('attachment') -Default $null
+            $heldAlbum = [string](Get-DpPropertyValue -InputObject $Command -Name @('mediaGroupId') -Default '')
+            if ($heldAttachment -and $heldAlbum) {
+                Start-DpIntercomDownload -Attachment $heldAttachment -MediaGroupId $heldAlbum -Unaddressed
+            }
             return
         }
         Add-DpIntercomLog -Direction 'in' -Kind 'ignored' -Detail $Command.reason -Accepted $false @attribution
@@ -523,7 +531,12 @@ function Invoke-DpIntercomCommand {
                 return
             }
             if ($Command.attachment) {
-                Start-DpIntercomDownload -Attachment $Command.attachment -Caption ([string]$Command.text)
+                $downloadParams = @{
+                    Attachment   = $Command.attachment
+                    Caption      = [string]$Command.text
+                    MediaGroupId = [string](Get-DpPropertyValue -InputObject $Command -Name @('mediaGroupId') -Default '')
+                }
+                Start-DpIntercomDownload @downloadParams
                 return
             }
             if ($intercom.QueuedPrompt) {

@@ -157,7 +157,9 @@ The persisted Setting is `intercom.requireGroupMention`.
 - Address commands explicitly, for example `/status@yourbot` or
   `@yourbot /status`. A bare `/status` or a command for another bot is ignored.
 - Mention the bot in an Attachment's caption to have it downloaded and used.
-  An uncaptioned Attachment is ignored when this option is on.
+  An uncaptioned Attachment is ignored when this option is on, unless it was
+  sent together with one whose caption mentions the bot: that mention covers
+  every file of the Album.
 - Use Telegram's **Reply** on the question currently waiting in that group to
   answer in plain text without a mention. Replies to other Messages or an old
   question do not qualify. Commands, edits, and Attachments still need a mention.
@@ -243,6 +245,7 @@ Start a job in DeskPilot as normal, then walk away. From your phone:
 | **Tap a button** under a message | Picks that answer, or switches conversation, agent, model or project from the matching list |
 | Any other message | The agent treats it as a new instruction |
 | A file, with or without a caption | DeskPilot saves it into your project folder and the agent works on it; your caption is the instruction |
+| Several files at once | DeskPilot fetches every one, then runs your caption once with all of them — up to 20 files at a time |
 | `/status` | What is happening right now |
 | `/chats` | Lists your conversations, newest first, and marks the one you are in |
 | `/chats all` | The same, including the archived ones (marked) |
@@ -282,6 +285,11 @@ Three things worth knowing:
   belong.
 - **A message sent while a job is running is queued**, not jammed in. It runs as
   soon as the current job finishes. Use `/steer` if you want to interrupt.
+- **Several files sent together become one job.** Telegram delivers them as an
+  Album, one message per file, with your caption on just one of them.
+  DeskPilot waits until no more have arrived for a few seconds, then runs your
+  caption once with every file and shows every photo to the agent. It takes up
+  to 20 files at a time and tells you how many it left.
 - **`/undo` is the escape hatch when the agent went the wrong way.** Send it and
   DeskPilot tells you exactly what it would throw away — how many messages, how
   many files — and waits. Send `/undo confirm` and it takes you back to just

@@ -195,6 +195,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an approval card, and file changes could skip their approval. DeskPilot's
   Tools now accept only their own arguments and refuse anything else without
   running. See [the security model](specs/050-security-model.md) (T16).
+- Fetch every file when you send several at once to Intercom from Telegram.
+  Intercom used to fetch only the first, answer "One file at a time, please."
+  to the rest, and lose your caption whenever Telegram had attached it to a
+  later file. It now waits until they have all arrived and runs your caption
+  once with every file, showing every photo to the model. A single file still
+  runs as soon as it lands. In a group that requires a bot mention, a mention
+  in the caption covers every file sent with it. Intercom takes up to 20 files
+  at a time and tells you how many it left. See
+  [Using it](docs/intercom-getting-started.md#using-it).
+- Keep an instruction already queued from your phone when a file arrives after
+  it: Intercom now says it saved the file instead of replacing the
+  instruction. Switching Intercom off also drops files it is still fetching,
+  so they no longer run when you switch it back on.
 - Keep the Intercom log useful in a busy group when **Require a bot mention in
   groups** is on. Messages meant for someone else now fold into one
   `unaddressed` line per group that counts them, instead of pushing rejections

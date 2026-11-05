@@ -98,22 +98,11 @@ function Initialize-DpIntercom {
         # reports back where it was asked for rather than always in the operator's
         # own chat. It outlives the dispatch that set it, which ReplyChatId does not.
         QueuedChatId     = $null
-        # An image Attachment to hand the Engine's Vision input alongside it.
+        # The image Attachments to hand the Engine's Vision input alongside it.
         QueuedImage      = $null
-        # A file the operator sent, being fetched across two Telegram calls. Both
-        # are started on one pump tick and reaped on a later one, because a
-        # multi-megabyte download on the accept thread would freeze the window.
-        Download         = @{
-            stage      = ''
-            task       = $null
-            fileId     = ''
-            fileName   = ''
-            mimeType   = ''
-            isImage    = $false
-            caption    = ''
-            chatId     = ''
-            startedUtc = $null
-        }
+        # The files the operator sent, being fetched one at a time before they
+        # become the queued prompt - see New-DpIntercomDownloadState.
+        Download         = New-DpIntercomDownloadState
         LastActivityUtc  = [DateTime]::UtcNow
         # What a Turn started from the phone is producing right now. The browser
         # has no request to stream over for a remote Turn, and the single-threaded

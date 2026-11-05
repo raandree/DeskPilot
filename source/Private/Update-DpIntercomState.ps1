@@ -92,8 +92,12 @@ function Update-DpIntercomState {
             $intercom.PollTask = $null
             $intercom.PendingQuestion = $null
             $intercom.QueuedPrompt = $null
+            $intercom.QueuedImage = $null
             $intercom.QueuedChatId = $null
             $intercom.ReplyChatId = $null
+            # Files still being fetched would otherwise resume, and run, the
+            # moment Intercom is switched back on.
+            Clear-DpIntercomDownload
             $intercom.Outbound.Clear()
             $intercom.StatusMessageId = 0
             Add-DpIntercomLog -Direction 'system' -Kind 'disabled' -Detail 'Intercom is off.'
@@ -317,16 +321,23 @@ function Update-DpIntercomState {
         # no Turn to run until the operator has confirmed who they are.
         if ($isPairing) { return }
 
-        # Advance a file the operator sent. It becomes the queued prompt once it
-        # has landed on disk. It spans pump ticks, so it carries the chat it came
-        # from rather than relying on the dispatch that started it.
+        # Advance the files the operator sent. They become the queued prompt once
+        # they have all landed on disk. That spans pump ticks, so the batch
+        # carries the chat it came from rather than relying on the dispatch that
+        # started it.
         $callerChat = $intercom.ReplyChatId
         $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom.Download -Name @('chatId') -Default '')
         try { Update-DpIntercomDownload } catch {
             $intercom.Counters.errors++
-            Add-DpIntercomLog -Direction 'in' -Kind 'attachment-error' -Detail (Hide-DpIntercomSecret -Text "$_") -Accepted $false
-            $intercom.Download.stage = ''
-            $intercom.Download.task = $null
+            $failure = Hide-DpIntercomSecret -Text "$_"
+            Add-DpIntercomLog -Direction 'in' -Kind 'attachment-error' -Detail $failure -Accepted $false
+            # A fault that repeats would fire again on every tick, so the batch is
+            # abandoned; whatever it already saved stays on disk.
+            $wasOpen = $null -ne $intercom.Download['startedUtc']
+            Clear-DpIntercomDownload -KeepHeld
+            if ($wasOpen) {
+                $null = Send-DpIntercomMessage -Title 'I could not finish fetching your files.' -Line @($failure, 'Try sending them again.') -Kind 'failed'
+            }
         }
         finally { $intercom.ReplyChatId = $callerChat }
 
@@ -387,7 +398,8 @@ function Update-DpIntercomState {
         #    can never re-enter a Turn that is already running.
         if ($AllowTurn -and $intercom.QueuedPrompt -and -not $state.TurnRunning) {
             $prompt = [string]$intercom.QueuedPrompt
-            $image = [string]$intercom.QueuedImage
+            # An array: cast to [string] it would become one space-joined path.
+            $images = @($intercom.QueuedImage | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { [string]$_ })
             $intercom.QueuedPrompt = $null
             $intercom.QueuedImage = $null
             # The Turn reports back where it was asked for, which the queued
@@ -398,7 +410,7 @@ function Update-DpIntercomState {
             $intercom.ReplyChatId = [string](Get-DpPropertyValue -InputObject $intercom -Name @('QueuedChatId') -Default '')
             $intercom.QueuedChatId = $null
             try {
-                if ($image) { Invoke-DpIntercomTurn -Prompt $prompt -Image $image }
+                if ($images.Count -gt 0) { Invoke-DpIntercomTurn -Prompt $prompt -Image $images }
                 else { Invoke-DpIntercomTurn -Prompt $prompt }
             }
             finally { $intercom.ReplyChatId = $callerChat }

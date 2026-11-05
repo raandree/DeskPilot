@@ -62,10 +62,7 @@ BeforeAll {
                 QueuedChatId    = $null
                 QueuedImage     = $null
                 ReplyChatId     = $null
-                Download        = @{
-                    stage = ''; task = $null; fileId = ''; fileName = ''
-                    mimeType = ''; isImage = $false; caption = ''; chatId = ''; startedUtc = $null
-                }
+                Download        = New-DpIntercomDownloadState
                 Outbound        = [System.Collections.Generic.Queue[hashtable]]::new()
                 RateWindow      = [System.Collections.Generic.List[DateTime]]::new()
                 Log             = [System.Collections.Generic.List[object]]::new()

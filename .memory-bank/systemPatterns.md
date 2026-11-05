@@ -87,12 +87,12 @@ source: repository implementation, regression evidence, and decision records
   preserve user edits. Compare normalized blobs before refreshing an index.
 - Diagnostics is bounded and allow-listed; correlation excludes prompts/arguments.
   Keep Usage unknown, errors redacted, prerequisite ids stable and readiness machine-bound.
-- Intercom allow-lists first; mentions never authorize. Exact same-chat plain-text
-  pending replies may bypass mentions. All entries share Turn/Permission gates.
-  Fold benign high-volume intake (un-addressed group chatter) into one counted
-  audit line per chat and kind, so it cannot evict rejections and errors. Retry
-  a failed `getMe` on a bounded schedule; a new token forgets the old name. The
-  group mention gate defaults on; mentions still grant nothing.
+- Intercom allow-lists first; mentions never authorize; the group mention gate
+  defaults on. Same-chat plain-text pending replies may bypass it. All entries
+  share Turn/Permission gates. Fold un-addressed group chatter into one counted
+  audit line per chat. Retry a failed `getMe` on a bounded schedule; a new token
+  forgets the old name. An Album is one Message per file with one caption: batch
+  per chat, queue one prompt once quiet; that caption's mention covers it all.
 - Theme and Mode stay local. Bundle licensed fonts; draw icons by name in `icons.js`
   with currentColor, never emoji or remote assets. Check colors, fonts and bounds.
 - Split thinking at Engine iterations, never per token; title it from its own text

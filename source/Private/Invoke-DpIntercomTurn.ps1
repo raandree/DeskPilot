@@ -22,7 +22,7 @@ function Invoke-DpIntercomTurn {
     .PARAMETER Prompt
         The prompt received from the phone.
     .PARAMETER Image
-        An image Attachment to hand the Engine's native Vision input.
+        The image Attachments to hand the Engine's native Vision input.
     .OUTPUTS
         None.
     #>
@@ -35,8 +35,8 @@ function Invoke-DpIntercomTurn {
         [string]$Prompt,
 
         [AllowNull()]
-        [AllowEmptyString()]
-        [string]$Image
+        [AllowEmptyCollection()]
+        [string[]]$Image = @()
     )
 
     $state = $script:DeskPilot
@@ -100,7 +100,8 @@ function Invoke-DpIntercomTurn {
             Prompt       = $Prompt
             Stream       = [System.IO.Stream]::Null
         }
-        if (-not [string]::IsNullOrWhiteSpace($Image)) { $turnParams.Image = @($Image) }
+        $visionImages = @($Image | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($visionImages.Count -gt 0) { $turnParams.Image = [string[]]$visionImages }
         Invoke-DpTurn @turnParams
     }
     catch {

@@ -2,6 +2,28 @@
 
 Recurring issues and how they were resolved.
 
+## Telegram Album: one file reaches Intercom, the caption vanishes (2026-11-05)
+
+**Symptom:** Six PDFs sent together with the caption "here are 6 files, store
+them" produced "Fetching that file...", five "One file at a time, please."
+replies, and a Turn on the first PDF with the default prompt "Have a look at
+this file and tell me what it is."
+
+**Root cause:** Telegram delivers an Album as one Message per file, sharing a
+`media_group_id`, and puts the caption on just one of them; for documents, the
+last. Intercom fetched the first file and refused every file that arrived
+while that fetch was in flight, which dropped the other five files and the
+caption that rode on the last.
+
+**Fix + rule:** Never refuse a file because another one is in flight. Collect
+files per chat in one batch (`New-DpIntercomDownloadState`). Wait until an
+Album has been quiet for 3 seconds, because Telegram never states its size,
+then queue one prompt. Never assume which file carries the caption. In a group
+that requires a mention, hold unmentioned Album files until the file with the
+mention claims them. `tests/Unit/IntercomAlbum.Tests.ps1` reproduces it by
+driving the real pump with Telegram mocked at `Invoke-DpTelegramRequest` and
+`Invoke-DpTelegramFileRequest`.
+
 ## Scripted Engine journeys fail only in CI (2026-11-05)
 
 **Symptom:** The publishing run for `29eaac7` (CI run `42042027242`) failed the

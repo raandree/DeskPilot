@@ -32,7 +32,10 @@ function ConvertFrom-DpIntercomUpdate {
           rejected - the chat is not allow-listed
           ignore   - nothing actionable (a photo, a channel post, an empty message).
                      'unaddressed' marks group chatter the mention gate turned
-                     away, which the audit log folds instead of listing.
+                     away, which the audit log folds instead of listing. An
+                     unaddressed file of an Album keeps its attachment and
+                     mediaGroupId, never its words, so it can join its Album if
+                     another file of the Album mentions Intercom.
     .PARAMETER Update
         One element of the Telegram getUpdates result array.
     .PARAMETER AllowedChatId
@@ -120,6 +123,10 @@ function ConvertFrom-DpIntercomUpdate {
         preview          = ''
         # A file the operator sent, to be downloaded before the prompt runs.
         attachment       = $null
+        # Telegram's id for the Album the file belongs to. Several files sent
+        # together arrive as one Message each, sharing this id, and only one of
+        # them carries the caption.
+        mediaGroupId     = ''
         # The tap on an inline-keyboard button that produced this, answered so
         # Telegram stops showing the button as loading.
         callbackId       = ''
@@ -210,6 +217,9 @@ function ConvertFrom-DpIntercomUpdate {
     if ($attachment) {
         $rawText = [string](Get-DpPropertyValue -InputObject $message -Name @('caption') -Default '')
         $result.preview = $(if ($rawText) { $rawText } else { [string]$attachment.fileName })
+        $mediaGroupId = [string](Get-DpPropertyValue -InputObject $message -Name @('media_group_id') -Default '')
+        if ($mediaGroupId.Length -gt 64) { $mediaGroupId = $mediaGroupId.Substring(0, 64) }
+        $result.mediaGroupId = $mediaGroupId
     }
 
     $replyTo = Get-DpPropertyValue -InputObject $message -Name @('reply_to_message') -Default $null
@@ -250,6 +260,11 @@ function ConvertFrom-DpIntercomUpdate {
             $result.preview = ''
             $result.reason = 'Group Message did not mention this Intercom.'
             $result.unaddressed = $true
+            # Only one file of an Album carries the caption that can mention
+            # Intercom - for documents, usually the last. The others keep their
+            # file so it can join the Album if that caption does, never their
+            # words, which nobody addressed to Intercom.
+            if ($attachment -and $result.mediaGroupId -and -not $isEdit) { $result.attachment = $attachment }
             return $result
         }
     }

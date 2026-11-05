@@ -10,6 +10,33 @@ source: red/green Pester and Node regressions, real-Engine scripted-provider jou
 
 ## Current focus
 
+Making files sent together from Telegram (an Album) reach Intercom whole, on
+`ai/intercom-albums` from `main` `2e6b4c0`, which the user reported on
+2026-11-05 with screenshots. The Preview publish below still waits for a push.
+
+### Telegram Albums reach Intercom whole (2026-11-05)
+
+- **Symptom:** six PDFs sent together with the caption "here are 6 files, store
+  them" became one fetch, five "One file at a time, please." replies, and a
+  Turn on the first PDF with the default prompt.
+- **Cause:** Telegram sends an Album as one Message per file, sharing a
+  `media_group_id`, with the caption on one of them (the last, for documents).
+  Intercom refused every file while another was being fetched.
+- **Fix:** one batch per chat (`New-DpIntercomDownloadState`), fetched one file
+  at a time, and one prompt once an Album has been quiet for 3 seconds; a lone
+  file still runs at once. Images reach Vision as one set. A batch takes at
+  most 20 files, and another chat is asked once to wait. In a group that
+  requires a mention, the caption's mention addresses the whole Album, and
+  unmentioned files are held unfetched for 30 seconds. A finished batch never
+  replaces a queued instruction. Switching Intercom off drops the batch and
+  `QueuedImage`.
+- **Evidence:** `tests/Unit/IntercomAlbum.Tests.ps1`, 18 cases, 15 red first;
+  the other 3 guard the lone-file path and the trust boundary. Intercom suites
+  285/285, analyzer clean, and the full Sampler gate: 3,141 passed, 0 failed,
+  15 skips. No live Telegram run.
+
+### Preview publish from `ai/subagents`
+
 Publishing the next Preview from `ai/subagents` (from `main` `9d3890c`), which
 the user requested on 2026-11-05 with `review: on`. The branch carries the
 Subagents work, the closed assessment findings, another chat's Intercom
@@ -135,3 +162,7 @@ price Models in DeskPilot.
 - **The `security-reviewer` custom agent cannot start.** It is configured for
   the Model "Claude Opus 5 (copilot)", which is no longer offered. The built-in
   reviewer stood in for it.
+- **Check a real Telegram Album end to end.** The Album fix is proven against a
+  mocked Telegram only. Also still open: a Project without phone control
+  answers every file of an Album with its own refusal (pre-existing); one
+  refusal per Album would do.
