@@ -122,13 +122,23 @@ function Invoke-DpSubagentTool {
     else { '' }
     if ($refusal) { return (& $finish 'refused' $refusal '' $null) }
 
+    # Withhold only what the Engine knows: it refuses an unregistered name. A list
+    # that cannot be read leaves nothing to withhold, so nothing runs.
+    $registered = $null
+    try {
+        $registered = & {
+            $ErrorActionPreference = 'Stop'
+            @(Get-ShpTool -Origin User | ForEach-Object { [string]$_.Name })
+        }
+    }
+    catch {
+        return (& $finish 'failed' ('The Subagent could not run: the Engine''s Tool list could not be read, so the Tools a Subagent must not have could not be withheld. ' + $_.Exception.Message) '' $null)
+    }
+
     $state.active = $runId
     $state.runs = [int]$state.runs + 1
     $runUSD = [Math]::Round([Math]::Min([double]$limits.maxChildUSD, [double]$limits.maxTurnUSD - [double]$state.spentUSD), 6)
 
-    # Withhold only what the Engine knows: it refuses an unregistered name.
-    $registered = @()
-    try { $registered = @(Get-ShpTool -Origin User | ForEach-Object { [string]$_.Name }) } catch { $registered = @() }
     $turn = @{}
     foreach ($key in $context.turn.Keys) { $turn[$key] = $context.turn[$key] }
     $turn['excludeTool'] = @(@($context.turn.excludeTool) | Where-Object { $_ -in $registered })

@@ -465,6 +465,55 @@ Describe 'New-DpSubagentContext' {
         @((New-DpSubagentContext @script:ctxParams).context.turn.excludeTool) | Should -Be @('run_subagent')
     }
 
+    It 'leaves no Turn parameter undecided for a Subagent' {
+        # A Subagent inherits only what New-DpSubagentContext hands the Engine.
+        # Every key New-DpTurnParameter can set is accounted for here: carried to
+        # the Subagent, translated by DeskPilot's Invoker, or replaced by the
+        # Subagent's own context. A restriction added to the Turn later fails this
+        # test until someone decides what a Subagent does with it.
+        $carried = @('DisableBrowsing', 'DisableFileAccess', 'DisableMcp', 'DisableTerminal', 'DisableUserTools')
+        $translated = @('Model', 'ReasoningEffort', 'MaxToolIterations', 'DisableTodoList', 'DisableUserPrompts')
+        $ownContext = @('Prompt', 'History', 'Image', 'SystemPrompt', 'SkillPath', 'InstructionRoot')
+
+        $closed = Get-DpDefaultSettings
+        foreach ($name in @($closed.permissions.Keys)) { $closed.permissions[$name] = $false }
+        $closed.skillRoots = @('skills')
+        $closed.instructionRoots = @('instructions')
+        $closed.reasoningEffort = 'high'
+        $closed.maxToolIterations = 12
+        $closed.taskTracking = $false
+        $open = Get-DpDefaultSettings
+        foreach ($name in @($open.permissions.Keys)) { $open.permissions[$name] = $true }
+        $open.perCallApproval = $true
+        $keys = foreach ($settings in $closed, $open) {
+            $turnParams = @{
+                Prompt = 'p'; Settings = $settings; Image = @('shot.png'); History = @(@{ role = 'user'; content = 'h' })
+                Model = 'gpt-4o'; ModelReasoningEfforts = @('high'); McpSupported = $true; AgentSystemPrompt = 'persona'
+            }
+            @((New-DpTurnParameter @turnParams).Keys)
+        }
+
+        $undecided = @($keys | Sort-Object -Unique | Where-Object { $_ -notin ($carried + $translated + $ownContext) })
+        $undecided | Should -BeNullOrEmpty -Because 'New-DpSubagentContext has to decide whether a Subagent inherits each Turn parameter'
+    }
+
+    It 'carries every restriction a closed Turn sets' {
+        $settings = Get-DpDefaultSettings
+        foreach ($name in @($settings.permissions.Keys)) { $settings.permissions[$name] = $false }
+        $settings.permissions.subagents = $true
+        $settings.permissions.userTools = $true
+        $turnParameter = New-DpTurnParameter -Prompt 'p' -Settings $settings -McpSupported
+        $script:ctxParams.Settings = $settings
+        $script:ctxParams.TurnParameter = $turnParameter
+
+        $capability = (New-DpSubagentContext @script:ctxParams).context.capability
+
+        foreach ($key in @('DisableBrowsing', 'DisableFileAccess', 'DisableMcp', 'DisableTerminal')) {
+            $turnParameter[$key] | Should -BeTrue -Because "a closed Turn sets $key"
+            $capability[$key] | Should -BeTrue -Because "a Subagent must inherit $key"
+        }
+    }
+
     It 'stays off when <Case>' -ForEach @(
         @{ Case = 'the Subagents Permission is off'; Change = { $script:ctxSettings.permissions.subagents = $false }; Reason = 'Permission' }
         @{ Case = 'User Tools are off'; Change = { $script:ctxSettings.permissions.userTools = $false }; Reason = 'User Tools' }
@@ -533,7 +582,8 @@ $global:FakeShpCalls.Add($bound)
                 [hashtable]$Arguments = @{ Prompt = 'Audit the docs folder.' },
                 [string]$Engine = $script:engineCompleted,
                 [string]$SubagentAnswer = 'The docs are current.',
-                [AllowNull()][object]$SubagentCost = 0.0125
+                [AllowNull()][object]$SubagentCost = 0.0125,
+                [string]$ToolList = "param([string]`$Origin) @([pscustomobject]@{ Name = 'run_subagent' }, [pscustomobject]@{ Name = 'ask_questions' })"
             )
             $runspace = [runspacefactory]::CreateRunspace()
             $runspace.Open()
@@ -541,11 +591,11 @@ $global:FakeShpCalls.Add($bound)
             $shell.Runspace = $runspace
             try {
                 $null = $shell.AddScript(@'
-param($Definitions, $Context, $Engine, $SubagentShp, $Arguments, $SubagentAnswer, $SubagentCost)
+param($Definitions, $Context, $Engine, $SubagentShp, $Arguments, $SubagentAnswer, $SubagentCost, $ToolList)
 . ([scriptblock]::Create($Definitions))
 . ([scriptblock]::Create("function global:Invoke-ShpSubagent {`n$Engine`n}"))
 . ([scriptblock]::Create("function global:Invoke-Shp {`n$SubagentShp`n}"))
-function global:Get-ShpTool { param([string]$Origin) @([pscustomobject]@{ Name = 'run_subagent' }, [pscustomobject]@{ Name = 'ask_questions' }) }
+. ([scriptblock]::Create("function global:Get-ShpTool {`n$ToolList`n}"))
 $global:FakeSubagentCalls = [System.Collections.Generic.List[object]]::new()
 $global:FakeShpCalls = [System.Collections.Generic.List[object]]::new()
 $global:FakeSubagentAnswer = $SubagentAnswer
@@ -553,7 +603,7 @@ $global:FakeSubagentCost = $SubagentCost
 Set-Variable -Name DeskPilotSubagentContext -Scope Global -Value $Context
 $json = Invoke-DpSubagentTool @Arguments
 [pscustomobject]@{ Json = $json; Subagent = @($global:FakeSubagentCalls); Shp = @($global:FakeShpCalls) }
-'@).AddArgument($script:toolDefinitions).AddArgument($Context).AddArgument($Engine).AddArgument($script:subagentShp).AddArgument($Arguments).AddArgument($SubagentAnswer).AddArgument($SubagentCost)
+'@).AddArgument($script:toolDefinitions).AddArgument($Context).AddArgument($Engine).AddArgument($script:subagentShp).AddArgument($Arguments).AddArgument($SubagentAnswer).AddArgument($SubagentCost).AddArgument($ToolList)
                 $output = @($shell.Invoke())
                 if ($shell.HadErrors) { throw $shell.Streams.Error[0] }
                 [pscustomobject]@{
@@ -648,6 +698,32 @@ $json = Invoke-DpSubagentTool @Arguments
         $run = Invoke-SubagentToolFixture -Context $context -SubagentCost $null
         $null -eq $run.Records[1].CostUSD | Should -BeTrue
         $context.state.spentUSD | Should -Be 0
+    }
+
+    It 'runs nothing when the Engine cannot list its Tools, because nothing could be withheld' {
+        # The withheld names are filtered by that list, so an unreadable list
+        # used to withhold nothing: run_subagent and ask_questions reached the
+        # Subagent.
+        $context = New-ToolContext
+        $unreadable = "param([string]`$Origin) throw 'The Tool registry is unavailable.'"
+        $run = Invoke-SubagentToolFixture -Context $context -ToolList $unreadable
+
+        $run.Reply.status | Should -BeExactly 'failed'
+        $run.Reply.error | Should -Match 'withheld'
+        $run.Subagent | Should -HaveCount 0
+        $run.Shp | Should -HaveCount 0
+        @($run.Records.Phase) | Should -Be @('started', 'finished')
+        $context.state.runs | Should -Be 0
+        $context.state.active | Should -BeNullOrEmpty
+    }
+
+    It 'treats a non-terminating Tool list error as unreadable too' {
+        $context = New-ToolContext
+        $unreadable = "param([string]`$Origin) Write-Error 'The Tool registry is unavailable.'"
+        $run = Invoke-SubagentToolFixture -Context $context -ToolList $unreadable
+
+        $run.Reply.status | Should -BeExactly 'failed'
+        $run.Shp | Should -HaveCount 0
     }
 
     It 'refuses <Case> without dispatching anything' -ForEach @(
