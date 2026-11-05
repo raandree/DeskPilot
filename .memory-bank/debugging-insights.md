@@ -2,6 +2,26 @@
 
 Recurring issues and how they were resolved.
 
+## A command lookup by name imports another Engine copy (2026-11-05)
+
+**Symptom:** After `Invoke-DpSubagentTool` began reading `Get-ShpUsage`, six
+fake-Engine tests failed with the real Engine's own error: *The agent
+definition 'C:\b\gp.agent.md' does not exist*. Those tests define
+`Invoke-ShpSubagent` as a global stand-in, in a runspace without ShellPilot.
+
+**Root cause:** Calling `Get-ShpUsage` by name, where nothing defined it, made
+PowerShell auto-import the installed ShellPilot. Importing a module overwrites
+same-named global functions, so the stand-in `Invoke-ShpSubagent` was replaced
+by the real one. In a probe, neither `$PSModuleAutoLoadingPreference = 'None'`
+set in a child scope nor `Get-Command -ListImported` prevented the import. In CI,
+ShellPilot 0.3.1 in `output/RequiredModules` would have done the same.
+
+**Fix + rule:** Read an optional Engine command from the runspace's function
+table with `Get-Item -LiteralPath function:<Name>`, and invoke the returned
+function. That finds a stand-in, finds the imported Engine, and imports nothing
+when neither exists. Never call an optional Engine command by name inside the
+Engine Runspace or a fixture runspace.
+
 ## Thread cannot be scrolled back down while thinking streams (2026-09-29)
 
 **Symptom:** During a long Turn with thinking on, the reader could scroll up but

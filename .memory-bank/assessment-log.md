@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: security-reviewer
-last-verified: 2026-10-02
+last-verified: 2026-11-05
 source: repository evidence
 ---
 
@@ -11,6 +11,85 @@ source: repository evidence
 Episodic record of security assessments: date, scope, verdict, top findings,
 remediation status. Newest first. Retention: two years, then archive to a dated
 topic file.
+
+## 2026-11-05 — Pre-publish review of `ai/subagents` (`258e1b0`)
+
+**Scope:** `git diff 9d3890c..258e1b0`, before the next Preview. This covers
+bounded Subagents (`3ee65d2`), the Intercom fixes (`534dc78`), the SPA Node
+wrapper (`fda2c0b`) and the `stopTurn` route tests (`439d3cf`). The review used
+the built-in `security-review` agent, because the custom security-reviewer agent
+could not start: the Model it is configured for is no longer offered.
+
+**Original verdict: REQUEST CHANGES.**
+
+| ID | Severity | CVSS | Finding | Status |
+| --- | --- | --- | --- | --- |
+| FIND-017 | Critical | — | The Engine passes every key of a Tool call's arguments to a User Tool, in its own scope. DeskPilot's Tools are advanced functions, so `OutVariable`, `ErrorVariable`, their aliases and their prefixes overwrote the Engine's gates. A disabled Terminal then ran on the host without approval, and `ToolCallControl` was skipped. The flaw is present on `main` and in the published Preview 0026 | **closed** (DeskPilot side) |
+| FIND-018 | Medium | — | `InformationAction: Ignore` on a `run_subagent` call dropped the run's records. The run then had no card and no Usage share, and its files never reached Changes, Undo or Checkpoint restore | **closed** |
+| FIND-019 | Low | — | The per-Turn USD ledger charged only a returned result. A Subagent that threw at its iteration cap or deadline charged nothing, so the USD 2.00 cap was soft | **closed** |
+
+### Evidence
+
+- **FIND-017 reproduced.** The reviewer used the installed Engine, DeskPilot's
+  real initializers, a scripted provider and inert native stubs. One Tool call
+  smuggled both variables, and afterwards both the native file writer and the
+  disabled `run_command` were dispatched. No real command ran and no file was
+  written.
+- **Discarded as false positives:**
+  - an Agent name reaching a file path;
+  - `-Capability @{Tool=$null}` widening the Subagent;
+  - the missing SkillPath and InstructionRoot;
+  - nesting and ledger reset;
+  - forged records and a stale registration;
+  - prototype pollution in the UI;
+  - a failing `Get-ShpTool`, which is harmless (DeskPilot fails it closed anyway since `30d270a`);
+  - Subagent browser approvals;
+  - the Intercom token race.
+
+### Remediation, 2026-11-05 (same day)
+
+**Follow-up verdict: PASS.** The same reviewer verified the fixes in one
+narrower round and reported no new finding.
+
+- **FIND-017, closed in `b0fb045`.**
+  - **The fix.** `Protect-DpUserTool` follows every `Register-ShpTool` in the
+    five initializers. The Model is still offered the advanced function's
+    schema. Dispatch reaches a plain function that binds only the Tool's own
+    parameters and refuses every other key without running anything. The
+    Terminal Tool is guarded once, after its last registration.
+  - **Regression test.** It runs through the real Engine. Before the fix it
+    reached both native stubs; after the fix it reaches neither.
+  - **Mutation check.** Guarding the Terminal Tool before isolation's second
+    registration fails the Terminal schema test.
+  - **Reviewer's re-run.** It replayed the original attack through
+    `run_subagent`, the aliases `ov` and `ev`, `OutVar=global:DeskPilotSubagentContext`
+    and `infa`, then fuzzed about 40 keys. Every one was refused before the
+    Tool ran.
+- **FIND-018, closed in `dbdc7ed`.** The run records pin
+  `-InformationAction SilentlyContinue`, and the guard also refuses the key.
+- **FIND-019, closed in `dbdc7ed`.** The ledger charges the larger of the
+  reported cost and the Engine's Usage delta. The reviewer ran a real Engine
+  past its iteration cap: the run was charged USD 0.4, where it was charged 0
+  before.
+- **Also reviewed and found sound:** `30d270a`, and `a1ccaa6`, which turns the
+  group mention gate on by default.
+- **Full gate at `dbdc7ed`:** 3,123 passed, 0 failed, 15 skipped; 16 tasks,
+  0 errors, the 7 known Memory warnings.
+
+### Residual risk and notes
+
+- **The root cause stays in ShellPilot** (`Invoke-Shp.ps1` lines 2858–2862).
+  The Engine should pass only the exact declared, non-common parameter names,
+  which would also protect its other consumers.
+- **The isolated child runtime is unguarded.** Its own registrations
+  (`source/child/Start-DpChildEngine.ps1:26`) have no guard. The runtime ships
+  off, and its container is read-only and has no network. Guard it before child
+  runs are enabled.
+- **One parser default is still off.** `ConvertFrom-DpIntercomUpdate
+  -RequireGroupMention` defaults to `$false`. This is harmless today, because
+  its one caller passes the Setting.
+- **The registration tripwire has a blind spot.** It sees only literal command
+  names in `source/Private`.
 
 ## 2026-09-08 — Intercom mention-only group intake (`38e4e99`)
 

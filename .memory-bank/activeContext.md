@@ -2,16 +2,37 @@
 schema-version: 1
 status: accepted
 owner: software-engineer
-last-verified: 2026-10-02
-source: red/green Pester and Node regressions, real-Engine scripted-provider journey, headless Edge renders, full Sampler gate
+last-verified: 2026-11-05
+source: red/green Pester and Node regressions, real-Engine scripted-provider journeys, independent security review, full Sampler gates in an isolated worktree
 ---
 
 # Active context
 
 ## Current focus
 
-`ai/subagents`, from `main` `9d3890c`, carries two pieces of unattended work
-and one requested Intercom default change. No push or Merge was requested.
+Publishing the next Preview from `ai/subagents` (from `main` `9d3890c`), which
+the user requested on 2026-11-05 with `review: on`. The branch carries the
+Subagents work, the closed assessment findings, another chat's Intercom
+default change (`a1ccaa6`), and the fixes from the pre-publish security review
+below. `main` is fast-forwarded to the reviewed and gated commit and pushed; CI
+then tags and publishes.
+
+### Pre-publish security review (2026-11-05)
+
+Recorded in [assessment-log.md](assessment-log.md). The original verdict was
+REQUEST CHANGES; after the fixes, the follow-up verdict is PASS.
+
+- **FIND-017 (Critical, already on `main`): DeskPilot User Tools bound PowerShell
+  common parameters.** The Engine splats a Tool call's arguments in its own scope,
+  so `OutVariable` and `ErrorVariable` could overwrite its gates and run a
+  disabled Terminal without approval. Closed on DeskPilot's side by
+  `Protect-DpUserTool` after every registration (`b0fb045`). The real-Engine
+  regression is in `tests/Unit/UserToolGuard.Tests.ps1`.
+- **FIND-018 and FIND-019 (Subagents).** The run records pin their
+  `InformationAction`. The ledger charges the Engine's measured spend, so a run
+  cut off at its iteration cap or deadline still counts (`dbdc7ed`).
+- **My own five-axis review** fixed a fail-open when `Get-ShpTool` fails, and
+  added guards that a Subagent inherits every Turn restriction (`30d270a`).
 
 ### Subagents (`3ee65d2`)
 
@@ -74,8 +95,13 @@ Closed test-first and recorded in
 
 ## Validation
 
-- Full Sampler gate: 3,082 passed, 0 failed, 15 skips; 16 tasks, 0 errors,
-  the 7 known Memory preservation warnings. The SPA Node wrapper ran inside it.
+- Full Sampler gate at `dbdc7ed`, run in a separate worktree so the two chats'
+  builds could not collide: 3,123 passed, 0 failed, 15 skips; 16 tasks, 0 errors,
+  the 7 known Memory preservation warnings. It includes the Intercom default
+  change, whose own chat could not run the full gate.
+- The installed Engine (0.4.0-preview0016) is function-for-function identical to
+  CI's compatibility Engine `08a4a22`, all 153 functions checked. So the
+  real-Engine tests run the same Engine code in CI as locally.
 - Intercom suites 355/355, Diagnostics 49/49, Node UI 103/103. Subagent and
   stopTurn suites pass under `Set-StrictMode -Version Latest`; the Intercom
   suites set it themselves.
@@ -92,10 +118,17 @@ price Models in DeskPilot.
 
 ## Open follow-ups
 
-- FIND-009 stays open on purpose: the fix belongs in the disabled isolated
+- **The Engine-side root cause of FIND-017 stays open in ShellPilot.**
+  `Invoke-Shp` should pass only the exact declared, non-common parameter names to
+  a User Tool. DeskPilot's guard covers its own Tools only.
+- **Guard the isolated child runtime before child runs are enabled.** Its
+  registrations (`source/child/Start-DpChildEngine.ps1`) have no guard; the runtime
+  ships off.
+- **FIND-009 stays open on purpose.** The fix belongs in the disabled isolated
   child runtime, whose live Docker and Model proof is bound to its source
   hashes. The assessment log records the remediation plan.
-- A live, authenticated Model run of a Subagent has not been done. It belongs to
-  the operator acceptance profile.
-- An independent review is recommended (`review: on`) for the Subagent approval
-  inheritance and the Intercom intake and audit changes; none was dispatched.
+- **A live, authenticated Model run of a Subagent has not been done.** It
+  belongs to the operator acceptance profile.
+- **The `security-reviewer` custom agent cannot start.** It is configured for
+  the Model "Claude Opus 5 (copilot)", which is no longer offered. The built-in
+  reviewer stood in for it.

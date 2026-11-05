@@ -2,7 +2,7 @@
 schema-version: 1
 status: accepted
 owner: shared
-last-verified: 2026-10-02
+last-verified: 2026-11-05
 source: repository implementation, regression evidence, and decision records
 ---
 
@@ -64,6 +64,10 @@ source: repository implementation, regression evidence, and decision records
   control objects, withhold `run_subagent`/`ask_questions`, refuse a control it
   cannot inherit, and keep Turn grants out of it. Mirror an Engine translation
   only behind a parity test against the installed Engine.
+- The Engine splats a Tool call's arguments onto a User Tool in its own scope, so
+  common parameters must never bind. Register each DeskPilot Tool from its
+  advanced function, then guard it with `Protect-DpUserTool` once, after its last
+  registration (the schema is built at registration).
 
 ## Data and user experience
 
