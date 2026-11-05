@@ -170,6 +170,12 @@ Describe 'User Tool arguments through the Engine' -Tag 'Unit' -Skip:(-not $scrip
     # Only the provider is scripted, and the native Terminal and file writer are
     # inert stubs that record whether they were reached.
     BeforeAll {
+        # The Engine refuses its Copilot backend when $env:CI is set, unless this
+        # opt-in is present. Nothing here reaches Copilot - the provider is
+        # scripted and both network paths throw - so the opt-in only gets the
+        # fixture past that gate on a CI runner. Restored in AfterAll.
+        $script:previousCopilotInCi = $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI
+        $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI = '1'
         if (-not ('DeskPilot.Tests.GuardApprovalBridge' -as [type])) {
             Add-Type -TypeDefinition @'
 namespace DeskPilot.Tests {
@@ -239,6 +245,11 @@ $global:DpNativeDispatch = [System.Collections.Generic.List[string]]::new()
 
     AfterEach { $script:guardRunspace.Dispose() }
 
+    AfterAll {
+        if ($null -eq $script:previousCopilotInCi) { Remove-Item -Path Env:\SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI -ErrorAction SilentlyContinue }
+        else { $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI = $script:previousCopilotInCi }
+    }
+
     It 'keeps a disabled Tool disabled and every approval asked when a call smuggles common parameters' {
         $workspace = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $null = New-Item -ItemType Directory -Path $workspace
@@ -273,7 +284,7 @@ $result = Invoke-Shp @Parameters
 [pscustomobject]@{ Result = $result; Calls = @($global:DpProviderCalls); Native = @($global:DpNativeDispatch) }
 '@).AddArgument($responses).AddArgument($parameters)
             $output = @($shell.Invoke())
-            if ($output.Count -eq 0) { throw $shell.Streams.Error[0] }
+            if ($output.Count -eq 0 -or ($shell.HadErrors -and $null -eq $output[-1].Result)) { throw $shell.Streams.Error[0] }
             $run = $output[-1]
         }
         finally { $shell.Dispose() }

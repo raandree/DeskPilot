@@ -882,6 +882,12 @@ Describe 'run_subagent through the Engine' -Skip:(-not $script:hasSubagentEngine
     # replaced inside the Engine by a stub with its exact parameters, credentials
     # are a fixture and both network paths throw.
     BeforeAll {
+        # The Engine refuses its Copilot backend when $env:CI is set, unless this
+        # opt-in is present. Nothing here reaches Copilot - the provider is
+        # scripted and both network paths throw - so the opt-in only gets the
+        # fixture past that gate on a CI runner. Restored in AfterAll.
+        $script:previousCopilotInCi = $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI
+        $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI = '1'
         if (-not ('DeskPilot.Tests.SubagentApprovalBridge' -as [type])) {
             Add-Type -TypeDefinition @'
 namespace DeskPilot.Tests {
@@ -942,7 +948,9 @@ $result = Invoke-Shp @Parameters
 [pscustomobject]@{ Result = $result; Calls = @($global:DpProviderCalls) }
 '@).AddArgument($Responses).AddArgument($Parameters)
                 $output = @($shell.Invoke())
-                if ($shell.HadErrors -and $output.Count -eq 0) { throw $shell.Streams.Error[0] }
+                # Surface the Engine's own error rather than a null Result: a Turn
+                # the Engine refused otherwise reads as "got $null" in CI.
+                if ($shell.HadErrors -and ($output.Count -eq 0 -or $null -eq $output[-1].Result)) { throw $shell.Streams.Error[0] }
                 [pscustomobject]@{
                     Result  = $output[-1].Result
                     Calls   = $output[-1].Calls
@@ -975,6 +983,11 @@ $result = Invoke-Shp @Parameters
     }
 
     AfterEach { $script:e2eRunspace.Dispose() }
+
+    AfterAll {
+        if ($null -eq $script:previousCopilotInCi) { Remove-Item -Path Env:\SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI -ErrorAction SilentlyContinue }
+        else { $env:SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI = $script:previousCopilotInCi }
+    }
 
     It 'runs a Subagent under the Turn''s own approval control and hands its report to the parent' {
         $bridge = [DeskPilot.Tests.SubagentApprovalBridge]::new()

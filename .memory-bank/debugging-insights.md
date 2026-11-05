@@ -2,6 +2,30 @@
 
 Recurring issues and how they were resolved.
 
+## Scripted Engine journeys fail only in CI (2026-11-05)
+
+**Symptom:** The publishing run for `29eaac7` (CI run `42042027242`) failed the
+same three tests on Windows, Ubuntu and macOS. They were the two real-Engine
+Subagent journeys and the real-Engine Tool-argument guard test. Each reported
+only that `Result.Content` was `$null`, and the deploy job was skipped. All three
+passed locally, including against CI's own compatibility Engine.
+
+**Root cause:** ShellPilot's `Resolve-ShpCiProfile` refuses the default Copilot
+backend whenever `$env:CI` is truthy, unless
+`SHELLPILOT_ALLOW_COPILOT_BACKEND_IN_CI` opts in. That is a deliberate
+attribution gate. Every GitHub runner sets `CI`; this workstation does not. The
+fixtures only script `Invoke-CopilotTurn` and stub the session token, so the
+gate threw before the stubbed provider was reached. The harness discarded the
+error once `Invoke-Shp` had written any output, which hid it.
+
+**Fix + rule:** A Describe that runs a full `Invoke-Shp` Turn against a scripted
+provider sets the opt-in in `BeforeAll` and restores it in `AfterAll`. Nothing
+reaches Copilot, because the provider is scripted and both network paths throw.
+The harness now throws the Engine's own error when `Result` is `$null`. To
+reproduce CI on a workstation, run with `$env:CI = 'true'` and
+`DESKPILOT_TEST_ENGINE_PATH` pointing at a compatibility Engine built from the
+pinned revision.
+
 ## A command lookup by name imports another Engine copy (2026-11-05)
 
 **Symptom:** After `Invoke-DpSubagentTool` began reading `Get-ShpUsage`, six

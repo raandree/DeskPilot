@@ -14,8 +14,11 @@ Publishing the next Preview from `ai/subagents` (from `main` `9d3890c`), which
 the user requested on 2026-11-05 with `review: on`. The branch carries the
 Subagents work, the closed assessment findings, another chat's Intercom
 default change (`a1ccaa6`), and the fixes from the pre-publish security review
-below. `main` is fast-forwarded to the reviewed and gated commit and pushed; CI
-then tags and publishes.
+below. The user pushed `29eaac7` to `main`, but its CI run (`42042027242`) failed
+the three scripted real-Engine tests on every OS, so nothing was published.
+ShellPilot's CI gate refused the Copilot backend because runners set `$env:CI`
+(see debugging-insights). The test-only fix is committed on `main`, and the
+next push publishes the Preview.
 
 ### Pre-publish security review (2026-11-05)
 
